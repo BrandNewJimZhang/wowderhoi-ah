@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #080a0f;
+  color: #dce3ef;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+::selection {
+  background: rgba(246, 180, 75, 0.35);
+}
+
+.terminal-grid {
+  background-image: linear-gradient(rgba(86, 199, 255, 0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(86, 199, 255, 0.04) 1px, transparent 1px);
+  background-size: 24px 24px;
+}

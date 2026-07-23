@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- WoWderhoi AHelper logo, Wonderlands x Showtime flavor: Emu-pink
+       stage panel, Tsukasa-yellow border, gold coin, Nene-mint rising
+       arrow, sparkle stars. Master file; rendered by npm run logo:render
+       (64px addon icon, 256px project avatar). -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff9ed8"/>
+      <stop offset="1" stop-color="#f0479e"/>
+    </linearGradient>
+    <linearGradient id="coin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe08a"/>
+      <stop offset="1" stop-color="#e0a52e"/>
+    </linearGradient>
+  </defs>
+  <rect x="10" y="10" width="492" height="492" rx="110" fill="url(#bg)" stroke="#ffd94d" stroke-width="22"/>
+  <circle cx="196" cy="320" r="118" fill="url(#coin)" stroke="#b57d18" stroke-width="14"/>
+  <circle cx="196" cy="320" r="80" fill="none" stroke="#b57d18" stroke-width="10" opacity="0.55"/>
+  <polyline points="102,428 200,356 282,392 404,232" fill="none" stroke="#2ce8a4" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+  <polygon points="430,194 414,276 350,224" fill="#2ce8a4"/>
+  <!-- four-point sparkles, Emu style -->
+  <path d="M388 84 Q396 116 428 124 Q396 132 388 164 Q380 132 348 124 Q380 116 388 84 Z" fill="#fff6bf"/>
+  <path d="M118 128 Q123 148 143 153 Q123 158 118 178 Q113 158 93 153 Q113 148 118 128 Z" fill="#ffffff" opacity="0.9"/>
+  <path d="M330 300 Q334 314 348 318 Q334 322 330 336 Q326 322 312 318 Q326 314 330 300 Z" fill="#c493ff"/>
+</svg>

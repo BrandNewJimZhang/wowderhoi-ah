@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Item {
+  id               String            @id @default(cuid())
+  itemId           Int               @unique @map("item_id")
+  name             String
+  quality          String
+  category         String
+  subCategory      String            @map("sub_category")
+  vendorPrice      Int               @default(0) @map("vendor_price") // NPC sell price in copper; 0 = unsellable
+  snapshots        AuctionSnapshot[]
+  dailySummaries   DailySummary[]
+  alerts           AlertRule[]
+  watchlistEntry   Watchlist?
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  @@index([category, subCategory])
+}
+
+model AuctionSnapshot {
+  id          String   @id @default(cuid())
+  itemId      Int      @map("item_id")
+  timestamp   DateTime
+  server      String
+  faction     String
+  minPrice    Int      @map("min_price")
+  marketPrice Int      @map("market_price")
+  quantity    Int
+  numAuctions Int      @map("num_auctions")
+  rawPayload   Json?    @map("raw_payload")
+  item        Item     @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
+
+  @@index([itemId, timestamp])
+  @@index([server, faction, timestamp])
+}
+
+model DailySummary {
+  id         String   @id @default(cuid())
+  itemId     Int      @map("item_id")
+  date       DateTime
+  openPrice  Int      @map("open_price")
+  closePrice Int      @map("close_price")
+  highPrice  Int      @map("high_price")
+  lowPrice   Int      @map("low_price")
+  volume     Int
+  item       Item     @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
+
+  @@unique([itemId, date])
+  @@index([date])
+}
+
+model Event {
+  id        String   @id @default(cuid())
+  eventType String   @map("event_type")
+  eventName String   @map("event_name")
+  startTime DateTime @map("start_time")
+  endTime   DateTime @map("end_time")
+
+  @@index([eventType, startTime])
+}
+
+// Single-operator local terminal: no userId columns anywhere.
+model Watchlist {
+  id        String   @id @default(cuid())
+  itemId    Int      @unique @map("item_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  item      Item     @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
+}
+
+model AlertRule {
+  id         String    @id @default(cuid())
+  itemId     Int       @map("item_id")
+  metric     String
+  operator   String
+  threshold  Float
+  enabled    Boolean   @default(true)
+  lastSignal DateTime? @map("last_signal")
+  item       Item      @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
+
+  @@index([enabled])
+}

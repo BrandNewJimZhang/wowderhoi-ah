@@ -1,0 +1,25 @@
+node_modules
+.next
+dist
+coverage
+.env
+.env.local
+prisma/dev.db
+prisma/dev.db-*
+prisma/perf.db
+prisma/perf.db-*
+scripts/perf/reports/
+*.log
+tsconfig.tsbuildinfo
+next-env.d.ts
+
+# legacy scripts with hardcoded Battle.net secrets — never commit
+auth.txt
+auth.py
+identify.py
+test.py
+data.json
+
+
+# self-hosted item icons, refetchable via npm run icons:fetch
+public/icons/
