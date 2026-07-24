@@ -1,4 +1,4 @@
-## Interface: 20505
+## Interface: 20506
 ## Title: WoWderhoi AHelper
 ## Notes: Auction house scanner and price intelligence for the WoWderhoi AH terminal.
 ## Author: Jim Zhang
