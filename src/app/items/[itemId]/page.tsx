@@ -100,7 +100,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
               {signal && (
                 <>
                   <div>
-                    <div className="text-xs uppercase text-terminal-muted">P50 市价</div>
+                    <div className="text-xs uppercase text-terminal-muted">P10 市价</div>
                     <div className="text-2xl"><Coins copper={signal.price} /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-xs">

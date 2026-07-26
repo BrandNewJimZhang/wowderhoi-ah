@@ -3,7 +3,7 @@ import { normalizeAddonScan, parseSavedVariables } from "@/lib/addon-scan";
 
 const savedVariablesFixture = `
 WoWderhoiAH_ScanData = {
-\t["dataVersion"] = 2,
+\t["dataVersion"] = 3,
 \t["scannedAt"] = 1721700000,
 \t["server"] = "Anniversary",
 \t["faction"] = "Alliance",
@@ -82,13 +82,13 @@ describe("normalizeAddonScan", () => {
   });
 
   it("rejects payloads without items", () => {
-    expect(() => normalizeAddonScan({ dataVersion: 2, scannedAt: 1721700000, server: "A", faction: "Alliance", items: {} }))
+    expect(() => normalizeAddonScan({ dataVersion: 3, scannedAt: 1721700000, server: "A", faction: "Alliance", items: {} }))
       .toThrow(/items/i);
   });
 
   it("rejects entries with non-positive prices", () => {
     const broken = {
-      dataVersion: 2,
+      dataVersion: 3,
       scannedAt: 1721700000,
       server: "Anniversary",
       faction: "Horde",
@@ -110,5 +110,8 @@ describe("normalizeAddonScan", () => {
     };
     expect(() => normalizeAddonScan(stale)).toThrow(/dataVersion/i);
     expect(() => normalizeAddonScan({ ...stale, dataVersion: 1 })).toThrow(/dataVersion/i);
+    // dataVersion 2 carried a P50 marketPrice; the P10 rework redefined that
+    // field, so v2 scans must be rejected rather than silently mixed in.
+    expect(() => normalizeAddonScan({ ...stale, dataVersion: 2 })).toThrow(/dataVersion/i);
   });
 });

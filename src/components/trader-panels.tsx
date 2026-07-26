@@ -8,7 +8,7 @@ import { formatWowMoney } from "@/lib/wow-money";
 type AlertRuleRow = { id: string; metric: string; operator: string; threshold: number; enabled: boolean };
 
 const metricLabels: Record<string, string> = {
-  price: "P50 市价",
+  price: "P10 市价",
   minPrice: "最低价",
   med7: "7日中位价",
   discountPercent: "折扣%",

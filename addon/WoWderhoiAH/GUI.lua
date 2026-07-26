@@ -50,12 +50,12 @@ local function appendTraderSection(tooltip)
   lastTooltipItemId = itemId
   -- Session scan is the live view (AH prices swing by the hour);
   -- history is context. Show live first, one price per line.
-  local scanned = WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.dataVersion == 2
+  local scanned = WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.dataVersion == WAH.PIPELINE_VERSION
     and WoWderhoiAH_ScanData.items and WoWderhoiAH_ScanData.items[itemId]
   -- Old-pipeline scan on disk: rejected by the version gate, but say so
   -- visibly instead of silently dropping the section.
   local staleScan = not scanned and WoWderhoiAH_ScanData
-    and WoWderhoiAH_ScanData.dataVersion ~= 2 and WoWderhoiAH_ScanData.items ~= nil
+    and WoWderhoiAH_ScanData.dataVersion ~= WAH.PIPELINE_VERSION and WoWderhoiAH_ScanData.items ~= nil
   local entry = historyFor(itemId)
   if not scanned and not entry and not staleScan then return end
   tooltip.wahAppended = true
@@ -73,9 +73,8 @@ local function appendTraderSection(tooltip)
       tooltip:AddDoubleLine("  |cffff9933" .. L.TT_SELLP .. "|r", GetCoinTextureString(scanned.sellP))
     end
     tooltip:AddDoubleLine("  " .. L.TT_MIN, GetCoinTextureString(scanned.minPrice))
-    if scanned.p10 then tooltip:AddDoubleLine("  P10", GetCoinTextureString(scanned.p10)) end
-    if scanned.p25 then tooltip:AddDoubleLine("  P25", GetCoinTextureString(scanned.p25)) end
-    tooltip:AddDoubleLine("  P50", GetCoinTextureString(scanned.marketPrice))
+    if scanned.p5 then tooltip:AddDoubleLine("  P5", GetCoinTextureString(scanned.p5)) end
+    tooltip:AddDoubleLine("  P10", GetCoinTextureString(scanned.marketPrice))
     tooltip:AddDoubleLine("  " .. L.TT_SUPPLY, string.format(L.TT_SUPPLY_FMT, scanned.quantity, scanned.numAuctions))
   end
   if entry then
@@ -118,7 +117,7 @@ for _, method in ipairs({
 end
 
 -- Hand-drawn line charts: scan-to-scan closes connected with Line
--- objects (frame:CreateLine, available on the 2.5.5 anniversary
+-- objects (frame:CreateLine, available on the 2.5.6 anniversary
 -- client), anchored beside the auction frame. Two stacked windows over
 -- the same point series: last 3 hours on top, last 48 hours below.
 -- Each plot owns four separate rows — caption, high/low, plot box,
@@ -147,13 +146,6 @@ local function coinLabel(amount)
     amount = amount - amount % COPPER_PER_SILVER
   end
   return GetCoinTextureString(amount)
-end
-
--- The chart plots the P10 close (p): the cheap-tail front a buyer
--- actually pays, vs the P50 median (c) feeding the 7d stats. Points
--- recorded before p existed fall back to c.
-local function pointValue(point)
-  return point.p or point.c
 end
 
 local function createPlot(layout)
@@ -213,9 +205,8 @@ local function renderPlot(plot, pts, now)
   end
   local minClose, maxClose = math.huge, 0
   for _, point in ipairs(points) do
-    local value = pointValue(point)
-    if value < minClose then minClose = value end
-    if value > maxClose then maxClose = value end
+    if point.c < minClose then minClose = point.c end
+    if point.c > maxClose then maxClose = point.c end
   end
   plot.hilo:SetText(string.format(L.CHART_HILO,
     coinLabel(maxClose), coinLabel(minClose)))
@@ -233,7 +224,7 @@ local function renderPlot(plot, pts, now)
   local function plotXY(point)
     local x = PLOT_LEFT + (point.t - firstT) / timeSpan * PLOT_WIDTH
     -- Flat series draw at mid-height instead of hugging the bottom row.
-    local ratio = range > 0 and (pointValue(point) - minClose) / range or 0.5
+    local ratio = range > 0 and (point.c - minClose) / range or 0.5
     return x, plot.bottom + ratio * PLOT_HEIGHT
   end
 

@@ -28,7 +28,7 @@ async function importLatestScan() {
     console.log("No WoWderhoiAH_ScanData in SavedVariables yet; waiting for the first /wahscan.");
     return;
   }
-  if (scan.dataVersion !== 2) {
+  if (scan.dataVersion !== 3) {
     console.log("Stale scan from an old addon version on disk — rescan in game (/wahscan) to produce current-pipeline data.");
     return;
   }

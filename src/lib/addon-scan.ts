@@ -12,7 +12,7 @@ export type AddonScanItem = {
   category: string;
   subCategory: string;
   minPrice: number;
-  marketPrice: number;
+  marketPrice: number; // quantity-weighted P10 unit price, copper
   quantity: number;
   numAuctions: number;
   vendorPrice: number; // NPC sell price in copper; 0 = unsellable to vendors
@@ -163,10 +163,11 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
     throw new Error(`Addon scan payload must be an object, got ${JSON.stringify(raw)}`);
   }
   const scan = raw as Record<string, unknown>;
-  // Pipeline version gate: scans stamped before the percentile pricing
-  // rework carry mean-polluted prices and must never enter the store.
-  if (scan.dataVersion !== 2) {
-    throw new Error(`Addon scan dataVersion must be 2 (percentile pipeline), got ${JSON.stringify(scan.dataVersion)} — rescan in game with the current addon`);
+  // Pipeline version gate: v1 scans carry mean-polluted prices and v2 scans
+  // carry a P50 marketPrice, which this realm's thin upper book made
+  // unusable. Only v3 (P10 marketPrice) may enter the store.
+  if (scan.dataVersion !== 3) {
+    throw new Error(`Addon scan dataVersion must be 3 (P10 pricing pipeline), got ${JSON.stringify(scan.dataVersion)} — rescan in game with the current addon`);
   }
   if (typeof scan.scannedAt !== "number" || scan.scannedAt <= 0) {
     throw new Error(`Addon scan scannedAt must be a positive epoch, got ${JSON.stringify(scan.scannedAt)}`);

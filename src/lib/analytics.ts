@@ -9,15 +9,15 @@ export type MarketSignal = {
   name: string;
   category: string;
   quality: string;
-  price: number; // latest scan's P50 unit price, copper
+  price: number; // latest scan's P10 unit price, copper
   minPrice: number; // latest scan's minimum listed unit price
   quantity: number; // latest scan's listed quantity (supply, NOT sales)
   numAuctions: number;
   vendorPrice: number; // NPC sell price, copper; 0 = unsellable
-  med7: number; // median snapshot P50 over the last 7 days
+  med7: number; // median snapshot P10 over the last 7 days
   med7Samples: number; // snapshots inside the 7d window backing med7
   discountPercent: number; // how far the current min sits below med7
-  changePercent: number; // latest P50 vs the previous scan's P50
+  changePercent: number; // latest P10 vs the previous scan's P10
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;

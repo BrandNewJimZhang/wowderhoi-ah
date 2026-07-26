@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Target the TBC Anniversary 2.5.6 client (`Interface: 20506`).
+- Pricing pipeline reworked around the bottom decile (`dataVersion` 3).
+  This realm's upper order book is thin and stale, so P50 tracked
+  listings nothing ever traded against:
+  - `marketPrice` is now the quantity-weighted **P10**, was P50. Every
+    surface labelled "P50" — tooltip ladder, market table, item page,
+    intraday chart, alert metrics — now reads P10.
+  - Percentile ladder is **min / P5 / P10**, was P10 / P25 / P50. The
+    `p25` field is gone and `p5` replaces it; the standalone `p10`
+    field is gone too, since `marketPrice` now carries that number.
+  - In-game price points store one close (`c`, the P10) instead of a
+    P50/P10 pair. Points recorded by an older pipeline are dropped on
+    the first scan after the bump — mixing P50 and P10 closes would
+    poison the 7d median and the deal radar for a week.
+- Scans stamped `dataVersion` 1 or 2 are rejected by the importer and
+  the watcher; rescan in game with `/wahscan`.
+
 ## v0.1.0 — 2026-07-24
 
 First public release of WoWderhoi AHelper.

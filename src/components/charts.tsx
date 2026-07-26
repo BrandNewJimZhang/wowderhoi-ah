@@ -32,7 +32,7 @@ export function TimeSeriesChart({ data }: { data: TimePoint[] }) {
         <Tooltip
           contentStyle={{ background: "#10141d", border: "1px solid #263042", color: "#dce3ef" }}
           labelFormatter={(value) => formatClock(Number(value))}
-          formatter={(value, name) => (name === "volume" ? [String(value), "在售量"] : [formatGold(Number(value)), "P50"])}
+          formatter={(value, name) => (name === "volume" ? [String(value), "在售量"] : [formatGold(Number(value)), "P10"])}
         />
         <Bar yAxisId="volume" dataKey="volume" fill="#263f5c" opacity={0.7} />
         <Line yAxisId="price" type="monotone" dataKey="price" dot={{ r: 2 }} stroke="#56c7ff" strokeWidth={2} />

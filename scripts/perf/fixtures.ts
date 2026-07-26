@@ -121,7 +121,7 @@ export function buildScanPayload(market: SyntheticMarket, pointIndex: number, sc
     };
   }
   return {
-    dataVersion: 2,
+    dataVersion: 3,
     scannedAt: scannedAtEpochSeconds,
     server: "PerfRealm",
     faction: "Alliance",

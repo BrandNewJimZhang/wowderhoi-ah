@@ -31,7 +31,7 @@ local MIN_PROFIT = 500 -- 5s absolute floor; sub-silver "deals" waste a trip
 
 local function refreshDeals()
   wipe(deals)
-  local scan = WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.dataVersion == 2 and WoWderhoiAH_ScanData.items
+  local scan = WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.dataVersion == WAH.PIPELINE_VERSION and WoWderhoiAH_ScanData.items
   if not scan or not next(scan) then
     chatMessage(L.DEALS_NEED_SCAN)
     return
@@ -201,7 +201,7 @@ end
 -- undercutting a lone dump listing gives gold away; undercutting where
 -- real depth starts puts you first in the queue that matters.
 local function sessionUnitPrice(itemId)
-  local scanned = WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.dataVersion == 2
+  local scanned = WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.dataVersion == WAH.PIPELINE_VERSION
     and WoWderhoiAH_ScanData.items and WoWderhoiAH_ScanData.items[itemId]
   if scanned and (scanned.sellP or scanned.minPrice) then
     return scanned.sellP or scanned.minPrice, "scan"

@@ -5,14 +5,14 @@
 # WoWderhoi AHelper
 
 [![Release](https://img.shields.io/github/v/release/BrandNewJimZhang/wowderhoi-ah?color=f0479e)](https://github.com/BrandNewJimZhang/wowderhoi-ah/releases)
-![Interface](https://img.shields.io/badge/WoW-TBC%20Anniversary%202.5.5-ffd94d)
+![Interface](https://img.shields.io/badge/WoW-TBC%20Anniversary%202.5.6-ffd94d)
 ![Stack](https://img.shields.io/badge/Next.js%2016-TypeScript-2ce8a4)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-c493ff)](LICENSE)
 
 **English** | [中文](#中文)
 
 Auction house price intelligence and short-swing trading kit for
-World of Warcraft Classic Anniversary (TBC 2.5.5).
+World of Warcraft Classic Anniversary (TBC 2.5.6).
 
 </div>
 
@@ -46,8 +46,10 @@ path from installing the addon to your first real price curve, ~30 min.
 ### Price statistics
 
 - Every scan produces a **quantity-weighted percentile ladder**
-  (P10/P25/P50): P50 is the market price; P10/P25 mark where the cheap
-  tail starts. Percentiles shrug off bait listings that wreck any mean.
+  (min/P5/P10): P10 is the market price; min/P5 mark the very bottom of
+  the book. This realm's upper book is thin and stale — nothing trades
+  against it — so only the bottom decile reflects real prices.
+  Percentiles shrug off bait listings that wreck any mean.
 - **Sell front** (depth-aware): the cheapest price with real quantity
   behind it — undercutting *it* matters; undercutting a lone dump
   listing just gives gold away.
@@ -60,7 +62,7 @@ path from installing the addon to your first real price curve, ~30 min.
 - `/wahscan` full scan: getAll fast path (whole AH in one query) with
   paged fallback on cooldown; `/wahauto` auto-rescan (~every 15 min).
 - Tooltip market data: sell front leads (orange), then min price,
-  P10/P25/P50, supply, 7-day median and trend.
+  P5/P10, supply, 7-day median and trend.
 - Price charts beside the auction frame: last 3 hours / last 48 hours,
   plotting the P10 series.
 - Sell prefill: buyout auto-filled at an undercut of the sell front.
@@ -78,7 +80,7 @@ path from installing the addon to your first real price curve, ~30 min.
 ## Stack
 
 Next.js 16 + React Server Components + TypeScript · TailwindCSS ·
-Prisma + SQLite · Recharts · WoW Lua addon (Interface 20505).
+Prisma + SQLite · Recharts · WoW Lua addon (Interface 20506).
 
 ## Development
 
@@ -143,7 +145,7 @@ an issue; see [CONTRIBUTING.md](CONTRIBUTING.md). Security notes in
 
 </div>
 
-《魔兽世界》经典周年服（TBC 2.5.5）拍卖行价格情报与短线交易工具。两个部件，一条本地数据闭环，不依赖 Battle.net API：
+《魔兽世界》经典周年服（TBC 2.5.6）拍卖行价格情报与短线交易工具。两个部件，一条本地数据闭环，不依赖 Battle.net API：
 
 - **游戏内插件**（`addon/WoWderhoiAH`）——扫描拍卖行、逐次积累价格历史，提供 tooltip 行情、双窗口价格走势图，以及独立的 **WAH 交易页**：捡漏雷达、核验后一键购买、压价卖单预填。插件即数据后端。
 - **桌面终端**（Next.js 16）——类 Bloomberg 的深色高密度界面：市场监控表、盘中/日线图表、预警与关注列表、制造利润排行。
@@ -160,14 +162,14 @@ an issue; see [CONTRIBUTING.md](CONTRIBUTING.md). Security notes in
 
 **价格统计**
 
-- 每次扫描产出**量加权百分位阶梯**（P10/P25/P50）：P50 是市价，P10/P25 标出便宜尾部从哪里开始；百分位天然抗钓鱼挂单。
+- 每次扫描产出**量加权百分位阶梯**（最低/P5/P10）：P10 是市价，最低/P5 标出订单簿最底部。本服上层挂单又薄又陈、根本没有成交，只有底部十分位才反映真实价格；百分位天然抗钓鱼挂单。
 - **建议卖价**（深度感知卖价前沿）：有真实量支撑的最低价，而非孤立甩卖单——压过它才有意义，压过甩卖单只是白送钱。
 - 价格历史由插件逐次扫描自行积累（`WoWderhoiAH_Points`，7 天 × 192 点），7 日中位价、趋势、区间全部由它派生，无需桌面端回写。
 
 **游戏内**
 
 - `/wahscan` 全量扫描：getAll 快路径 + 冷却时分页回退；`/wahauto` 挂机自动扫描（约 15 分钟一次）。
-- tooltip 行情：建议卖价领衔（橙色标注），随后最低价、P10/P25/P50、供给、7 日中位价与趋势。
+- tooltip 行情：建议卖价领衔（橙色标注），随后最低价、P5/P10、供给、7 日中位价与趋势。
 - 拍卖行旁价格走势图：最近 3 小时 / 最近 48 小时双窗口，绘制 P10 低位价序列。
 - 卖货预填：自动以建议卖价压价填入买断价，确认后发布。
 

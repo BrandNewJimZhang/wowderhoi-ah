@@ -11,6 +11,11 @@ local PROCESS_PER_FRAME = 500
 local ADDON_NAME, WAH = ...
 local L = WAH.L
 
+-- Pricing pipeline version, stamped into every scan. Consumers (tooltip,
+-- deal radar, desktop importer) reject any other value: a bump means the
+-- meaning of the stored prices changed, not just their values.
+WAH.PIPELINE_VERSION = 3
+
 local scanState = nil -- { mode = "getall"|"paged", page, itemsById, processing, cursor }
 
 local function autoScanOn()
@@ -55,9 +60,11 @@ local function recordAuction(index)
 end
 
 -- Quantity-weighted percentile: the unit price at which `fraction` of
--- the listed quantity sits at or below. P50 is the market price; the
--- P10/P25 rungs show where the cheap tail actually starts. Percentiles
--- shrug off bait stacks that wreck any mean.
+-- the listed quantity sits at or below. This realm's upper book is noise
+-- — thin, stale listings nobody transacts against — so only the bottom
+-- decile reflects real trade: P10 is the market price, and the min/P5
+-- rungs show where the cheap tail starts. Percentiles shrug off bait
+-- stacks that wreck any mean.
 local function weightedPercentile(sortedListings, totalQuantity, fraction)
   local threshold = totalQuantity * fraction
   local cumulative = 0
@@ -94,31 +101,38 @@ local function finishScan(totalAuctions)
       minPrice = math.floor(entry.minPrice + 0.5),
       vendorP = entry.vendorP,
       sellP = math.floor(sellFrontPrice(entry.listings, entry.quantity) + 0.5),
-      p10 = math.floor(weightedPercentile(entry.listings, entry.quantity, 0.10) + 0.5),
-      p25 = math.floor(weightedPercentile(entry.listings, entry.quantity, 0.25) + 0.5),
-      marketPrice = math.floor(weightedPercentile(entry.listings, entry.quantity, 0.50) + 0.5),
+      p5 = math.floor(weightedPercentile(entry.listings, entry.quantity, 0.05) + 0.5),
+      marketPrice = math.floor(weightedPercentile(entry.listings, entry.quantity, 0.10) + 0.5),
       quantity = entry.quantity,
       numAuctions = entry.numAuctions
     }
     itemCount = itemCount + 1
   end
+  -- Every stored point carries the pipeline's close price, so a pipeline
+  -- bump redefines what the whole series means. Blending v2's P50 closes
+  -- into the new P10 series would poison med7 and the deal radar until
+  -- the last old point aged out; drop them on the first scan after a bump.
+  local previousVersion = WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.dataVersion
+  if previousVersion and previousVersion ~= WAH.PIPELINE_VERSION then
+    WoWderhoiAH_Points = nil
+  end
   WoWderhoiAH_ScanData = {
-    dataVersion = 2, -- percentile pricing pipeline; consumers reject anything else
+    dataVersion = WAH.PIPELINE_VERSION, -- consumers reject anything else
     scannedAt = time(),
     server = GetRealmName(),
     faction = UnitFactionGroup("player"),
     items = items
   }
-  -- Accumulate per-item price points in game: c = P50 feeds the 7d
-  -- median and deal radar, p = P10 feeds the chart (the cheap-tail
-  -- front a buyer actually pays). 7-day window, newest 192 points per
-  -- item (~48 h at the 15-minute auto-scan cadence).
+  -- Accumulate per-item price points in game: c is the P10 close — the
+  -- price a buyer actually pays on this realm — and feeds the chart, the
+  -- 7d median and the deal radar alike. 7-day window, newest 192 points
+  -- per item (~48 h at the 15-minute auto-scan cadence).
   WoWderhoiAH_Points = WoWderhoiAH_Points or {}
   local nowTs = time()
   local cutoff = nowTs - 7 * 24 * 3600
   for itemId, item in pairs(items) do
     local pts = WoWderhoiAH_Points[itemId] or {}
-    pts[#pts + 1] = { t = nowTs, c = item.marketPrice, p = item.p10 }
+    pts[#pts + 1] = { t = nowTs, c = item.marketPrice }
     WoWderhoiAH_Points[itemId] = pts
   end
   for itemId, pts in pairs(WoWderhoiAH_Points) do

@@ -31,7 +31,7 @@ function history(
 }
 
 describe("buildMarketSignal", () => {
-  it("derives snapshot-based stats: latest P50, min, med7, discount", () => {
+  it("derives snapshot-based stats: latest P10, min, med7, discount", () => {
     const signal = buildMarketSignal(
       history([
         { daysAgo: 2, marketPrice: 100 },
