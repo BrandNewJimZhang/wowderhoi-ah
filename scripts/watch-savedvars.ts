@@ -4,6 +4,7 @@
 // Run alongside the game client:  npm run addon:watch
 import { readFileSync, watchFile } from "node:fs";
 import { parseSavedVariables } from "@/lib/addon-scan";
+import { SCAN_PIPELINE_VERSION } from "@/lib/market-rules";
 
 // Nothing else in this process loads .env (the Prisma import that did so
 // as a side effect is gone), so load it explicitly before reading config.
@@ -28,7 +29,7 @@ async function importLatestScan() {
     console.log("No WoWderhoiAH_ScanData in SavedVariables yet; waiting for the first /wahscan.");
     return;
   }
-  if (scan.dataVersion !== 3) {
+  if (scan.dataVersion !== SCAN_PIPELINE_VERSION) {
     console.log("Stale scan from an old addon version on disk — rescan in game (/wahscan) to produce current-pipeline data.");
     return;
   }

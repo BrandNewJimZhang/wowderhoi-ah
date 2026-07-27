@@ -11,10 +11,10 @@ local PROCESS_PER_FRAME = 500
 local ADDON_NAME, WAH = ...
 local L = WAH.L
 
--- Pricing pipeline version, stamped into every scan. Consumers (tooltip,
--- deal radar, desktop importer) reject any other value: a bump means the
--- meaning of the stored prices changed, not just their values.
-WAH.PIPELINE_VERSION = 3
+-- WAH.PIPELINE_VERSION and WAH.RADAR are set by GeneratedRules.lua, compiled
+-- from src/lib/market-rules.ts. A bump means the meaning of the stored prices
+-- changed, not just their values; consumers (tooltip, deal radar, desktop
+-- importer) reject any other value.
 
 local scanState = nil -- { mode = "getall"|"paged", page, itemsById, processing, cursor }
 

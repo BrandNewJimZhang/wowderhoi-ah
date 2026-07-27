@@ -12,7 +12,9 @@ local L = WAH.L
 
 local ROWS_VISIBLE = 12
 local ROW_HEIGHT = 22
-local DEAL_DISCOUNT = 0.85 -- min price at 85% of med7 or lower
+-- Deal-radar thresholds live in WAH.RADAR (GeneratedRules.lua, compiled from
+-- src/lib/market-rules.ts) so the in-game radar and the desktop terminal
+-- classify every scan identically.
 
 local trade = nil
 local results = {} -- search rows: { index, itemId, name, count, buyout, unitPrice, texture }
@@ -25,9 +27,6 @@ local function chatMessage(text)
 end
 
 -- ============================== Deal radar ============================
-
-local MIN_AUCTIONS = 3 -- liquidity guard: fewer sellers = no real market
-local MIN_PROFIT = 500 -- 5s absolute floor; sub-silver "deals" waste a trip
 
 local function refreshDeals()
   wipe(deals)
@@ -58,11 +57,11 @@ local function refreshDeals()
     -- Class 2: median discount. Requires history depth (3+ scans) AND a
     -- live market (3+ auctions) AND a worthwhile absolute spread —
     -- otherwise the list fills with illiquid junk nobody ever buys.
-    elseif history and #history.pts >= 3 and history.med7 and history.med7 > 0
+    elseif history and #history.pts >= WAH.RADAR.minHistory and history.med7 and history.med7 > 0
       and entry.minPrice and entry.minPrice > 0
-      and (entry.numAuctions or 0) >= MIN_AUCTIONS
-      and (history.med7 - entry.minPrice) >= MIN_PROFIT
-      and entry.minPrice <= history.med7 * DEAL_DISCOUNT then
+      and (entry.numAuctions or 0) >= WAH.RADAR.minAuctions
+      and (history.med7 - entry.minPrice) >= WAH.RADAR.minProfit
+      and entry.minPrice <= history.med7 * WAH.RADAR.discount then
       deals[#deals + 1] = {
         itemId = itemId,
         name = entry.name,

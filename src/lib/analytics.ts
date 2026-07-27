@@ -3,6 +3,7 @@
 // snapshots, never means over daily aggregates — means inherit every
 // bait listing, and daily closes erase the hourly structure of the AH.
 import type { MarketHistory } from "@/lib/market-data";
+import { dealRadarRules } from "@/lib/market-rules";
 
 export type MarketSignal = {
   itemId: number;
@@ -70,11 +71,9 @@ export type DealRadarRow = {
 
 // Deal radar, mirroring addon/WoWderhoiAH/Trade.lua refreshDeals: the two
 // implementations must classify the same scan identically or the terminal
-// promises deals the in-game buy list can't deliver.
-const RADAR_MIN_AUCTIONS = 3; // liquidity guard: fewer sellers = no real market
-const RADAR_MIN_PROFIT = 500; // 5s absolute floor; sub-silver "deals" waste a trip
-const RADAR_MIN_HISTORY = 3; // median needs depth before it means anything
-const RADAR_DISCOUNT = 0.85; // min price at 85% of med7 or lower
+// promises deals the in-game buy list can't deliver. Both read the same
+// thresholds from the single source of truth (src/lib/market-rules.ts).
+const { minProfit: RADAR_MIN_PROFIT, discount: RADAR_DISCOUNT, minAuctions: RADAR_MIN_AUCTIONS, minHistory: RADAR_MIN_HISTORY } = dealRadarRules;
 
 export function buildDealRadar(signals: MarketSignal[]): DealRadarRow[] {
   const deals: DealRadarRow[] = [];

@@ -1,6 +1,7 @@
 // Parses WoW SavedVariables Lua files and validates addon scan payloads.
 // Single validation authority for addon-sourced scans: the watcher and the
 // import route both rely on normalizeAddonScan, never on ad-hoc checks.
+import { SCAN_PIPELINE_VERSION } from "@/lib/market-rules";
 
 // Quality index -> name mapping shared with the perf fixtures generator.
 export const QUALITY_NAMES = ["poor", "common", "uncommon", "rare", "epic", "legendary"] as const;
@@ -166,8 +167,8 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
   // Pipeline version gate: v1 scans carry mean-polluted prices and v2 scans
   // carry a P50 marketPrice, which this realm's thin upper book made
   // unusable. Only v3 (P10 marketPrice) may enter the store.
-  if (scan.dataVersion !== 3) {
-    throw new Error(`Addon scan dataVersion must be 3 (P10 pricing pipeline), got ${JSON.stringify(scan.dataVersion)} — rescan in game with the current addon`);
+  if (scan.dataVersion !== SCAN_PIPELINE_VERSION) {
+    throw new Error(`Addon scan dataVersion must be ${SCAN_PIPELINE_VERSION} (P10 pricing pipeline), got ${JSON.stringify(scan.dataVersion)} — rescan in game with the current addon`);
   }
   if (typeof scan.scannedAt !== "number" || scan.scannedAt <= 0) {
     throw new Error(`Addon scan scannedAt must be a positive epoch, got ${JSON.stringify(scan.scannedAt)}`);
