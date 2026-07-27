@@ -1,0 +1,6 @@
+# GeneratedRules.lua is byte-compared against the generator's output by
+# scripts/gen-lua-rules.test.ts, and the generator emits LF. Without this,
+# core.autocrlf=true checkouts rewrite it to CRLF and the drift gate fails
+# for a reason unrelated to the drift it exists to catch. The WoW client
+# loads LF and CRLF alike, so pinning the whole addon to LF is free.
+*.lua text eol=lf
