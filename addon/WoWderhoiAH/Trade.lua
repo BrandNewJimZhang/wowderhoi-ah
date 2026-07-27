@@ -241,9 +241,20 @@ end)
 -- ============================== Frame =================================
 
 local function createTradeFrame()
-  trade = CreateFrame("Frame", "WoWderhoiAHTrade", AuctionFrame)
+  trade = CreateFrame("Frame", "WoWderhoiAHTrade", AuctionFrame, "BackdropTemplate")
   trade:SetPoint("TOPLEFT", AuctionFrame, "TOPLEFT", 22, -70)
   trade:SetPoint("BOTTOMRIGHT", AuctionFrame, "BOTTOMRIGHT", -10, 38)
+  -- Own opaque panel: without it the transparent frame shows whatever art
+  -- the previously active tab left behind — Blizzard's or, when Auctionator
+  -- is loaded, its independently rendered background. Sit above the AH so
+  -- our page owns every pixel it covers instead of borrowing shared slices.
+  trade:SetFrameLevel(AuctionFrame:GetFrameLevel() + 10)
+  trade:SetBackdrop({
+    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+    tile = true, tileSize = 32, edgeSize = 20,
+    insets = { left = 5, right = 5, top = 5, bottom = 5 }
+  })
 
   trade.title = trade:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   trade.title:SetPoint("TOPLEFT", 0, -2)
@@ -394,16 +405,6 @@ local function registerAuctionTab()
           AuctionFrameBrowse:Hide()
           AuctionFrameBid:Hide()
           AuctionFrameAuctions:Hide()
-          -- The stock handler swaps the frame's six backdrop slices only
-          -- for tabs 1-3; for ours it leaves the previous tab's art
-          -- behind (e.g. Browse's filter column). Use the full-width
-          -- Auctions art, the same set the stock Auctions tab uses.
-          for _, slice in ipairs({ "TopLeft", "Top", "TopRight", "BotLeft", "Bot", "BotRight" }) do
-            local region = _G["AuctionFrame" .. slice]
-            if region then
-              region:SetTexture("Interface\\AuctionFrame\\UI-AuctionFrame-Auction-" .. slice)
-            end
-          end
           trade:Show()
           -- Deal radar is the landing view; refresh it on entry.
           mode = "deals"
