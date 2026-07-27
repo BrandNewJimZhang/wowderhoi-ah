@@ -14,5 +14,5 @@ export const dealRadarRules = {
   minProfit: 500, // 5s absolute floor; sub-silver "deals" waste a trip
   discount: 0.85, // min price at 85% of med7 or lower
   minAuctions: 3, // liquidity guard: fewer sellers = no real market
-  minHistory: 3 // median needs depth before it means anything
+  minHistory: 3 // the P10 median needs depth before it means anything
 } as const;

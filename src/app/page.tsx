@@ -31,7 +31,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   const watchedSignals = signals.filter((signal) => watchedIds.has(signal.itemId));
   const triggeredAlerts = evaluateAlertRules(alertRules, signals);
   // Deal radar: same rule set as the in-game radar (vendor arbitrage plus
-  // guarded median discount), so both surfaces flag identical listings.
+  // guarded P10 median discount), so both surfaces flag identical listings.
   const deals = buildDealRadar(signals).slice(0, 12);
   const priceByItemId = new Map(signals.map((signal) => [signal.itemId, signal.price]));
   const craftRows = computeCraftProfits(craftRecipes, priceByItemId);
@@ -62,7 +62,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       <div className="grid gap-3 xl:grid-cols-[1fr_360px]">
         <div className="space-y-3">
           <Panel>
-            <PanelHeader title="捡漏雷达" action={<span className="font-mono text-xs text-terminal-green">NPC必赚 + 最低价 vs 7日中位</span>} />
+            <PanelHeader title="捡漏雷达" action={<span className="font-mono text-xs text-terminal-green">NPC必赚 + 最低价 vs 7日P10中位</span>} />
             <div className="space-y-2 p-3 font-mono text-xs">
               {deals.length === 0 && (
                 <div className="text-terminal-muted">
@@ -80,7 +80,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                   </Link>
                   <span className="flex items-center gap-3">
                     <Coins copper={deal.minPrice} />
-                    <span className="text-terminal-muted">{deal.vendor ? "NPC价" : "中位"} <Coins copper={deal.reference} /></span>
+                    <span className="text-terminal-muted">{deal.vendor ? "NPC价" : "P10中位"} <Coins copper={deal.reference} /></span>
                   </span>
                 </div>
               ))}

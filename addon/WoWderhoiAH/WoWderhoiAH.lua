@@ -142,7 +142,7 @@ local function finishScan(totalAuctions)
   }
   -- Accumulate per-item price points in game: c is the P10 close — the
   -- price a buyer actually pays on this realm — and feeds the chart, the
-  -- 7d median and the deal radar alike. 7-day window, newest 192 points
+  -- 7d P10 median and the deal radar alike. 7-day window, newest 192 points
   -- per item (~48 h at the 15-minute auto-scan cadence).
   WoWderhoiAH_Points = WoWderhoiAH_Points or {}
   local nowTs = time()
@@ -282,7 +282,7 @@ C_Timer.NewTicker(20, function()
 end)
 
 -- Single history authority: points accumulated across scans plus the
--- 7d median derived from them. GUI chart, tooltip history, and the
+-- 7d P10 median derived from them. GUI chart, tooltip history, and the
 -- deal radar all read through here.
 function WAH.history(itemId)
   local pts = WoWderhoiAH_Points and WoWderhoiAH_Points[itemId]

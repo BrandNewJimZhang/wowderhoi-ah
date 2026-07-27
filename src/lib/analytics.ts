@@ -93,7 +93,7 @@ export function buildDealRadar(signals: MarketSignal[]): DealRadarRow[] {
         vendor: true,
         discountPercent: (1 - signal.minPrice / signal.vendorPrice) * 100
       });
-    // Class 2: median discount. Requires history depth (3+ scans) AND a
+    // Class 2: P10 median discount. Requires history depth (3+ scans) AND a
     // live market (3+ auctions) AND a worthwhile absolute spread —
     // otherwise the list fills with illiquid junk nobody ever buys.
     } else if (signal.med7Samples >= RADAR_MIN_HISTORY && signal.med7 > 0 && signal.minPrice > 0

@@ -1,5 +1,5 @@
 -- WAH tab: deal radar plus buy list. The radar is the differentiated
--- feature — it crosses this session's scan against the in-game 7d
+-- feature — it crosses this session's scan against the in-game 7d P10
 -- median to surface listings 15%+ below their usual price, something
 -- neither Auctionator nor the stock UI can do.
 --
@@ -54,7 +54,7 @@ local function refreshDeals()
         vendor = true,
         discountPercent = (1 - entry.minPrice / entry.vendorP) * 100
       }
-    -- Class 2: median discount. Requires history depth (3+ scans) AND a
+    -- Class 2: P10 median discount. Requires history depth (3+ scans) AND a
     -- live market (3+ auctions) AND a worthwhile absolute spread —
     -- otherwise the list fills with illiquid junk nobody ever buys.
     elseif history and #history.pts >= WAH.RADAR.minHistory and history.med7 and history.med7 > 0

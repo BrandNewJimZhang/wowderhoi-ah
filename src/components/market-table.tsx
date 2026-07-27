@@ -17,7 +17,7 @@ import { ItemIcon } from "@/components/item-icon";
 const sortableColumns: Array<{ key: SignalSortKey; heading: string }> = [
   { key: "price", heading: "P10" },
   { key: "minPrice", heading: "最低价" },
-  { key: "med7", heading: "7日中位" },
+  { key: "med7", heading: "7日P10中位" },
   { key: "discountPercent", heading: "折扣%" },
   { key: "changePercent", heading: "环比%" },
   { key: "quantity", heading: "在售量" },

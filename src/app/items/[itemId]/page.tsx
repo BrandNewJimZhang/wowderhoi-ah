@@ -75,7 +75,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
             </div>
           </Panel>
           <Panel>
-            <PanelHeader title="星期几季节性 (中位收盘)" />
+            <PanelHeader title="星期几季节性 (P10收盘中位)" />
             <div className="grid grid-cols-7 gap-px bg-terminal-border font-mono text-xs">
               {seasonality.map((day) => (
                 <div key={day.weekday} className="bg-terminal-panel px-2 py-3 text-center">
@@ -105,7 +105,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-xs">
                     <div><div className="text-terminal-muted">最低价</div><div><Coins copper={signal.minPrice} /></div></div>
-                    <div><div className="text-terminal-muted">7日中位</div><div><Coins copper={signal.med7} /></div></div>
+                    <div><div className="text-terminal-muted">7日P10中位</div><div><Coins copper={signal.med7} /></div></div>
                     <div><div className="text-terminal-muted">折扣</div><div className={signal.discountPercent >= 15 ? "text-terminal-green" : ""}>{signal.discountPercent.toFixed(0)}%</div></div>
                     <div><div className="text-terminal-muted">环比上次</div><div className={signal.changePercent >= 0 ? "text-terminal-red" : "text-terminal-green"}>{formatPercent(signal.changePercent)}</div></div>
                     <div><div className="text-terminal-muted">在售量</div><div>{signal.quantity.toLocaleString()}</div></div>

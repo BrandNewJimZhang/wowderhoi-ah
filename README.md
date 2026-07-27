@@ -36,9 +36,9 @@ path from installing the addon to your first real price curve, ~30 min.
 
 - **Vendor arbitrage**: listings below the NPC sell price — zero market
   risk, no history needed.
-- **Median discount**: min price 15%+ below the 7-day median, gated by
-  liquidity (3+ auctions), history depth (3+ scans), and absolute
-  profit (5s+) — filters out discounts nobody will ever buy.
+- **P10 median discount**: min price 15%+ below the 7-day P10 median,
+  gated by liquidity (3+ auctions), history depth (3+ scans), and
+  absolute profit (5s+) — filters out discounts nobody will ever buy.
 - Sorting: vendor arbitrage first, then by absolute profit. The in-game
   WAH tab searches straight from a radar row and buys after verifying
   the listing is unchanged.
@@ -54,15 +54,15 @@ path from installing the addon to your first real price curve, ~30 min.
   behind it — undercutting *it* matters; undercutting a lone dump
   listing just gives gold away.
 - Price history accumulates inside the addon (`WoWderhoiAH_Points`,
-  7 days × 192 points); the 7-day median, trend, and range all derive
-  from it. No desktop write-back.
+  7 days × 192 points); the 7-day P10 median, trend, and range all
+  derive from it. No desktop write-back.
 
 ### In game
 
 - `/wahscan` full scan: getAll fast path (whole AH in one query) with
   paged fallback on cooldown; `/wahauto` auto-rescan (~every 15 min).
 - Tooltip market data: sell front leads (orange), then min price,
-  P5/P10, supply, 7-day median and trend.
+  P5/P10, supply, 7-day P10 median and trend.
 - Price charts beside the auction frame: last 3 hours / last 48 hours,
   plotting the P10 series.
 - Sell prefill: buyout auto-filled at an undercut of the sell front.
@@ -124,7 +124,7 @@ duplicate scan timestamps are skipped automatically.
 - `addon/WoWderhoiAH/GUI.lua` — tooltip injection and the 3h/48h price charts.
 - `scripts/watch-savedvars.ts` — SavedVariables watcher and importer.
 - `src/lib/addon-scan.ts` — SavedVariables parsing and scan validation (single entry point).
-- `src/lib/analytics.ts` — snapshot-median signals, deal radar rules, seasonality.
+- `src/lib/analytics.ts` — 7d P10 median signals, deal radar rules, seasonality.
 - `src/app/page.tsx` — market overview: deal radar, monitor table, alerts/watchlist/crafting.
 - `src/app/items/[itemId]/page.tsx` — item terminal, intraday and daily charts.
 - `scripts/perf/` — deterministic perf benchmarks and latency budget gates.
@@ -157,19 +157,19 @@ an issue; see [CONTRIBUTING.md](CONTRIBUTING.md). Security notes in
 **捡漏雷达**（游戏内与终端同一套规则）
 
 - **NPC 必赚**：挂单价低于 NPC 收购价，零市场风险，无需历史数据。
-- **中位折扣**：最低价低于 7 日中位价 15% 以上，且同时过三道闸门——流动性（≥3 个挂单）、历史深度（≥3 次扫描）、绝对利润（≥5 银）——滤掉没人接盘的垃圾折扣。
+- **P10中位折扣**：最低价低于 7 日P10中位 15% 以上，且同时过三道闸门——流动性（≥3 个挂单）、历史深度（≥3 次扫描）、绝对利润（≥5 银）——滤掉没人接盘的垃圾折扣。
 - 排序：NPC 必赚优先，其余按绝对利润降序。游戏内 WAH 页可直接从雷达行发起搜索，核验挂单未变后购买。
 
 **价格统计**
 
 - 每次扫描产出**量加权百分位阶梯**（最低/P5/P10）：P10 是市价，最低/P5 标出订单簿最底部。本服上层挂单又薄又陈、根本没有成交，只有底部十分位才反映真实价格；百分位天然抗钓鱼挂单。
 - **建议卖价**（深度感知卖价前沿）：有真实量支撑的最低价，而非孤立甩卖单——压过它才有意义，压过甩卖单只是白送钱。
-- 价格历史由插件逐次扫描自行积累（`WoWderhoiAH_Points`，7 天 × 192 点），7 日中位价、趋势、区间全部由它派生，无需桌面端回写。
+- 价格历史由插件逐次扫描自行积累（`WoWderhoiAH_Points`，7 天 × 192 点），7 日P10中位、趋势、区间全部由它派生，无需桌面端回写。
 
 **游戏内**
 
 - `/wahscan` 全量扫描：getAll 快路径 + 冷却时分页回退；`/wahauto` 挂机自动扫描（约 15 分钟一次）。
-- tooltip 行情：建议卖价领衔（橙色标注），随后最低价、P5/P10、供给、7 日中位价与趋势。
+- tooltip 行情：建议卖价领衔（橙色标注），随后最低价、P5/P10、供给、7 日P10中位与趋势。
 - 拍卖行旁价格走势图：最近 3 小时 / 最近 48 小时双窗口，绘制 P10 低位价序列。
 - 卖货预填：自动以建议卖价压价填入买断价，确认后发布。
 

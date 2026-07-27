@@ -10,7 +10,7 @@ type AlertRuleRow = { id: string; metric: string; operator: string; threshold: n
 const metricLabels: Record<string, string> = {
   price: "P10 市价",
   minPrice: "最低价",
-  med7: "7日中位价",
+  med7: "7日P10中位",
   discountPercent: "折扣%",
   quantity: "在售量"
 };
