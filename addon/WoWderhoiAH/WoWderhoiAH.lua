@@ -6,7 +6,15 @@
 
 local PAGE_SIZE = 50
 local QUALITY_ANY = -1
-local PROCESS_PER_FRAME = 500
+-- Hard ceiling on listings processed per OnUpdate frame. The real gate is
+-- the time budget below; this only caps a single catastrophically slow
+-- recordAuction from spinning one frame indefinitely.
+local PROCESS_PER_FRAME = 200
+-- Per-frame time budget for getAll processing, in milliseconds. We yield
+-- back to the renderer at ~8ms so a full-AH scan stays under one frame at
+-- 60fps instead of hitching on a 500-row burst. Measured with
+-- debugprofilestop (ms float, available since client 2.5.6).
+local FRAME_BUDGET_MS = 8
 
 local ADDON_NAME, WAH = ...
 local L = WAH.L
@@ -38,14 +46,23 @@ local function recordAuction(index)
   local unitPrice = buyoutPrice / count
   local entry = scanState.itemsById[itemId]
   if not entry then
-    local _, _, _, _, _, itemClass, itemSubClass = GetItemInfo(itemId)
-    local vendorPrice = select(11, GetItemInfo(itemId))
+    -- GetItemInfo is the single most expensive call per new itemId; the
+    -- old code fired it twice (class lookup + select(11) vendor price).
+    -- Cache by itemId for the scan's lifetime so a repeat listing — and
+    -- there are many — reuses one call instead of re-querying.
+    local cached = scanState.itemInfoCache[itemId]
+    if cached == nil then
+      local _, _, _, _, _, itemClass, itemSubClass = GetItemInfo(itemId)
+      local vendorPrice = select(11, GetItemInfo(itemId))
+      cached = { class = itemClass, subClass = itemSubClass, vendorP = vendorPrice or 0 }
+      scanState.itemInfoCache[itemId] = cached
+    end
     entry = {
       name = name,
       quality = quality,
-      itemClass = itemClass,
-      itemSubClass = itemSubClass,
-      vendorP = vendorPrice or 0,
+      itemClass = cached.class,
+      itemSubClass = cached.subClass,
+      vendorP = cached.vendorP,
       minPrice = unitPrice,
       listings = {}, -- { price = unit price, count } for the weighted median
       quantity = 0,
@@ -158,9 +175,26 @@ local function processGetAllChunk()
   local total = GetNumAuctionItems("list")
   local cursor = scanState.cursor
   local target = math.min(cursor + PROCESS_PER_FRAME - 1, total)
-  for index = cursor, target do recordAuction(index) end
-  scanState.cursor = target + 1
-  if target >= total then
+  local frameStart = debugprofilestop()
+  local index = cursor
+  local yielded = false
+  while index <= target do
+    recordAuction(index)
+    -- Yield as soon as this frame has consumed its time budget, even if we
+    -- haven't hit the per-frame count ceiling. The count ceiling only
+    -- guards a single pathological recordAuction; the budget is the real
+    -- 60fps gate.
+    if debugprofilestop() - frameStart >= FRAME_BUDGET_MS then
+      yielded = true
+      break
+    end
+    index = index + 1
+  end
+  -- On a normal completion index has advanced past `target`; on a budget
+  -- break it points at the last record actually processed. In both cases
+  -- the next frame resumes at index + 1.
+  scanState.cursor = index + 1
+  if not yielded and target >= total then
     frame:SetScript("OnUpdate", nil)
     finishScan(total)
   end
@@ -189,11 +223,11 @@ local function startScan()
   WAH.scanRunning = true
   local _, canGetAll = CanSendAuctionQuery()
   if canGetAll then
-    scanState = { mode = "getall", itemsById = {} }
+    scanState = { mode = "getall", itemsById = {}, itemInfoCache = {} }
     chatMessage(L.SCAN_GETALL_START)
     QueryAuctionItems("", nil, nil, 0, false, QUALITY_ANY, true, false)
   else
-    scanState = { mode = "paged", page = 0, itemsById = {} }
+    scanState = { mode = "paged", page = 0, itemsById = {}, itemInfoCache = {} }
     chatMessage(L.SCAN_PAGED_START)
     queryCurrentPage()
   end

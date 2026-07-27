@@ -5,7 +5,7 @@
 //   npm run perf:run -- [--db prisma/perf.db] [--port 3105] [--skip-build]
 //                       [--explore] [--requests 30] [--label gate-1x]
 //                       [--items-x 1] [--depth-x 1]
-import { execFileSync, execSync, spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { cpus, freemem, totalmem } from "node:os";
 import { parseArgs } from "node:util";
@@ -13,6 +13,7 @@ import { PrismaClient } from "@prisma/client";
 import { performance } from "node:perf_hooks";
 import { evaluateGate, percentile, type PerfReport } from "./budgets";
 import { buildScanPayload, generateMarket } from "./fixtures";
+import { isPortInUse, nodeProcessCount, killTree } from "./host";
 
 const { values } = parseArgs({
   options: {
@@ -60,16 +61,6 @@ function summarize(samples: Sample[]) {
   };
 }
 
-function nodeProcessCount(): number {
-  try {
-    return execSync('tasklist /FI "IMAGENAME eq node.exe" /NH', { encoding: "utf8" })
-      .split("\n")
-      .filter((line) => line.includes("node.exe")).length;
-  } catch {
-    return -1;
-  }
-}
-
 async function waitForServer(): Promise<void> {
   const deadline = Date.now() + 120_000;
   while (Date.now() < deadline) {
@@ -84,7 +75,7 @@ async function waitForServer(): Promise<void> {
 }
 
 async function main() {
-  const portBusy = execSync(`netstat -ano -p TCP`, { encoding: "utf8" }).includes(`:${port} `);
+  const portBusy = await isPortInUse(port);
   if (portBusy) {
     throw new Error(`Port ${port} is already in use — stop the stale perf server first`);
   }
@@ -99,7 +90,9 @@ async function main() {
     env: { ...process.env, DATABASE_URL: databaseUrl, NODE_ENV: "production" },
     stdio: "ignore",
     shell: true,
-    detached: false
+    // Own process group so killTree can signal the whole next subtree, not
+    // just the npx wrapper.
+    detached: true
   });
   try {
     await waitForServer();
@@ -191,8 +184,9 @@ async function main() {
       }
     }
   } finally {
-    // next's CLI wrapper spawns the actual server; kill the whole tree.
-    if (server.pid) execSync(`taskkill /PID ${server.pid} /T /F`, { stdio: "ignore" });
+    // next's CLI wrapper spawns the actual server in our process group;
+    // killing the negative pid reaps the whole tree cross-platform.
+    if (server.pid) killTree(server.pid);
   }
 }
 
