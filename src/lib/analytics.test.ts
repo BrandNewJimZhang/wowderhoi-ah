@@ -79,7 +79,9 @@ describe("buildMarketSignal", () => {
 
 describe("buildDealRadar", () => {
   // Mirrors the in-game radar (addon/WoWderhoiAH/Trade.lua): vendor
-  // arbitrage plus median discount, both gated on a 5s profit floor.
+  // arbitrage (any listing below NPC sell price, no profit floor — the
+  // NPC always buys, so even a 1c spread is risk-free) plus median
+  // discount (gated on the 5s floor because reselling carries risk).
   const liquid = { quantity: 100, numAuctions: 10 };
 
   function signals(items: Parameters<typeof buildMarketSignal>[0][]) {
@@ -93,6 +95,17 @@ describe("buildDealRadar", () => {
     expect(deals).toHaveLength(1);
     expect(deals[0].vendor).toBe(true);
     expect(deals[0].profit).toBe(600); // vendorPrice 1000 - minPrice 400
+  });
+
+  it("flags vendor arbitrage below the 5s floor — the NPC buy is risk-free", () => {
+    // minPrice 999 vs vendorPrice 1000: a 1c spread, far under RADAR_MIN_PROFIT.
+    // Reselling to the NPC is guaranteed, so it still belongs on the radar.
+    const deals = buildDealRadar(
+      signals([history([{ daysAgo: 0, marketPrice: 999, minPrice: 999, ...liquid }], { vendorPrice: 1000 })])
+    );
+    expect(deals).toHaveLength(1);
+    expect(deals[0].vendor).toBe(true);
+    expect(deals[0].profit).toBe(1);
   });
 
   it("requires the 15% discount, 3-scan depth, 3-auction liquidity, and 5s floor together", () => {

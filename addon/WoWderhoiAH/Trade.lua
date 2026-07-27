@@ -41,9 +41,11 @@ local function refreshDeals()
     local history = WAH.history(itemId)
     if history then anyHistory = true end
     -- Class 1: vendor arbitrage. Listed below the NPC sell price is a
-    -- guaranteed profit with zero market risk — no history needed.
+    -- guaranteed profit with zero market risk — no history needed, and no
+    -- profit floor either: the NPC always buys, so even a 1c spread is
+    -- free money the moment you're already at the AH.
     if entry.vendorP and entry.vendorP > 0 and entry.minPrice and entry.minPrice > 0
-      and entry.minPrice < entry.vendorP and (entry.vendorP - entry.minPrice) >= MIN_PROFIT then
+      and entry.minPrice < entry.vendorP then
       deals[#deals + 1] = {
         itemId = itemId,
         name = entry.name,

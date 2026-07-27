@@ -80,9 +80,10 @@ export function buildDealRadar(signals: MarketSignal[]): DealRadarRow[] {
   const deals: DealRadarRow[] = [];
   for (const signal of signals) {
     // Class 1: vendor arbitrage. Listed below the NPC sell price is a
-    // guaranteed profit with zero market risk — no history needed.
-    if (signal.vendorPrice > 0 && signal.minPrice > 0 && signal.minPrice < signal.vendorPrice
-      && signal.vendorPrice - signal.minPrice >= RADAR_MIN_PROFIT) {
+    // guaranteed profit with zero market risk — no history needed, and no
+    // profit floor either: the NPC always buys, so even a 1c spread is
+    // free money the moment you're already at the AH.
+    if (signal.vendorPrice > 0 && signal.minPrice > 0 && signal.minPrice < signal.vendorPrice) {
       deals.push({
         itemId: signal.itemId,
         name: signal.name,
