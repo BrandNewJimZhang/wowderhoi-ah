@@ -112,6 +112,8 @@ local function collectSearchResults()
   table.sort(results, function(left, right) return left.unitPrice < right.unitPrice end)
 end
 
+local runSearch -- forward declaration; buy-refresh and deal rows trigger searches
+
 local function verifyAndBuy(row)
   local name, _, count, _, _, _, _, _, _, buyoutPrice = GetAuctionItemInfo("list", row.index)
   if name ~= row.name or count ~= row.count or buyoutPrice ~= row.buyout then
@@ -120,14 +122,14 @@ local function verifyAndBuy(row)
   end
   PlaceAuctionBid("list", row.index, row.buyout)
   chatMessage(string.format(L.BOUGHT, row.name, row.count, GetCoinTextureString(row.buyout)))
+  -- Re-run the search after the bid settles so the bought listing drops
+  -- off. Route through runSearch (not a raw query) so the searching flag
+  -- is set — the list handler ignores updates when it is not, which is
+  -- why a raw re-query here never refreshed the rows.
   C_Timer.After(0.6, function()
-    if trade and trade:IsShown() and trade.lastQuery then
-      QueryAuctionItems(trade.lastQuery, nil, nil, 0, false, -1, false, false)
-    end
+    if trade and trade:IsShown() and trade.lastQuery then runSearch() end
   end)
 end
-
-local runSearch -- forward declaration; deal rows trigger searches
 
 local function renderRows()
   if not trade then return end
