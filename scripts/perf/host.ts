@@ -40,18 +40,25 @@ export function nodeProcessCount(): number {
   }
 }
 
-// Delivers SIGTERM to a process group so next's spawned server subtree dies
-// with it. `spawn(..., { detached: true })` puts the child in its own group;
-// killing the negative pid signals every member. Returns false for an
-// invalid/already-dead pid rather than throwing.
+// Terminates the process subtree so next's spawned server dies with it.
+// Returns false for an invalid/already-dead pid rather than throwing.
 export function killTree(pid: number): boolean {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
+    if (process.platform === "win32") {
+      // Windows has no process groups, so a negative pid signals nothing.
+      // /T covers the subtree, matching the POSIX group semantics below.
+      // /F is a hard kill: the graceful path (WM_CLOSE) is not delivered to
+      // console processes, so there is no SIGTERM equivalent to try first.
+      execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });
+      return true;
+    }
     // Negative pid = the whole process group rooted at `pid`.
+    // `spawn(..., { detached: true })` put the child in its own group.
     process.kill(-pid, "SIGTERM");
     return true;
   } catch {
-    // Group already gone, or we lack permission — nothing left to signal.
+    // Subtree already gone, or we lack permission — nothing left to signal.
     return false;
   }
 }
