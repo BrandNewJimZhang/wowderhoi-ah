@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.2.1 — 2026-07-27
+
+### Changed
+
+- Vendor arbitrage deals no longer require the 5s profit floor: any
+  listing below its NPC sell price is flagged, since reselling to the
+  vendor is risk-free even on a 1c spread. The floor still gates
+  median-discount deals, where reselling carries market risk.
+- Deal-radar thresholds and the scan pipeline version now live in one
+  source (`src/lib/market-rules.ts`), compiled into the addon's
+  `GeneratedRules.lua`. A drift test fails CI if the two sides diverge,
+  so the in-game radar and the desktop terminal can never classify the
+  same scan differently.
+
+### Fixed
+
+- WAH tab draws its own opaque panel instead of showing whatever art the
+  previous tab (or Auctionator) left behind.
+- WAH search list refreshes after a buy completes, so a bought listing
+  drops off without a manual re-search.
+
 ## v0.2.0 — 2026-07-27
 
 ### Changed
