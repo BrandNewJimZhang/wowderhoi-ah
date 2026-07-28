@@ -43,6 +43,7 @@
     "autoprefixer": "^10.4.20",
     "eslint": "^9.17.0",
     "eslint-config-next": "^16.0.0",
+    "fengari": "^0.1.5",
     "postcss": "^8.4.49",
     "prisma": "^6.10.0",
     "tailwindcss": "^3.4.17",
