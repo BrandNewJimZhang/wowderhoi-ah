@@ -70,6 +70,19 @@ describe("buildMarketSignal", () => {
     expect(signal.med7).toBe(100);
   });
 
+  it("counts distinct closes in the window so a flat series is detectable", () => {
+    const flat = buildMarketSignal(
+      history([
+        { daysAgo: 2, marketPrice: 49240 },
+        { daysAgo: 1, marketPrice: 49240 },
+        { daysAgo: 0, marketPrice: 49240 }
+      ]),
+      now
+    );
+    expect(flat.med7Samples).toBe(3);
+    expect(flat.med7Distinct).toBe(1);
+  });
+
   it("works over the demo fixture (test-only universe)", () => {
     const signal = buildMarketSignal(generateDemoHistory(5)[0], new Date());
     expect(signal.price).toBeGreaterThan(0);
@@ -109,19 +122,21 @@ describe("buildDealRadar", () => {
   });
 
   it("requires the 15% discount, 3-scan depth, 3-auction liquidity, and 5s floor together", () => {
+    // Closes vary scan to scan so every rejection below is attributable to
+    // the gate under test, not to the flat-series guard.
     const base = [
-      { daysAgo: 2, marketPrice: 10000, ...liquid },
+      { daysAgo: 2, marketPrice: 9800, ...liquid },
       { daysAgo: 1, marketPrice: 10000, ...liquid }
     ];
-    const qualifying = history([...base, { daysAgo: 0, marketPrice: 10000, minPrice: 8000, ...liquid }]);
-    const thinDiscount = history([...base, { daysAgo: 0, marketPrice: 10000, minPrice: 9000, ...liquid }], { itemId: 2 });
-    const shallowHistory = history([{ daysAgo: 0, marketPrice: 10000, minPrice: 8000, ...liquid }], { itemId: 3 });
-    const illiquid = history([...base, { daysAgo: 0, marketPrice: 10000, minPrice: 8000, quantity: 2, numAuctions: 2 }], { itemId: 4 });
+    const qualifying = history([...base, { daysAgo: 0, marketPrice: 10200, minPrice: 8000, ...liquid }]);
+    const thinDiscount = history([...base, { daysAgo: 0, marketPrice: 10200, minPrice: 9000, ...liquid }], { itemId: 2 });
+    const shallowHistory = history([{ daysAgo: 0, marketPrice: 10200, minPrice: 8000, ...liquid }], { itemId: 3 });
+    const illiquid = history([...base, { daysAgo: 0, marketPrice: 10200, minPrice: 8000, quantity: 2, numAuctions: 2 }], { itemId: 4 });
     const subSilver = history(
       [
-        { daysAgo: 2, marketPrice: 100, ...liquid },
+        { daysAgo: 2, marketPrice: 98, ...liquid },
         { daysAgo: 1, marketPrice: 100, ...liquid },
-        { daysAgo: 0, marketPrice: 100, minPrice: 50, ...liquid }
+        { daysAgo: 0, marketPrice: 102, minPrice: 50, ...liquid }
       ],
       { itemId: 5 }
     );
@@ -135,14 +150,58 @@ describe("buildDealRadar", () => {
     const smallVendor = history([{ daysAgo: 0, marketPrice: 900, minPrice: 400, ...liquid }], { vendorPrice: 1000, itemId: 1 });
     const bigMedian = history(
       [
-        { daysAgo: 2, marketPrice: 50000, ...liquid },
+        { daysAgo: 2, marketPrice: 49000, ...liquid },
         { daysAgo: 1, marketPrice: 50000, ...liquid },
-        { daysAgo: 0, marketPrice: 50000, minPrice: 10000, ...liquid }
+        { daysAgo: 0, marketPrice: 51000, minPrice: 25000, ...liquid }
       ],
       { itemId: 2 }
     );
     const deals = buildDealRadar(signals([bigMedian, smallVendor]));
     expect(deals.map((deal) => deal.itemId)).toEqual([1, 2]);
+  });
+
+  it("rejects a flat 7d P10 series — one camper's ask is not a reference price", () => {
+    // Every scan saw the same P10: a single seller holding the bottom of a
+    // thin book. med7 is that player's asking price, and nothing ever
+    // traded against it, so the "discount" measures nothing.
+    const camper = history([
+      { daysAgo: 2, marketPrice: 49240, ...liquid },
+      { daysAgo: 1, marketPrice: 49240, ...liquid },
+      { daysAgo: 0, marketPrice: 49240, minPrice: 40000, ...liquid }
+    ]);
+    expect(buildDealRadar(signals([camper]))).toHaveLength(0);
+  });
+
+  it("rejects implausible discounts — past the cap the reference is broken", () => {
+    // 6240 against a med7 of 49240 is 87% off: the shape the in-game radar
+    // was ranking as its best deal, and always bad reference data.
+    const absurd = history([
+      { daysAgo: 2, marketPrice: 49000, ...liquid },
+      { daysAgo: 1, marketPrice: 49240, ...liquid },
+      { daysAgo: 0, marketPrice: 49500, minPrice: 6240, ...liquid }
+    ]);
+    expect(buildDealRadar(signals([absurd]))).toHaveLength(0);
+  });
+
+  it("keeps a discount sitting exactly on the plausibility cap", () => {
+    const atCap = history([
+      { daysAgo: 2, marketPrice: 9000, ...liquid },
+      { daysAgo: 1, marketPrice: 10000, ...liquid },
+      { daysAgo: 0, marketPrice: 11000, minPrice: 4000, ...liquid }
+    ]);
+    const deals = buildDealRadar(signals([atCap])); // med7 10000, min 4000 = 60% off
+    expect(deals).toHaveLength(1);
+    expect(deals[0].discountPercent).toBeCloseTo(60, 5);
+  });
+
+  it("exempts vendor arbitrage from the med7 guards — the NPC price is a fact", () => {
+    // Single scan, flat series, 90% below the NPC price: none of the
+    // reference-credibility guards apply, because the NPC always buys.
+    const deals = buildDealRadar(
+      signals([history([{ daysAgo: 0, marketPrice: 1000, minPrice: 100, ...liquid }], { vendorPrice: 1000 })])
+    );
+    expect(deals).toHaveLength(1);
+    expect(deals[0].vendor).toBe(true);
   });
 });
 

@@ -56,12 +56,17 @@ local function refreshDeals()
       }
     -- Class 2: P10 median discount. Requires history depth (3+ scans) AND a
     -- live market (3+ auctions) AND a worthwhile absolute spread —
-    -- otherwise the list fills with illiquid junk nobody ever buys.
+    -- otherwise the list fills with illiquid junk nobody ever buys. The
+    -- last two conditions distrust med7 itself: a flat series is one
+    -- camper's ask, and a discount past the cap means the reference broke,
+    -- not that the listing is cheap. Neither applies to vendor deals above.
     elseif history and #history.pts >= WAH.RADAR.minHistory and history.med7 and history.med7 > 0
       and entry.minPrice and entry.minPrice > 0
       and (entry.numAuctions or 0) >= WAH.RADAR.minAuctions
       and (history.med7 - entry.minPrice) >= WAH.RADAR.minProfit
-      and entry.minPrice <= history.med7 * WAH.RADAR.discount then
+      and entry.minPrice <= history.med7 * WAH.RADAR.discount
+      and (history.distinct or 0) >= WAH.RADAR.minMed7Distinct
+      and entry.minPrice >= history.med7 * (1 - WAH.RADAR.maxDiscount) then
       deals[#deals + 1] = {
         itemId = itemId,
         name = entry.name,

@@ -10,5 +10,7 @@ WAH.RADAR = {
   minProfit = 500,
   discount = 0.85,
   minAuctions = 3,
-  minHistory = 3
+  minHistory = 3,
+  minMed7Distinct = 2,
+  maxDiscount = 0.6
 }

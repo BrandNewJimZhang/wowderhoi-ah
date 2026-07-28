@@ -291,7 +291,14 @@ function WAH.history(itemId)
   for index, point in ipairs(pts) do prices[index] = point.c end
   table.sort(prices)
   local med7 = prices[math.ceil(#prices / 2)]
-  return { pts = pts, med7 = med7, latest = pts[#pts].c }
+  -- Distinct closes in the window. A flat series means one camper's ask
+  -- recorded over and over, so med7 is a price nothing traded against;
+  -- the deal radar refuses to discount from it.
+  local distinct = 1
+  for index = 2, #prices do
+    if prices[index] ~= prices[index - 1] then distinct = distinct + 1 end
+  end
+  return { pts = pts, med7 = med7, latest = pts[#pts].c, distinct = distinct }
 end
 
 SLASH_WOWDERHOIAH1 = "/wahscan"

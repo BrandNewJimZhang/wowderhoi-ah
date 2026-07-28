@@ -13,6 +13,7 @@ function signal(partial: Partial<MarketSignal> & Pick<MarketSignal, "itemId" | "
     vendorPrice: 0,
     med7: 100,
     med7Samples: 1,
+    med7Distinct: 1,
     discountPercent: 0,
     changePercent: 0,
     ...partial

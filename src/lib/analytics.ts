@@ -17,6 +17,7 @@ export type MarketSignal = {
   vendorPrice: number; // NPC sell price, copper; 0 = unsellable
   med7: number; // median snapshot P10 over the last 7 days
   med7Samples: number; // snapshots inside the 7d window backing med7
+  med7Distinct: number; // distinct P10 values in that window; 1 = flat series
   discountPercent: number; // how far the current min sits below med7
   changePercent: number; // latest P10 vs the previous scan's P10
 };
@@ -53,6 +54,7 @@ export function buildMarketSignal(item: MarketHistory, now: Date): MarketSignal 
     vendorPrice: item.vendorPrice,
     med7,
     med7Samples: windowPrices.length,
+    med7Distinct: new Set(windowPrices).size,
     discountPercent: med7 > 0 ? (1 - latest.minPrice / med7) * 100 : 0,
     changePercent: previous && previous.marketPrice > 0 ? ((latest.marketPrice - previous.marketPrice) / previous.marketPrice) * 100 : 0
   };
@@ -73,7 +75,14 @@ export type DealRadarRow = {
 // implementations must classify the same scan identically or the terminal
 // promises deals the in-game buy list can't deliver. Both read the same
 // thresholds from the single source of truth (src/lib/market-rules.ts).
-const { minProfit: RADAR_MIN_PROFIT, discount: RADAR_DISCOUNT, minAuctions: RADAR_MIN_AUCTIONS, minHistory: RADAR_MIN_HISTORY } = dealRadarRules;
+const {
+  minProfit: RADAR_MIN_PROFIT,
+  discount: RADAR_DISCOUNT,
+  minAuctions: RADAR_MIN_AUCTIONS,
+  minHistory: RADAR_MIN_HISTORY,
+  minMed7Distinct: RADAR_MIN_MED7_DISTINCT,
+  maxDiscount: RADAR_MAX_DISCOUNT
+} = dealRadarRules;
 
 export function buildDealRadar(signals: MarketSignal[]): DealRadarRow[] {
   const deals: DealRadarRow[] = [];
@@ -95,11 +104,16 @@ export function buildDealRadar(signals: MarketSignal[]): DealRadarRow[] {
       });
     // Class 2: P10 median discount. Requires history depth (3+ scans) AND a
     // live market (3+ auctions) AND a worthwhile absolute spread —
-    // otherwise the list fills with illiquid junk nobody ever buys.
+    // otherwise the list fills with illiquid junk nobody ever buys. The
+    // last two conditions distrust med7 itself: a flat series is one
+    // camper's ask, and a discount past the cap means the reference broke,
+    // not that the listing is cheap. Neither applies to vendor deals above.
     } else if (signal.med7Samples >= RADAR_MIN_HISTORY && signal.med7 > 0 && signal.minPrice > 0
       && signal.numAuctions >= RADAR_MIN_AUCTIONS
       && signal.med7 - signal.minPrice >= RADAR_MIN_PROFIT
-      && signal.minPrice <= signal.med7 * RADAR_DISCOUNT) {
+      && signal.minPrice <= signal.med7 * RADAR_DISCOUNT
+      && signal.med7Distinct >= RADAR_MIN_MED7_DISTINCT
+      && signal.minPrice >= signal.med7 * (1 - RADAR_MAX_DISCOUNT)) {
       deals.push({
         itemId: signal.itemId,
         name: signal.name,
