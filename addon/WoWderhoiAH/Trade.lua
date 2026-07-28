@@ -252,6 +252,9 @@ renderRows = function()
       end
       if mode == "deals" then
         rowFrame.icon:SetTexture(GetItemIcon(row.itemId))
+        -- A radar row is built from scan data, so it has an item but no
+        -- live auction to point a tooltip at.
+        rowFrame.showTooltip = function() GameTooltip:SetHyperlink("item:" .. row.itemId) end
         -- Risk class rides on the name, not on a number column: vendor
         -- profit is guaranteed, a median discount is an estimate, and
         -- mixing the two into one cell is what made the old column unreadable.
@@ -265,6 +268,9 @@ renderRows = function()
         end)
       else
         rowFrame.icon:SetTexture(row.texture)
+        -- The listing's own tooltip: stack size, bid, seller and time left
+        -- are what separate two rows at the same unit price.
+        rowFrame.showTooltip = function() GameTooltip:SetAuctionItem("list", row.index) end
         rowFrame.name:SetText(row.name)
         rowFrame.buy:SetText(L.BUY)
         rowFrame.buy:SetScript("OnClick", function() verifyAndBuy(row) end)
@@ -487,6 +493,17 @@ local function createTradeFrame()
     rowFrame.name:SetPoint("RIGHT", rowFrame.cells[1], "LEFT", -COL_GAP, 0)
     rowFrame.name:SetJustifyH("LEFT")
     rowFrame.name:SetWordWrap(false) -- long names truncate with an ellipsis
+    -- Rows show the client's own item tooltip, which is where the addon
+    -- already puts its price block (GUI.lua hooks every tooltip setter).
+    -- Four columns is all the table can hold; everything else a buy
+    -- decision needs is one hover away instead of absent.
+    rowFrame:EnableMouse(true)
+    rowFrame:SetScript("OnEnter", function(self)
+      if not self.showTooltip then return end
+      GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+      self.showTooltip()
+    end)
+    rowFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
     rowFrame:Hide()
     trade.rows[rowIndex] = rowFrame
   end

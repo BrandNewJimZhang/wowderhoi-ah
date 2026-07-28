@@ -62,6 +62,7 @@ function frameMeta:SetHeight(height) self._height = height end
 function frameMeta:GetWidth() return self._width end
 function frameMeta:GetHeight() return self._height end
 function frameMeta:SetWordWrap(wrap) self._wordWrap = wrap end
+function frameMeta:EnableMouse(enabled) self._mouse = enabled end
 function frameMeta:SetBackdrop(backdrop) self._backdrop = backdrop end
 
 -- SetPoint has three shapes in the real API. Normalizing them here is what
@@ -112,13 +113,59 @@ UIParent = newFrame("UIParent")
 GameTooltip = newFrame("GameTooltip")
 ItemRefTooltip = newFrame("ItemRefTooltip")
 
+-- GameTooltip records what it was pointed at and what got written into it.
+-- A trade row's whole job is to aim the client's own item tooltip, so the
+-- observable result is the source it was given plus the lines GUI.lua's
+-- hooks append on top.
+GameTooltip._lines = {}
+function GameTooltip:SetOwner(owner, anchor) self._owner, self._anchor = owner, anchor end
+function GameTooltip:GetItem() return self._itemName, self._link end
+function GameTooltip:AddLine(text) self._lines[#self._lines + 1] = bed.plain(text) end
+function GameTooltip:AddDoubleLine(left, right)
+  self._lines[#self._lines + 1] = bed.plain(left) .. "\t" .. bed.plain(right)
+end
+function GameTooltip:ClearLines()
+  self._lines, self._source, self._link, self._itemName = {}, nil, nil, nil
+  if self._scripts.OnTooltipCleared then self._scripts.OnTooltipCleared(self) end
+end
+
+local function tooltipShowItem(tooltip, source, itemId, itemName)
+  tooltip:ClearLines()
+  tooltip._source, tooltip._itemName = source, itemName
+  tooltip._link = "|Hitem:" .. tostring(itemId) .. ":0:0:0|h[" .. tostring(itemName) .. "]|h"
+  tooltip:Show()
+end
+
+function GameTooltip:SetAuctionItem(_, index)
+  local listing = bed.listings[index]
+  tooltipShowItem(self, "auction:" .. tostring(index),
+    listing and listing.itemId or 0, listing and listing.name)
+end
+
+function GameTooltip:SetHyperlink(link)
+  tooltipShowItem(self, "hyperlink:" .. tostring(link), tonumber(tostring(link):match("item:(%d+)")) or 0, link)
+end
+
 DEFAULT_CHAT_FRAME = { AddMessage = function(_, text) bed.chat[#bed.chat + 1] = text end }
 SlashCmdList = {}
 
 function AuctionFrameTab_OnClick() end
-function hooksecurefunc(name, handler)
-  bed.hooks[name] = bed.hooks[name] or {}
-  table.insert(bed.hooks[name], handler)
+-- Two shapes: hooksecurefunc(globalName, handler) and the method form
+-- hooksecurefunc(table, method, handler). GUI.lua uses the method form to
+-- attach its price block to the tooltip setters, so wrapping it for real is
+-- what lets a test see the block ride along with a row's tooltip.
+function hooksecurefunc(target, name, handler)
+  if type(target) == "string" then
+    bed.hooks[target] = bed.hooks[target] or {}
+    table.insert(bed.hooks[target], name)
+    return
+  end
+  local original = target[name]
+  target[name] = function(...)
+    local result = original(...)
+    handler(...)
+    return result
+  end
 end
 
 C_Timer = {
@@ -137,6 +184,9 @@ end
 
 function GetLocale() return bed.locale or "zhCN" end
 function time() return NOW end
+-- WoW exposes os.date as a bare global. Defaulting to the fixed clock keeps
+-- anything formatted from "now" as reproducible as everything else here.
+function date(format, when) return os.date(format, when or NOW) end
 function debugprofilestop() return 0 end -- never trip the per-frame yield budget
 function GetRealmName() return "TestRealm" end
 function UnitFactionGroup() return "Alliance" end
@@ -325,6 +375,42 @@ function bed.rowCount()
     if row._shown then count = count + 1 end
   end
   return count
+end
+
+-- A row's hover handler is the whole tooltip feature; fire it the way the
+-- client would when the cursor crosses the row.
+function bed.hoverRow(index, leave)
+  local row = tradeFrame().rows[index]
+  -- A plain Frame gets no cursor events until it asks for them, so a
+  -- handler on a mouse-disabled row is one the player can never trigger.
+  if not row._mouse then error("row " .. index .. " does not take mouse input") end
+  local script = row._scripts[leave and "OnLeave" or "OnEnter"]
+  if not script then error("row " .. index .. " has no hover handler") end
+  script(row)
+end
+
+function bed.tooltipSource() return GameTooltip._source or "" end
+function bed.tooltipText() return table.concat(GameTooltip._lines, "\n") end
+function bed.tooltipShown() return GameTooltip:IsShown() end
+
+function bed.buyRow(index)
+  local row = tradeFrame().rows[index]
+  row.buy._scripts.OnClick(row.buy)
+end
+
+local function scanEntry(itemId)
+  local items = WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.items
+  return items and items[itemId]
+end
+
+function bed.scanned(itemId) return scanEntry(itemId) ~= nil end
+function bed.scanMin(itemId)
+  local entry = scanEntry(itemId)
+  return entry and entry.minPrice
+end
+function bed.scanAuctions(itemId)
+  local entry = scanEntry(itemId)
+  return entry and entry.numAuctions
 end
 
 function bed.rowName(index) return bed.plain(tradeFrame().rows[index].name._text) end

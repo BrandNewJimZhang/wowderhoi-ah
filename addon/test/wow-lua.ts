@@ -129,6 +129,17 @@ export function loadAddon(options?: { locale?: string }) {
     backdropInset: (side: "left" | "right" | "top" | "bottom") =>
       Number(evaluate(`WowTest.backdropInset(${toLua(side)})`)),
     visibleRows: () => Number(evaluate("WowTest.visibleRows()")),
-    wrappingCells: () => Number(evaluate("WowTest.wrappingCells()"))
+    wrappingCells: () => Number(evaluate("WowTest.wrappingCells()")),
+
+    hoverRow: (row: number) => exec(`WowTest.hoverRow(${row})`),
+    leaveRow: (row: number) => exec(`WowTest.hoverRow(${row}, true)`),
+    tooltipSource: () => String(evaluate("WowTest.tooltipSource()")),
+    tooltipText: () => String(evaluate("WowTest.tooltipText()")),
+    tooltipShown: () => Boolean(evaluate("WowTest.tooltipShown()")),
+
+    buyRow: (row: number) => exec(`WowTest.buyRow(${row})`),
+    scanned: (itemId: number) => Boolean(evaluate(`WowTest.scanned(${itemId})`)),
+    scanMin: (itemId: number) => evaluate(`WowTest.scanMin(${itemId})`),
+    scanAuctions: (itemId: number) => evaluate(`WowTest.scanAuctions(${itemId})`)
   };
 }
