@@ -53,9 +53,20 @@ local L = {
   DEALS_FOUND = "%d deals found (min price vs 7d P10 median).",
   COL_ITEM = "Item",
   VENDOR_TAG = "NPC",
-  COL_DISC = "Profit",
+  COL_DISC = "Disc",
+  COL_PROFIT = "Profit",
+  COL_REF = "Reference",
+  COL_QTY = "Qty",
   COL_UNIT = "Unit",
   COL_TOTAL = "Total",
+  -- Money suffixes and sort markers sit in the locale table because they
+  -- are font coverage, not translation: FRIZQT__ has no arrow glyphs
+  -- while the zhCN fonts carry the full CJK symbol block.
+  MONEY_G = "g",
+  MONEY_S = "s",
+  MONEY_C = "c",
+  SORT_ASC = "^",
+  SORT_DESC = "v",
   LISTING_CHANGED = "Listing changed since search — search again before buying.",
   BOUGHT = "Bought %s x%d for %s.",
   N_LISTINGS = "%d buyable listings.",
@@ -124,9 +135,17 @@ if GetLocale() == "zhCN" then
   L.DEALS_FOUND = "发现 %d 个捡漏机会（最低价 vs 7日P10中位）。"
   L.COL_ITEM = "物品"
   L.VENDOR_TAG = "NPC必赚"
-  L.COL_DISC = "利润/折扣"
+  L.COL_DISC = "折扣"
+  L.COL_PROFIT = "利润"
+  L.COL_REF = "参考价"
+  L.COL_QTY = "数量"
   L.COL_UNIT = "单价"
   L.COL_TOTAL = "总价"
+  L.MONEY_G = "金"
+  L.MONEY_S = "银"
+  L.MONEY_C = "铜"
+  L.SORT_ASC = "▲"
+  L.SORT_DESC = "▼"
   L.LISTING_CHANGED = "挂单已变化 — 请重新搜索后再购买。"
   L.BOUGHT = "已购买 %s x%d，花费 %s。"
   L.N_LISTINGS = "%d 条可购买挂单。"

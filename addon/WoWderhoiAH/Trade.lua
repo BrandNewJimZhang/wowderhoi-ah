@@ -26,10 +26,104 @@ local function chatMessage(text)
   DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WAH|r " .. text)
 end
 
+-- ============================ Table model =============================
+
+-- Compact money. GetCoinTextureString always prints all three units with
+-- inline coin icons, so no two prices in a column line up and 24s31c of
+-- noise crowds out the gold that actually decides the trade. Two units is
+-- everything anyone acts on; the third never changes a decision.
+-- Deliberately keeps the silver that formatWowMoney's compact mode drops
+-- past 100g: 199g99s is a bait price and 199g01s is not, and the radar
+-- exists to make exactly that difference visible.
+local function money(copper)
+  local total = math.floor((copper or 0) + 0.5)
+  local gold = math.floor(total / 10000)
+  local silver = math.floor(total % 10000 / 100)
+  if gold > 0 then
+    return string.format("|cffffd700%d%s|r |cffc7c7cf%02d%s|r", gold, L.MONEY_G, silver, L.MONEY_S)
+  elseif silver > 0 then
+    return string.format("|cffc7c7cf%d%s|r |cffeda55f%02d%s|r", silver, L.MONEY_S, total % 100, L.MONEY_C)
+  end
+  return string.format("|cffeda55f%d%s|r", total % 100, L.MONEY_C)
+end
+
+local function moneyCell(value) return money(value) end
+local function discountCell(value) return string.format("|cff55ff55-%.0f%%|r", value) end
+local function countCell(value) return tostring(value) end
+
+-- Four right-aligned slots, each holding exactly one quantity, so every
+-- number is comparable straight down its column and sortable by its own
+-- header. A mode with fewer columns pads from the left, which keeps money
+-- in the same slots whichever list is showing.
+local COL_COUNT = 4
+local DEAL_COLUMNS = {
+  { key = "discountPercent", label = "COL_DISC", cell = discountCell },
+  { key = "profit", label = "COL_PROFIT", cell = moneyCell },
+  { key = "minPrice", label = "TT_MIN", cell = moneyCell, asc = true },
+  { key = "med7", label = "COL_REF", cell = moneyCell }
+}
+local RESULT_COLUMNS = {
+  { key = "count", label = "COL_QTY", cell = countCell },
+  { key = "unitPrice", label = "COL_UNIT", cell = moneyCell, asc = true },
+  { key = "buyout", label = "COL_TOTAL", cell = moneyCell, asc = true }
+}
+
+local sortKey = nil -- nil = the current mode's default ordering
+local sortAsc = false
+
+local function columnAt(slot)
+  local columns = mode == "deals" and DEAL_COLUMNS or RESULT_COLUMNS
+  return columns[slot - (COL_COUNT - #columns)]
+end
+
+-- The default order carries the judgement the radar exists to make:
+-- vendor deals first because they carry no market risk, then by absolute
+-- profit. Clicking any header drops that tiering for a plain one-column
+-- sort — the user has taken over the ranking at that point.
+local function applySort()
+  local rows = mode == "deals" and deals or results
+  if not sortKey then
+    if mode == "deals" then
+      table.sort(rows, function(left, right)
+        if left.vendor ~= right.vendor then return left.vendor end
+        return left.profit > right.profit
+      end)
+    else
+      table.sort(rows, function(left, right) return left.unitPrice < right.unitPrice end)
+    end
+    return
+  end
+  table.sort(rows, function(left, right)
+    if left[sortKey] == right[sortKey] then return left.name < right.name end
+    if sortAsc then return left[sortKey] < right[sortKey] end
+    return left[sortKey] > right[sortKey]
+  end)
+end
+
+local renderRows -- forward declaration; a header click re-renders after sorting
+
+local function sortMark(key)
+  if sortKey ~= key then return "" end
+  return " " .. (sortAsc and L.SORT_ASC or L.SORT_DESC)
+end
+
+local function sortByKey(key, defaultAsc)
+  if sortKey == key then
+    sortAsc = not sortAsc
+  else
+    sortKey, sortAsc = key, defaultAsc or false
+  end
+  applySort()
+  FauxScrollFrame_SetOffset(trade.scroll, 0)
+  renderRows()
+end
+
 -- ============================== Deal radar ============================
 
 local function refreshDeals()
   wipe(deals)
+  -- A rebuilt row set invalidates whichever column the user last sorted by.
+  sortKey = nil
   local scan = WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.dataVersion == WAH.PIPELINE_VERSION and WoWderhoiAH_ScanData.items
   if not scan or not next(scan) then
     chatMessage(L.DEALS_NEED_SCAN)
@@ -82,11 +176,7 @@ local function refreshDeals()
     chatMessage(L.DEALS_NEED_HISTORY)
     return
   end
-  -- Vendor deals first (risk-free), then by absolute profit.
-  table.sort(deals, function(left, right)
-    if left.vendor ~= right.vendor then return left.vendor end
-    return left.profit > right.profit
-  end)
+  applySort()
   chatMessage(#deals == 0 and L.DEALS_NONE or string.format(L.DEALS_FOUND, #deals))
 end
 
@@ -113,7 +203,8 @@ local function collectSearchResults()
       }
     end
   end
-  table.sort(results, function(left, right) return left.unitPrice < right.unitPrice end)
+  sortKey = nil
+  applySort()
 end
 
 local runSearch -- forward declaration; buy-refresh and deal rows trigger searches
@@ -135,49 +226,44 @@ local function verifyAndBuy(row)
   end)
 end
 
-local function renderRows()
+renderRows = function()
   if not trade then return end
   local rows = mode == "deals" and deals or results
-  -- Column headers follow the mode.
-  if mode == "deals" then
-    trade.headDisc:SetText(L.COL_DISC)
-    trade.headA:SetText(L.TT_MIN)
-    trade.headB:SetText(L.TT_MED7)
-  else
-    trade.headDisc:SetText("")
-    trade.headA:SetText(L.COL_UNIT)
-    trade.headB:SetText(L.COL_TOTAL)
+  -- Headers follow the mode, and carry the sort marker for the live key.
+  trade.headItem:SetText(L.COL_ITEM .. sortMark("name"))
+  for slot = 1, COL_COUNT do
+    local column = columnAt(slot)
+    trade.headers[slot]:SetText(column and (L[column.label] .. sortMark(column.key)) or "")
   end
   local offset = FauxScrollFrame_GetOffset(trade.scroll)
   FauxScrollFrame_Update(trade.scroll, #rows, ROWS_VISIBLE, ROW_HEIGHT)
   for rowIndex = 1, ROWS_VISIBLE do
     local rowFrame = trade.rows[rowIndex]
     local row = rows[rowIndex + offset]
-    if row and mode == "deals" then
-      rowFrame.icon:SetTexture(GetItemIcon(row.itemId))
-      if row.vendor then
-        rowFrame.name:SetText(string.format("%s |cffffd100[%s]|r", row.name, L.VENDOR_TAG))
-        rowFrame.disc:SetText(string.format("|cffffd100+%s|r", GetCoinTextureString(row.profit)))
-      else
-        rowFrame.name:SetText(row.name)
-        rowFrame.disc:SetText(string.format("|cff55ff55-%.0f%%|r", row.discountPercent))
+    if row then
+      for slot = 1, COL_COUNT do
+        local column = columnAt(slot)
+        rowFrame.cells[slot]:SetText(column and column.cell(row[column.key]) or "")
       end
-      rowFrame.colA:SetText(GetCoinTextureString(row.minPrice))
-      rowFrame.colB:SetText(GetCoinTextureString(row.med7))
-      rowFrame.buy:SetText(L.FIND)
-      rowFrame.buy:SetScript("OnClick", function()
-        trade.searchBox:SetText(row.name)
-        runSearch()
-      end)
-      rowFrame:Show()
-    elseif row then
-      rowFrame.icon:SetTexture(row.texture)
-      rowFrame.name:SetText(string.format("%s x%d", row.name, row.count))
-      rowFrame.disc:SetText("")
-      rowFrame.colA:SetText(GetCoinTextureString(math.floor(row.unitPrice + 0.5)))
-      rowFrame.colB:SetText(GetCoinTextureString(row.buyout))
-      rowFrame.buy:SetText(L.BUY)
-      rowFrame.buy:SetScript("OnClick", function() verifyAndBuy(row) end)
+      if mode == "deals" then
+        rowFrame.icon:SetTexture(GetItemIcon(row.itemId))
+        -- Risk class rides on the name, not on a number column: vendor
+        -- profit is guaranteed, a median discount is an estimate, and
+        -- mixing the two into one cell is what made the old column unreadable.
+        rowFrame.name:SetText(row.vendor
+          and string.format("%s |cffffd100[%s]|r", row.name, L.VENDOR_TAG)
+          or row.name)
+        rowFrame.buy:SetText(L.FIND)
+        rowFrame.buy:SetScript("OnClick", function()
+          trade.searchBox:SetText(row.name)
+          runSearch()
+        end)
+      else
+        rowFrame.icon:SetTexture(row.texture)
+        rowFrame.name:SetText(row.name)
+        rowFrame.buy:SetText(L.BUY)
+        rowFrame.buy:SetScript("OnClick", function() verifyAndBuy(row) end)
+      end
       rowFrame:Show()
     else
       rowFrame:Hide()
@@ -298,22 +384,37 @@ local function createTradeFrame()
   -- columns are fixed-width so long values can never collide with the
   -- item name, which truncates with an ellipsis instead of overflowing.
   local HEADER_Y = -50
-  local COL_BUY_W, COL_PRICE_W, COL_DISC_W = 60, 130, 96
+  local COL_BUY_W, COL_W, COL_GAP = 60, 92, 8
+  -- FontStrings take no clicks, so a header is a label plus a transparent
+  -- button covering it; the label keeps the anchor, width and
+  -- justification the whole layout is built on. Which column a slot holds
+  -- is resolved at click time because it follows the current mode.
+  local function makeSortable(label, onClick)
+    local hit = CreateFrame("Button", nil, trade)
+    hit:SetAllPoints(label)
+    hit:SetScript("OnClick", onClick)
+    hit:SetScript("OnEnter", function() label:SetTextColor(1, 1, 1) end)
+    hit:SetScript("OnLeave", function() label:SetTextColor(1, 0.82, 0) end)
+  end
+
   trade.headItem = trade:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   trade.headItem:SetPoint("TOPLEFT", 26, HEADER_Y)
   trade.headItem:SetText(L.COL_ITEM)
-  trade.headDisc = trade:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  trade.headDisc:SetPoint("TOPRIGHT", trade, "TOPRIGHT", -(24 + COL_BUY_W + 8 + 2 * (COL_PRICE_W + 8)), HEADER_Y)
-  trade.headDisc:SetWidth(COL_DISC_W)
-  trade.headDisc:SetJustifyH("RIGHT")
-  trade.headA = trade:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  trade.headA:SetPoint("TOPRIGHT", trade, "TOPRIGHT", -(24 + COL_BUY_W + 8 + COL_PRICE_W + 8), HEADER_Y)
-  trade.headA:SetWidth(COL_PRICE_W)
-  trade.headA:SetJustifyH("RIGHT")
-  trade.headB = trade:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  trade.headB:SetPoint("TOPRIGHT", trade, "TOPRIGHT", -(24 + COL_BUY_W + 8), HEADER_Y)
-  trade.headB:SetWidth(COL_PRICE_W)
-  trade.headB:SetJustifyH("RIGHT")
+  makeSortable(trade.headItem, function() sortByKey("name", true) end)
+
+  trade.headers = {}
+  for slot = 1, COL_COUNT do
+    local label = trade:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetPoint("TOPRIGHT", trade, "TOPRIGHT",
+      -(24 + COL_BUY_W + COL_GAP + (COL_COUNT - slot) * (COL_W + COL_GAP)), HEADER_Y)
+    label:SetWidth(COL_W)
+    label:SetJustifyH("RIGHT")
+    makeSortable(label, function()
+      local column = columnAt(slot)
+      if column then sortByKey(column.key, column.asc) end
+    end)
+    trade.headers[slot] = label
+  end
   local headerLine = trade:CreateTexture(nil, "ARTWORK")
   headerLine:SetColorTexture(0.6, 0.5, 0.3, 0.6)
   headerLine:SetPoint("TOPLEFT", 0, HEADER_Y - 14)
@@ -351,21 +452,19 @@ local function createTradeFrame()
     rowFrame.buy = CreateFrame("Button", nil, rowFrame, "UIPanelButtonTemplate")
     rowFrame.buy:SetSize(COL_BUY_W, 18)
     rowFrame.buy:SetPoint("RIGHT", 0, 0)
-    rowFrame.colB = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    rowFrame.colB:SetPoint("RIGHT", rowFrame.buy, "LEFT", -8, 0)
-    rowFrame.colB:SetWidth(COL_PRICE_W)
-    rowFrame.colB:SetJustifyH("RIGHT")
-    rowFrame.colA = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    rowFrame.colA:SetPoint("RIGHT", rowFrame.colB, "LEFT", -8, 0)
-    rowFrame.colA:SetWidth(COL_PRICE_W)
-    rowFrame.colA:SetJustifyH("RIGHT")
-    rowFrame.disc = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    rowFrame.disc:SetPoint("RIGHT", rowFrame.colA, "LEFT", -8, 0)
-    rowFrame.disc:SetWidth(COL_DISC_W)
-    rowFrame.disc:SetJustifyH("RIGHT")
+    rowFrame.cells = {}
+    local anchor = rowFrame.buy
+    for slot = COL_COUNT, 1, -1 do
+      local cell = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+      cell:SetPoint("RIGHT", anchor, "LEFT", -COL_GAP, 0)
+      cell:SetWidth(COL_W)
+      cell:SetJustifyH("RIGHT")
+      rowFrame.cells[slot] = cell
+      anchor = cell
+    end
     rowFrame.name = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     rowFrame.name:SetPoint("LEFT", rowFrame.icon, "RIGHT", 6, 0)
-    rowFrame.name:SetPoint("RIGHT", rowFrame.disc, "LEFT", -8, 0)
+    rowFrame.name:SetPoint("RIGHT", rowFrame.cells[1], "LEFT", -COL_GAP, 0)
     rowFrame.name:SetJustifyH("LEFT")
     rowFrame.name:SetWordWrap(false) -- long names truncate with an ellipsis
     rowFrame:Hide()
