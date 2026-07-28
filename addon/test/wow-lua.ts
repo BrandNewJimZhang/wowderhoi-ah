@@ -138,6 +138,8 @@ export function loadAddon(options?: { locale?: string }) {
     tooltipShown: () => Boolean(evaluate("WowTest.tooltipShown()")),
 
     buyRow: (row: number) => exec(`WowTest.buyRow(${row})`),
+    repriceListing: (index: number, buyout: number) =>
+      exec(`WowTest.repriceListing(${index}, ${buyout})`),
     scanned: (itemId: number) => Boolean(evaluate(`WowTest.scanned(${itemId})`)),
     scanMin: (itemId: number) => evaluate(`WowTest.scanMin(${itemId})`),
     scanAuctions: (itemId: number) => evaluate(`WowTest.scanAuctions(${itemId})`)

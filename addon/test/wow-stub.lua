@@ -362,6 +362,10 @@ end
 
 function bed.setListings(listings) bed.listings = listings end
 
+-- Move a listing's price without re-running the search, so a test can make
+-- the book change under a row the way another buyer would.
+function bed.repriceListing(index, buyout) bed.listings[index].buyout = buyout end
+
 function bed.search(query, listings)
   bed.setListings(listings)
   tradeFrame().searchBox:SetText(query)

@@ -214,6 +214,41 @@ end
 
 local runSearch -- forward declaration; buy-refresh and deal rows trigger searches
 
+-- The radar reads WoWderhoiAH_ScanData as its record of what is listed
+-- right now, and only a full rescan ever writes it — so buying the cheapest
+-- listing left the scan advertising a price nobody can pay, and the bought
+-- deal came back every time the list was rebuilt. This is the one moment in
+-- a session that knows the listing is gone, so the correction is written
+-- here, from the rows still on the list.
+--
+-- Ceiling: those rows are one query page of buyout listings, never the whole
+-- book, so the price this lands on is never below the truth. It can hide a
+-- real deal until the next scan; it can never invent one. That is the right
+-- direction for a list whose whole value is that its rows are real.
+local function repriceAfterPurchase(bought)
+  local scan = WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.dataVersion == WAH.PIPELINE_VERSION
+    and WoWderhoiAH_ScanData.items
+  local scanned = scan and scan[bought.itemId]
+  if not scanned then return end
+  local cheapest = nil
+  for _, row in ipairs(results) do
+    if row.itemId == bought.itemId and row.index ~= bought.index
+      and (not cheapest or row.unitPrice < cheapest) then
+      cheapest = row.unitPrice
+    end
+  end
+  if not cheapest then
+    -- Nothing of this item left on the page: every number in the entry
+    -- describes a book that no longer exists, and a zeroed minimum would
+    -- read as "free" on the tooltip. The 7d history it is judged against
+    -- lives elsewhere and survives; the next scan re-lists the item.
+    scan[bought.itemId] = nil
+    return
+  end
+  scanned.minPrice = cheapest
+  scanned.numAuctions = math.max((scanned.numAuctions or 1) - 1, 0)
+end
+
 local function verifyAndBuy(row)
   local name, _, count, _, _, _, _, _, _, buyoutPrice = GetAuctionItemInfo("list", row.index)
   if name ~= row.name or count ~= row.count or buyoutPrice ~= row.buyout then
@@ -221,6 +256,7 @@ local function verifyAndBuy(row)
     return
   end
   PlaceAuctionBid("list", row.index, row.buyout)
+  repriceAfterPurchase(row)
   chatMessage(string.format(L.BOUGHT, row.name, row.count, GetCoinTextureString(row.buyout)))
   -- Re-run the search after the bid settles so the bought listing drops
   -- off. Route through runSearch (not a raw query) so the searching flag
