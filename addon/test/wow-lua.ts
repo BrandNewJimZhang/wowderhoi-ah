@@ -78,7 +78,10 @@ export function loadAddon(options?: { locale?: string }) {
     lua.lua_remove(state, -2);
     if (lua.lua_pcall(state, 2, 0, 0) !== lua.LUA_OK) fail(`${file} failed to load`);
   }
-  exec("WowTest.fireEvent('ADDON_LOADED')");
+  // ADDON_LOADED carries the addon name, and Settings.lua ignores the event
+  // without it -- which would leave WAH.settings nil and every setting-gated
+  // branch running on the nil fallback instead of the shipped defaults.
+  exec(`WowTest.fireEvent('ADDON_LOADED', ${toLua(ADDON_NAME)})`);
 
   function evaluate(expression: string): string | number | boolean | null {
     load(`return ${expression}`, "test");
@@ -118,6 +121,14 @@ export function loadAddon(options?: { locale?: string }) {
       const count = Number(evaluate("WowTest.rowCount()"));
       return Array.from({ length: count }, (_, index) => String(evaluate(`WowTest.cellText(${index + 1}, ${slot})`)));
     },
-    lastChat: () => String(evaluate("WowTest.lastChat()"))
+    lastChat: () => String(evaluate("WowTest.lastChat()")),
+
+    panelHeight: () => Number(evaluate("WowTest.panelHeight()")),
+    clearance: (side: "LEFT" | "RIGHT" | "TOP" | "BOTTOM") =>
+      Number(evaluate(`WowTest.panelClearance(${toLua(side)})`)),
+    backdropInset: (side: "left" | "right" | "top" | "bottom") =>
+      Number(evaluate(`WowTest.backdropInset(${toLua(side)})`)),
+    visibleRows: () => Number(evaluate("WowTest.visibleRows()")),
+    wrappingCells: () => Number(evaluate("WowTest.wrappingCells()"))
   };
 }

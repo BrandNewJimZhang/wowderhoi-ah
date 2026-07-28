@@ -56,6 +56,29 @@ function frameMeta:RegisterEvent(event) self._events[event] = true end
 function frameMeta:SetText(text) self._text = text end
 function frameMeta:GetText() return self._text or "" end
 function frameMeta:SetAllPoints(target) self._allPoints = target end
+function frameMeta:SetSize(width, height) self._width, self._height = width, height end
+function frameMeta:SetWidth(width) self._width = width end
+function frameMeta:SetHeight(height) self._height = height end
+function frameMeta:GetWidth() return self._width end
+function frameMeta:GetHeight() return self._height end
+function frameMeta:SetWordWrap(wrap) self._wordWrap = wrap end
+function frameMeta:SetBackdrop(backdrop) self._backdrop = backdrop end
+
+-- SetPoint has three shapes in the real API. Normalizing them here is what
+-- lets a test resolve where a frame actually lands, which is the only way
+-- to assert that the panel's content stays off its own border art.
+function frameMeta:SetPoint(point, first, second, third, fourth)
+  local relativeTo, relativePoint, xOffset, yOffset
+  if type(first) == "table" then
+    relativeTo, relativePoint, xOffset, yOffset = first, second, third, fourth
+  else
+    relativeTo, relativePoint, xOffset, yOffset = self._parent, point, first, second
+  end
+  self._points = self._points or {}
+  self._points[point] = {
+    to = relativeTo, toPoint = relativePoint or point, x = xOffset or 0, y = yOffset or 0
+  }
+end
 function frameMeta:CreateFontString() return newFrame(nil, self) end
 function frameMeta:CreateTexture() return newFrame(nil, self) end
 function frameMeta:CreateLine() return newFrame(nil, self) end
@@ -76,6 +99,9 @@ end
 
 AuctionFrame = newFrame("AuctionFrame")
 AuctionFrame.numTabs = 3
+-- The real 2.5.6 AuctionFrame is 800x447. The WAH page derives its row
+-- count from that height, so an unsized stub would test nothing.
+AuctionFrame:SetSize(800, 447)
 AuctionFrame:Show()
 AuctionFrameBrowse = newFrame("AuctionFrameBrowse")
 AuctionFrameBid = newFrame("AuctionFrameBid")
@@ -168,10 +194,10 @@ local function tradeFrame()
   return _G.WoWderhoiAHTrade or error("trade frame not built -- call WowTest.openTab() first")
 end
 
-function bed.fireEvent(event)
+function bed.fireEvent(event, ...)
   for _, frame in ipairs(bed.frames) do
     if frame._events[event] and frame._scripts.OnEvent then
-      frame._scripts.OnEvent(frame, event)
+      frame._scripts.OnEvent(frame, event, ...)
     end
   end
 end
@@ -321,6 +347,65 @@ function bed.headerColor(text)
   error("no header labelled '" .. text .. "'")
 end
 function frameMeta:SetTextColor(red, green, blue) self._color = { red, green, blue } end
+
+-- ============================== Geometry ==============================
+
+-- The panel pins two corners to AuctionFrame, so its own height follows
+-- from the client's. Resolving it here means a layout test measures the
+-- box the client would lay out rather than a number copied into the test.
+function bed.panelHeight()
+  local panel = tradeFrame()
+  return AuctionFrame:GetHeight() + panel._points.TOPLEFT.y - panel._points.BOTTOMRIGHT.y
+end
+
+-- Smallest gap between the panel's edge and anything anchored to it, per
+-- side. The backdrop draws its border inside these same bounds, so this is
+-- exactly the room the border art has to occupy without content on top.
+function bed.panelClearance(side)
+  local panel = tradeFrame()
+  local least = nil
+  local function keep(value)
+    if not least or value < least then least = value end
+  end
+  for _, frame in ipairs(bed.frames) do
+    if frame._parent == panel and frame._points then
+      for point, anchor in pairs(frame._points) do
+        if anchor.to == panel and point:find(side) then
+          if side == "LEFT" then keep(anchor.x)
+          elseif side == "RIGHT" then keep(-anchor.x)
+          elseif side == "TOP" then keep(-anchor.y)
+          else keep(anchor.y) end
+        end
+      end
+    end
+  end
+  -- Rows hang off the top edge, so their lower edge -- not their anchor --
+  -- is what the bottom border has to clear.
+  if side == "BOTTOM" then
+    local last = panel.rows[#panel.rows]
+    keep(bed.panelHeight() + last._points.TOPLEFT.y - last._height)
+  end
+  return least
+end
+
+function bed.backdropInset(side) return tradeFrame()._backdrop.insets[side] end
+function bed.visibleRows() return #tradeFrame().rows end
+
+-- A FontString pinned to a fixed width inside a fixed-height row must not
+-- be allowed to wrap: a second line grows past the row and lands on the
+-- next one. Counts the ones still able to.
+function bed.wrappingCells()
+  local panel = tradeFrame()
+  local wrapping = 0
+  local function check(fontString)
+    if fontString._width and fontString._wordWrap ~= false then wrapping = wrapping + 1 end
+  end
+  for _, label in ipairs(panel.headers) do check(label) end
+  for _, row in ipairs(panel.rows) do
+    for _, cell in ipairs(row.cells) do check(cell) end
+  end
+  return wrapping
+end
 
 function bed.chatCount() return #bed.chat end
 function bed.lastChat() return bed.plain(bed.chat[#bed.chat] or "") end

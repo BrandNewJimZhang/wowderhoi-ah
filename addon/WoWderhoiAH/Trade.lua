@@ -10,8 +10,13 @@
 local ADDON_NAME, WAH = ...
 local L = WAH.L
 
-local ROWS_VISIBLE = 12
+local ROWS_VISIBLE = 12 -- replaced in createTradeFrame by what the panel actually fits
 local ROW_HEIGHT = 22
+-- The backdrop draws its border art inside the frame's own bounds, so a
+-- child anchored at the edge is painted on the bevel. Every child keeps PAD
+-- clear of all four sides; PAD is wider than the backdrop's declared inset
+-- because the dialog-box border's visible bevel runs past it.
+local PAD = 8
 -- Deal-radar thresholds live in WAH.RADAR (GeneratedRules.lua, compiled from
 -- src/lib/market-rules.ts) so the in-game radar and the desktop terminal
 -- classify every scan identically.
@@ -332,8 +337,10 @@ end)
 
 local function createTradeFrame()
   trade = CreateFrame("Frame", "WoWderhoiAHTrade", AuctionFrame, "BackdropTemplate")
-  trade:SetPoint("TOPLEFT", AuctionFrame, "TOPLEFT", 22, -70)
-  trade:SetPoint("BOTTOMRIGHT", AuctionFrame, "BOTTOMRIGHT", -10, 38)
+  -- Named because the row count is derived from what these two leave over.
+  local TOP_INSET, BOTTOM_INSET = 70, 38
+  trade:SetPoint("TOPLEFT", AuctionFrame, "TOPLEFT", 22, -TOP_INSET)
+  trade:SetPoint("BOTTOMRIGHT", AuctionFrame, "BOTTOMRIGHT", -10, BOTTOM_INSET)
   -- Own opaque panel: without it the transparent frame shows whatever art
   -- the previously active tab left behind — Blizzard's or, when Auctionator
   -- is loaded, its independently rendered background. Sit above the AH so
@@ -347,12 +354,12 @@ local function createTradeFrame()
   })
 
   trade.title = trade:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  trade.title:SetPoint("TOPLEFT", 0, -2)
+  trade.title:SetPoint("TOPLEFT", PAD, -PAD)
   trade.title:SetText(L.TRADE_TITLE)
 
   trade.searchBox = CreateFrame("EditBox", "WoWderhoiAHTradeSearch", trade, "SearchBoxTemplate")
   trade.searchBox:SetSize(180, 20)
-  trade.searchBox:SetPoint("TOPLEFT", 4, -22)
+  trade.searchBox:SetPoint("TOPLEFT", PAD, -26)
   trade.searchBox:SetAutoFocus(false)
   trade.searchBox:SetScript("OnEnterPressed", runSearch)
 
@@ -383,8 +390,10 @@ local function createTradeFrame()
   -- Table header row: fixed columns, right-aligned numbers. Price
   -- columns are fixed-width so long values can never collide with the
   -- item name, which truncates with an ellipsis instead of overflowing.
-  local HEADER_Y = -50
+  local HEADER_Y = -54
   local COL_BUY_W, COL_W, COL_GAP = 60, 92, 8
+  local SCROLL_W = 24 -- right gutter the FauxScrollFrame's bar occupies
+  local ICON_X, ICON_W, NAME_GAP = 4, 18, 6 -- row art; the item header aligns to the name
   -- FontStrings take no clicks, so a header is a label plus a transparent
   -- button covering it; the label keeps the anchor, width and
   -- justification the whole layout is built on. Which column a slot holds
@@ -398,7 +407,7 @@ local function createTradeFrame()
   end
 
   trade.headItem = trade:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  trade.headItem:SetPoint("TOPLEFT", 26, HEADER_Y)
+  trade.headItem:SetPoint("TOPLEFT", PAD + ICON_X + ICON_W + NAME_GAP, HEADER_Y)
   trade.headItem:SetText(L.COL_ITEM)
   makeSortable(trade.headItem, function() sortByKey("name", true) end)
 
@@ -406,9 +415,12 @@ local function createTradeFrame()
   for slot = 1, COL_COUNT do
     local label = trade:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     label:SetPoint("TOPRIGHT", trade, "TOPRIGHT",
-      -(24 + COL_BUY_W + COL_GAP + (COL_COUNT - slot) * (COL_W + COL_GAP)), HEADER_Y)
+      -(SCROLL_W + COL_BUY_W + COL_GAP + (COL_COUNT - slot) * (COL_W + COL_GAP)), HEADER_Y)
     label:SetWidth(COL_W)
     label:SetJustifyH("RIGHT")
+    -- Fixed width in a fixed-height row: wrapping would push a second line
+    -- onto the row below, so a long label truncates instead.
+    label:SetWordWrap(false)
     makeSortable(label, function()
       local column = columnAt(slot)
       if column then sortByKey(column.key, column.asc) end
@@ -417,14 +429,21 @@ local function createTradeFrame()
   end
   local headerLine = trade:CreateTexture(nil, "ARTWORK")
   headerLine:SetColorTexture(0.6, 0.5, 0.3, 0.6)
-  headerLine:SetPoint("TOPLEFT", 0, HEADER_Y - 14)
-  headerLine:SetPoint("TOPRIGHT", -24, HEADER_Y - 14)
+  headerLine:SetPoint("TOPLEFT", PAD, HEADER_Y - 14)
+  headerLine:SetPoint("TOPRIGHT", -SCROLL_W, HEADER_Y - 14)
   headerLine:SetHeight(1)
 
-  local ROWS_TOP = -68
+  local ROWS_TOP = -72
+  -- Whatever the panel has left after the header block, minus the bottom
+  -- border. Hardcoding 12 is what put the last row on the frame's edge:
+  -- AuctionFrame is 447 tall, this page keeps 70 above and 38 below, and
+  -- 12 rows of 22 overran what remained by all but 7px.
+  local rowSpace = (AuctionFrame:GetHeight() or 447) - TOP_INSET - BOTTOM_INSET + ROWS_TOP - PAD
+  ROWS_VISIBLE = math.max(math.floor(rowSpace / ROW_HEIGHT), 1)
+
   trade.scroll = CreateFrame("ScrollFrame", "WoWderhoiAHTradeScroll", trade, "FauxScrollFrameTemplate")
-  trade.scroll:SetPoint("TOPLEFT", 0, ROWS_TOP)
-  trade.scroll:SetPoint("BOTTOMRIGHT", -24, 2)
+  trade.scroll:SetPoint("TOPLEFT", PAD, ROWS_TOP)
+  trade.scroll:SetPoint("BOTTOMRIGHT", -SCROLL_W, PAD)
   trade.scroll:SetScript("OnVerticalScroll", function(self, delta)
     FauxScrollFrame_OnVerticalScroll(self, delta, ROW_HEIGHT, renderRows)
   end)
@@ -433,8 +452,8 @@ local function createTradeFrame()
   for rowIndex = 1, ROWS_VISIBLE do
     local rowFrame = CreateFrame("Frame", nil, trade)
     rowFrame:SetHeight(ROW_HEIGHT)
-    rowFrame:SetPoint("TOPLEFT", 0, ROWS_TOP - (rowIndex - 1) * ROW_HEIGHT)
-    rowFrame:SetPoint("TOPRIGHT", trade, "TOPRIGHT", -24, ROWS_TOP - (rowIndex - 1) * ROW_HEIGHT)
+    rowFrame:SetPoint("TOPLEFT", PAD, ROWS_TOP - (rowIndex - 1) * ROW_HEIGHT)
+    rowFrame:SetPoint("TOPRIGHT", trade, "TOPRIGHT", -SCROLL_W, ROWS_TOP - (rowIndex - 1) * ROW_HEIGHT)
     -- Zebra shading + a hairline separator under every row.
     if rowIndex % 2 == 0 then
       local shade = rowFrame:CreateTexture(nil, "BACKGROUND")
@@ -447,8 +466,8 @@ local function createTradeFrame()
     separator:SetPoint("BOTTOMRIGHT", 0, 0)
     separator:SetHeight(1)
     rowFrame.icon = rowFrame:CreateTexture(nil, "ARTWORK")
-    rowFrame.icon:SetSize(18, 18)
-    rowFrame.icon:SetPoint("LEFT", 4, 0)
+    rowFrame.icon:SetSize(ICON_W, ICON_W)
+    rowFrame.icon:SetPoint("LEFT", ICON_X, 0)
     rowFrame.buy = CreateFrame("Button", nil, rowFrame, "UIPanelButtonTemplate")
     rowFrame.buy:SetSize(COL_BUY_W, 18)
     rowFrame.buy:SetPoint("RIGHT", 0, 0)
@@ -459,11 +478,12 @@ local function createTradeFrame()
       cell:SetPoint("RIGHT", anchor, "LEFT", -COL_GAP, 0)
       cell:SetWidth(COL_W)
       cell:SetJustifyH("RIGHT")
+      cell:SetWordWrap(false) -- a wrapped value would grow past ROW_HEIGHT
       rowFrame.cells[slot] = cell
       anchor = cell
     end
     rowFrame.name = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    rowFrame.name:SetPoint("LEFT", rowFrame.icon, "RIGHT", 6, 0)
+    rowFrame.name:SetPoint("LEFT", rowFrame.icon, "RIGHT", NAME_GAP, 0)
     rowFrame.name:SetPoint("RIGHT", rowFrame.cells[1], "LEFT", -COL_GAP, 0)
     rowFrame.name:SetJustifyH("LEFT")
     rowFrame.name:SetWordWrap(false) -- long names truncate with an ellipsis
