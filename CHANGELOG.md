@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.3.0 — 2026-11-05
+
+### Changed
+
+- Target WoW Forever (client 1.60.1, `Interface: 16001`). The repository
+  now has two long-lived branches and no `main`: `forever` (default) and
+  `anniversary` (TBC 2.5.6 maintenance). Shared work lands on `forever`
+  and is merged into `anniversary`.
+- The addon's scanner is rewritten for the modern `C_AuctionHouse` API:
+  `ReplicateItems()` replaces the legacy `QueryAuctionItems` getAll path
+  and the paged fallback. The per-frame cursor now advances *before* the
+  budget check, fixing an off-by-one that skipped one row at every
+  200-row boundary.
+- The WAH trade page is a standalone panel anchored beside the modern
+  auction house, opened from the addon compartment, `/wahtrade`, or
+  automatically with the AH. It no longer injects an `AuctionFrame` tab.
+- Buying goes through the modern API: item auctions are bought out by
+  auction ID after re-reading the live buyout; commodities are purchased
+  by quantity at the verified market price and confirmed in the client's
+  own dialog.
+- Sell prefill is replaced by `/wahprice` (cursor item or item link),
+  because the modern client exposes no sell-slot query to addons.
+- The Lua test suite now models the Forever client (modern AH API,
+  `AuctionHouseFrame`) and covers replicate scanning, commodity buying,
+  and the price guide.
+
+### Added
+
+- `docs/in-game-design-review.md` — feature-design review and roadmap.
+- Addon compartment entry point (`AddonCompartmentFunc`).
+
 ## v0.2.1 — 2026-07-27
 
 ### Changed
