@@ -23,7 +23,7 @@
 local bed = { chat = {}, frames = {}, timers = {}, hooks = {}, listings = {}, itemInfo = {}, ns = {} }
 WowTest = bed
 
-local NOW = 1700000000 -- fixed clock; a real time() would make med7 windows flaky
+local NOW = 1700000000 -- fixed clock; real time() would make history windows flaky
 local clockOffset = 0
 -- Tests that need two adjacent scans advance this instead of sleeping.
 function bed.advance(seconds) clockOffset = clockOffset + (seconds or 0) end
