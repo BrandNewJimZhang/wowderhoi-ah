@@ -778,7 +778,8 @@ function WAH.coreInput()
   local override = WAH.settings and WAH.settings.phaseOverride
   if override and override ~= "auto" then input.phaseOverride = override end
   local ledger = WAH.Ledger and WAH.Ledger.current() or nil
-  local ownSales = ledger and WAH.Ledger.salesSince(7 * 24 * 3600, input.now) or {}
+  local ownWindowDays = (WAH.RULES.fill and WAH.RULES.fill.ownSalesWindowDays) or 7
+  local ownSales = ledger and WAH.Ledger.salesSince(ownWindowDays * 24 * 3600, input.now) or {}
   for itemId, entry in pairs(scan.items or {}) do
     if entry.minPrice and entry.minPrice > 0 then
       local history = WAH.history(itemId)
