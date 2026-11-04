@@ -29,23 +29,24 @@ export function diffScanItems(items: AddonScanItem[], existing: ExistingItemRow[
       });
     } else {
       // Item data arrives lazily in the modern client: a scan can report
-      // "unknown" before the item record loads, and that miss reports a zero
-      // vendor price too. Never let an unresolved row overwrite known data,
+      // "unknown" class, quality and a zero vendor price before the item
+      // record loads. Never let an unresolved field overwrite known data,
       // but do let a later loaded record fix an earlier unknown.
       const unresolved = item.category === "unknown";
+      const quality = item.quality === "unknown" ? current.quality : item.quality;
       const category = unresolved ? current.category : item.category;
       const subCategory = unresolved ? current.subCategory : item.subCategory;
       const vendorPrice = unresolved && current.vendorPrice > 0 ? current.vendorPrice : item.vendorPrice;
       if (
         current.name !== item.name
-        || current.quality !== item.quality
+        || current.quality !== quality
         || current.category !== category
         || current.subCategory !== subCategory
         || current.vendorPrice !== vendorPrice
       ) {
         updates.push({
           itemId: item.itemId,
-          data: { name: item.name, quality: item.quality, category, subCategory, vendorPrice }
+          data: { name: item.name, quality, category, subCategory, vendorPrice }
         });
       }
     }
