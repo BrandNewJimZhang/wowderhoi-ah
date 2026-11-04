@@ -100,7 +100,6 @@ model Position {
   itemId    Int      @map("item_id")
   qty       Int
   costBasis Int      @map("cost_basis")
-  openedAt  DateTime @map("opened_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   market    Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
 
@@ -117,7 +116,6 @@ model Trade {
   qty        Int
   price      Int
   fee        Int      @default(0)
-  basis      Int      @default(0)
   pnl        Int
   channel    String // auction | vendor | disenchant | ...
   inferred   Boolean  @default(false) // labelled: the client exposes no sale event

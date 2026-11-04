@@ -99,24 +99,18 @@ export async function POST(request: Request) {
   ];
 
   if (replay) {
-    const positions = Object.entries(replay.positions).map(([itemId, position]) => {
-      const lots = replay.lots[Number(itemId)] ?? [];
-      const openedAt = lots[0]?.at ? new Date(lots[0].at * 1000) : scan.scannedAt;
-      return {
-        marketId: market.id,
-        itemId: Number(itemId),
-        qty: position.qty,
-        costBasis: position.cost,
-        openedAt
-      };
-    });
+    const positions = Object.entries(replay.positions).map(([itemId, position]) => ({
+      marketId: market.id,
+      itemId: Number(itemId),
+      qty: position.qty,
+      costBasis: position.cost
+    }));
     const trades = replay.trades.map((trade) => ({
       marketId: market.id,
       itemId: trade.itemId ?? 0,
       qty: trade.qty,
       price: trade.price,
       fee: trade.fee,
-      basis: trade.basis,
       pnl: trade.pnl,
       channel: trade.channel,
       inferred: trade.inferred,
