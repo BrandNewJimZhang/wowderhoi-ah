@@ -22,12 +22,12 @@ export async function getMarketScope(): Promise<MarketScope | null> {
     if (!market) throw new Error(`AQT_MARKET points at ${realm}|${faction}, but no such market has been imported`);
     return market;
   }
+  // Every snapshot belongs to a market, so the newest one names the scope.
   const latest = await prisma.auctionSnapshot.findFirst({
-    where: { marketId: { not: null } },
     orderBy: { timestamp: "desc" },
     select: { marketId: true }
   });
-  if (latest?.marketId) {
+  if (latest) {
     const market = await prisma.market.findUnique({ where: { id: latest.marketId } });
     if (market) return market;
   }

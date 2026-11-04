@@ -6,11 +6,14 @@ import { prisma } from "@/lib/prisma";
 import type { MarketBundle } from "@/lib/market-signals";
 
 export async function recordDecisions(bundle: MarketBundle): Promise<void> {
-  if (!bundle.latestSnapshotAt) return;
+  // A decision belongs to a market; without a scope there is no market to
+  // record it against, so an empty bundle never writes a row.
+  const scope = bundle.scope;
+  if (!bundle.latestSnapshotAt || !scope) return;
   const at = bundle.latestSnapshotAt;
   const rows = bundle.evaluation.actions.slice(0, 12).map((action) => ({
     at,
-    marketId: bundle.scope?.id,
+    marketId: scope.id,
     phase: bundle.phase,
     itemId: action.itemId,
     kind: action.kind,
@@ -18,8 +21,8 @@ export async function recordDecisions(bundle: MarketBundle): Promise<void> {
       breadth: bundle.evaluation.breadth,
       ageHours: bundle.evaluation.ageHours,
       dataAgeMinutes: bundle.evaluation.dataAgeMinutes,
-      realm: bundle.scope?.realm,
-      faction: bundle.scope?.faction
+      realm: scope.realm,
+      faction: scope.faction
     },
     candidates: bundle.evaluation.rows.slice(0, 12).map((row) => ({
       itemId: row.itemId,
@@ -33,7 +36,7 @@ export async function recordDecisions(bundle: MarketBundle): Promise<void> {
     reason: action.reason
   }));
   await prisma.$transaction([
-    prisma.decision.deleteMany({ where: { at, marketId: bundle.scope?.id ?? null } }),
+    prisma.decision.deleteMany({ where: { at, marketId: scope.id } }),
     ...(rows.length > 0 ? [prisma.decision.createMany({ data: rows })] : [])
   ]);
 }

@@ -46,7 +46,7 @@ model AuctionSnapshot {
   id               String   @id @default(cuid())
   itemId           Int      @map("item_id")
   timestamp        DateTime
-  marketId         String?  @map("market_id")
+  marketId         String   @map("market_id")
   // A snapshot is one item's observation from one scan. `priced = false`
   // marks a demand-only row: the item had bid-only listings and no buyout,
   // so every price column is zero and only `bidOnlyCount`/`highestBid` are
@@ -68,7 +68,7 @@ model AuctionSnapshot {
   topTiers         Json?    @map("top_tiers")
   expiring         Json?    @map("expiring")
   item             Item     @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
-  market           Market?  @relation(fields: [marketId], references: [id], onDelete: SetNull)
+  market           Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
 
   @@unique([marketId, timestamp, itemId])
   @@index([itemId, timestamp])
@@ -78,7 +78,7 @@ model AuctionSnapshot {
 model DailySummary {
   id         String   @id @default(cuid())
   itemId     Int      @map("item_id")
-  marketId   String?  @map("market_id")
+  marketId   String   @map("market_id")
   date       DateTime
   openPrice  Int      @map("open_price")
   closePrice Int      @map("close_price")
@@ -86,7 +86,7 @@ model DailySummary {
   lowPrice   Int      @map("low_price")
   volume     Int
   item       Item     @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
-  market     Market?  @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  market     Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
 
   @@unique([marketId, itemId, date])
   @@index([marketId, date])
@@ -132,7 +132,7 @@ model Trade {
 // terminal; used for review and propensity correction.
 model Decision {
   id         String   @id @default(cuid())
-  marketId   String?  @map("market_id")
+  marketId   String   @map("market_id")
   at         DateTime
   phase      String
   itemId     Int?     @map("item_id")
@@ -141,8 +141,7 @@ model Decision {
   candidates Json?
   chosen     Json?
   reason     String?
-  outcomeId  String?  @map("outcome_id")
-  market     Market?  @relation(fields: [marketId], references: [id], onDelete: SetNull)
+  market     Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
 
   @@index([at])
   @@index([itemId])
@@ -189,7 +188,6 @@ model AlertRule {
   operator   String
   threshold  Float
   enabled    Boolean   @default(true)
-  lastSignal DateTime? @map("last_signal")
   item       Item      @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
 
   @@index([enabled])
