@@ -45,6 +45,14 @@ describe("decision core parity", () => {
     expect(lua.number("WowTest.ns.Core.listPrice(50, 100, WowTest.ns.RULES)")).toBe(101);
   });
 
+  it("walks the ladder cheapest-first and refuses a short book", () => {
+    const lua = loadAddon();
+    // 5 units at 100 + 3 units at 200 = 1100; the purchase page must quote
+    // the same total the core would plan against.
+    expect(lua.number("WowTest.ns.Core.ladderCost({ { p = 200, q = 5 }, { p = 100, q = 5 } }, 8)")).toBe(1100);
+    expect(lua.eval("WowTest.ns.Core.ladderCost({ { p = 100, q = 5 } }, 6)")).toBeNull();
+  });
+
   it("exposes the sell plan arithmetic through the same core", () => {
     const lua = loadAddon();
     const plan = lua.eval(

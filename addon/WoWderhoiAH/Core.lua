@@ -136,6 +136,22 @@ function Core.executableQty(tiers, priceCap, budget, bagCapacity)
   return quantity, cost, cost / quantity
 end
 
+-- Cost of buying exactly `quantity` units, cheapest offers first. Returns
+-- nil when the visible book cannot fill the order: the callers quote a price
+-- they could not pay otherwise. The UI's purchase estimate and the core's
+-- ladder walk must agree, so this is the only quantity-walk authority.
+function Core.ladderCost(tiers, quantity)
+  if not quantity or quantity <= 0 then return 0 end
+  local remaining, cost = quantity, 0
+  for _, tier in ipairs(Core.sortedTiers(tiers)) do
+    local take = math.min(remaining, tier.q)
+    cost = cost + take * tier.p
+    remaining = remaining - take
+    if remaining <= 0 then return cost end
+  end
+  return nil
+end
+
 function Core.netIfSold(listPrice, quantity, unitCost, feeRate)
   local fee = feeRate or 0
   return listPrice * quantity * (1 - fee) - unitCost * quantity

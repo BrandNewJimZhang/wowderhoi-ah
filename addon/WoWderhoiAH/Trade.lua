@@ -261,17 +261,11 @@ end
 -- the cost of buying N units is not N times any single row's price. Returns
 -- nil when the visible book cannot fill the quantity.
 local function commodityCost(quantity)
-  local offers = {}
-  for _, row in ipairs(results) do offers[#offers + 1] = row end
-  table.sort(offers, function(left, right) return left.unitPrice < right.unitPrice end)
-  local remaining, total = quantity, 0
-  for _, offer in ipairs(offers) do
-    local take = math.min(remaining, offer.count)
-    total = total + take * offer.unitPrice
-    remaining = remaining - take
-    if remaining <= 0 then return total end
-  end
-  return nil
+  -- The purchase walks the whole offer ladder, never just the clicked row,
+  -- and must price it exactly the way the decision core does.
+  local tiers = {}
+  for _, row in ipairs(results) do tiers[#tiers + 1] = { p = row.unitPrice, q = row.count } end
+  return WAH.Core.ladderCost(tiers, quantity)
 end
 
 local runSearch -- forward declaration
