@@ -100,7 +100,6 @@ local function collectBag()
             itemId = info.itemID,
             name = info.itemName or ("item:" .. info.itemID),
             icon = info.iconFileID,
-            quality = info.quality,
             count = 0,
             bag = bag,
             slot = slot
