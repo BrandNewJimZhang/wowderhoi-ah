@@ -52,6 +52,13 @@ describe("filterSortSignals", () => {
     expect(filterSortSignals(signals, { sortKey: "changePercent", sortAsc: true }).map((signal) => signal.itemId)[0]).toBe(1);
   });
 
+  it("keeps delisted rows below every tradeable row under any sort", () => {
+    const stale = makeSignal({ itemId: 9, name: "下架货", sellPrice: 9999, spreadPercent: 99, stale: true });
+    const fresh = makeSignal({ itemId: 8, name: "在售货", sellPrice: 10, spreadPercent: 1 });
+    expect(filterSortSignals([stale, fresh], { sortKey: "sellPrice" }).map((signal) => signal.itemId)).toEqual([8, 9]);
+    expect(filterSortSignals([stale, fresh], { sortKey: "spreadPercent" }).map((signal) => signal.itemId)).toEqual([8, 9]);
+  });
+
   it("composes query, category, and sort without mutating the input", () => {
     const result = filterSortSignals(signals, { query: "矿", category: "矿石", sortKey: "sellPrice", sortAsc: true });
     expect(result.map((signal) => signal.itemId)).toEqual([1, 2]);

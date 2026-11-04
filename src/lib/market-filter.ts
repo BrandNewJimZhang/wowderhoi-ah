@@ -36,10 +36,15 @@ export function filterSortSignals(
   let rows = signals;
   if (query) rows = rows.filter((signal) => signal.name.toLowerCase().includes(query));
   if (view.category) rows = rows.filter((signal) => signal.category === view.category);
+  // Delisted items keep their last book in the monitor, but they must never
+  // outrank a tradeable row: an old wide spread is not an opportunity.
+  const freshFirst = (left: MarketSignal, right: MarketSignal) => Number(left.stale) - Number(right.stale);
   if (view.sortKey) {
     const key = view.sortKey;
     const direction = view.sortAsc ? 1 : -1;
-    rows = [...rows].sort((left, right) => (left[key] - right[key]) * direction);
+    rows = [...rows].sort((left, right) => freshFirst(left, right) || (left[key] - right[key]) * direction);
+  } else {
+    rows = [...rows].sort(freshFirst);
   }
   return rows;
 }
