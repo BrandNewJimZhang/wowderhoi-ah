@@ -1,45 +1,63 @@
--- In-game price intelligence: trader tooltip section and a hand-drawn
--- line chart fed by WoWderhoiAH_Points, the scan-to-scan price points
--- the scanner accumulates in this client — no desktop roundtrip.
+-- In-game price intelligence: the trader tooltip section, the order-book
+-- and time-series chart, and the diagnostic command.
+--
+-- The anchor is the sell front, not a P10 median. The tooltip shows what
+-- to list at first, then the book and supply behind it, and keeps P10 in a
+-- statistics line. The chart defaults to the order book -- the one picture
+-- that still means something before two scans exist -- and switches to a
+-- time series with explicit windows when history is available.
 
 local ADDON_NAME, WAH = ...
 local L = WAH.L
 local coinString = WAH.coinString
 local getItemInfo = WAH.getItemInfo
 
-local EPOCH_DAY = 24 * 60 * 60
+local HOUR = 60 * 60
+local DAY = 24 * HOUR
 
 local function historyFor(itemId)
   return WAH.history and WAH.history(itemId)
 end
 
-local function trendText(latest, med7)
-  if med7 == 0 then return "" end
-  local delta = (latest - med7) / med7 * 100
-  if delta > 3 then
-    return string.format("|cffff5555" .. L.TT_TREND_VS .. "|r", delta)
-  elseif delta < -3 then
-    return string.format("|cff55ff55" .. L.TT_TREND_VS .. "|r", delta)
-  end
-  return string.format("|cffcccccc" .. L.TT_TREND_VS .. "|r", delta)
+local function currentItem(itemId)
+  local scan = WoWderhoiAH_ScanData
+  if not scan or scan.dataVersion ~= WAH.PIPELINE_VERSION then return nil end
+  return scan.items and scan.items[itemId]
+end
+
+local function phaseLabel(phase)
+  return (L.PHASE_LABELS and L.PHASE_LABELS[phase]) or phase or "?"
+end
+
+local function trendText(latest, reference, windowHours)
+  if not reference or reference <= 0 then return "" end
+  local delta = (latest - reference) / reference * 100
+  local color = delta > 3 and "|cffff5555" or (delta < -3 and "|cff55ff55" or "|cffcccccc")
+  return string.format(color .. L.TT_TREND_VS .. "|r", delta, windowHours)
 end
 
 local function rangeText(entry)
-  local minClose, maxClose = math.huge, 0
-  for _, point in ipairs(entry.pts) do
-    if point.c < minClose then minClose = point.c end
-    if point.c > maxClose then maxClose = point.c end
-  end
-  if maxClose == 0 or maxClose == minClose then return nil end
-  local percentile = (entry.latest - minClose) / (maxClose - minClose) * 100
+  if not entry or not entry.minSell or entry.maxSell == entry.minSell then return nil end
+  local percentile = entry.latest and entry.maxSell > entry.minSell
+    and (entry.latest - entry.minSell) / (entry.maxSell - entry.minSell) * 100 or 50
   return string.format(L.TT_RANGE_NOW,
-    coinString(minClose), coinString(maxClose), percentile)
+    coinString(entry.minSell), coinString(entry.maxSell), percentile)
+end
+
+local function ladderText(entry)
+  if not entry.tiers or #entry.tiers == 0 then return nil end
+  local parts = {}
+  for index = 1, math.min(3, #entry.tiers) do
+    local tier = entry.tiers[index]
+    parts[#parts + 1] = string.format("%s(%d)", coinString(tier.p), tier.q)
+  end
+  return table.concat(parts, " |cff666666/|r ")
 end
 
 -- Trader tooltip section: everywhere an item tooltip renders
 -- (bags, AH, chat links, bank).
 local lastTooltipItemId = nil
-local chart = nil -- declared before the hooks below close over it
+local chart = nil
 
 local function appendTraderSection(tooltip)
   if tooltip ~= GameTooltip then return end
@@ -50,12 +68,7 @@ local function appendTraderSection(tooltip)
   local itemId = tonumber(link:match("item:(%d+)"))
   if not itemId then return end
   lastTooltipItemId = itemId
-  -- Session scan is the live view (AH prices swing by the hour);
-  -- history is context. Show live first, one price per line.
-  local scanned = WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.dataVersion == WAH.PIPELINE_VERSION
-    and WoWderhoiAH_ScanData.items and WoWderhoiAH_ScanData.items[itemId]
-  -- Old-pipeline scan on disk: rejected by the version gate, but say so
-  -- visibly instead of silently dropping the section.
+  local scanned = currentItem(itemId)
   local staleScan = not scanned and WoWderhoiAH_ScanData
     and WoWderhoiAH_ScanData.dataVersion ~= WAH.PIPELINE_VERSION and WoWderhoiAH_ScanData.items ~= nil
   local entry = historyFor(itemId)
@@ -66,41 +79,49 @@ local function appendTraderSection(tooltip)
   if staleScan then
     tooltip:AddLine("|cffff8800" .. L.TT_SCAN_STALE .. "|r")
   end
+  local phase = WAH.currentPhase and WAH.currentPhase() or "steady"
   if scanned then
     local age = math.floor((time() - (WoWderhoiAH_ScanData.scannedAt or time())) / 60)
-    tooltip:AddDoubleLine(string.format(L.TT_SCAN_HEADER, age), "")
-    -- Sell front leads every other price: it is the action anchor
-    -- (what to list at), the rest is context. Orange to stand out.
+    local stale = age >= 30
+    tooltip:AddDoubleLine(string.format(L.TT_SCAN_HEADER, age) .. " |cff888888" .. phaseLabel(phase) .. "|r", "")
+    -- Sell front leads every other price: it is the action anchor.
     if scanned.sellP then
       tooltip:AddDoubleLine("  |cffff9933" .. L.TT_SELLP .. "|r", coinString(scanned.sellP))
     end
     tooltip:AddDoubleLine("  " .. L.TT_MIN, coinString(scanned.minPrice))
-    if scanned.p5 then tooltip:AddDoubleLine("  P5", coinString(scanned.p5)) end
-    tooltip:AddDoubleLine("  P10", coinString(scanned.marketPrice))
-    tooltip:AddDoubleLine("  " .. L.TT_SUPPLY, string.format(L.TT_SUPPLY_FMT, scanned.quantity, scanned.numAuctions))
+    local ladder = ladderText(scanned)
+    if ladder then tooltip:AddDoubleLine("  " .. L.TT_LADDER, ladder) end
+    tooltip:AddDoubleLine("  " .. L.TT_SUPPLY, string.format(L.TT_SUPPLY_FMT,
+      scanned.quantity or 0, scanned.numAuctions or 0, scanned.sellers or 0))
+    if scanned.inferredSold and scanned.inferredSold > 0 then
+      tooltip:AddDoubleLine("  " .. L.TT_INFERRED, string.format(L.TT_INFERRED_FMT, scanned.inferredSold))
+    end
+    -- P10 is a statistic, never a decision anchor.
+    tooltip:AddDoubleLine("  |cff888888" .. L.TT_P10_STAT .. "|r", coinString(scanned.marketPrice or 0))
+    if stale then tooltip:AddLine("|cffff8800" .. L.TT_SCAN_STALE .. "|r") end
   end
   if entry then
     if scanned then tooltip:AddLine(" ") end
-    tooltip:AddDoubleLine(L.TT_HISTORY_HEADER, "")
-    tooltip:AddDoubleLine("  " .. L.TT_MED7, coinString(entry.med7))
-    local trend = trendText(scanned and scanned.marketPrice or entry.latest, entry.med7)
-    if trend ~= "" then tooltip:AddDoubleLine("  " .. L.TT_TREND, trend) end
+    local window = entry.windowHours or 168
+    tooltip:AddDoubleLine(string.format(L.TT_HISTORY_HEADER, window), "")
+    tooltip:AddDoubleLine("  " .. L.TT_SELL_REF, coinString(entry.sellRef or 0))
+    if scanned and scanned.sellP and entry.sellRef then
+      local trend = trendText(scanned.sellP, entry.sellRef, window)
+      if trend ~= "" then tooltip:AddDoubleLine("  " .. L.TT_TREND, trend) end
+    end
     local range = rangeText(entry)
     if range then tooltip:AddDoubleLine("  " .. L.TT_RANGE, range) end
   end
-  -- Trailing separator so the next addon's section does not glue to ours.
   tooltip:AddLine(" ")
   tooltip:Show()
   if WoWderhoiAH_UpdateChart then WoWderhoiAH_UpdateChart(itemId) end
 end
 
--- Tooltip pipelines differ across client builds and cannot be probed
--- offline; register every known path and dedupe per tooltip show via
--- the wahAppended flag (cleared below when the tooltip resets).
 GameTooltip:HookScript("OnTooltipCleared", function(tooltip) tooltip.wahAppended = nil end)
 GameTooltip:HookScript("OnHide", function(tooltip)
   tooltip.wahAppended = nil
-  if chart and not (AuctionFrame and AuctionFrame:IsShown()) then chart:Hide() end
+  local auctionHouse = WAH.ahFrame and WAH.ahFrame()
+  if chart and not (auctionHouse and auctionHouse:IsShown()) then chart:Hide() end
 end)
 
 if TooltipDataProcessor and Enum and Enum.TooltipDataType then
@@ -118,56 +139,332 @@ for _, method in ipairs({
   end
 end
 
--- Hand-drawn line charts: scan-to-scan closes connected with Line
--- objects (frame:CreateLine, available on the 2.5.6 anniversary
--- client), anchored beside the auction frame. Two stacked windows over
--- the same point series: last 3 hours on top, last 48 hours below.
--- Each plot owns four separate rows — caption, high/low, plot box,
--- time row — one string per row, so label widths can never collide
--- with each other or with the line (font metrics are unknowable
--- offline, so overlap is prevented structurally, not by tuning).
-local EPOCH_HOUR = 60 * 60
-local CHART_WIDTH, CHART_HEIGHT = 280, 272
+-- ============================== Chart ===============================
+
+local CHART_WIDTH, CHART_HEIGHT = 320, 320
 local PLOT_LEFT = 14
-local PLOT_WIDTH, PLOT_HEIGHT = CHART_WIDTH - 28, 60
--- Row offsets from each plot's top edge.
-local ROW_HILO, ROW_BOX, ROW_TIME = 14, 30, 92
-local PLOT_LAYOUT = {
-  { window = 3 * EPOCH_HOUR, captionKey = "CHART_RANGE_3H", top = 42 },
-  { window = 48 * EPOCH_HOUR, captionKey = "CHART_RANGE_48H", top = 152 },
+local PLOT_WIDTH = CHART_WIDTH - 28
+local PLOT_HEIGHT = 96
+local PLOT_TOP = 94
+local PLOT_BOTTOM = CHART_HEIGHT - PLOT_TOP - PLOT_HEIGHT
+
+local WINDOWS = {
+  { key = "1h", hours = 1, label = "CHART_WINDOW_1H" },
+  { key = "6h", hours = 6, label = "CHART_WINDOW_6H" },
+  { key = "24h", hours = 24, label = "CHART_WINDOW_24H" },
+  { key = "7d", hours = 168, label = "CHART_WINDOW_7D" },
+  { key = "all", hours = 0, label = "CHART_WINDOW_ALL" }
 }
 
--- Chart price labels trim minor coins — gold prices drop copper,
--- 100g+ prices drop silver too — so the H/L string stays narrow
--- enough for one row. Full precision stays on the tooltip.
-local COPPER_PER_SILVER, COPPER_PER_GOLD = 100, 100 * 100
+local chartMode = nil -- nil = automatic: book with <2 points, time otherwise
+local chartWindow = nil -- nil = phase default
+
+local function phaseWindow()
+  local phase = WAH.currentPhase and WAH.currentPhase() or "steady"
+  if phase == "ignition" then return 0 end
+  if phase == "wave" then return 6 end
+  return 24
+end
+
 local function coinLabel(amount)
-  if amount >= 100 * COPPER_PER_GOLD then
-    amount = amount - amount % COPPER_PER_GOLD
-  elseif amount >= COPPER_PER_GOLD then
-    amount = amount - amount % COPPER_PER_SILVER
+  if amount >= 100 * 10000 then
+    amount = amount - amount % 10000
+  elseif amount >= 10000 then
+    amount = amount - amount % 100
   end
   return coinString(amount)
 end
 
-local function createPlot(layout)
-  local plot = { window = layout.window, segments = {} }
-  plot.caption = chart:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  plot.caption:SetPoint("TOPLEFT", PLOT_LEFT, -layout.top)
-  plot.caption:SetText(L[layout.captionKey])
-  plot.hilo = chart:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  plot.hilo:SetPoint("TOPLEFT", PLOT_LEFT, -(layout.top + ROW_HILO))
-  plot.startLabel = chart:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-  plot.startLabel:SetPoint("TOPLEFT", PLOT_LEFT, -(layout.top + ROW_TIME))
-  plot.endLabel = chart:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-  plot.endLabel:SetPoint("TOPRIGHT", -PLOT_LEFT, -(layout.top + ROW_TIME))
-  -- Line/dot offsets anchor from the frame's BOTTOMLEFT.
-  plot.bottom = CHART_HEIGHT - layout.top - ROW_BOX - PLOT_HEIGHT
-  plot.dot = chart:CreateTexture(nil, "OVERLAY")
-  plot.dot:SetColorTexture(1.0, 1.0, 1.0, 1.0)
-  plot.dot:SetSize(4, 4)
-  plot.dot:Hide()
-  return plot
+local function ensureLine(pool, index)
+  local line = pool[index]
+  if not line then
+    line = chart:CreateLine(nil, "ARTWORK")
+    line:SetThickness(2)
+    pool[index] = line
+  end
+  return line
+end
+
+local function hideFrom(pool, index)
+  for cursor = index, #pool do pool[cursor]:Hide() end
+end
+
+local function ensureBar(index)
+  chart.bars = chart.bars or {}
+  local bar = chart.bars[index]
+  if not bar then
+    bar = chart:CreateTexture(nil, "BACKGROUND")
+    bar:SetColorTexture(0.2, 0.35, 0.55, 0.7)
+    chart.bars[index] = bar
+  end
+  return bar
+end
+
+local function hideBarsFrom(index)
+  chart.bars = chart.bars or {}
+  for cursor = index, #chart.bars do chart.bars[cursor]:Hide() end
+end
+
+local function ensureDot(index)
+  chart.dots = chart.dots or {}
+  local dot = chart.dots[index]
+  if not dot then
+    dot = chart:CreateTexture(nil, "OVERLAY")
+    dot:SetColorTexture(1, 0.6, 0.2, 1)
+    dot:SetSize(5, 5)
+    chart.dots[index] = dot
+  end
+  return dot
+end
+
+local function hideDotsFrom(index)
+  chart.dots = chart.dots or {}
+  for cursor = index, #chart.dots do chart.dots[cursor]:Hide() end
+end
+
+local function setState(state)
+  chart._state = state
+end
+
+local function renderBook(entry)
+  chart.segments = chart.segments or {}
+  local tiers = entry.tiers or {}
+  if #tiers == 0 then
+    chart.hilo:SetText(L.CHART_NO_BOOK)
+    chart.startLabel:SetText("")
+    chart.endLabel:SetText("")
+    hideFrom(chart.segments, 1)
+    hideBarsFrom(1)
+    hideDotsFrom(1)
+    setState({ mode = "book", points = 0, title = chart.title:GetText() })
+    return
+  end
+  local total = 0
+  for _, tier in ipairs(tiers) do total = total + tier.q end
+  local minP, maxP = tiers[1].p, tiers[#tiers].p
+  local span = math.max(maxP - minP, 1)
+  local function xFor(price) return PLOT_LEFT + (price - minP) / span * PLOT_WIDTH end
+  local function yFor(cumulative) return PLOT_BOTTOM + (total > 0 and cumulative / total or 0) * PLOT_HEIGHT end
+
+  -- Step line: each price level holds its cumulative quantity until the
+  -- next level. A vertical segment is what makes the book a staircase.
+  local cursor, cumulative = 0, 0
+  for tierIndex, tier in ipairs(tiers) do
+    local previous = cumulative
+    cumulative = cumulative + tier.q
+    cursor = cursor + 1
+    local line = ensureLine(chart.segments, cursor)
+    line:SetStartPoint("BOTTOMLEFT", chart, xFor(tier.p), yFor(previous))
+    line:SetEndPoint("BOTTOMLEFT", chart, xFor(tier.p), yFor(cumulative))
+    line:SetColorTexture(0.55, 0.75, 1, 0.9)
+    line:Show()
+    local nextPrice = tiers[tierIndex + 1] and tiers[tierIndex + 1].p or tier.p
+    if nextPrice > tier.p then
+      cursor = cursor + 1
+      local horizontal = ensureLine(chart.segments, cursor)
+      horizontal:SetStartPoint("BOTTOMLEFT", chart, xFor(tier.p), yFor(cumulative))
+      horizontal:SetEndPoint("BOTTOMLEFT", chart, xFor(nextPrice), yFor(cumulative))
+      horizontal:SetColorTexture(0.55, 0.75, 1, 0.55)
+      horizontal:Show()
+    end
+  end
+  hideFrom(chart.segments, cursor + 1)
+  hideBarsFrom(1)
+
+  local dotCount = 0
+  dotCount = dotCount + 1
+  local minDot = ensureDot(dotCount)
+  minDot:ClearAllPoints()
+  minDot:SetPoint("CENTER", chart, "BOTTOMLEFT", xFor(minP), yFor(0))
+  minDot:SetColorTexture(0.55, 0.75, 1, 1)
+  minDot:Show()
+  if entry.sellP and entry.sellP > 0 then
+    dotCount = dotCount + 1
+    local sellDot = ensureDot(dotCount)
+    sellDot:ClearAllPoints()
+    sellDot:SetPoint("CENTER", chart, "BOTTOMLEFT", xFor(entry.sellP), yFor(total))
+    sellDot:SetColorTexture(1, 0.6, 0.2, 1)
+    sellDot:Show()
+  end
+  hideDotsFrom(dotCount + 1)
+
+  chart.hilo:SetText(string.format(L.CHART_BOOK_INFO,
+    coinLabel(minP), coinLabel(entry.sellP or maxP), total))
+  chart.startLabel:SetText(coinLabel(minP))
+  chart.endLabel:SetText(coinLabel(maxP))
+  setState({
+    mode = "book",
+    points = #tiers,
+    min = minP,
+    max = maxP,
+    sellP = entry.sellP,
+    supply = total,
+    title = chart.title:GetText()
+  })
+end
+
+local function medianInterval(points)
+  if #points < 3 then return nil end
+  local gaps = {}
+  for index = 2, #points do gaps[#gaps + 1] = points[index].t - points[index - 1].t end
+  table.sort(gaps)
+  return gaps[math.ceil(#gaps / 2)]
+end
+
+local function renderTime(entry, windowHours)
+  chart.segments = chart.segments or {}
+  local now = time()
+  local cutoff = windowHours > 0 and (now - windowHours * HOUR) or 0
+  local points = {}
+  for _, point in ipairs(entry.pts or {}) do
+    if point.t >= cutoff then points[#points + 1] = point end
+  end
+  if #points < 2 then
+    chart.hilo:SetText(L.CHART_EMPTY)
+    chart.startLabel:SetText("")
+    chart.endLabel:SetText("")
+    hideFrom(chart.segments, 1)
+    hideBarsFrom(1)
+    hideDotsFrom(1)
+    setState({ mode = "time", window = windowHours, points = #points, title = chart.title:GetText() })
+    return
+  end
+  local minPrice, maxPrice = math.huge, 0
+  local maxSupply = 0
+  for _, point in ipairs(points) do
+    local sell = point.sell or point.c
+    local low = point.min or sell
+    if sell < minPrice then minPrice = sell end
+    if low < minPrice then minPrice = low end
+    if sell > maxPrice then maxPrice = sell end
+    if low > maxPrice then maxPrice = low end
+    if (point.q or 0) > maxSupply then maxSupply = point.q or 0 end
+  end
+  if minPrice == math.huge or maxPrice == 0 then
+    chart.hilo:SetText(L.CHART_EMPTY)
+    return
+  end
+  local logScale = minPrice > 0 and maxPrice / minPrice > 4
+  local firstT, lastT = points[1].t, points[#points].t
+  local timeSpan = math.max(lastT - firstT, 1)
+  local function yFor(price)
+    if maxPrice == minPrice then return PLOT_BOTTOM + PLOT_HEIGHT * 0.5 end
+    if logScale then
+      if price <= 0 or minPrice <= 0 then return PLOT_BOTTOM end
+      return PLOT_BOTTOM + math.log(price / minPrice) / math.log(maxPrice / minPrice) * PLOT_HEIGHT
+    end
+    return PLOT_BOTTOM + (price - minPrice) / (maxPrice - minPrice) * PLOT_HEIGHT
+  end
+  local function xFor(stamp) return PLOT_LEFT + (stamp - firstT) / timeSpan * PLOT_WIDTH end
+  local gapLimit = (medianInterval(points) or timeSpan) * 3
+
+  local segmentCount = 0
+  local function drawSeries(key, red, green, blue, alpha)
+    for index = 1, #points - 1 do
+      local left, right = points[index], points[index + 1]
+      if right.t - left.t <= gapLimit then
+        local leftValue, rightValue = left[key] or left.c, right[key] or right.c
+        if leftValue and rightValue then
+          segmentCount = segmentCount + 1
+          local line = ensureLine(chart.segments, segmentCount)
+          line:SetStartPoint("BOTTOMLEFT", chart, xFor(left.t), yFor(leftValue))
+          line:SetEndPoint("BOTTOMLEFT", chart, xFor(right.t), yFor(rightValue))
+          line:SetColorTexture(red, green, blue, alpha)
+          line:Show()
+        end
+      end
+    end
+  end
+  drawSeries("sell", 1, 0.6, 0.2, 0.95)
+  drawSeries("min", 0.6, 0.65, 0.75, 0.55)
+  hideFrom(chart.segments, segmentCount + 1)
+
+  local barCount = 0
+  for index, point in ipairs(points) do
+    if maxSupply > 0 and (point.q or 0) > 0 then
+      barCount = barCount + 1
+      local bar = ensureBar(barCount)
+      local height = math.max(1, (point.q or 0) / maxSupply * 18)
+      bar:ClearAllPoints()
+      bar:SetSize(math.max(PLOT_WIDTH / #points - 1, 2), height)
+      bar:SetPoint("BOTTOMLEFT", chart, xFor(point.t), PLOT_BOTTOM - 20)
+      bar:Show()
+    end
+  end
+  hideBarsFrom(barCount + 1)
+
+  local dotCount = 0
+  for _, point in ipairs(points) do
+    if point.event == 1 then
+      dotCount = dotCount + 1
+      local dot = ensureDot(dotCount)
+      dot:ClearAllPoints()
+      dot:SetPoint("CENTER", chart, "BOTTOMLEFT", xFor(point.t), yFor(point.sell or point.c))
+      dot:SetColorTexture(1, 0.8, 0.3, 1)
+      dot:Show()
+    end
+  end
+  hideDotsFrom(dotCount + 1)
+
+  local labelFormat = timeSpan < DAY and "%H:%M" or "%m-%d %H:%M"
+  chart.startLabel:SetText(date(labelFormat, firstT))
+  chart.endLabel:SetText(date(labelFormat, lastT))
+  chart.hilo:SetText(string.format(L.CHART_HILO, coinLabel(maxPrice), coinLabel(minPrice),
+    logScale and L.CHART_LOG or ""))
+  setState({
+    mode = "time",
+    window = windowHours,
+    points = #points,
+    min = minPrice,
+    max = maxPrice,
+    logScale = logScale,
+    sellRef = entry.sellRef,
+    title = chart.title:GetText(),
+    segments = segmentCount,
+    bars = barCount
+  })
+end
+
+local function renderChart(itemId)
+  local entry = currentItem(itemId)
+  local history = historyFor(itemId)
+  if not entry and not history then chart:Hide() return end
+  chart:ClearAllPoints()
+  local auctionHouse = WAH.ahFrame and WAH.ahFrame()
+  local tradePage = WAH.tradeFrame and WAH.tradeFrame()
+  if tradePage and tradePage:IsShown() then
+    chart:SetPoint("TOPLEFT", tradePage, "TOPRIGHT", 4, -12)
+  elseif auctionHouse and auctionHouse:IsShown() then
+    chart:SetPoint("TOPLEFT", auctionHouse, "TOPRIGHT", 4, -12)
+  elseif GameTooltip:IsShown() then
+    chart:SetPoint("TOPRIGHT", GameTooltip, "TOPLEFT", -4, 0)
+  else
+    chart:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+  end
+  local name = getItemInfo(itemId) or ("item:" .. itemId)
+  chart.title:SetText(name)
+
+  local hasHistory = history and #(history.pts or {}) >= 2
+  local mode = chartMode or (hasHistory and "time" or "book")
+  if mode == "time" and not hasHistory then mode = "book" end
+  local window = chartWindow or phaseWindow()
+  if mode == "book" then
+    renderBook(entry or { tiers = {} })
+    chart.subtitle:SetText(string.format(L.CHART_SUBTITLE_BOOK,
+      (entry and entry.numAuctions) or 0, phaseLabel(WAH.currentPhase and WAH.currentPhase() or "steady")))
+  else
+    renderTime(history, window)
+    chart.subtitle:SetText(string.format(L.CHART_SUBTITLE,
+      #history.pts, coinString(history.latest or 0), window > 0 and window or L.CHART_ALL_LABEL))
+  end
+  for _, button in ipairs(chart.modeButtons) do
+    button:SetText(button.mode == mode and ("|cffffd100" .. button.label .. "|r") or button.label)
+  end
+  for _, button in ipairs(chart.windowButtons) do
+    button:SetShown(mode == "time")
+    button:SetText(button.hours == window and ("|cffffd100" .. button.label .. "|r") or button.label)
+  end
+  chart:Show()
 end
 
 local function createChart()
@@ -184,75 +481,55 @@ local function createChart()
   chart.title:SetPoint("TOPLEFT", 12, -10)
   chart.subtitle = chart:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   chart.subtitle:SetPoint("TOPLEFT", 12, -26)
-  chart.plots = {}
-  for index, layout in ipairs(PLOT_LAYOUT) do
-    chart.plots[index] = createPlot(layout)
-  end
-  chart:Hide()
-end
+  chart.hilo = chart:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  chart.hilo:SetPoint("TOPLEFT", PLOT_LEFT, -(PLOT_TOP + PLOT_HEIGHT + 6))
+  chart.startLabel = chart:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+  chart.startLabel:SetPoint("TOPLEFT", PLOT_LEFT, -(PLOT_TOP + PLOT_HEIGHT + 22))
+  chart.endLabel = chart:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+  chart.endLabel:SetPoint("TOPRIGHT", -PLOT_LEFT, -(PLOT_TOP + PLOT_HEIGHT + 22))
 
-local function renderPlot(plot, pts, now)
-  local cutoff = now - plot.window
-  local points = {}
-  for _, point in ipairs(pts) do
-    if point.t >= cutoff then points[#points + 1] = point end
-  end
-  if #points < 2 then
-    plot.hilo:SetText(L.CHART_EMPTY)
-    plot.startLabel:SetText("")
-    plot.endLabel:SetText("")
-    for _, segment in ipairs(plot.segments) do segment:Hide() end
-    plot.dot:Hide()
-    return
-  end
-  local minClose, maxClose = math.huge, 0
-  for _, point in ipairs(points) do
-    if point.c < minClose then minClose = point.c end
-    if point.c > maxClose then maxClose = point.c end
-  end
-  plot.hilo:SetText(string.format(L.CHART_HILO,
-    coinLabel(maxClose), coinLabel(minClose)))
-
-  -- X is proportional to real time (t = epoch seconds): a two-hour gap
-  -- in scanning renders as a two-hour-wide gap on the axis. Labels use
-  -- clock time for intraday spans, dates once the span crosses a day.
-  local firstT, lastT = points[1].t, points[#points].t
-  local timeSpan = math.max(lastT - firstT, 1)
-  local labelFormat = timeSpan < EPOCH_DAY and "%H:%M" or "%m-%d %H:%M"
-  plot.startLabel:SetText(date(labelFormat, firstT))
-  plot.endLabel:SetText(date(labelFormat, lastT))
-
-  local range = maxClose - minClose
-  local function plotXY(point)
-    local x = PLOT_LEFT + (point.t - firstT) / timeSpan * PLOT_WIDTH
-    -- Flat series draw at mid-height instead of hugging the bottom row.
-    local ratio = range > 0 and (point.c - minClose) / range or 0.5
-    return x, plot.bottom + ratio * PLOT_HEIGHT
-  end
-
-  for index = 1, #points - 1 do
-    local segment = plot.segments[index]
-    if not segment then
-      segment = chart:CreateLine(nil, "ARTWORK")
-      segment:SetThickness(2)
-      plot.segments[index] = segment
+  local function tab(parent, anchor, label, width, onClick)
+    local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    button:SetSize(width or 52, 18)
+    if anchor then
+      button:SetPoint("LEFT", anchor, "RIGHT", 4, 0)
+    else
+      button:SetPoint("TOPLEFT", 12, -44)
     end
-    local x1, y1 = plotXY(points[index])
-    local x2, y2 = plotXY(points[index + 1])
-    segment:SetStartPoint("BOTTOMLEFT", chart, x1, y1)
-    segment:SetEndPoint("BOTTOMLEFT", chart, x2, y2)
-    -- Fade older segments so the recent trend reads first.
-    local recency = index / #points
-    segment:SetColorTexture(0.2, 0.7 + 0.3 * recency, 0.5 + 0.1 * recency, 0.5 + 0.5 * recency)
-    segment:Show()
+    button:SetText(label)
+    button:SetScript("OnClick", onClick)
+    return button
   end
-  for index = #points, #plot.segments do
-    plot.segments[index]:Hide()
+
+  chart.modeButtons = {}
+  local bookButton = tab(chart, nil, L.CHART_BOOK, 52, function() WAH.setChartMode("book") end)
+  bookButton.mode, bookButton.label = "book", L.CHART_BOOK
+  local timeButton = tab(chart, bookButton, L.CHART_TIME, 52, function() WAH.setChartMode("time") end)
+  timeButton.mode, timeButton.label = "time", L.CHART_TIME
+  chart.modeButtons = { bookButton, timeButton }
+
+  chart.windowButtons = {}
+  local windowAnchor = nil
+  for _, window in ipairs(WINDOWS) do
+    local button = CreateFrame("Button", nil, chart, "UIPanelButtonTemplate")
+    button:SetSize(40, 18)
+    if windowAnchor then
+      button:SetPoint("LEFT", windowAnchor, "RIGHT", 4, 0)
+    else
+      button:SetPoint("TOPLEFT", 12, -66)
+    end
+    button:SetText(L[window.label])
+    button:SetScript("OnClick", function() WAH.setChartWindow(window.hours) end)
+    button.hours = window.hours
+    button.label = L[window.label]
+    chart.windowButtons[#chart.windowButtons + 1] = button
+    windowAnchor = button
   end
-  local dotX, dotY = plotXY(points[#points])
-  plot.dot:ClearAllPoints()
-  plot.dot:SetPoint("CENTER", chart, "BOTTOMLEFT", dotX, dotY)
-  plot.dot:Show()
+
+  chart.segments = {}
+  chart.bars = {}
+  chart.dots = {}
+  chart:Hide()
 end
 
 function WoWderhoiAH_UpdateChart(itemId)
@@ -261,35 +538,26 @@ function WoWderhoiAH_UpdateChart(itemId)
     return
   end
   if not chart then createChart() end
-  local entry = historyFor(itemId)
-  if not entry or not entry.pts or #entry.pts < 2 then
-    chart:Hide()
-    return
-  end
-  -- Follow the tooltip: anchored beside the AH when it is open,
-  -- beside the game tooltip otherwise.
-  chart:ClearAllPoints()
-  local auctionHouse = WAH.ahFrame and WAH.ahFrame()
-  local tradePage = WAH.tradeFrame and WAH.tradeFrame()
-  if tradePage and tradePage:IsShown() then
-    chart:SetPoint("TOPLEFT", tradePage, "TOPRIGHT", 4, -12)
-  elseif auctionHouse and auctionHouse:IsShown() then
-    chart:SetPoint("TOPLEFT", auctionHouse, "TOPRIGHT", 4, -12)
-  elseif GameTooltip:IsShown() then
-    chart:SetPoint("TOPRIGHT", GameTooltip, "TOPLEFT", -4, 0)
-  else
-    chart:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-  end
-  local itemName = getItemInfo(itemId) or ("item:" .. itemId)
-  chart.title:SetText(itemName)
-  chart.subtitle:SetText(string.format(L.CHART_SUBTITLE, #entry.pts, coinString(entry.latest)))
-
-  local now = time()
-  for _, plot in ipairs(chart.plots) do
-    renderPlot(plot, entry.pts, now)
-  end
-  chart:Show()
+  lastTooltipItemId = itemId
+  renderChart(itemId)
 end
+
+function WAH.setChartMode(mode)
+  chartMode = mode
+  if lastTooltipItemId and chart then renderChart(lastTooltipItemId) end
+end
+
+function WAH.setChartWindow(hours)
+  chartWindow = hours
+  chartMode = "time"
+  if lastTooltipItemId and chart then renderChart(lastTooltipItemId) end
+end
+
+function WAH.chartState()
+  return chart and chart._state or nil
+end
+
+-- ============================== Status ==============================
 
 local guiFrame = CreateFrame("Frame")
 guiFrame:RegisterEvent("PLAYER_LOGIN")
@@ -298,11 +566,13 @@ guiFrame:RegisterEvent("AUCTION_HOUSE_CLOSED")
 guiFrame:SetScript("OnEvent", function(_, event)
   if event == "PLAYER_LOGIN" then
     local count = 0
-    if WoWderhoiAH_Points then
-      for _ in pairs(WoWderhoiAH_Points) do count = count + 1 end
+    local market = WAH.seriesMarket and WAH.seriesMarket()
+    if market then
+      for _ in pairs(market.items) do count = count + 1 end
     end
     DEFAULT_CHAT_FRAME:AddMessage(string.format(
       "|cff33ff99WoWderhoi AHelper|r " .. L.LOADED, count))
+    if WAH.Ledger then WAH.Ledger.rebuild() end
     return
   end
   if event == "AUCTION_HOUSE_SHOW" then
@@ -314,30 +584,34 @@ end)
 
 SLASH_WOWDERHOIAHSTATUS1 = "/wah"
 SlashCmdList["WOWDERHOIAHSTATUS"] = function()
+  local market = WAH.seriesMarket and WAH.seriesMarket()
   local historyCount = 0
-  if WoWderhoiAH_Points then
-    for _ in pairs(WoWderhoiAH_Points) do historyCount = historyCount + 1 end
+  if market then
+    for _ in pairs(market.items) do historyCount = historyCount + 1 end
   end
   local scanInfo = L.STATUS_NO_SCAN
   if WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.scannedAt then
     local itemCount = 0
-    for _ in pairs(WoWderhoiAH_ScanData.items or {}) do itemCount = itemCount + 1 end
+    for _, entry in pairs(WoWderhoiAH_ScanData.items or {}) do
+      if entry.minPrice and entry.minPrice > 0 then itemCount = itemCount + 1 end
+    end
     scanInfo = string.format(L.STATUS_LAST_SCAN,
       date("%m-%d %H:%M", WoWderhoiAH_ScanData.scannedAt), itemCount)
   end
+  local ledger = WAH.Ledger and WAH.Ledger.current() or nil
   DEFAULT_CHAT_FRAME:AddMessage(string.format(
-    "|cff33ff99WoWderhoi AHelper|r " .. L.STATUS_FMT, historyCount, scanInfo))
+    "|cff33ff99WoWderhoi AHelper|r " .. L.STATUS_FMT,
+    historyCount, scanInfo,
+    WAH.currentPhase and WAH.currentPhase() or "?",
+    ledger and ledger.capital.realized or 0,
+    ledger and ledger.capital.escrow or 0))
 end
 
--- The modern auction house has no sell-item query an addon can read, so
--- posting guidance is command-driven: hold an item on the cursor (or pass
--- its link) and /wahprice prints the same numbers the sell prefill used to
--- write into the price fields.
+-- ============================== Price guide ========================
+
 local function printPrice(itemId)
   local name = getItemInfo(itemId) or ("item:" .. tostring(itemId))
-  local scanned = WoWderhoiAH_ScanData
-    and WoWderhoiAH_ScanData.dataVersion == WAH.PIPELINE_VERSION
-    and WoWderhoiAH_ScanData.items and WoWderhoiAH_ScanData.items[itemId]
+  local scanned = currentItem(itemId)
   local entry = historyFor(itemId)
   if not scanned and not entry then
     DEFAULT_CHAT_FRAME:AddMessage(string.format(
@@ -347,20 +621,21 @@ local function printPrice(itemId)
   local lines = { string.format(L.PRICE_HEADER, name) }
   if scanned and scanned.sellP then
     lines[#lines + 1] = string.format(L.PRICE_SELL, coinString(scanned.sellP))
+    lines[#lines + 1] = string.format(L.PRICE_LIST, coinString(math.max((scanned.vendorP or 0) + 1, scanned.sellP - 1)))
   end
   if scanned then
     lines[#lines + 1] = string.format(L.PRICE_MIN, coinString(scanned.minPrice))
-    if scanned.p5 then
-      lines[#lines + 1] = string.format(L.PRICE_P5, coinString(scanned.p5))
-    end
-    lines[#lines + 1] = string.format(L.PRICE_P10, coinString(scanned.marketPrice))
-    lines[#lines + 1] = string.format(L.PRICE_SUPPLY, scanned.quantity, scanned.numAuctions)
+    local ladder = ladderText(scanned)
+    if ladder then lines[#lines + 1] = string.format(L.PRICE_LADDER, ladder) end
+    lines[#lines + 1] = string.format(L.PRICE_SUPPLY, scanned.quantity or 0, scanned.numAuctions or 0)
+    lines[#lines + 1] = string.format(L.PRICE_P10, coinString(scanned.marketPrice or 0))
   end
   if entry then
-    lines[#lines + 1] = string.format(L.PRICE_MED7, coinString(entry.med7))
-    if entry.med7 > 0 then
+    local window = entry.windowHours or 168
+    lines[#lines + 1] = string.format(L.PRICE_SELL_REF, window, coinString(entry.sellRef or 0))
+    if scanned and scanned.sellP and entry.sellRef and entry.sellRef > 0 then
       lines[#lines + 1] = string.format(L.PRICE_TREND,
-        (entry.latest - entry.med7) / entry.med7 * 100)
+        (scanned.sellP - entry.sellRef) / entry.sellRef * 100, window)
     end
   end
   for _, line in ipairs(lines) do
@@ -375,8 +650,6 @@ SlashCmdList["WOWDERHOIAHPRICE"] = function(input)
     itemId = tonumber(input:match("item:(%d+)")) or tonumber(input)
   end
   if not itemId then
-    -- GetCursorInfo's second return is the item id for item cursors and nil
-    -- for money/spells, which is exactly the guard this command needs.
     local _, cursorItemId = GetCursorInfo()
     itemId = cursorItemId
   end
@@ -385,4 +658,64 @@ SlashCmdList["WOWDERHOIAHPRICE"] = function(input)
     return
   end
   printPrice(itemId)
+end
+
+-- ============================== Diagnostics ========================
+
+local function diagLine(text)
+  DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WAH diag|r " .. text)
+end
+
+SLASH_WOWDERHOIAHDIAG1 = "/wahdiag"
+SlashCmdList["WOWDERHOIAHDIAG"] = function()
+  local timeLeftValue, timeLeftType = "n/a", "missing"
+  if C_AuctionHouse.GetReplicateItemTimeLeft then
+    local ok, value = pcall(C_AuctionHouse.GetReplicateItemTimeLeft, 1)
+    if ok then timeLeftValue, timeLeftType = tostring(value), type(value) end
+  end
+  diagLine(string.format("GetReplicateItemTimeLeft(1): %s (%s)", timeLeftValue, timeLeftType))
+
+  local visible, hidden, items, points = 0, 0, 0, 0
+  for _, entry in pairs(WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.items or {}) do
+    if entry.minPrice and entry.minPrice > 0 then
+      items = items + 1
+      if entry.sellersInvisible then hidden = hidden + 1 else visible = visible + 1 end
+    end
+  end
+  local market = WAH.seriesMarket and WAH.seriesMarket()
+  if market then
+    for _, series in pairs(market.items) do points = points + #series.t end
+  end
+  diagLine(string.format("owner visibility: %d visible / %d hidden / %d priced items", visible, hidden, items))
+  diagLine(string.format("scan age: %s min, %s total auctions",
+    tostring(WAH.scanAgeMinutes and math.floor(WAH.scanAgeMinutes() or -1) or -1),
+    tostring(WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.total or 0)))
+  diagLine(string.format("series: %d points across %d items",
+    points, market and (function() local n = 0 for _ in pairs(market.items) do n = n + 1 end return n end)() or 0))
+  diagLine(string.format("capture tiers: %d items",
+    (function() local n = 0 for _ in pairs(WoWderhoiAH_Capture and WoWderhoiAH_Capture.items or {}) do n = n + 1 end return n end)()))
+  diagLine(string.format("SaveAddOns: %s", C_AddOns and C_AddOns.SaveAddOns and "available" or "missing"))
+  diagLine(string.format("PostItem/PostCommodity: %s/%s",
+    C_AuctionHouse.PostItem and "present" or "missing",
+    C_AuctionHouse.PostCommodity and "present" or "missing"))
+  local deposit = "n/a"
+  if C_AuctionHouse.CalculateCommodityDeposit then
+    local ok, value = pcall(C_AuctionHouse.CalculateCommodityDeposit, 2589, 24, 1)
+    deposit = ok and tostring(value) or "error"
+  end
+  diagLine(string.format("CalculateCommodityDeposit(2589,24,1): %s", deposit))
+  diagLine(string.format("owned auctions: %s", tostring(
+    C_AuctionHouse.GetNumOwnedAuctions and C_AuctionHouse.GetNumOwnedAuctions() or -1)))
+  diagLine(string.format("throttle ready: %s", tostring(
+    C_AuctionHouse.IsThrottledMessageSystemReady and C_AuctionHouse.IsThrottledMessageSystemReady() or "n/a")))
+  local journal = WAH.Journal and WAH.Journal.count() or 0
+  local ledger = WAH.Ledger and WAH.Ledger.current() or nil
+  diagLine(string.format("journal: %d events | realized %s | escrow %s | fees %s | deposits lost %s",
+    journal,
+    coinString(ledger and ledger.capital.realized or 0),
+    coinString(ledger and ledger.capital.escrow or 0),
+    coinString(ledger and ledger.capital.fees or 0),
+    coinString(ledger and ledger.capital.depositsLost or 0)))
+  diagLine(string.format("phase: %s (override %s)", WAH.currentPhase and WAH.currentPhase() or "?",
+    (WAH.settings and WAH.settings.phaseOverride) or "auto"))
 end

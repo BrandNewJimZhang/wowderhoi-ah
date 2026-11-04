@@ -45,7 +45,8 @@ describe("row tooltips", () => {
     // already hooks every tooltip setter, so the scan and history section
     // appends itself with no second code path to keep in step.
     expect(lua.tooltipText()).toContain("最低价");
-    expect(lua.tooltipText()).toContain("7日P10中位");
+    expect(lua.tooltipText()).toContain("建议卖价中位");
+    expect(lua.tooltipText()).toContain("P10（统计）");
   });
 
   it("shows the item itself for a deal row, which has no live listing", () => {

@@ -679,13 +679,23 @@ function WAH.history(itemId, windowHours)
       p10s[#p10s + 1] = series.p10[index]
       mins[#mins + 1] = series.min[index]
       quantities[#quantities + 1] = series.q[index]
-      pts[#pts + 1] = { t = series.t[index], c = series.p10[index], sell = series.sell[index], q = series.q[index] }
+      pts[#pts + 1] = {
+        t = series.t[index],
+        c = series.p10[index],
+        sell = series.sell[index],
+        min = series.min[index],
+        q = series.q[index],
+        event = series.e[index]
+      }
     end
   end
   if #sells == 0 then
     local last = #series.t
     sells[1], p10s[1], mins[1], quantities[1] = series.sell[last], series.p10[last], series.min[last], series.q[last]
-    pts[1] = { t = series.t[last], c = series.p10[last], sell = series.sell[last], q = series.q[last] }
+    pts[1] = {
+      t = series.t[last], c = series.p10[last], sell = series.sell[last],
+      min = series.min[last], q = series.q[last], event = series.e[last]
+    }
   end
   local distinctSells = 1
   local sortedSells = {}

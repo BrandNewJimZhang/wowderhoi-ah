@@ -22,7 +22,8 @@ describe("/wahprice", () => {
     const lua = page();
     lua.exec("WowTest.cursorInfo = { 'item', 4338 }");
     lua.exec("SlashCmdList['WOWDERHOIAHPRICE']('')");
-    expect(lua.anyChat("7日P10中位")).toBe(true);
+    expect(lua.anyChat("建议卖价中位")).toBe(true);
+    expect(lua.anyChat("P10（统计）")).toBe(true);
     expect(lua.anyChat("建议卖价")).toBe(true);
     expect(lua.anyChat("最低价")).toBe(true);
     expect(lua.anyChat("在售 40 件 / 6 笔拍卖")).toBe(true);
@@ -31,7 +32,8 @@ describe("/wahprice", () => {
   it("accepts an item link as the argument", () => {
     const lua = page();
     lua.exec("SlashCmdList['WOWDERHOIAHPRICE']('|Hitem:4338:0:0:0|h[Mageweave Cloth]|h')");
-    expect(lua.anyChat("7日P10中位")).toBe(true);
+    expect(lua.anyChat("建议卖价中位")).toBe(true);
+    expect(lua.anyChat("P10（统计）")).toBe(true);
   });
 
   it("tells the player how to use it when no item is available", () => {
