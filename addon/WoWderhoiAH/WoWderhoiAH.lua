@@ -796,7 +796,7 @@ function WAH.coreInput()
       items = {}
     },
     positions = {},
-    capital = { cash = 0, mail = 0, escrow = 0, budget = 0 },
+    capital = { cash = 0, budget = 0 },
     capacity = { bagSlots = 20, stackSize = 20 }
   }
   if not scan then return input end
@@ -814,7 +814,6 @@ function WAH.coreInput()
         name = entry.name,
         quality = entry.quality,
         itemClass = entry.itemClass,
-        itemSubClass = entry.itemSubClass,
         -- The scan's classification, not a re-derivation from a book that
         -- purchases have already thinned.
         marketType = entry.marketType,
@@ -843,8 +842,6 @@ function WAH.coreInput()
   input.positions = ledger and ledger.positions or {}
   input.capital = {
     cash = cash,
-    mail = 0,
-    escrow = ledger and ledger.capital and ledger.capital.escrow or 0,
     budget = math.floor(cash * (WAH.RULES.portfolio.dailyBudget or 0.5))
   }
   return input

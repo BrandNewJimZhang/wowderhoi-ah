@@ -103,6 +103,10 @@ describe("buildCoreInput", () => {
     });
     expect(input.capital?.cash).toBe(123456);
     expect(input.capital?.budget).toBe(500000);
+    // The core reads cash and budget only. Mail and escrow were carried in
+    // the contract but never consumed, so they must not travel between the
+    // builders.
+    expect(Object.keys(input.capital ?? {}).sort()).toEqual(["budget", "cash"]);
   });
 
   it("hands the scan's market classification to the core", () => {
@@ -120,6 +124,14 @@ describe("buildCoreInput", () => {
     // terminal's radar rows fell back to "unknown" and lost their color.
     const input = buildCoreInput(pairs(1), { now: LATEST, phase: "wave" });
     expect(input.market.items[1].quality).toBe("common");
+  });
+
+  it("does not ship fields the core never reads", () => {
+    // The sub-category is consumed to build the demand prior; keeping it in
+    // the item table made the two builders carry a field Core.lua ignores.
+    const input = buildCoreInput(pairs(1), { now: LATEST, phase: "wave" });
+    expect("itemSubClass" in input.market.items[1]).toBe(false);
+    expect(input.market.items[1].demandPrior).toBe(1.2);
   });
 
   it("prefers the store's first snapshot time when the caller knows it", () => {

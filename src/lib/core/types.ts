@@ -17,7 +17,6 @@ export type CoreMarketItem = {
   name: string;
   quality?: number | string;
   itemClass?: string;
-  itemSubClass?: string;
   vendorP?: number;
   minPrice: number;
   sellP?: number;
@@ -48,7 +47,9 @@ export type CoreInput = {
     firstScanAt?: number;
     items: Record<number, CoreMarketItem>;
   };
-  capital?: { cash?: number; mail?: number; escrow?: number; budget?: number };
+  // The core reads cash (the scanned purse) and budget (the planning cap).
+  // Mail and escrow are ledger facts, not decision inputs.
+  capital?: { cash?: number; budget?: number };
   capacity?: { bagSlots?: number; stackSize?: number };
   positions?: Record<number, { qty: number; cost: number }>;
 };

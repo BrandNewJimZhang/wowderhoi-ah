@@ -70,7 +70,6 @@ export function buildCoreInput(
       // the item row's name so CoreRow quality is populated on both sides.
       quality: signal.quality,
       itemClass: signal.category,
-      itemSubClass: history.subCategory,
       // The scan classified the book; only rows without a captured
       // classification fall back to the core's own derivation.
       marketType: signal.marketType ?? undefined,
@@ -106,9 +105,7 @@ export function buildCoreInput(
     },
     capital: {
       cash: options.cashCopper ?? 0,
-      budget: options.budgetCopper ?? 0,
-      mail: 0,
-      escrow: 0
+      budget: options.budgetCopper ?? 0
     },
     capacity: {
       bagSlots: options.bagSlots ?? 20,

@@ -332,7 +332,7 @@ end
 --   phaseOverride    optional phase name
 --   rules            WAH.RULES (compiled constants)
 --   market           { firstScanAt, items = { [id] = item } }
---   capital          { cash, mail, escrow, budget }
+--   capital          { cash, budget }
 --   capacity         { bagSlots, stackSize }
 --   positions        { [itemId] = { qty, cost } }
 --
