@@ -14,6 +14,9 @@
 Auction house price intelligence and short-swing trading kit for
 World of Warcraft Classic Anniversary (TBC 2.5.6).
 
+**This is the `anniversary` maintenance branch. The default branch is
+`forever`, targeting WoW Forever 1.60.1.**
+
 </div>
 
 Two parts, one fully local data loop — no Battle.net API:
@@ -145,7 +148,11 @@ an issue; see [CONTRIBUTING.md](CONTRIBUTING.md). Security notes in
 
 </div>
 
-《魔兽世界》经典周年服（TBC 2.5.6）拍卖行价格情报与短线交易工具。两个部件，一条本地数据闭环，不依赖 Battle.net API：
+《魔兽世界》经典周年服（TBC 2.5.6）拍卖行价格情报与短线交易工具。
+
+**本分支是 `anniversary` 维护线；默认分支是 `forever`（无限 1.60.1）。**
+
+两个部件，一条本地数据闭环，不依赖 Battle.net API：
 
 - **游戏内插件**（`addon/WoWderhoiAH`）——扫描拍卖行、逐次积累价格历史，提供 tooltip 行情、双窗口价格走势图，以及独立的 **WAH 交易页**：捡漏雷达、核验后一键购买、压价卖单预填。插件即数据后端。
 - **桌面终端**（Next.js 16）——类 Bloomberg 的深色高密度界面：市场监控表、盘中/日线图表、预警与关注列表、制造利润排行。
