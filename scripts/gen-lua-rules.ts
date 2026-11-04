@@ -27,6 +27,10 @@ const compiledDemand = demandBands.map((band) => ({
   weight: band.weight
 }));
 
+// The addon derives its spend cap from dailyBudget only; Kelly sizing and
+// the per-item exposure cap are terminal-side rules.
+const compiledPortfolio = { dailyBudget: portfolioRules.dailyBudget };
+
 const LUA_PATH = fileURLToPath(new URL("../addon/WoWderhoiAH/GeneratedRules.lua", import.meta.url));
 
 function luaTable(value: unknown, indent: string): string {
@@ -56,7 +60,7 @@ WAH.RULES = {
   phaseBoundaries = ${luaTable(phaseBoundaries, "")},
   phaseHistory = ${luaTable(phaseHistory, "")},
   fill = ${luaTable(fillRules, "")},
-  portfolio = ${luaTable(portfolioRules, "")},
+  portfolio = ${luaTable(compiledPortfolio, "")},
   marketTypeRules = ${luaTable(marketTypeRules, "")}
 }
 
