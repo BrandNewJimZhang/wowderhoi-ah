@@ -24,7 +24,7 @@ export async function POST(request: Request) {
   const market = await prisma.market.upsert({
     where: { realm_faction: { realm: scan.server, faction: scan.faction } },
     create: { realm: scan.server, faction: scan.faction, openedAt: scan.scannedAt },
-    update: {}
+    update: { cash: scan.cash }
   });
 
   const duplicate = await prisma.auctionSnapshot.findFirst({

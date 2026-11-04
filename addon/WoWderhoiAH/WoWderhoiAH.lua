@@ -477,6 +477,7 @@ local function finishScan(totalAuctions)
     server = GetRealmName(),
     faction = UnitFactionGroup("player"),
     character = UnitName and UnitName("player") or nil,
+    cash = GetMoney and GetMoney() or 0,
     total = totalAuctions or 0,
     items = items,
     bids = bids

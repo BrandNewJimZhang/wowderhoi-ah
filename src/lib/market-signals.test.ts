@@ -69,6 +69,17 @@ describe("createMarketSignalSource", () => {
     expect(bundle.evaluation.actions.some((action) => action.kind === "buy")).toBe(true);
   });
 
+  it("records decisions once per scan generation", async () => {
+    const recorded: unknown[] = [];
+    const source = createMarketSignalSource({
+      ...fetchers([historyItem(1, 200)]),
+      recordDecisions: async (bundle) => { recorded.push(bundle); }
+    });
+    await source.getMarketSignals();
+    await source.getMarketSignals();
+    expect(recorded).toHaveLength(1);
+  });
+
   it("recomputes when a newer snapshot lands", async () => {
     let generation = new Date("2026-07-20T10:00:00Z");
     let price = 200;

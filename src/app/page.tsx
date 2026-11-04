@@ -60,6 +60,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
             <RadioTower size={14} /> 数据更新于 {freshness.label}
           </span>
           <span className="flex items-center gap-1"><Bell size={14} /> 预警就绪</span>
+          <Link href="/recipes" className="text-terminal-muted hover:text-terminal-amber">制造</Link>
           <span className="max-w-[360px] truncate text-terminal-muted" title={phaseDescription(phase)}>{phaseDescription(phase)}</span>
         </div>
       </div>

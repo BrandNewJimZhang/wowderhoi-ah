@@ -13,6 +13,7 @@ model Market {
   realm     String
   faction   String
   openedAt  DateTime? @map("opened_at")
+  cash      Int       @default(0) // latest scan's player cash, copper
   createdAt DateTime @default(now()) @map("created_at")
 
   snapshots AuctionSnapshot[]
@@ -143,17 +144,23 @@ model Decision {
   @@index([itemId])
 }
 
-// Forever recipe network, imported from the wuxianwow data export.
+// Forever recipe network, imported from data/recipes.forever.json.
+// `products` is a list because some recipes produce several items; the
+// first product is duplicated into productItemId for cheap joins.
 model Recipe {
   id              Int      @id
+  name            String
   profession      String
-  productItemId   Int      @map("product_item_id")
-  productQuantity Int      @default(1) @map("product_quantity")
+  category        String
   expansion       String   @default("forever")
-  materials       Json // [{ itemId, qty }]
+  effect          String?
+  minRank         Int?     @map("min_rank")
+  skillUpRange    Json?    @map("skill_up_range")
+  materials       Json // [{ itemId, name, qty }]
+  products        Json // [{ itemId, name, qty, quality?, ilvl? }]
+  productItemId   Int?     @map("product_item_id")
+  productQuantity Int      @default(1) @map("product_quantity")
   cooldownHours   Float?   @map("cooldown_hours")
-  skillReq        Int?     @map("skill_req")
-  source          String?
   createdAt       DateTime @default(now()) @map("created_at")
 
   @@index([profession])

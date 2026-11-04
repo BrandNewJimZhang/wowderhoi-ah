@@ -26,6 +26,7 @@ type SignalFetchers = {
   getEarliestSnapshotTime: () => Promise<Date | null>;
   getMarketUniverse: () => Promise<MarketHistory[]>;
   getPositions: () => Promise<Record<number, { qty: number; cost: number }>>;
+  recordDecisions?: (bundle: MarketBundle) => Promise<void>;
 };
 
 function configuredPhase(): MarketPhase | null {
@@ -99,6 +100,7 @@ export function createMarketSignalSource(fetchers: SignalFetchers) {
         evaluation: runCore(input)
       };
       cachedAtMs = latestSnapshotAt.getTime();
+      if (fetchers.recordDecisions) await fetchers.recordDecisions(cached);
       return cached;
     }
   };
@@ -108,7 +110,8 @@ const defaultSource = createMarketSignalSource({
   getLatestSnapshotTime,
   getEarliestSnapshotTime,
   getMarketUniverse,
-  getPositions
+  getPositions,
+  recordDecisions: (bundle) => import("@/lib/decisions").then((module) => module.recordDecisions(bundle))
 });
 
 export const getMarketSignals = defaultSource.getMarketSignals;

@@ -37,6 +37,7 @@ export type AddonScan = {
   server: string;
   faction: string;
   character: string | null;
+  cash: number;
   total: number;
   items: AddonScanItem[];
   bids: AddonBid[];
@@ -304,6 +305,7 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
     server: scan.server,
     faction: scan.faction,
     character: typeof scan.character === "string" ? scan.character : null,
+    cash: optionalNonNegative(scan.cash, "cash", "scan"),
     total: optionalNonNegative(scan.total, "total", "scan"),
     items,
     bids: normalizeBids(scan.bids)

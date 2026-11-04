@@ -51,6 +51,14 @@ export async function getEarliestSnapshotTime() {
 }
 
 // The journal projection as a plain itemId -> position map for Core.lua.
+export async function getMarketContext() {
+  return prisma.market.findFirst({ orderBy: { createdAt: "asc" } });
+}
+
+export async function getRecipes() {
+  return prisma.recipe.findMany({ orderBy: [{ profession: "asc" }, { name: "asc" }] });
+}
+
 export async function getPositions(): Promise<Record<number, { qty: number; cost: number }>> {
   const rows = await prisma.position.findMany({ select: { itemId: true, qty: true, costBasis: true } });
   return Object.fromEntries(rows.map((row) => [row.itemId, { qty: row.qty, cost: row.costBasis }]));
