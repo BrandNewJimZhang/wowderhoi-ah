@@ -49,6 +49,23 @@ describe("buildPriceIndex", () => {
   it("returns an empty index when no positive price exists", () => {
     expect(buildPriceIndex([])).toEqual({ dates: [], values: [], baseDate: "" });
   });
+
+  it("uses daily closes so the index spans more than the snapshot window", () => {
+    // The universe query keeps only the last 48 snapshots, so a snapshot-only
+    // index can never cover two days at the 15-minute cadence. Daily closes
+    // are the multi-day record, and the latest snapshot refines today.
+    const history = item(1, [{ day: "2026-07-03", sell: 300 }]);
+    history.dailySummaries = [
+      { date: new Date("2026-07-01T00:00:00Z"), openPrice: 100, closePrice: 100, highPrice: 100, lowPrice: 100, volume: 10 },
+      { date: new Date("2026-07-02T00:00:00Z"), openPrice: 100, closePrice: 200, highPrice: 200, lowPrice: 100, volume: 10 },
+      { date: new Date("2026-07-03T00:00:00Z"), openPrice: 200, closePrice: 500, highPrice: 500, lowPrice: 200, volume: 10 }
+    ];
+    const index = buildPriceIndex([history]);
+    expect(index.dates).toEqual(["2026-07-01", "2026-07-02", "2026-07-03"]);
+    // 2026-07-03 closes at 500 in the summary but the day's last snapshot is
+    // 300, which wins as the most recent observation.
+    expect(index.values).toEqual([100, 200, 300]);
+  });
 });
 
 describe("indexFor and realPrice", () => {

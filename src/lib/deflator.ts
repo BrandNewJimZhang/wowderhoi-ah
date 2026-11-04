@@ -20,20 +20,28 @@ function median(values: number[]): number {
   return sorted[Math.ceil(sorted.length / 2) - 1];
 }
 
-// Each item contributes one price per day (its last scan), so a single
-// heavily scanned item cannot dominate the index. The daily median is
-// then normalised to the first day with data.
+// Each item contributes one price per day (its close), so a single
+// heavily scanned item cannot dominate the index. Daily summaries are the
+// multi-day record: the universe query only keeps the last 48 snapshots,
+// which is half a day at the 15-minute cadence, so snapshots alone could
+// never produce an index that spans more than one day. Recent snapshots
+// still refine the current day's close. The daily median is normalised to
+// the first day with data.
 export function buildPriceIndex(items: MarketHistory[]): PriceIndex {
   const byDate = new Map<string, Map<number, number>>();
+  const record = (date: string, itemId: number, price: number) => {
+    if (!price || price <= 0) return;
+    const day = byDate.get(date) ?? new Map<number, number>();
+    day.set(itemId, price);
+    byDate.set(date, day);
+  };
   for (const item of items) {
+    for (const summary of item.dailySummaries) {
+      record(utcDateKey(summary.date), item.itemId, summary.closePrice);
+    }
     const snapshots = [...item.snapshots].sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
     for (const snapshot of snapshots) {
-      const price = snapshot.sellPrice ?? snapshot.marketPrice;
-      if (!price || price <= 0) continue;
-      const key = utcDateKey(snapshot.timestamp);
-      const day = byDate.get(key) ?? new Map<number, number>();
-      day.set(item.itemId, price);
-      byDate.set(key, day);
+      record(utcDateKey(snapshot.timestamp), item.itemId, snapshot.sellPrice ?? snapshot.marketPrice);
     }
   }
   const dates = Array.from(byDate.keys()).sort();
