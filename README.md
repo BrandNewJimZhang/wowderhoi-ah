@@ -163,6 +163,7 @@ catalogue.
 ```powershell
 npm test             # vitest, including the shipped Lua in the Forever stub
 npm run typecheck
+npm run lint
 npm run build
 npm run perf:seed    # deterministic synthetic market, leaves dev.db alone
 npm run perf:run     # page/import latency budgets

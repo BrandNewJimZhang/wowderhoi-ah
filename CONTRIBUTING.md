@@ -17,7 +17,7 @@ PRs are welcome — with one hard rule:
 4. Commit messages: English, imperative, `Feat:`/`Fix:`/`Docs:`/...
    prefixes (see `git log` for the house style).
 5. Behavior changes land with tests. TypeScript: `npm run test`,
-   `npm run typecheck`. The Lua addon is driven through a stubbed Wow
+   `npm run typecheck`, `npm run lint`. The Lua addon is driven through a stubbed Wow
    Forever client in `addon/test` (`npm test` runs the shipped Lua
    verbatim); add a case there instead of listing manual steps only.
    Still describe any in-game verification in the PR.
@@ -57,7 +57,7 @@ that applies to both should not be written twice.
    改动。
 4. Commit message 用英文祈使句，带 `Feat:`/`Fix:`/`Docs:` 等前缀。
 5. 行为变更必须附带测试。TypeScript：`npm run test`、
-   `npm run typecheck`。Lua 插件在 `addon/test` 里有模拟无限客户端的
+   `npm run typecheck`、`npm run lint`。Lua 插件在 `addon/test` 里有模拟无限客户端的
    离线环境（`npm test` 直接跑发布用的 Lua），请在那里加用例，而不是
    只在 PR 里写手工验证步骤；游戏内验证仍请一并描述。
 
