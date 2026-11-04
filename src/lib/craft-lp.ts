@@ -10,7 +10,6 @@ export type LpRecipe = {
   id: number;
   name: string;
   profession: string;
-  category?: string;
   materials: Array<{ itemId: number; qty: number }>;
   products: Array<{ itemId: number; qty: number }>;
 };

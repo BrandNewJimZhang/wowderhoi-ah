@@ -129,7 +129,9 @@ model Trade {
 }
 
 // What the system recommended and why. Written by the cockpit or the
-// terminal; used for review and propensity correction.
+// terminal and read by the review page. Only the fields the review and
+// calibration actually consume are stored: a candidate snapshot nobody
+// reads is storage, not a decision log.
 model Decision {
   id         String   @id @default(cuid())
   marketId   String   @map("market_id")
@@ -137,9 +139,6 @@ model Decision {
   phase      String
   itemId     Int?     @map("item_id")
   kind       String
-  context    Json?
-  candidates Json?
-  chosen     Json?
   reason     String?
   market     Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
 
@@ -150,12 +149,11 @@ model Decision {
 // Forever recipe network, imported from data/recipes.forever.json.
 // `products` is a list because some recipes produce several items; the LP
 // only reads the fields below, so the table does not mirror source-only
-// metadata (effect, rank, skill-up range, expansion).
+// metadata (category, effect, rank, skill-up range, expansion).
 model Recipe {
   id              Int      @id
   name            String
   profession      String
-  category        String
   materials       Json // [{ itemId, name, qty }]
   products        Json // [{ itemId, name, qty, quality?, ilvl? }]
   createdAt       DateTime @default(now()) @map("created_at")

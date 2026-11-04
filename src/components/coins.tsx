@@ -20,11 +20,11 @@ function CoinPart({ value, kind }: { value: number; kind: keyof typeof COIN_ICON
   );
 }
 
-export function Coins({ copper: totalCopper, muteZero = true }: { copper: number; muteZero?: boolean }) {
+export function Coins({ copper: totalCopper }: { copper: number }) {
   const { gold, silver, copper } = splitCopper(totalCopper);
   const sign = totalCopper < 0 ? "-" : "";
   const showGold = gold > 0;
-  const showSilver = silver > 0 || (!muteZero && showGold);
+  const showSilver = silver > 0;
   const showCopper = copper > 0 || (!showGold && !showSilver);
   return (
     <span className="inline-flex items-center gap-1 whitespace-nowrap">

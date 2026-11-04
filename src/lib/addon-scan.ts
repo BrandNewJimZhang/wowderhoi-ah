@@ -41,7 +41,6 @@ export type AddonScan = {
   faction: string;
   character: string | null;
   cash: number;
-  total: number;
   items: AddonScanItem[];
 };
 
@@ -248,7 +247,7 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
     const entry = value as Record<string, unknown>;
     const bidOnlyCount = optionalNonNegative(entry.bidOnly, "bidOnly", key);
     const inferredSoldLow = optionalNonNegative(entry.inferredSoldLow, "inferredSoldLow", key);
-    const inferredSoldHigh = optionalNonNegative(entry.inferredSoldHigh ?? entry.inferredSoldLow, "inferredSoldHigh", key);
+    const inferredSoldHigh = optionalNonNegative(entry.inferredSoldHigh, "inferredSoldHigh", key);
     if (inferredSoldHigh < inferredSoldLow) {
       throw new Error(`Addon scan item ${key}: inferredSoldHigh (${inferredSoldHigh}) is below inferredSoldLow (${inferredSoldLow})`);
     }
@@ -301,7 +300,6 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
     faction: scan.faction,
     character: typeof scan.character === "string" ? scan.character : null,
     cash: optionalNonNegative(scan.cash, "cash", "scan"),
-    total: optionalNonNegative(scan.total, "total", "scan"),
     items
   };
 }

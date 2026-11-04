@@ -4,7 +4,7 @@ import { Hammer } from "lucide-react";
 import { getMarketSignals } from "@/lib/market-signals";
 import { phaseLabels } from "@/lib/phase";
 import { buildProductionPlan } from "@/lib/production-plan";
-import { dbRecipeToLp } from "@/lib/recipes";
+import { recipeToLp } from "@/lib/recipes";
 import { getRecipes } from "@/lib/repositories";
 import { Coins } from "@/components/coins";
 import { Panel, PanelHeader } from "@/components/ui/panel";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 export default async function RecipesPage() {
   const [{ signals, phase }, recipeRows] = await Promise.all([getMarketSignals(), getRecipes()]);
-  const recipes = recipeRows.map(dbRecipeToLp);
+  const recipes = recipeRows.map(recipeToLp);
   const { solution, budget } = buildProductionPlan(signals, recipes);
 
   return (

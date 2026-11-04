@@ -3,12 +3,14 @@ import {
   AH_FEE_RATE,
   marketPhases,
   marketTypeRules,
-  marketTypes,
   phaseBoundaries,
   phaseHistory,
   portfolioRules,
-  sellFrontRules
+  sellFrontRules,
+  type MarketType
 } from "@/lib/market-rules";
+
+const marketTypes: readonly MarketType[] = ["vendor", "commodity", "item"];
 
 describe("phase rules", () => {
   it("defines every market type in every phase", () => {

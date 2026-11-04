@@ -109,5 +109,4 @@ export const portfolioRules = {
   dailyBudget: 0.5 // share of deployable capital committed per day
 } as const;
 
-export const marketTypes: readonly MarketType[] = ["vendor", "commodity", "item"];
 export const marketPhases: readonly MarketPhase[] = ["ignition", "wave", "settle", "steady"];

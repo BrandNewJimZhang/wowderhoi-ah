@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dbRecipeToLp, loadRecipeDataset, toLpRecipe } from "@/lib/recipes";
+import { loadRecipeDataset, recipeToLp } from "@/lib/recipes";
 
 describe("recipe dataset", () => {
   const dataset = loadRecipeDataset();
@@ -29,17 +29,16 @@ describe("recipe dataset", () => {
 
   it("maps a dataset row into the LP shape", () => {
     const recipe = dataset.recipes.find((entry) => entry.id === 1353)!;
-    const lp = toLpRecipe(recipe);
+    const lp = recipeToLp(recipe);
     expect(lp.materials).toEqual([{ itemId: 2318, qty: 2 }, { itemId: 2320, qty: 1 }]);
     expect(lp.products).toEqual([{ itemId: 2302, qty: 1 }]);
   });
 
   it("maps a Prisma row's JSON columns into the same shape", () => {
-    const lp = dbRecipeToLp({
+    const lp = recipeToLp({
       id: 1,
       name: "Test",
       profession: "裁缝",
-      category: "布甲",
       materials: [{ itemId: 1, qty: 2 }],
       products: [{ itemId: 2, qty: 1 }]
     });

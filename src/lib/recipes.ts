@@ -34,22 +34,12 @@ export function loadRecipeDataset(): RecipeDataset {
   return cached;
 }
 
-export function toLpRecipe(recipe: DatasetRecipe): LpRecipe {
-  return {
-    id: recipe.id,
-    name: recipe.name,
-    profession: recipe.profession,
-    category: recipe.category,
-    materials: recipe.materials.map((material) => ({ itemId: material.itemId, qty: material.qty })),
-    products: recipe.products.map((product) => ({ itemId: product.itemId, qty: product.qty }))
-  };
-}
-
-export type DbRecipeShape = {
+// One mapper for both shapes: the committed dataset and the imported table
+// carry the same fields, so a second mapping is a drift risk, not a layer.
+export type RecipeSourceRow = {
   id: number;
   name: string;
   profession: string;
-  category: string;
   materials: unknown;
   products: unknown;
 };
@@ -66,12 +56,11 @@ function rowsOf(value: unknown): Array<{ itemId: number; qty: number }> {
     .filter((entry): entry is { itemId: number; qty: number } => entry !== null);
 }
 
-export function dbRecipeToLp(recipe: DbRecipeShape): LpRecipe {
+export function recipeToLp(recipe: RecipeSourceRow): LpRecipe {
   return {
     id: recipe.id,
     name: recipe.name,
     profession: recipe.profession,
-    category: recipe.category,
     materials: rowsOf(recipe.materials),
     products: rowsOf(recipe.products)
   };

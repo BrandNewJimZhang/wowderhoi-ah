@@ -79,7 +79,6 @@ describe("normalizeAddonScan", () => {
     expect(scan.server).toBe("Anniversary");
     expect(scan.faction).toBe("Alliance");
     expect(scan.character).toBe("Tester");
-    expect(scan.total).toBe(15);
     // Bid-only entries are demand observations, not zero-priced markets.
     expect(scan.items).toHaveLength(3);
     expect(scan.items.find((item) => item.itemId === 700)).toMatchObject({

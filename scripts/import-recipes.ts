@@ -17,7 +17,6 @@ async function main() {
     id: recipe.id,
     name: recipe.name,
     profession: recipe.profession,
-    category: recipe.category,
     materials: recipe.materials,
     products: recipe.products,
   }));

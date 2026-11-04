@@ -17,22 +17,6 @@ export async function recordDecisions(bundle: MarketBundle): Promise<void> {
     phase: bundle.phase,
     itemId: action.itemId,
     kind: action.kind,
-    context: {
-      breadth: bundle.evaluation.breadth,
-      ageHours: bundle.evaluation.ageHours,
-      dataAgeMinutes: bundle.evaluation.dataAgeMinutes,
-      realm: scope.realm,
-      faction: scope.faction
-    },
-    candidates: bundle.evaluation.rows.slice(0, 12).map((row) => ({
-      itemId: row.itemId,
-      name: row.name,
-      netProfit: row.netProfit,
-      fillProb: row.fillProb,
-      fillBasis: row.fillBasis,
-      confidence: row.confidence
-    })),
-    chosen: action,
     reason: action.reason
   }));
   await prisma.$transaction([

@@ -13,7 +13,7 @@ import { runCore } from "@/lib/core/run-core";
 import type { CoreInput } from "@/lib/core/types";
 import { solveProduction, type LpRecipe } from "@/lib/craft-lp";
 import { replayJournal, type JournalEvent } from "@/lib/journal";
-import { loadRecipeDataset, toLpRecipe } from "@/lib/recipes";
+import { loadRecipeDataset, recipeToLp } from "@/lib/recipes";
 import { normalizeAddonScan } from "@/lib/addon-scan";
 import { productionCapacity } from "@/lib/production-config";
 
@@ -109,7 +109,7 @@ describe("system performance gates", () => {
 
   it("solves 120 production candidates inside the gate", () => {
     const dataset = loadRecipeDataset();
-    const recipes: LpRecipe[] = dataset.recipes.map(toLpRecipe);
+    const recipes: LpRecipe[] = dataset.recipes.map(recipeToLp);
     const prices = new Map<number, number>();
     for (let index = 0; index < 3000; index += 1) prices.set(index, 100 + index);
     const start = performance.now();
