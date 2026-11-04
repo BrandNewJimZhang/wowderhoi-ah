@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getMarketSignals } from "@/lib/market-signals";
 import { getPositions } from "@/lib/repositories";
 import { phaseLabels } from "@/lib/phase";
+import { valuePositions } from "@/lib/position-valuation";
 import { summarizeTrades } from "@/lib/trade-summary";
 import { Coins } from "@/components/coins";
 import { Panel, PanelHeader } from "@/components/ui/panel";
@@ -24,25 +25,13 @@ export default async function PortfolioPage() {
   const { signals, phase } = bundle;
   const priceById = new Map(signals.map((signal) => [signal.itemId, signal.sellPrice]));
   const nameById = new Map(signals.map((signal) => [signal.itemId, signal.name]));
-  const rows = Object.entries(positions)
-    .map(([key, position]) => {
-      const itemId = Number(key);
-      const price = priceById.get(itemId) ?? 0;
-      const value = price * position.qty;
-      return {
-        itemId,
-        name: nameById.get(itemId) ?? `#${itemId}`,
-        qty: position.qty,
-        cost: position.cost,
-        unitCost: position.qty > 0 ? position.cost / position.qty : 0,
-        price,
-        value,
-        unrealized: value - position.cost
-      };
-    })
-    .sort((left, right) => right.value - left.value);
-  const positionValue = rows.reduce((sum, row) => sum + row.value, 0);
-  const positionCost = rows.reduce((sum, row) => sum + row.cost, 0);
+  const {
+    rows,
+    pricedValue: positionValue,
+    pricedCost: positionCost,
+    unrealized,
+    unpricedCount
+  } = valuePositions(positions, priceById, nameById);
   const trades = summarizeTrades(allTrades);
   const cash = scope?.cash ?? 0;
 
@@ -67,13 +56,16 @@ export default async function PortfolioPage() {
           <div className="mt-1 text-lg text-terminal-amber"><Coins copper={cash} /></div>
         </div>
         <div className="border border-terminal-border bg-terminal-panel p-3">
-          <div className="text-terminal-muted">持仓市值 / 成本</div>
+          <div className="text-terminal-muted">持仓市值 / 成本（有报价）</div>
           <div className="mt-1 text-lg"><Coins copper={positionValue} /> <span className="text-xs text-terminal-muted">/ <Coins copper={positionCost} /></span></div>
+          {unpricedCount > 0 && (
+            <div className="mt-1 text-[10px] text-terminal-muted">另有 {unpricedCount} 种当前无挂单，不计入市值与浮动</div>
+          )}
         </div>
         <div className="border border-terminal-border bg-terminal-panel p-3">
-          <div className="text-terminal-muted">浮动盈亏</div>
-          <div className={`mt-1 text-lg ${positionValue - positionCost >= 0 ? "text-terminal-green" : "text-terminal-red"}`}>
-            <Coins copper={positionValue - positionCost} />
+          <div className="text-terminal-muted">浮动盈亏（有报价）</div>
+          <div className={`mt-1 text-lg ${unrealized >= 0 ? "text-terminal-green" : "text-terminal-red"}`}>
+            <Coins copper={unrealized} />
           </div>
         </div>
         <div className="border border-terminal-border bg-terminal-panel p-3">
@@ -108,9 +100,11 @@ export default async function PortfolioPage() {
                     <td className="px-3 py-2 text-left"><Link href={`/items/${row.itemId}`} className="text-slate-100 hover:text-terminal-amber">{row.name}</Link></td>
                     <td className="px-3 py-2 text-right text-slate-300">{row.qty}</td>
                     <td className="px-3 py-2 text-right"><Coins copper={row.unitCost} /></td>
-                    <td className="px-3 py-2 text-right"><Coins copper={row.price} /></td>
-                    <td className="px-3 py-2 text-right"><Coins copper={row.value} /></td>
-                    <td className={`px-3 py-2 text-right ${row.unrealized >= 0 ? "text-terminal-green" : "text-terminal-red"}`}><Coins copper={row.unrealized} /></td>
+                    <td className="px-3 py-2 text-right">{row.priced ? <Coins copper={row.price} /> : <span className="text-terminal-muted">—</span>}</td>
+                    <td className="px-3 py-2 text-right">{row.priced ? <Coins copper={row.value} /> : <span className="text-terminal-muted">—</span>}</td>
+                    <td className={`px-3 py-2 text-right ${row.unrealized === null ? "text-terminal-muted" : row.unrealized >= 0 ? "text-terminal-green" : "text-terminal-red"}`}>
+                      {row.unrealized === null ? "—" : <Coins copper={row.unrealized} />}
+                    </td>
                   </tr>
                 ))}
                 {rows.length === 0 && (
