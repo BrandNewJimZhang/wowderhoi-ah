@@ -40,7 +40,6 @@ local lastScanStartedAt = 0
 local scanFailures = 0
 local backoffUntil = 0
 local searchQuietUntil = 0
-local lastPhase = "steady"
 
 -- The auction house frame is named differently across client eras. The 1.60
 -- client ships the modern AuctionHouseFrame; the fallback keeps the shared
@@ -89,7 +88,6 @@ end
 local function marketKey()
   return GetRealmName() .. "|" .. (UnitFactionGroup("player") or "Unknown")
 end
-WAH.marketKey = marketKey
 
 -- ============================ Time left ==============================
 
@@ -122,8 +120,9 @@ local function newEntry(itemId, name, quality, cached)
     vendorP = cached.vendorP,
     minPrice = nil,
     listings = {}, -- { price = unit price, count, timeLeft }
-    priceQty = {}, -- price -> quantity, the capture / sold-inference key
-    priceTimeLeft = {},
+    flowKeys = {}, -- owner|unitPrice -> quantity, matched across scans
+    ownerTotals = {}, -- owner -> quantity across all prices, detects repricing
+    flowTimeLeft = {}, -- flow key -> shortest remaining time seen
     bidAmount = 0,
     bidOnly = 0,
     hasBuyout = false,
@@ -151,10 +150,10 @@ local function recordAuction(index)
   if not entry then
     local cached = scanState.itemInfoCache[itemId]
     if cached == nil then
-      -- GetItemInfo is the single most expensive call per new itemId. Cache
-      -- it for the scan's lifetime; a repeat listing reuses one call.
-      local _, _, _, _, _, itemClass, itemSubClass = WAH.getItemInfo(itemId)
-      local vendorPrice = select(11, WAH.getItemInfo(itemId))
+      -- GetItemInfo is the single most expensive call per new itemId. Read
+      -- every field once, cache it for the scan's lifetime, and let repeat
+      -- listings reuse the result.
+      local _, _, _, _, _, itemClass, itemSubClass, _, _, _, vendorPrice = WAH.getItemInfo(itemId)
       if itemClass == nil and C_Item and C_Item.RequestLoadItemDataByID then
         -- The item database loads lazily on modern clients. Ask once so the
         -- next scan can price vendor arbitrage for this item.
@@ -186,29 +185,19 @@ local function recordAuction(index)
   local unitPrice = buyoutPrice / count
   entry.hasBuyout = true
   if not entry.minPrice or unitPrice < entry.minPrice then entry.minPrice = unitPrice end
-  entry.listings[#entry.listings + 1] = { price = unitPrice, count = count, timeLeft = timeLeft }
+  entry.listings[#entry.listings + 1] = { price = unitPrice, count = count, timeLeft = timeLeft, owner = seller }
   entry.quantity = entry.quantity + count
   entry.numAuctions = entry.numAuctions + 1
-  entry.priceQty[unitPrice] = (entry.priceQty[unitPrice] or 0) + count
+  local flowKey = (seller or "?") .. "|" .. unitPrice
+  entry.flowKeys[flowKey] = (entry.flowKeys[flowKey] or 0) + count
+  if seller then
+    entry.ownerTotals[seller] = (entry.ownerTotals[seller] or 0) + count
+  end
   if timeLeft then
-    local current = entry.priceTimeLeft[unitPrice]
-    if not current or timeLeft < current then entry.priceTimeLeft[unitPrice] = timeLeft end
+    local current = entry.flowTimeLeft[flowKey]
+    if not current or timeLeft < current then entry.flowTimeLeft[flowKey] = timeLeft end
   end
   entry.expiring[expiryBucket(timeLeft)] = entry.expiring[expiryBucket(timeLeft)] + 1
-end
-
--- Quantity-weighted percentile over the aggregated ladder.
-local function ladderPercentile(tiers, fraction)
-  local total = 0
-  for _, tier in ipairs(tiers) do total = total + tier.q end
-  if total <= 0 then return nil end
-  local threshold = total * fraction
-  local cumulative = 0
-  for _, tier in ipairs(tiers) do
-    cumulative = cumulative + tier.q
-    if cumulative >= threshold then return tier.p end
-  end
-  return tiers[#tiers].p
 end
 
 local function aggregateTiers(listings)
@@ -245,7 +234,9 @@ end
 -- ============================== Series ===============================
 
 local function ensureSeries()
-  WoWderhoiAH_Series = WoWderhoiAH_Series or { v = WAH.PIPELINE_VERSION, markets = {} }
+  if type(WoWderhoiAH_Series) ~= "table" or WoWderhoiAH_Series.v ~= WAH.PIPELINE_VERSION then
+    WoWderhoiAH_Series = { v = WAH.PIPELINE_VERSION, markets = {} }
+  end
   local key = marketKey()
   local market = WoWderhoiAH_Series.markets[key]
   if not market then
@@ -269,7 +260,7 @@ local function appendPoint(series, item, nowTs)
   series.q[#series.q + 1] = item.quantity
   series.n[#series.n + 1] = item.numAuctions
   series.s[#series.s + 1] = item.sellers
-  series.d[#series.d + 1] = item.inferredSold or 0
+  series.d[#series.d + 1] = item.inferredSoldLow or 0
   series.e[#series.e + 1] = event
 end
 
@@ -360,24 +351,53 @@ local function previousCapture()
   return capture
 end
 
+-- Disappearances between two scans, as an interval.
+--
+--   high  units that left their (owner, count, price) key and were not
+--         expiring. Includes sales, cancellations and repricing.
+--   low   units that left an owner entirely. A price change keeps the
+--         owner's total, so repricing is excluded; cancellations remain.
+--         Never above high.
+--
+-- Without visible owners the lower edge is zero: every disappearance could
+-- be a reprice. The core therefore falls back to its phase prior instead of
+-- pretending the upper edge is demand.
 local function inferFlow(entry, previous, elapsedSeconds)
-  if not previous or elapsedSeconds <= 0 then return 0, 0 end
-  local sold = 0
-  for price, quantity in pairs(previous.q or {}) do
-    local remaining = entry.priceQty[price] or 0
-    local timeLeft = previous.t and previous.t[price]
+  if not previous or elapsedSeconds <= 0 then return 0, 0, 0 end
+  local high = 0
+  local liveOwners = {}
+  for key, quantity in pairs(previous.keys or {}) do
+    local remaining = entry.flowKeys[key] or 0
+    local timeLeft = previous.t and previous.t[key]
     -- A listing cannot have sold if its previous remaining time was shorter
     -- than the gap between scans: that disappearance is an expiry.
-    if quantity > remaining and (not timeLeft or timeLeft > elapsedSeconds + 60) then
-      sold = sold + (quantity - remaining)
+    local live = timeLeft and timeLeft > elapsedSeconds + 60
+    if quantity > remaining and (not timeLeft or live) then
+      high = high + (quantity - remaining)
+    end
+    if live then
+      local owner = key:match("^(.-)|")
+      if owner and owner ~= "?" then
+        -- Only units that could not have expired contribute to the lower
+        -- edge; an owner total that moved between prices stays unchanged.
+        liveOwners[owner] = (liveOwners[owner] or 0) + quantity
+      end
     end
   end
+  local low = 0
+  for owner, quantity in pairs(liveOwners) do
+    local remaining = entry.ownerTotals[owner] or 0
+    if quantity > remaining then low = low + (quantity - remaining) end
+  end
+  low = math.min(low, high)
   local elapsedHours = math.max(elapsedSeconds / HOUR, 1 / 60)
   local supplyGrowth = 0
   if previous.total and previous.total > 0 then
-    supplyGrowth = ((entry.quantity - previous.total) + sold) / (previous.total * elapsedHours)
+    -- Use the lower edge: assuming fewer sales can only overstate new supply,
+    -- which is the conservative direction for a bubble warning.
+    supplyGrowth = ((entry.quantity - previous.total) + low) / (previous.total * elapsedHours)
   end
-  return sold, supplyGrowth
+  return low, high, supplyGrowth
 end
 
 local function finishScan(totalAuctions)
@@ -413,7 +433,7 @@ local function finishScan(totalAuctions)
       local sellers = countSellers(entry)
       local sellersInvisible = entry.sellerUnknown
       if sellersInvisible then sellers = entry.numAuctions end
-      local sold, supplyGrowth = inferFlow(entry, previous and previous.items[itemId], elapsedSeconds)
+      local soldLow, soldHigh, supplyGrowth = inferFlow(entry, previous and previous.items[itemId], elapsedSeconds)
       items[itemId] = {
         name = entry.name,
         quality = entry.quality,
@@ -422,8 +442,8 @@ local function finishScan(totalAuctions)
         vendorP = entry.vendorP,
         minPrice = math.floor((entry.minPrice or 0) + 0.5),
         sellP = math.floor((sellP or entry.minPrice or 0) + 0.5),
-        p5 = math.floor((ladderPercentile(tiers, 0.05) or entry.minPrice or 0) + 0.5),
-        marketPrice = math.floor((ladderPercentile(tiers, 0.10) or entry.minPrice or 0) + 0.5),
+        p5 = math.floor((Core.weightedPercentile(tiers, 0.05) or entry.minPrice or 0) + 0.5),
+        marketPrice = math.floor((Core.weightedPercentile(tiers, 0.10) or entry.minPrice or 0) + 0.5),
         quantity = entry.quantity,
         numAuctions = entry.numAuctions,
         sellers = sellers,
@@ -431,13 +451,14 @@ local function finishScan(totalAuctions)
         bidOnly = entry.bidOnly,
         tiers = storedTiers,
         expiring = entry.expiring,
-        inferredSold = sold,
+        inferredSoldLow = soldLow,
+        inferredSoldHigh = soldHigh,
         supplyGrowth = supplyGrowth,
         elapsedHours = math.max(elapsedSeconds / HOUR, 1 / 60)
       }
       captureItems[itemId] = {
-        q = entry.priceQty,
-        t = entry.priceTimeLeft,
+        keys = entry.flowKeys,
+        t = entry.flowTimeLeft,
         total = entry.quantity,
         at = nowTs
       }
@@ -457,7 +478,8 @@ local function finishScan(totalAuctions)
         bidOnly = entry.bidOnly,
         tiers = {},
         expiring = entry.expiring,
-        inferredSold = 0,
+        inferredSoldLow = 0,
+        inferredSoldHigh = 0,
         supplyGrowth = 0
       }
     end
@@ -489,9 +511,6 @@ local function finishScan(totalAuctions)
     items = captureItems
   }
   recordSeries(items, nowTs)
-  -- The phase is a property of this scan; cache it so GUI/chat read one
-  -- answer instead of recomputing from slightly different clocks.
-  lastPhase = WAH.currentPhase and WAH.currentPhase() or phase
   scanState = nil
   WAH.scanRunning = false
   scanFailures = 0
@@ -673,13 +692,10 @@ function WAH.history(itemId, windowHours)
   local window = windowHours or phaseRule.windowHours
   if window <= 0 then window = 168 end
   local cutoff = time() - window * HOUR
-  local sells, p10s, mins, quantities, pts = {}, {}, {}, {}, {}
+  local sells, pts = {}, {}
   for index = 1, #series.t do
     if series.t[index] >= cutoff then
       sells[#sells + 1] = series.sell[index]
-      p10s[#p10s + 1] = series.p10[index]
-      mins[#mins + 1] = series.min[index]
-      quantities[#quantities + 1] = series.q[index]
       pts[#pts + 1] = {
         t = series.t[index],
         c = series.p10[index],
@@ -692,18 +708,11 @@ function WAH.history(itemId, windowHours)
   end
   if #sells == 0 then
     local last = #series.t
-    sells[1], p10s[1], mins[1], quantities[1] = series.sell[last], series.p10[last], series.min[last], series.q[last]
+    sells[1] = series.sell[last]
     pts[1] = {
       t = series.t[last], c = series.p10[last], sell = series.sell[last],
       min = series.min[last], q = series.q[last], event = series.e[last]
     }
-  end
-  local distinctSells = 1
-  local sortedSells = {}
-  for index, value in ipairs(sells) do sortedSells[index] = value end
-  table.sort(sortedSells)
-  for index = 2, #sortedSells do
-    if sortedSells[index] ~= sortedSells[index - 1] then distinctSells = distinctSells + 1 end
   end
   local minSell, maxSell = math.huge, 0
   for _, value in ipairs(sells) do
@@ -715,11 +724,8 @@ function WAH.history(itemId, windowHours)
     samples = #sells,
     sellRef = Core.median(sells),
     latest = sells[#sells],
-    latestP10 = p10s[#p10s],
-    med7 = Core.median(p10s),
     minSell = minSell,
     maxSell = maxSell,
-    distinct = distinctSells,
     windowHours = window
   }
 end
@@ -764,8 +770,7 @@ function WAH.coreInput()
     market = {
       scannedAt = scan and scan.scannedAt or nil,
       firstScanAt = market and market.firstScanAt or nil,
-      items = {},
-      bids = scan and scan.bids or {}
+      items = {}
     },
     positions = {},
     capital = { cash = 0, mail = 0, escrow = 0, budget = 0 },
@@ -774,9 +779,12 @@ function WAH.coreInput()
   if not scan or scan.dataVersion ~= WAH.PIPELINE_VERSION then return input end
   local override = WAH.settings and WAH.settings.phaseOverride
   if override and override ~= "auto" then input.phaseOverride = override end
+  local ledger = WAH.Ledger and WAH.Ledger.current() or nil
+  local ownSales = ledger and WAH.Ledger.salesSince(7 * 24 * 3600, input.now) or {}
   for itemId, entry in pairs(scan.items or {}) do
     if entry.minPrice and entry.minPrice > 0 then
       local history = WAH.history(itemId)
+      local own = ownSales[itemId]
       input.market.items[itemId] = {
         itemId = itemId,
         name = entry.name,
@@ -786,28 +794,24 @@ function WAH.coreInput()
         vendorP = entry.vendorP,
         minPrice = entry.minPrice,
         sellP = entry.sellP,
-        p5 = entry.p5,
-        p10 = entry.marketPrice,
         quantity = entry.quantity,
         numAuctions = entry.numAuctions,
         sellers = entry.sellers,
         sellersInvisible = entry.sellersInvisible,
         bidOnly = entry.bidOnly,
         tiers = entry.tiers,
-        inferredSold = entry.inferredSold,
+        inferredSoldLow = entry.inferredSoldLow,
+        inferredSoldHigh = entry.inferredSoldHigh,
         supplyGrowth = entry.supplyGrowth,
         elapsedHours = entry.elapsedHours,
+        ownSold = own and own.qty or 0,
+        ownSamples = own and own.samples or 0,
+        ownElapsedHours = own and own.elapsedHours or 0,
         demandPrior = Core.demandFor(entry.itemClass, entry.itemSubClass),
-        history = history and {
-          sellRef = history.sellRef,
-          samples = history.samples,
-          latest = history.latest,
-          distinct = history.distinct
-        } or nil
+        history = history and { samples = history.samples } or nil
       }
     end
   end
-  local ledger = WAH.Ledger and WAH.Ledger.current() or nil
   local cash = GetMoney and GetMoney() or 0
   input.positions = ledger and ledger.positions or {}
   input.capital = {
@@ -818,5 +822,3 @@ function WAH.coreInput()
   }
   return input
 end
-
-WAH.lastPhase = function() return lastPhase end

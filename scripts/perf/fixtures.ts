@@ -131,7 +131,8 @@ export function buildScanPayload(market: SyntheticMarket, pointIndex: number, sc
       bidOnly: 0,
       tiers,
       expiring: { soon: 1, mid: 2, late: 3 },
-      inferredSold: 0,
+      inferredSoldLow: 0,
+      inferredSoldHigh: 0,
       supplyGrowth: 0
     };
   }
