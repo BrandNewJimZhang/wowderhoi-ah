@@ -108,9 +108,11 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
                 : <div className="p-4 font-mono text-xs text-terminal-muted">
                     {fillRow?.vendor
                       ? "NPC 收购价高于挂单价：成交由商人保证，无需挂单成交估计。"
-                      : latest
-                        ? "该物品未通过当前阶段门槛，暂无成交概率估计；先看盘口与建议卖价。"
-                        : "尚无扫描数据"}
+                      : signal?.stale
+                        ? "最近一次扫描中已无在售挂单，无法估计成交概率；价格是上次有货时的值。"
+                        : latest
+                          ? "该物品未通过当前阶段门槛，暂无成交概率估计；先看盘口与建议卖价。"
+                          : "尚无扫描数据"}
                   </div>}
             </div>
           </Panel>

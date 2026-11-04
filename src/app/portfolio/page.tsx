@@ -23,7 +23,9 @@ export default async function PortfolioPage() {
     })
   ]);
   const { signals, phase } = bundle;
-  const priceById = new Map(signals.map((signal) => [signal.itemId, signal.sellPrice]));
+  // A position whose item left the newest scan has no current sell front:
+  // value it as unpriced instead of carrying the last price it was seen at.
+  const priceById = new Map(signals.filter((signal) => !signal.stale).map((signal) => [signal.itemId, signal.sellPrice]));
   const nameById = new Map(signals.map((signal) => [signal.itemId, signal.name]));
   const {
     rows,

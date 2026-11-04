@@ -43,9 +43,12 @@ export default async function ReviewPage() {
   }));
   const policyEstimate = evaluatePolicy(loggedDecisions, realizedTrades, () => true);
   const firstPosition = Object.entries(positions)[0];
+  // Experiments are priced around the current sell front; a held item that
+  // left the newest scan has no usable reference, so it is skipped.
+  const currentSignals = signals.filter((signal) => !signal.stale);
   const experimentSignal = firstPosition
-    ? signals.find((signal) => signal.itemId === Number(firstPosition[0]))
-    : signals[0];
+    ? currentSignals.find((signal) => signal.itemId === Number(firstPosition[0]))
+    : currentSignals[0];
   const experiment = experimentSignal
     ? designExperiment({
         itemId: experimentSignal.itemId,
@@ -182,7 +185,11 @@ export default async function ReviewPage() {
               <div className="text-[11px] text-terminal-muted">{experiment.note}</div>
             </div>
           ) : (
-            <div className="p-3 font-mono text-xs text-terminal-muted">先扫描并导入一个市场，才能设计实验。</div>
+            <div className="p-3 font-mono text-xs text-terminal-muted">
+              {signals.length > 0
+                ? "持仓物品未出现在最近一次扫描中，没有可用的当前卖价来设计实验。"
+                : "先扫描并导入一个市场，才能设计实验。"}
+            </div>
           )}
         </Panel>
       </div>
