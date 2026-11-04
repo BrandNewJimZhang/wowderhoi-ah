@@ -1,4 +1,6 @@
-// Craft profit engine plus the curated TBC phase-2 recipe table.
+// Craft profit engine plus a curated vanilla/TBC recipe table. On the
+// Forever branch some materials may not exist or may not be priced by the
+// current scan; those rows report as missing instead of inventing a cost.
 // Quantities are curated seed data (verify in-game before trusting large
 // positions); itemIds are authoritative, names are display labels.
 

@@ -11,12 +11,35 @@ PRs are welcome — with one hard rule:
 2. **All PRs are reviewed by the maintainer** (@BrandNewJimZhang)
    before merging. Expect review comments; unresponsive PRs may be
    closed after a while.
-3. Keep history linear: rebase on `main`, no merge commits.
+3. Keep history linear: rebase on `forever` (the default branch), no
+   merge commits. `anniversary` is a maintenance line that receives
+   shared work by merging `forever` into it.
 4. Commit messages: English, imperative, `Feat:`/`Fix:`/`Docs:`/...
    prefixes (see `git log` for the house style).
-5. Behavior changes to the TypeScript side land with tests
-   (`npm run test`, `npm run typecheck` must pass). The Lua addon has
-   no offline harness — describe your in-game verification in the PR.
+5. Behavior changes land with tests. TypeScript: `npm run test`,
+   `npm run typecheck`. The Lua addon is driven through a stubbed Wow
+   Forever client in `addon/test` (`npm test` runs the shipped Lua
+   verbatim); add a case there instead of listing manual steps only.
+   Still describe any in-game verification in the PR.
+
+## Branch model
+
+| Branch | Target | Role |
+|---|---|---|
+| `forever` (default) | WoW Forever 1.60.1, Interface 16001 | Development trunk |
+| `anniversary` | TBC Anniversary 2.5.6, Interface 20506 | Maintenance line |
+
+Shared work lands on `forever` first. When merging into `anniversary`,
+keep that branch's client-specific files:
+
+- `addon/WoWderhoiAH/WoWderhoiAH.toc`
+- the scan acquisition path in `addon/WoWderhoiAH/WoWderhoiAH.lua`
+- the buy/sell paths in `addon/WoWderhoiAH/Trade.lua`
+- branch-specific docs and README badges
+
+Everything else — the terminal, `src/lib/market-rules.ts`, pricing math,
+tooltip and chart code — is meant to stay identical on both branches.
+A fix that applies to both should not be written twice.
 
 ## 中文
 
@@ -26,8 +49,29 @@ PRs are welcome — with one hard rule:
    疑问都行），PR 描述里用 `Closes #N` / `Fixes #N` 关联。没有关联
    issue 的 PR 会被直接关闭。
 2. **所有 PR 由维护者（@BrandNewJimZhang）审阅**后合并。
-3. 保持线性历史：基于 `main` rebase，不要 merge commit。
+3. 保持线性历史：基于 `forever`（默认分支）rebase，不要 merge
+   commit。`anniversary` 是维护线，通过把 `forever` 合并进来接收共享
+   改动。
 4. Commit message 用英文祈使句，带 `Feat:`/`Fix:`/`Docs:` 等前缀。
-5. TypeScript 侧的行为变更需附带测试（`npm run test`、
-   `npm run typecheck` 必须通过）；Lua 插件无离线测试环境，请在 PR
-   里描述你的游戏内验证过程。
+5. 行为变更必须附带测试。TypeScript：`npm run test`、
+   `npm run typecheck`。Lua 插件在 `addon/test` 里有模拟无限客户端的
+   离线环境（`npm test` 直接跑发布用的 Lua），请在那里加用例，而不是
+   只在 PR 里写手工验证步骤；游戏内验证仍请一并描述。
+
+### 分支模型
+
+| 分支 | 目标 | 角色 |
+|---|---|---|
+| `forever`（默认） | 无限 1.60.1，Interface 16001 | 开发主线 |
+| `anniversary` | TBC 周年服 2.5.6，Interface 20506 | 维护线 |
+
+共享改动先落 `forever`。合并到 `anniversary` 时保留该分支的客户端
+专属文件：
+
+- `addon/WoWderhoiAH/WoWderhoiAH.toc`
+- `addon/WoWderhoiAH/WoWderhoiAH.lua` 里的扫描采集路径
+- `addon/WoWderhoiAH/Trade.lua` 里的买卖路径
+- 分支专属文档与 README 徽章
+
+其余部分——桌面终端、`src/lib/market-rules.ts`、定价数学、tooltip 与
+图表——应在两个分支保持一致。两边都适用的修复不要写两遍。

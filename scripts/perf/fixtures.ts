@@ -22,7 +22,7 @@ export type SyntheticItem = {
 
 export type SyntheticMarket = { items: SyntheticItem[] };
 
-// Rough histogram of a real Anniversary AH scan: trade goods dominate.
+// Rough histogram of a real Forever AH scan: trade goods dominate.
 const ITEM_CLASSES: Array<{ itemClass: string; itemSubClass: string; weight: number }> = [
   { itemClass: "Trade Goods", itemSubClass: "Herb", weight: 3 },
   { itemClass: "Trade Goods", itemSubClass: "Metal & Stone", weight: 3 },

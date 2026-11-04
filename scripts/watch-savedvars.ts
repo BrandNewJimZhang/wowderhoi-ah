@@ -14,7 +14,7 @@ const savedVarsPath = process.env.AQT_SAVEDVARS_PATH;
 if (!savedVarsPath) {
   throw new Error(
     "AQT_SAVEDVARS_PATH is not set. Point it at the WoW SavedVariables file, e.g. " +
-      "<WoW install dir>\\_anniversary_\\WTF\\Account\\<ACCOUNT>\\SavedVariables\\WoWderhoiAH.lua"
+      "<game data dir>\\WTF\\Account\\<ACCOUNT>\\SavedVariables\\WoWderhoiAH.lua"
   );
 }
 const importUrl = process.env.AQT_IMPORT_URL ?? "http://localhost:3000/api/import/addon-scan";
