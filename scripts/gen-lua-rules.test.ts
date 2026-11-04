@@ -23,4 +23,18 @@ describe("gen-lua-rules", () => {
     expect(lua).toContain("minAuctions = 3");
     expect(lua).toContain("minHistory = 3");
   });
+
+  it("emits the phase and market-type matrix the decision core reads", () => {
+    const lua = generateLuaRules();
+    expect(lua).toContain("WAH.RULES =");
+    expect(lua).toContain("feeRate = 0.05");
+    expect(lua).toContain("marketTypeRules =");
+    for (const phase of ["ignition", "wave", "settle", "steady"]) {
+      expect(lua).toContain(`${phase} = {`);
+    }
+    for (const type of ["vendor", "commodity", "item"]) {
+      expect(lua).toContain(`${type} = {`);
+    }
+    expect(lua).toContain("minUnitProfit = 250"); // steady/item is the strictest
+  });
 });

@@ -6,6 +6,7 @@ local ADDON_NAME, WAH = ...
 
 WAH.PIPELINE_VERSION = 3
 
+-- Legacy P10 radar thresholds; the executable-profit radar reads WAH.RULES.
 WAH.RADAR = {
   minProfit = 500,
   discount = 0.85,
@@ -13,4 +14,156 @@ WAH.RADAR = {
   minHistory = 3,
   minMed7Distinct = 2,
   maxDiscount = 0.6
+}
+
+WAH.RULES = {
+  feeRate = 0.05,
+  sellFront = {
+  alpha = 0.03,
+  noiseMultiple = 3,
+  undercutCopper = 1,
+  itemDepth = 3,
+  minDepthEarly = 1,
+  minDepth = 3
+},
+  phaseBoundaries = {
+  ignitionHours = 6,
+  waveHours = 48,
+  settleHours = 168,
+  ignitionBreadth = 80,
+  waveBreadth = 400,
+  settleBreadth = 800
+},
+  phaseHistory = {
+  ignition = {
+    windowHours = 0,
+    minSamples = 0
+  },
+  wave = {
+    windowHours = 6,
+    minSamples = 6
+  },
+  settle = {
+    windowHours = 24,
+    minSamples = 12
+  },
+  steady = {
+    windowHours = 168,
+    minSamples = 48
+  }
+},
+  marketTypes = { "vendor", "commodity", "item" },
+  phases = { "ignition", "wave", "settle", "steady" },
+  portfolio = {
+  kellyFraction = 0.25,
+  minKellySamples = 10,
+  maxItemExposure = 0.25,
+  dailyBudget = 0.5
+},
+  marketTypeRules = {
+  ignition = {
+    vendor = {
+      minListings = 1,
+      minSellers = 1,
+      minSpread = 0,
+      maxSpread = 1,
+      minNet = 0,
+      minUnitProfit = 0
+    },
+    commodity = {
+      minListings = 1,
+      minSellers = 1,
+      minSpread = 0.2,
+      maxSpread = 0.85,
+      minNet = 5000,
+      minUnitProfit = 50
+    },
+    item = {
+      minListings = 1,
+      minSellers = 1,
+      minSpread = 0.25,
+      maxSpread = 0.8,
+      minNet = 10000,
+      minUnitProfit = 100
+    }
+  },
+  wave = {
+    vendor = {
+      minListings = 1,
+      minSellers = 1,
+      minSpread = 0,
+      maxSpread = 1,
+      minNet = 0,
+      minUnitProfit = 0
+    },
+    commodity = {
+      minListings = 3,
+      minSellers = 2,
+      minSpread = 0.12,
+      maxSpread = 0.6,
+      minNet = 10000,
+      minUnitProfit = 75
+    },
+    item = {
+      minListings = 2,
+      minSellers = 1,
+      minSpread = 0.18,
+      maxSpread = 0.7,
+      minNet = 20000,
+      minUnitProfit = 150
+    }
+  },
+  settle = {
+    vendor = {
+      minListings = 1,
+      minSellers = 1,
+      minSpread = 0,
+      maxSpread = 1,
+      minNet = 0,
+      minUnitProfit = 0
+    },
+    commodity = {
+      minListings = 5,
+      minSellers = 3,
+      minSpread = 0.08,
+      maxSpread = 0.5,
+      minNet = 20000,
+      minUnitProfit = 100
+    },
+    item = {
+      minListings = 3,
+      minSellers = 1,
+      minSpread = 0.15,
+      maxSpread = 0.6,
+      minNet = 30000,
+      minUnitProfit = 200
+    }
+  },
+  steady = {
+    vendor = {
+      minListings = 1,
+      minSellers = 1,
+      minSpread = 0,
+      maxSpread = 1,
+      minNet = 0,
+      minUnitProfit = 0
+    },
+    commodity = {
+      minListings = 8,
+      minSellers = 4,
+      minSpread = 0.06,
+      maxSpread = 0.4,
+      minNet = 30000,
+      minUnitProfit = 125
+    },
+    item = {
+      minListings = 3,
+      minSellers = 1,
+      minSpread = 0.12,
+      maxSpread = 0.5,
+      minNet = 50000,
+      minUnitProfit = 250
+    }
+  }
+}
 }
