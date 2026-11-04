@@ -15,8 +15,8 @@ local getItemInfo = WAH.getItemInfo
 local HOUR = 60 * 60
 local DAY = 24 * HOUR
 
-local function historyFor(itemId)
-  return WAH.history and WAH.history(itemId)
+local function historyFor(itemId, windowHours)
+  return WAH.history and WAH.history(itemId, windowHours)
 end
 
 local function currentItem(itemId)
@@ -156,6 +156,11 @@ local WINDOWS = {
   { key = "7d", hours = 168, label = "CHART_WINDOW_7D" },
   { key = "all", hours = 0, label = "CHART_WINDOW_ALL" }
 }
+
+-- "All" means the whole retained series, not the phase window. The series
+-- keeps a month (WoWderhoiAH.lua's pruneSeries), so ask for a month and let
+-- WAH.history return every point it still holds.
+local ALL_HOURS = 30 * 24
 
 local chartMode = nil -- nil = automatic: book with <2 points, time otherwise
 local chartWindow = nil -- nil = phase default
@@ -365,7 +370,7 @@ local function renderTime(entry, windowHours)
     for index = 1, #points - 1 do
       local left, right = points[index], points[index + 1]
       if right.t - left.t <= gapLimit then
-        local leftValue, rightValue = left[key] or left.c, right[key] or right.c
+        local leftValue, rightValue = left[key], right[key]
         if leftValue and rightValue then
           segmentCount = segmentCount + 1
           local line = ensureLine(chart.segments, segmentCount)
@@ -429,7 +434,11 @@ end
 
 local function renderChart(itemId)
   local entry = currentItem(itemId)
-  local history = historyFor(itemId)
+  -- Read the whole retained series and let the selected window filter what
+  -- is drawn. Fetching the phase window here made the 24h/7d/all buttons
+  -- redraw the same handful of points in wave and settle.
+  local window = chartWindow or phaseWindow()
+  local history = historyFor(itemId, ALL_HOURS)
   if not entry and not history then chart:Hide() return end
   chart:ClearAllPoints()
   local auctionHouse = WAH.ahFrame and WAH.ahFrame()
@@ -449,15 +458,17 @@ local function renderChart(itemId)
   local hasHistory = history and #(history.pts or {}) >= 2
   local mode = chartMode or (hasHistory and "time" or "book")
   if mode == "time" and not hasHistory then mode = "book" end
-  local window = chartWindow or phaseWindow()
   if mode == "book" then
     renderBook(entry or { tiers = {} })
     chart.subtitle:SetText(string.format(L.CHART_SUBTITLE_BOOK,
       (entry and entry.numAuctions) or 0, phaseLabel(WAH.currentPhase and WAH.currentPhase() or "steady")))
   else
     renderTime(history, window)
+    -- Report the points actually inside the selected window, not the size
+    -- of the retained series.
+    local shown = chart._state and chart._state.points or 0
     chart.subtitle:SetText(string.format(L.CHART_SUBTITLE,
-      #history.pts, coinString(history.latest or 0), window > 0 and window or L.CHART_ALL_LABEL))
+      shown, coinString(history.latest or 0), window > 0 and window or L.CHART_ALL_LABEL))
   end
   for _, button in ipairs(chart.modeButtons) do
     button:SetText(button.mode == mode and ("|cffffd100" .. button.label .. "|r") or button.label)

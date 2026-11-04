@@ -16,6 +16,7 @@ import {
 import { formatWowMoney } from "@/lib/wow-money";
 import { fillCurve } from "@/lib/fill";
 import { median } from "@/lib/median";
+import type { TimePoint } from "@/lib/chart-series";
 import type { FillBasis } from "@/lib/core/types";
 
 const formatGold = (copper: number) => formatWowMoney(copper, { compact: true });
@@ -25,8 +26,6 @@ const tooltipStyle = { background: "#10141d", border: "1px solid #263042", color
 const axisStyle = { fill: "#8d96a8", fontSize: 11 };
 
 // ============================ Time series ============================
-
-export type TimePoint = { ts: number; price: number; min?: number | null; volume?: number };
 
 const WINDOWS = [
   { key: "1h", hours: 1 },
@@ -53,8 +52,8 @@ function withGapBreaks(points: TimePoint[]): Array<TimePoint & { gap?: boolean }
 
 // Time-proportional X axis: gaps in scanning render as real gaps, so
 // the trend shape is honest about when data actually exists.
-export function TimeSeriesChart({ data }: { data: TimePoint[] }) {
-  const [windowKey, setWindowKey] = useState<string>("全部");
+export function TimeSeriesChart({ data, defaultWindow = "全部" }: { data: TimePoint[]; defaultWindow?: string }) {
+  const [windowKey, setWindowKey] = useState<string>(defaultWindow);
   const filtered = useMemo(() => {
     const window = WINDOWS.find((entry) => entry.key === windowKey) ?? WINDOWS[4];
     if (window.hours === 0 || data.length === 0) return data;
@@ -66,10 +65,16 @@ export function TimeSeriesChart({ data }: { data: TimePoint[] }) {
   const min = prices.length > 0 ? Math.min(...prices) : 0;
   const max = prices.length > 0 ? Math.max(...prices) : 0;
   const logScale = min > 0 && max / min > 4;
+  // Multi-day windows need the date on every tick; within a day the clock
+  // alone reads cleaner.
+  const span = filtered.length > 1 ? filtered[filtered.length - 1].ts - filtered[0].ts : 0;
+  const multiDay = span > 24 * 60 * 60 * 1000;
 
   const formatClock = (ts: number) => {
     const date = new Date(ts);
-    return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+    const clock = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+    if (!multiDay) return clock;
+    return `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${clock}`;
   };
 
   return (

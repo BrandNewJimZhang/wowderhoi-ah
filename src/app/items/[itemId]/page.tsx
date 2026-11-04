@@ -10,6 +10,7 @@ import { ItemIcon } from "@/components/item-icon";
 import { describeFreshness } from "@/lib/freshness";
 import { SCAN_INTERVAL_MINUTES } from "@/lib/market-rules";
 import { bandFromInterval } from "@/lib/fill";
+import { buildTimeSeries } from "@/lib/chart-series";
 import { CandlestickChart, FillProbabilityChart, OrderBookChart, TimeSeriesChart, type BookTier } from "@/components/charts";
 import { AlertRulePanel } from "@/components/trader-panels";
 import { WatchStar } from "@/components/watch-star";
@@ -49,14 +50,12 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
     low: summary.lowPrice,
     volume: summary.volume
   }));
-  // Intraday view: raw scan snapshots. AH prices swing hour to hour;
-  // with auto-rescan on the compiled cadence this is the trading chart.
-  const intradayData = item.snapshots.slice(-48).map((snapshot) => ({
-    ts: snapshot.timestamp.getTime(),
-    price: snapshot.sellPrice ?? snapshot.marketPrice,
-    min: snapshot.minPrice,
-    volume: snapshot.quantity
-  }));
+  // Intraday view: raw scan snapshots, extended with older daily closes so
+  // the 24h/7d/全部 window buttons reach data instead of redrawing the same
+  // half-day. The current day's close comes from these snapshots, so it is
+  // never plotted twice.
+  const intradayData = buildTimeSeries(item.snapshots, item.dailySummaries);
+  const defaultChartWindow = bundle.phase === "ignition" ? "全部" : bundle.phase === "wave" ? "6h" : "24h";
   const tiers = (Array.isArray(latest?.topTiers) ? latest.topTiers : []) as BookTier[];
   const bookTiers = tiers.length > 0 ? tiers : latest ? [{ p: latest.minPrice, q: latest.quantity }] : [];
   // The fill curve is derived from the shared core's 24-hour fill
@@ -120,7 +119,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
             <PanelHeader title="盘中走势 (逐次扫描)" />
             <div className="p-3">
               {intradayData.length >= 2
-                ? <TimeSeriesChart data={intradayData} />
+                ? <TimeSeriesChart data={intradayData} defaultWindow={defaultChartWindow} />
                 : <div className="p-4 font-mono text-xs text-terminal-muted">盘中曲线需要多次扫描——开 /wahauto 挂机自动积累（每约 {SCAN_INTERVAL_MINUTES} 分钟一个点）</div>}
             </div>
           </Panel>

@@ -74,6 +74,52 @@ describe("time-series chart", () => {
     expect(lua.text("WoWderhoiAHChart.hilo:GetText()")).toBe("该时间窗内扫描次数不足");
   });
 
+  it("keeps points older than the phase default when a wider window is selected", () => {
+    const lua = loadAddon();
+    lua.exec("WowTest.ns.settings.phaseOverride = 'wave'");
+    lua.setScan([{
+      itemId: 4338,
+      name: "Mageweave Cloth",
+      minPrice: 8000,
+      sellP: 10000,
+      numAuctions: 6,
+      sellers: 3,
+      quantity: 70,
+      itemClass: "Trade Goods",
+      tiers: [{ p: 8000, q: 20 }, { p: 9000, q: 50 }]
+    }]);
+    // One point now, one 12 hours ago, one 25 hours ago. The wave default
+    // is a six-hour window, so the selected window — not the phase window —
+    // must reach the older points.
+    lua.exec(`WoWderhoiAH_Series = ${toLua({
+      v: 4,
+      markets: {
+        "TestRealm|Alliance": {
+          firstScanAt: 1699913600,
+          items: {
+            4338: {
+              t: [1699910000, 1699956800, 1700000000],
+              min: [8000, 8000, 8000],
+              sell: [9000, 9500, 10000],
+              q: [60, 65, 70],
+              e: [0, 0, 0]
+            }
+          }
+        }
+      }
+    })}`);
+    lua.openTab();
+    lua.exec("WoWderhoiAH_UpdateChart(4338)");
+    // The series spans a day, so the chart stays in time mode; the phase
+    // default only decides how much of it is drawn.
+    expect(lua.text("WowTest.ns.chartState().mode")).toBe("time");
+    expect(lua.number("WowTest.ns.chartState().points")).toBe(1);
+    lua.exec("WowTest.ns.setChartWindow(24)");
+    expect(lua.number("WowTest.ns.chartState().points")).toBe(2);
+    lua.exec("WowTest.ns.setChartWindow(168)");
+    expect(lua.number("WowTest.ns.chartState().points")).toBe(3);
+  });
+
   it("switches to a log axis when the range spans more than 4x", () => {
     const lua = chartPage([100, 1000, 5000]);
     expect(lua.eval("WowTest.ns.chartState().logScale")).toBe(true);
