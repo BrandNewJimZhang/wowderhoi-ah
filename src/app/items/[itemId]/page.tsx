@@ -7,7 +7,7 @@ import { Coins } from "@/components/coins";
 import { qualityColorClass } from "@/lib/quality";
 import { ItemIcon } from "@/components/item-icon";
 import { describeFreshness } from "@/lib/freshness";
-import { CandlestickChart, TimeSeriesChart } from "@/components/charts";
+import { CandlestickChart, FillProbabilityChart, OrderBookChart, TimeSeriesChart, type BookTier } from "@/components/charts";
 import { AlertRulePanel } from "@/components/trader-panels";
 import { WatchStar } from "@/components/watch-star";
 import { Panel, PanelHeader } from "@/components/ui/panel";
@@ -41,8 +41,17 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
   const intradayData = item.snapshots.slice(-48).map((snapshot) => ({
     ts: snapshot.timestamp.getTime(),
     price: snapshot.sellPrice ?? snapshot.marketPrice,
-    volume: snapshot.quantity
+    min: snapshot.minPrice,
+    volume: snapshot.quantity,
+    event: undefined
   }));
+  const latest = item.snapshots.at(-1);
+  const tiers = (Array.isArray(latest?.topTiers) ? latest.topTiers : []) as BookTier[];
+  const bookTiers = tiers.length > 0 ? tiers : latest ? [{ p: latest.minPrice, q: latest.quantity }] : [];
+  const inferredSold = latest?.soldProxyLow ?? 0;
+  const hazardPerHour = inferredSold > 0 && latest && latest.quantity > 0
+    ? Math.min(2, Math.max(0.001, inferredSold / (latest.quantity * 0.25)))
+    : 0.2;
 
   return (
     <main className="terminal-grid min-h-screen bg-terminal-bg p-3 text-slate-200">
@@ -58,6 +67,22 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
       </div>
       <div className="grid gap-3 xl:grid-cols-[1fr_360px]">
         <div className="space-y-3">
+          <Panel>
+            <PanelHeader title="盘口阶梯 (价格 vs 累计在售)" />
+            <div className="p-3">
+              {latest
+                ? <OrderBookChart tiers={bookTiers} sellP={latest.sellPrice} minPrice={latest.minPrice} />
+                : <div className="p-4 font-mono text-xs text-terminal-muted">尚无扫描数据</div>}
+            </div>
+          </Panel>
+          <Panel>
+            <PanelHeader title="24 小时成交概率" />
+            <div className="p-3">
+              {latest
+                ? <FillProbabilityChart tiers={bookTiers} hazardPerHour={hazardPerHour} inferred={inferredSold > 0} />
+                : <div className="p-4 font-mono text-xs text-terminal-muted">尚无扫描数据</div>}
+            </div>
+          </Panel>
           <Panel>
             <PanelHeader title="盘中走势 (逐次扫描)" />
             <div className="p-3">

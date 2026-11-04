@@ -67,6 +67,38 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       <div className="grid gap-3 xl:grid-cols-[1fr_360px]">
         <div className="space-y-3">
           <Panel>
+            <PanelHeader title="下一步行动" action={<span className="font-mono text-xs text-terminal-muted">共享决策核心 · 条件策略</span>} />
+            <div className="space-y-2 p-3 font-mono text-xs">
+              {evaluation.actions.length === 0 && (
+                <div className="text-terminal-muted">当前没有通过门槛的行动；先扫描，或等待阶段变化。</div>
+              )}
+              {evaluation.actions.slice(0, 8).map((action) => (
+                <div key={`${action.kind}-${action.itemId}`} className="flex flex-wrap items-center justify-between gap-2 border-b border-terminal-border/60 pb-1 last:border-0">
+                  <Link href={`/items/${action.itemId}`} className="text-slate-100 hover:text-terminal-amber">
+                    <span className={action.kind === "buy" ? "text-terminal-green" : "text-terminal-amber"}>
+                      {action.kind === "buy" ? "买入" : "卖出"}
+                    </span>
+                    {" "}{("name" in action && action.name) || `#${action.itemId}`}
+                  </Link>
+                  {action.kind === "buy" ? (
+                    <span className="flex items-center gap-3 text-terminal-muted">
+                      <span>{action.qty} 件</span>
+                      <span>上限 <Coins copper={action.maxUnitPrice} /></span>
+                      <span>净利 <Coins copper={action.expectedNet} /></span>
+                      <span>成交率 {(action.fillProb * 100).toFixed(0)}%</span>
+                      <span className="text-slate-400">{action.reason}</span>
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-3 text-terminal-muted">
+                      <span>{action.qty} 件 @ <Coins copper={action.price} /></span>
+                      <span>售出净利 <Coins copper={action.netIfSold} /></span>
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </Panel>
+          <Panel>
             <PanelHeader title="可执行机会" action={<span className="font-mono text-xs text-terminal-green">NPC必赚 + 最低价 vs 建议卖价</span>} />
             <div className="space-y-2 p-3 font-mono text-xs">
               {deals.length === 0 && (
