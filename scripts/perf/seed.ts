@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { PrismaClient } from "@prisma/client";
-import { generateMarket, qualityName, type SyntheticMarket } from "./fixtures";
+import { generateMarket, qualityName, syntheticMarketType, syntheticSellers, syntheticTiers, type SyntheticMarket } from "./fixtures";
 
 const SCAN_INTERVAL_MS = 15 * 60 * 1000; // matches /wahauto cadence
 const SCANS_PER_DAY = (24 * 60) / 15;
@@ -100,7 +100,15 @@ async function main() {
       // page instead of the real analytics path.
       sellPrice: point.marketPrice,
       quantity: point.quantity,
-      numAuctions: point.numAuctions
+      numAuctions: point.numAuctions,
+      // Depth, sellers and classification come from the same helpers the
+      // addon-payload generator uses. Leaving them at schema defaults made
+      // the seeder's core evaluation empty: zero sellers fails every phase's
+      // book gate, so the pages under test never rendered the radar.
+      sellerCount: syntheticSellers(point),
+      sellersInvisible: false,
+      marketType: syntheticMarketType(item, point),
+      topTiers: syntheticTiers(point)
     }))
   );
   await insertChunked(snapshotRows, (chunk) => prisma.auctionSnapshot.createMany({ data: chunk }));

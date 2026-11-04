@@ -101,6 +101,32 @@ export function qualityName(qualityIndex: number): string {
   return QUALITY_NAMES[qualityIndex] ?? "unknown";
 }
 
+// The derived book shape for one walk point. The addon-payload generator and
+// the database seeder are two encodings of the same synthetic market; if one
+// invents depth or sellers and the other does not, the perf harness measures
+// a book the decision core would filter out. Both call these helpers.
+export function syntheticTiers(point: SnapshotPoint) {
+  return [
+    { p: point.minPrice, q: Math.max(1, Math.round(point.quantity * 0.05)) },
+    { p: point.marketPrice, q: Math.max(1, Math.round(point.quantity * 0.25)) },
+    { p: Math.round(point.marketPrice * 1.1), q: Math.max(1, Math.round(point.quantity * 0.4)) }
+  ];
+}
+
+export function syntheticSellers(point: SnapshotPoint): number {
+  return Math.max(1, Math.round(point.numAuctions * 0.8));
+}
+
+// Same rule as Core.marketTypeFor: trade goods are anonymous offer groups,
+// and any book whose average lot holds more than 1.5 units is one too. The
+// fixture must classify exactly as the real scanner would, or the perf
+// pages would exercise a different gate than the live radar.
+export function syntheticMarketType(item: SyntheticItem, point: SnapshotPoint): "commodity" | "item" {
+  if (item.itemClass === "Trade Goods") return "commodity";
+  if (point.numAuctions > 0 && point.quantity / point.numAuctions > 1.5) return "commodity";
+  return "item";
+}
+
 // Payload in the exact shape the addon writes and normalizeAddonScan
 // validates; pointIndex selects which walk step this scan represents.
 export function buildScanPayload(market: SyntheticMarket, pointIndex: number, scannedAtEpochSeconds: number) {
@@ -110,29 +136,22 @@ export function buildScanPayload(market: SyntheticMarket, pointIndex: number, sc
     if (!point) {
       throw new Error(`buildScanPayload: pointIndex ${pointIndex} exceeds walk depth ${item.walk.length}`);
     }
-    const tiers = [
-      { p: point.minPrice, q: Math.max(1, Math.round(point.quantity * 0.05)) },
-      { p: point.marketPrice, q: Math.max(1, Math.round(point.quantity * 0.25)) },
-      { p: Math.round(point.marketPrice * 1.1), q: Math.max(1, Math.round(point.quantity * 0.4)) }
-    ];
     items[String(item.itemId)] = {
       name: item.name,
       quality: item.qualityIndex,
       itemClass: item.itemClass,
       itemSubClass: item.itemSubClass,
-      // The real scanner classifies each book; the fixture mirrors that
-      // instead of leaving the importer to re-derive one.
-      marketType: item.itemClass === "Trade Goods" ? "commodity" : "item",
+      marketType: syntheticMarketType(item, point),
       minPrice: point.minPrice,
       sellP: point.marketPrice,
       p5: point.minPrice,
       marketPrice: point.marketPrice,
       quantity: point.quantity,
       numAuctions: point.numAuctions,
-      sellers: Math.max(1, Math.round(point.numAuctions * 0.8)),
+      sellers: syntheticSellers(point),
       sellersInvisible: false,
       bidOnly: 0,
-      tiers,
+      tiers: syntheticTiers(point),
       expiring: { soon: 1, mid: 2, late: 3 },
       inferredSoldLow: 0,
       inferredSoldHigh: 0,

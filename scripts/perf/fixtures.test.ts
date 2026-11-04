@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { normalizeAddonScan } from "@/lib/addon-scan";
-import { buildScanPayload, generateMarket } from "./fixtures";
+import { buildScanPayload, generateMarket, syntheticMarketType, syntheticSellers, syntheticTiers } from "./fixtures";
 
 describe("generateMarket", () => {
   it("is deterministic for the same seed", () => {
@@ -47,6 +47,54 @@ describe("generateMarket", () => {
       .flatMap((item) => item.walk)
       .filter((point) => point.minPrice < point.marketPrice * 0.75);
     expect(baitPoints.length).toBeGreaterThan(0);
+  });
+});
+
+describe("synthetic book derivations", () => {
+  // The payload generator and the database seeder must describe the same
+  // market; these helpers are the single source for the derived fields.
+  const market = generateMarket({ itemCount: 40, depth: 3, seed: 9 });
+
+  it("produces a strictly ascending, positive ladder", () => {
+    for (const item of market.items) {
+      for (const point of item.walk) {
+        const tiers = syntheticTiers(point);
+        expect(tiers).toHaveLength(3);
+        for (const tier of tiers) {
+          expect(tier.p).toBeGreaterThan(0);
+          expect(tier.q).toBeGreaterThan(0);
+        }
+        // minPrice may round up to the market price on a flat point; the
+        // ladder only has to be non-decreasing.
+        expect(tiers[0].p).toBeLessThanOrEqual(tiers[1].p);
+        expect(tiers[1].p).toBeLessThan(tiers[2].p);
+      }
+    }
+  });
+
+  it("keeps sellers inside the listing count", () => {
+    for (const item of market.items) {
+      for (const point of item.walk) {
+        const sellers = syntheticSellers(point);
+        expect(sellers).toBeGreaterThanOrEqual(1);
+        expect(sellers).toBeLessThanOrEqual(point.numAuctions);
+      }
+    }
+  });
+
+  it("mirrors the scanner's market classification", () => {
+    // Trade goods are commodities; so is any book whose average lot holds
+    // more than 1.5 units. Core.marketTypeFor applies the same rule.
+    for (const item of market.items) {
+      for (const point of item.walk) {
+        const expected = (item.itemClass === "Trade Goods" || point.quantity / point.numAuctions > 1.5)
+          ? "commodity"
+          : "item";
+        expect(syntheticMarketType(item, point)).toBe(expected);
+      }
+    }
+    const goods = market.items.find((item) => item.itemClass === "Trade Goods");
+    if (goods) expect(syntheticMarketType(goods, goods.walk[0])).toBe("commodity");
   });
 });
 
