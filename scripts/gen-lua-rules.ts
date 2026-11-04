@@ -18,6 +18,15 @@ import {
   sellFrontRules
 } from "@/lib/market-rules";
 
+// Core.demandFor reads only the matcher and the weight. levelBand, peakDay
+// and note document the prior in src/data; compiling them would ship dead
+// data to every client.
+const compiledDemand = demandBands.map((band) => ({
+  classes: band.classes,
+  subClasses: band.subClasses,
+  weight: band.weight
+}));
+
 const LUA_PATH = fileURLToPath(new URL("../addon/WoWderhoiAH/GeneratedRules.lua", import.meta.url));
 
 function luaTable(value: unknown, indent: string): string {
@@ -51,7 +60,7 @@ WAH.RULES = {
   marketTypeRules = ${luaTable(marketTypeRules, "")}
 }
 
-WAH.DEMAND = ${luaTable(demandBands, "")}
+WAH.DEMAND = ${luaTable(compiledDemand, "")}
 `;
 }
 
