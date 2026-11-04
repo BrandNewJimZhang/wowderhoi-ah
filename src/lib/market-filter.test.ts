@@ -45,11 +45,6 @@ describe("filterSortSignals", () => {
     expect(filterSortSignals(signals, { category: "草药" }).map((signal) => signal.itemId)).toEqual([3]);
   });
 
-  it("filters out items below a minimum sell price", () => {
-    const cheapAllowed = filterSortSignals(signals, { minPriceCopper: 200 });
-    expect(cheapAllowed.map((signal) => signal.itemId)).toEqual([1, 2, 4]);
-  });
-
   it("sorts by a numeric key in both directions", () => {
     expect(filterSortSignals(signals, { sortKey: "sellPrice" }).map((signal) => signal.itemId)).toEqual([2, 4, 1, 3]);
     expect(filterSortSignals(signals, { sortKey: "changePercent", sortAsc: true }).map((signal) => signal.itemId)[0]).toBe(1);

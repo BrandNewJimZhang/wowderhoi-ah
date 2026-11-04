@@ -247,9 +247,6 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
     }
     const entry = value as Record<string, unknown>;
     const bidOnlyCount = optionalNonNegative(entry.bidOnly, "bidOnly", key);
-    if (entry.inferredSold !== undefined && entry.inferredSoldLow === undefined) {
-      throw new Error(`Addon scan item ${key}: replace inferredSold with inferredSoldLow/High`);
-    }
     const inferredSoldLow = optionalNonNegative(entry.inferredSoldLow, "inferredSoldLow", key);
     const inferredSoldHigh = optionalNonNegative(entry.inferredSoldHigh ?? entry.inferredSoldLow, "inferredSoldHigh", key);
     if (inferredSoldHigh < inferredSoldLow) {
@@ -268,7 +265,7 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
     const minPrice = priced ? requirePositiveInt(entry.minPrice, "minPrice", key) : 0;
     const quantity = priced ? requirePositiveInt(entry.quantity, "quantity", key) : 0;
     const numAuctions = priced ? requirePositiveInt(entry.numAuctions, "numAuctions", key) : 0;
-    const sellPrice = priced ? requirePositiveInt(entry.sellP ?? entry.sellPrice, "sellP", key) : 0;
+    const sellPrice = priced ? requirePositiveInt(entry.sellP, "sellP", key) : 0;
     items.push({
       itemId,
       name: entry.name,

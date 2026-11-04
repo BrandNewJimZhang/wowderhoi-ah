@@ -28,13 +28,12 @@ export function parseMarketView(params: Record<string, string | string[] | undef
 // component holds only view state.
 export function filterSortSignals(
   signals: MarketSignal[],
-  view: { query?: string; category?: string; minPriceCopper?: number; sortKey?: SignalSortKey; sortAsc?: boolean }
+  view: { query?: string; category?: string; sortKey?: SignalSortKey; sortAsc?: boolean }
 ): MarketSignal[] {
   const query = (view.query ?? "").trim().toLowerCase();
   let rows = signals;
   if (query) rows = rows.filter((signal) => signal.name.toLowerCase().includes(query));
   if (view.category) rows = rows.filter((signal) => signal.category === view.category);
-  if (view.minPriceCopper) rows = rows.filter((signal) => signal.sellPrice >= view.minPriceCopper!);
   if (view.sortKey) {
     const key = view.sortKey;
     const direction = view.sortAsc ? 1 : -1;

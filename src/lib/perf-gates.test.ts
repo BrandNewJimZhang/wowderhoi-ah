@@ -15,6 +15,7 @@ import { solveProduction, type LpRecipe } from "@/lib/craft-lp";
 import { replayJournal, type JournalEvent } from "@/lib/journal";
 import { loadRecipeDataset, toLpRecipe } from "@/lib/recipes";
 import { normalizeAddonScan } from "@/lib/addon-scan";
+import { productionCapacity } from "@/lib/production-config";
 
 const NOW = 1_800_000_000;
 
@@ -25,7 +26,6 @@ const NOW = 1_800_000_000;
 const budgets = {
   core866Ms: 1000,
   buildInputMs: 100,
-  journal5000Ms: 100,
   lp120Ms: 200,
   scan9000Ms: 1000
 };
@@ -115,11 +115,7 @@ describe("system performance gates", () => {
     const start = performance.now();
     const solution = solveProduction(recipes, {
       prices,
-      capacity: {
-        裁缝: 40, 制皮: 40, 锻造: 30, 工程学: 30, 炼金术: 60, 附魔: 60,
-        烹饪: 100, 急救: 100, 钓鱼: 20, 采矿: 20, 草药学: 20, 剥皮: 20,
-        毒药: 10, 理解: 10
-      },
+      capacity: productionCapacity,
       budget: 500_000,
       feeRate: 0.05,
       maxCandidates: 120

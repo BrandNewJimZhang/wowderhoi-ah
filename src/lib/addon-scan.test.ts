@@ -132,14 +132,6 @@ describe("normalizeAddonScan", () => {
     expect(() => normalizeAddonScan(broken)).toThrow(/minPrice/i);
   });
 
-  it("rejects the legacy single-edge flow field", () => {
-    const legacy = {
-      dataVersion: 4, scannedAt: 1721700000, server: "A", faction: "Alliance",
-      items: { 1: { name: "Linen", quality: 1, minPrice: 100, marketPrice: 100, sellP: 100, quantity: 5, numAuctions: 1, inferredSold: 3 } }
-    };
-    expect(() => normalizeAddonScan(legacy)).toThrow(/inferredSoldLow/);
-  });
-
   it("rejects an inverted inferred-flow interval", () => {
     const inverted = {
       dataVersion: 4, scannedAt: 1721700000, server: "A", faction: "Alliance",
