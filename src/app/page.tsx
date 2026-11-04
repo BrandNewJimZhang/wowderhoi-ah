@@ -74,7 +74,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   );
   // Same production plan as /recipes: one builder, so the dashboard and the
   // full page can never price a recipe against different inputs.
-  const production = buildProductionPlan(signals, recipeRows.map(recipeToLp));
+  const production = buildProductionPlan(signals, recipeRows.map(recipeToLp), scope?.cash ?? 0);
   // The client table only ever receives the visible page; filtering and
   // sorting run here against the URL-provided view.
   const filtered = filterSortSignals(signals, view);

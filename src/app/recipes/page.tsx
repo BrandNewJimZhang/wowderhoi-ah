@@ -12,9 +12,9 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 export const dynamic = "force-dynamic";
 
 export default async function RecipesPage() {
-  const [{ signals, phase }, recipeRows] = await Promise.all([getMarketSignals(), getRecipes()]);
+  const [{ signals, phase, scope }, recipeRows] = await Promise.all([getMarketSignals(), getRecipes()]);
   const recipes = recipeRows.map(recipeToLp);
-  const { solution, budget } = buildProductionPlan(signals, recipes);
+  const { solution, budget } = buildProductionPlan(signals, recipes, scope?.cash ?? 0);
 
   return (
     <main className="terminal-grid min-h-screen bg-terminal-bg p-3 text-slate-200">

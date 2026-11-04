@@ -54,6 +54,15 @@ describe("buildProductionPlan", () => {
     expect(solution.excluded).toBe(1);
   });
 
+  it("caps the production budget at the scanned cash", () => {
+    const { budget } = buildProductionPlan(
+      [signal({ itemId: 100 }), signal({ itemId: 200 })],
+      [RECIPE],
+      1000
+    );
+    expect(budget).toBe(1000);
+  });
+
   it("prices the same recipe when both sides are current", () => {
     const signalRows = [
       signal({ itemId: 100, sellPrice: 100 }),
