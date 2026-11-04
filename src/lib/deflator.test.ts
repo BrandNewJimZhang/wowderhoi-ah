@@ -46,6 +46,15 @@ describe("buildPriceIndex", () => {
     expect(index.values).toEqual([100]);
   });
 
+  it("falls back to P10 for legacy rows without a sell front", () => {
+    const legacy = item(1, [{ day: "2026-07-01", sell: 100 }]);
+    legacy.snapshots[0].sellPrice = 0;
+    legacy.snapshots[0].marketPrice = 250;
+    const index = buildPriceIndex([legacy]);
+    expect(index.dates).toEqual(["2026-07-01"]);
+    expect(index.values).toEqual([100]);
+  });
+
   it("returns an empty index when no positive price exists", () => {
     expect(buildPriceIndex([])).toEqual({ dates: [], values: [], baseDate: "" });
   });

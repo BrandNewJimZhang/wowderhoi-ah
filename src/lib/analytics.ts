@@ -47,7 +47,9 @@ export type MarketSignal = {
 };
 
 function sellOf(snapshot: MarketSnapshot): number {
-  return snapshot.sellPrice ?? snapshot.marketPrice;
+  // Legacy rows imported before the sell front existed carry 0, not
+  // undefined; `??` would keep the zero and erase the price entirely.
+  return snapshot.sellPrice && snapshot.sellPrice > 0 ? snapshot.sellPrice : snapshot.marketPrice;
 }
 
 export function buildMarketSignal(

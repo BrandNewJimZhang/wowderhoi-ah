@@ -66,6 +66,17 @@ describe("buildMarketSignal", () => {
     expect(signal.changePercent).toBeCloseTo(((110 - 120) / 120) * 100, 5);
   });
 
+  it("falls back to P10 when a legacy row has no sell front", () => {
+    // Rows imported before the sell-front column existed store 0, not null.
+    // Treating that zero as a price would erase the item from every window.
+    const signal = buildMarketSignal(
+      history([{ daysAgo: 0, sellPrice: 0, marketPrice: 900, minPrice: 700 }]),
+      now
+    );
+    expect(signal.sellPrice).toBe(900);
+    expect(signal.sellRef).toBe(900);
+  });
+
   it("counts only priced observations in the window sample size", () => {
     const signal = buildMarketSignal(
       history([

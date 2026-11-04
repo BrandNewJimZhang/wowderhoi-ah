@@ -36,7 +36,10 @@ export function buildPriceIndex(items: MarketHistory[]): PriceIndex {
     }
     const snapshots = [...item.snapshots].sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
     for (const snapshot of snapshots) {
-      record(utcDateKey(snapshot.timestamp), item.itemId, snapshot.sellPrice ?? snapshot.marketPrice);
+      // Legacy rows carry 0 in the sell-front column; fall back to P10
+      // instead of letting the zero empty the day's observation.
+      record(utcDateKey(snapshot.timestamp), item.itemId,
+        snapshot.sellPrice && snapshot.sellPrice > 0 ? snapshot.sellPrice : snapshot.marketPrice);
     }
   }
   const dates = Array.from(byDate.keys()).sort();
