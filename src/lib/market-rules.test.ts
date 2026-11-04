@@ -71,6 +71,8 @@ describe("pricing constants", () => {
     expect(sellFrontRules.alpha).toBeGreaterThan(0);
     expect(sellFrontRules.alpha).toBeLessThan(1);
     expect(sellFrontRules.undercutCopper).toBe(1);
+    expect(sellFrontRules.undercutWarnRatio).toBeGreaterThan(0);
+    expect(sellFrontRules.undercutWarnRatio).toBeLessThan(0.1);
     expect(sellFrontRules.noiseMultiple).toBeGreaterThan(1);
   });
 

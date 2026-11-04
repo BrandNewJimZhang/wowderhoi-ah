@@ -150,6 +150,19 @@ describe("owned auctions", () => {
     expect(lua.eval("WowTest.ns.Sell.state().owned[1].undercut")).toBe(true);
   });
 
+  it("tolerates the compiled undercut warning band before flagging", () => {
+    const lua = page();
+    // sell front 1000: exactly +2% is inside the noise band, one copper
+    // above it is a real undercut.
+    lua.setOwned([
+      { auctionID: 9002, itemId: 2589, quantity: 10, buyoutAmount: 10200, timeLeftSeconds: 3600 },
+      { auctionID: 9003, itemId: 2589, quantity: 10, buyoutAmount: 10210, timeLeftSeconds: 3600 }
+    ]);
+    lua.exec("WowTest.ns.Sell.collectOwned()");
+    expect(lua.eval("WowTest.ns.Sell.state().owned[1].undercut")).toBe(false);
+    expect(lua.eval("WowTest.ns.Sell.state().owned[2].undercut")).toBe(true);
+  });
+
   it("does not reconcile a posting younger than a minute", () => {
     const lua = page();
     lua.exec("WowTest.ns.Sell.select(2589)");

@@ -15,8 +15,8 @@ export const SCAN_PIPELINE_VERSION = 4;
 export const AH_FEE_RATE = 0.05;
 
 // The addon's auto-rescan cadence. Flow estimates and the terminal's
-// elapsed-time floor both resolve at this granularity; the Lua side keeps
-// its own timer, so a change here only needs a matching addon edit.
+// elapsed-time floor both resolve at this granularity, and the compiled
+// rule carries it into the addon ticker, so the two sides cannot disagree.
 export const SCAN_INTERVAL_MINUTES = 15;
 
 // Fallback daily capital when AQT_BUDGET_COPPER is unset. One value for the
@@ -30,6 +30,7 @@ export const sellFrontRules = {
   alpha: 0.03, // depth target as a share of listed supply
   noiseMultiple: 3, // listings above 3x the quantity-weighted median are noise
   undercutCopper: 1, // listP = max(vendor + 1, sellP - 1)
+  undercutWarnRatio: 0.02, // an owned listing above sellP * (1 + ratio) is undercut
   itemDepth: 3, // item auctions: the third-cheapest buyout, by listing count
   minDepthEarly: 1, // ignition: a single unit of depth is all that exists
   minDepth: 3 // wave and later: three units before the front is credible

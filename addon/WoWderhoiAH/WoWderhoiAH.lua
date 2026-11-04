@@ -17,7 +17,7 @@
 --   * a tier-level capture table, so an adjacent scan can infer how much
 --     disappeared and whether it looked like a sale rather than an expiry.
 -- Nothing is inferred into a point estimate: sold quantity is recorded as
--- a bounded lower edge and every consumer labels it "inferred".
+-- a bounded interval and every consumer labels it "inferred".
 
 local ADDON_NAME, WAH = ...
 local L = WAH.L
@@ -29,7 +29,9 @@ local FRAME_BUDGET_MS = 8
 -- the request was refused or lost. Abort loudly instead of leaving the
 -- auto-rescan ticker blocked behind a scan that never finishes.
 local SCAN_TIMEOUT_SECONDS = 120
-local AUTO_SCAN_INTERVAL = 15 * 60
+-- Compiled from src/lib/market-rules.ts; the terminal's elapsed-time floor
+-- reads the same constant, so the ticker and the fill model stay aligned.
+local AUTO_SCAN_INTERVAL = (WAH.RULES.scanIntervalMinutes or 15) * 60
 local SEARCH_QUIET_SECONDS = 60
 local SERIES_CAP = 60000
 local HOUR, DAY = 3600, 86400

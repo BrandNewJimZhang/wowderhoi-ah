@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { demandBands } from "@/lib/demand";
 import {
   AH_FEE_RATE,
+  SCAN_INTERVAL_MINUTES,
   SCAN_PIPELINE_VERSION,
   marketTypeRules,
   phaseBoundaries,
@@ -40,6 +41,7 @@ WAH.PIPELINE_VERSION = ${SCAN_PIPELINE_VERSION}
 
 WAH.RULES = {
   feeRate = ${AH_FEE_RATE},
+  scanIntervalMinutes = ${SCAN_INTERVAL_MINUTES},
   sellFront = ${luaTable(sellFrontRules, "")},
   phaseBoundaries = ${luaTable(phaseBoundaries, "")},
   phaseHistory = ${luaTable(phaseHistory, "")},

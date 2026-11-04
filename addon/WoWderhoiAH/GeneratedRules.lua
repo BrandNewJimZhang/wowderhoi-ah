@@ -8,10 +8,12 @@ WAH.PIPELINE_VERSION = 4
 
 WAH.RULES = {
   feeRate = 0.05,
+  scanIntervalMinutes = 15,
   sellFront = {
   alpha = 0.03,
   noiseMultiple = 3,
   undercutCopper = 1,
+  undercutWarnRatio = 0.02,
   itemDepth = 3,
   minDepthEarly = 1,
   minDepth = 3

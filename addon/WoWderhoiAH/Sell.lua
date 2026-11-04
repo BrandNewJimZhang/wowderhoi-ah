@@ -22,6 +22,10 @@ local ROW_HEIGHT = 22
 local BAG_ROWS = 8
 local OWNED_ROWS = 10
 local DURATIONS = { 12, 24, 48 }
+-- How far above the sell front an owned listing must sit before it counts
+-- as undercut. A tiny gap is noise from the one-copper listing rule, so the
+-- tolerance is a compiled market rule rather than a literal here.
+local UNDERCUT_WARN_RATIO = (WAH.RULES.sellFront and WAH.RULES.sellFront.undercutWarnRatio) or 0.02
 
 local sell = nil
 local mode = "sell"
@@ -259,7 +263,7 @@ local function collectOwned()
         unitPrice = unitPrice,
         buyout = buyout,
         timeLeftSeconds = seconds,
-        undercut = sellP and sellP > 0 and unitPrice > sellP * 1.02 or false,
+        undercut = sellP and sellP > 0 and unitPrice > sellP * (1 + UNDERCUT_WARN_RATIO) or false,
         status = info.status
       }
     end
