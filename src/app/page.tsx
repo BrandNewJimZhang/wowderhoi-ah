@@ -46,6 +46,10 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   // the addon runs in game. It is not a second radar implementation.
   const deals = evaluation.rows.slice(0, 12);
   const capitalBudget = resolveBudgetCopper();
+  // The planning budget is a cap, not a purse: never allocate more than the
+  // cash the latest scan reported. Core.lua applies the same bound to its
+  // spend, so the opportunity list and the position sizing share one base.
+  const deployableCapital = scope && scope.cash > 0 ? Math.min(capitalBudget, scope.cash) : capitalBudget;
   const vendorPriceById = new Map(signals.map((signal) => [signal.itemId, signal.vendorPrice]));
   const sizing = allocateCapital(
     evaluation.rows.filter((row) => !row.vendor).map((row) => ({
@@ -60,7 +64,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       residualValue: vendorPriceById.get(row.itemId) ?? 0,
       samples: row.confidence === "high" ? 20 : row.confidence === "medium" ? 8 : 2
     })),
-    capitalBudget,
+    deployableCapital,
     {
       kappa: portfolioRules.kellyFraction,
       maxItemExposure: portfolioRules.maxItemExposure,
@@ -177,7 +181,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
         </div>
         <div className="space-y-3">
           <Panel>
-            <PanelHeader title="仓位建议" action={<span className="font-mono text-xs text-terminal-muted">分数凯利 · 预算 {capitalBudget / 10000}g</span>} />
+            <PanelHeader title="仓位建议" action={<span className="font-mono text-xs text-terminal-muted">分数凯利 · 可动用 {deployableCapital / 10000}g</span>} />
             <div className="space-y-2 p-3 font-mono text-xs">
               {sizing.length === 0 && <div className="text-terminal-muted">当前没有通过风险预算的行动。</div>}
               {sizing.map((row) => (

@@ -8,7 +8,9 @@ import { DEFAULT_BUDGET_COPPER, marketPhases, type MarketPhase } from "@/lib/mar
 // Planning budget for the shared decision core, position sizing and the
 // production LP. Separate from the cash reported by the last scan: the
 // addon derives its budget from GetMoney() at decision time, while the
-// terminal evaluates a hypothetical budget the user configures.
+// terminal evaluates a hypothetical budget the user configures. The core
+// and the cockpit still bound the spend by the scanned cash, so this is an
+// upper cap, never a purse.
 export function resolveBudgetCopper(): number {
   const value = Number(process.env.AQT_BUDGET_COPPER);
   return Number.isFinite(value) && value > 0 ? value : DEFAULT_BUDGET_COPPER;

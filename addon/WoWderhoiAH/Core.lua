@@ -364,7 +364,13 @@ function Core.evaluate(input)
   local bagSlots = capacity.bagSlots or 20
   local stackSize = capacity.stackSize or 20
   local bagCapacity = bagSlots * stackSize
-  local budget = capital.budget or capital.cash or 0
+  -- The planning budget is a cap, never a substitute for cash: a scan that
+  -- reports 30k in the purse cannot fund a 94k ladder. Both runtimes feed
+  -- the same fields, so the bound belongs here rather than in one caller.
+  local cash = capital.cash or 0
+  local requested = capital.budget or 0
+  if requested <= 0 then requested = cash end
+  local budget = cash > 0 and math.min(requested, cash) or requested
 
   local rows = {}
   local excluded = { noBook = 0, thinBook = 0, noHistory = 0, spread = 0, net = 0, noDepth = 0 }

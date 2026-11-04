@@ -99,6 +99,20 @@ describe("Core.evaluate through fengari", () => {
     expect(row.netProfit).toBe(11688);
   });
 
+  it("never plans a spend larger than the cash the scan reported", () => {
+    // The terminal used to pass its planning budget as the only spend cap,
+    // so a 30k purse could be told to buy 94k worth of goods. The addon
+    // always bounded its budget by GetMoney(); the core must do the same
+    // for both runtimes.
+    const input = commodityInput({ phase: "wave" });
+    input.capital = { cash: 50000, budget: 500000 };
+    const output = runCore(input);
+    expect(output.rows).toHaveLength(1);
+    // 20 @ 700 = 14000 leaves 36000; 45 @ 800 = 36000 fits, 46 would not.
+    // The 500k planning budget is irrelevant: the scan saw 50k in the purse.
+    expect(output.rows[0].execQty).toBe(65);
+  });
+
   it("emits a conditional buy plan and a sell plan for a held position", () => {
     const input = commodityInput({ phase: "wave" });
     input.positions = { 2589: { qty: 40, cost: 32000 } };
