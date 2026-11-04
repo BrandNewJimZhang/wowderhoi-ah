@@ -102,7 +102,7 @@ AQT_BUDGET_COPPER="500000"
 2. 看驾驶舱状态行：扫描龄、条数、阶段、卖家可见率。
 3. 看“下一步行动”：只执行通过门槛的条目；购买前核对实时价格。
 4. 卖出页：给背包里积压的物品定价、上架、处理在售。
-5. 小退/`/reload` 或等 `SaveAddOns`；确认 watcher 导入。
+5. 确认 `SaveAddOns` 已在扫描后落盘、watcher 已导入；客户端不支持即时落盘时小退/`/reload`。
 6. 复盘页：看昨天的成交、推断占比、alpha 窗口。
 
 ## 7. 校准纪律
@@ -120,7 +120,7 @@ AQT_BUDGET_COPPER="500000"
 | 插件列表没有 WoWDerhoiAH | `.toc` 不在第一层，或客户端不是 16001 |
 | `/wahscan` 提示先开拍卖行 | 必须站在拍卖师面前且 AH 窗口开着 |
 | 扫描超时 | 服务器未返回全量副本；确认 AH 开着后重试，或等退避结束 |
-| watcher 没反应 | 忘了小退/`/reload`；或 `AQT_SAVEDVARS_PATH` 错 |
+| watcher 没反应 | 看 `/wahdiag` 的 `SaveAddOns` 与数据龄；或 `AQT_SAVEDVARS_PATH` 错 |
 | 导入 409 | 同一次扫描已导入，正常 |
 | 导入 400 | 扫描版本不是 v4；用当前插件重扫 |
 | 配方页为空 | 运行 `npm run recipes:import` |

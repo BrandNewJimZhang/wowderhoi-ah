@@ -1,6 +1,7 @@
 // Watches the WoW SavedVariables file written by the WoWderhoiAH addon
 // and posts each new scan to the terminal import endpoint. In-game
-// history accumulates inside the addon itself (WoWderhoiAH_Points).
+// history accumulates inside the addon itself (WoWderhoiAH_Series); the
+// addon asks the client to flush the file after every scan.
 // Run alongside the game client:  npm run addon:watch
 import { readFileSync, watchFile } from "node:fs";
 import { parseSavedVariables } from "@/lib/addon-scan";

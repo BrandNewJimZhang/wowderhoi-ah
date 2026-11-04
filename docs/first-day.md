@@ -96,8 +96,9 @@ Journal 都已入库。刷新 `http://localhost:3000`。
 
 ## 日常循环
 
-每天只需要：开拍卖行 → `/wahscan` → 小退或 `/reload`（或等 `SaveAddOns`）。
-`addon:watch` 会自动发现新扫描并入库；同一次扫描不会重复导入。快照积累两天以上后，
+每天只需要：开拍卖行 → `/wahscan`。插件在扫描结束后调用 `SaveAddOns`，
+`addon:watch` 会发现新文件并入库；若客户端不支持即时落盘，再小退或 `/reload`。
+同一次扫描不会重复导入。快照积累两天以上后，
 走势与星期季节性开始有意义；积累自己的成交后，成交率区间才会收窄。
 
 ## 常见问题
@@ -108,7 +109,7 @@ Journal 都已入库。刷新 `http://localhost:3000`。
 | `/wahscan` 提示先开拍卖行 | 必须站在拍卖师面前且拍卖行窗口开着 |
 | 扫描超时 | 服务器没有返回全量副本；确认 AH 已打开后重试，或等退避结束 |
 | watcher 报 `AQT_SAVEDVARS_PATH is not set` | `.env` 里没配路径，或路径带引号错误 |
-| watcher 一直没反应 | 忘了小退/`/reload`，数据还没写到磁盘 |
+| watcher 一直没反应 | 先看 `/wahdiag` 的 `SaveAddOns` 与数据龄；客户端不支持即时落盘时，小退或 `/reload` 一次 |
 | 导入报 409 | 同一次扫描已导入过，正常现象 |
 | 导入报 400 | 扫描不是 v4；用当前插件重扫 |
 | 配方页为空 | 运行 `npm run recipes:import` |

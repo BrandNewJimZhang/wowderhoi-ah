@@ -122,8 +122,8 @@ npm run recipes:import   # project data/recipes.forever.json into SQLite
 npm run dev
 ```
 
-In game, scan (`/wahscan`), then log out or `/reload` once, or rely on the
-addon's `C_AddOns.SaveAddOns()` after each scan. Point
+In game, scan (`/wahscan`); the addon calls `C_AddOns.SaveAddOns()` after
+each scan, and falls back to log out / `/reload` on clients without it. Point
 `AQT_SAVEDVARS_PATH` at the SavedVariables file and run:
 
 ```powershell
@@ -275,7 +275,7 @@ npm run recipes:import
 npm run dev
 ```
 
-游戏内扫描后小退/`/reload`，或依赖每次扫描后的 `SaveAddOns`；配置 `AQT_SAVEDVARS_PATH` 后运行 `npm run addon:watch`。导入是事务式的：快照、日线、头寸与成交一起落库；重复扫描时间戳自动跳过。
+游戏内扫描后插件会自动调用 `SaveAddOns`（不支持时小退/`/reload`）；配置 `AQT_SAVEDVARS_PATH` 后运行 `npm run addon:watch`。导入是事务式的：快照、日线、头寸与成交一起落库；重复扫描时间戳自动跳过。
 
 ### 边界
 
