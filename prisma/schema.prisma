@@ -7,6 +7,22 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// One row per realm+faction. Scans, positions and trades are scoped to it.
+model Market {
+  id        String   @id @default(cuid())
+  realm     String
+  faction   String
+  openedAt  DateTime? @map("opened_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  snapshots AuctionSnapshot[]
+  positions Position[]
+  trades    Trade[]
+  decisions Decision[]
+
+  @@unique([realm, faction])
+}
+
 model Item {
   id               String            @id @default(cuid())
   itemId           Int               @unique @map("item_id")
@@ -26,25 +42,39 @@ model Item {
 }
 
 model AuctionSnapshot {
-  id          String   @id @default(cuid())
-  itemId      Int      @map("item_id")
-  timestamp   DateTime
-  server      String
-  faction     String
-  minPrice    Int      @map("min_price")
-  marketPrice Int      @map("market_price")
-  quantity    Int
-  numAuctions Int      @map("num_auctions")
-  rawPayload   Json?    @map("raw_payload")
-  item        Item     @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
+  id               String   @id @default(cuid())
+  itemId           Int      @map("item_id")
+  timestamp        DateTime
+  server           String
+  faction          String
+  marketId         String?  @map("market_id")
+  minPrice         Int      @map("min_price")
+  marketPrice      Int      @map("market_price") // P10; a statistic, not a decision anchor
+  sellPrice        Int      @default(0) @map("sell_price")
+  p5Price          Int      @default(0) @map("p5_price")
+  quantity         Int
+  numAuctions      Int      @map("num_auctions")
+  sellerCount      Int      @default(0) @map("seller_count")
+  sellersInvisible Boolean  @default(false) @map("sellers_invisible")
+  bidOnlyCount     Int      @default(0) @map("bid_only_count")
+  soldProxyLow     Int      @default(0) @map("sold_proxy_low")
+  soldProxyHigh    Int      @default(0) @map("sold_proxy_high")
+  supplyGrowth     Float    @default(0) @map("supply_growth")
+  topTiers         Json?    @map("top_tiers")
+  expiring         Json?    @map("expiring")
+  rawPayload       Json?    @map("raw_payload")
+  item             Item     @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
+  market           Market?  @relation(fields: [marketId], references: [id], onDelete: SetNull)
 
   @@index([itemId, timestamp])
   @@index([server, faction, timestamp])
+  @@index([marketId, timestamp])
 }
 
 model DailySummary {
   id         String   @id @default(cuid())
   itemId     Int      @map("item_id")
+  marketId   String?  @map("market_id")
   date       DateTime
   openPrice  Int      @map("open_price")
   closePrice Int      @map("close_price")
@@ -55,6 +85,92 @@ model DailySummary {
 
   @@unique([itemId, date])
   @@index([date])
+}
+
+// A position is the ledger projection of the imported journal, rebuilt on
+// every import. It is not hand-edited.
+model Position {
+  id        String   @id @default(cuid())
+  marketId  String   @map("market_id")
+  itemId    Int      @map("item_id")
+  qty       Int
+  costBasis Int      @map("cost_basis")
+  openedAt  DateTime @map("opened_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  market    Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+
+  @@unique([marketId, itemId])
+  @@index([marketId])
+  @@index([itemId])
+}
+
+// Realized trades, also rebuilt from the journal on every import.
+model Trade {
+  id         String   @id @default(cuid())
+  marketId   String   @map("market_id")
+  itemId     Int      @map("item_id")
+  qty        Int
+  price      Int
+  fee        Int      @default(0)
+  basis      Int      @default(0)
+  pnl        Int
+  channel    String // auction | vendor | disenchant | ...
+  inferred   Boolean  @default(false) // labelled: the client exposes no sale event
+  realizedAt DateTime @map("realized_at")
+  market     Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+
+  @@index([marketId, realizedAt])
+  @@index([itemId])
+}
+
+// What the system recommended and why. Written by the cockpit or the
+// terminal; used for review and propensity correction.
+model Decision {
+  id         String   @id @default(cuid())
+  marketId   String?  @map("market_id")
+  at         DateTime
+  phase      String
+  itemId     Int?     @map("item_id")
+  kind       String
+  context    Json?
+  candidates Json?
+  chosen     Json?
+  reason     String?
+  outcomeId  String?  @map("outcome_id")
+  market     Market?  @relation(fields: [marketId], references: [id], onDelete: SetNull)
+
+  @@index([at])
+  @@index([itemId])
+}
+
+// Forever recipe network, imported from the wuxianwow data export.
+model Recipe {
+  id              Int      @id
+  profession      String
+  productItemId   Int      @map("product_item_id")
+  productQuantity Int      @default(1) @map("product_quantity")
+  expansion       String   @default("forever")
+  materials       Json // [{ itemId, qty }]
+  cooldownHours   Float?   @map("cooldown_hours")
+  skillReq        Int?     @map("skill_req")
+  source          String?
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([profession])
+  @@index([productItemId])
+}
+
+// Raid resets, darkmoon, phase openings and other demand pulses.
+model EventCalendar {
+  id            String    @id @default(cuid())
+  kind          String
+  name          String
+  startsAt      DateTime  @map("starts_at")
+  endsAt        DateTime? @map("ends_at")
+  affectedItems Json?     @map("affected_items")
+  leadHours     Int       @default(0) @map("lead_hours")
+
+  @@index([startsAt])
 }
 
 model Event {

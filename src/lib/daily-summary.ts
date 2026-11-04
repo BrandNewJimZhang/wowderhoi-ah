@@ -2,7 +2,10 @@
 // single caller and writer; DailySummary feeds every chart, moving average,
 // and seasonality view, so scans must land here or the terminal stays empty.
 
-type ScanPriceRow = { itemId: number; marketPrice: number; quantity: number };
+// OHLC is built from the sell front, the price a seller can actually
+// list at. P10 remains on the snapshot for statistics, not for the daily
+// series.
+type ScanPriceRow = { itemId: number; sellPrice: number; quantity: number };
 type ExistingDayRow = { itemId: number; highPrice: number; lowPrice: number };
 
 export function mergeScanIntoDailySummaries(items: ScanPriceRow[], scannedAt: Date, existing: ExistingDayRow[]) {
@@ -16,10 +19,10 @@ export function mergeScanIntoDailySummaries(items: ScanPriceRow[], scannedAt: Da
       creates.push({
         itemId: item.itemId,
         date,
-        openPrice: item.marketPrice,
-        closePrice: item.marketPrice,
-        highPrice: item.marketPrice,
-        lowPrice: item.marketPrice,
+        openPrice: item.sellPrice,
+        closePrice: item.sellPrice,
+        highPrice: item.sellPrice,
+        lowPrice: item.sellPrice,
         // volume proxies listed supply from the latest scan; true traded
         // volume needs sale tracking the AH API does not expose.
         volume: item.quantity
@@ -28,9 +31,9 @@ export function mergeScanIntoDailySummaries(items: ScanPriceRow[], scannedAt: Da
       updates.push({
         itemId: item.itemId,
         data: {
-          closePrice: item.marketPrice,
-          highPrice: Math.max(current.highPrice, item.marketPrice),
-          lowPrice: Math.min(current.lowPrice, item.marketPrice),
+          closePrice: item.sellPrice,
+          highPrice: Math.max(current.highPrice, item.sellPrice),
+          lowPrice: Math.min(current.lowPrice, item.sellPrice),
           volume: item.quantity
         }
       });

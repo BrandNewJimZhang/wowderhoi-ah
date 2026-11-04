@@ -1,15 +1,41 @@
 import type { AuctionSnapshot, DailySummary, Item } from "@prisma/client";
 
-export type ItemWithHistory = Item & {
-  snapshots: AuctionSnapshot[];
-  dailySummaries: DailySummary[];
+// The analytics layer reads a market snapshot, not a Prisma row. Making
+// the order-book fields optional keeps fixtures honest about what they
+// exercise: a test that does not care about the ladder should not have to
+// invent one.
+export type MarketSnapshot = {
+  id?: string;
+  itemId?: number;
+  timestamp: Date;
+  server: string;
+  faction: string;
+  minPrice: number;
+  marketPrice: number;
+  quantity: number;
+  numAuctions: number;
+  sellPrice?: number;
+  p5Price?: number;
+  sellerCount?: number;
+  sellersInvisible?: boolean;
+  bidOnlyCount?: number;
+  soldProxyLow?: number;
+  soldProxyHigh?: number;
+  supplyGrowth?: number;
+  topTiers?: unknown;
+  expiring?: unknown;
+  rawPayload?: unknown;
 };
 
 export type MarketHistory = Omit<Item, "id" | "createdAt" | "updatedAt"> & {
   id?: string;
   createdAt?: Date;
   updatedAt?: Date;
-  snapshots: Array<Omit<AuctionSnapshot, "id" | "itemId" | "item" | "rawPayload"> & Partial<Pick<AuctionSnapshot, "id" | "itemId" | "rawPayload">>>;
-  dailySummaries: Array<Omit<DailySummary, "id" | "itemId" | "item"> & Partial<Pick<DailySummary, "id" | "itemId">>>;
+  snapshots: MarketSnapshot[];
+  dailySummaries: Array<Omit<DailySummary, "id" | "itemId" | "item" | "marketId"> & Partial<Pick<DailySummary, "id" | "itemId" | "marketId">>>;
 };
 
+export type ItemWithHistory = Item & {
+  snapshots: AuctionSnapshot[];
+  dailySummaries: DailySummary[];
+};

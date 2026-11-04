@@ -114,7 +114,8 @@ function Ledger.replay(events, market)
       state.trades[#state.trades + 1] = {
         t = event.t, itemId = event.itemId, qty = event.qty or 0,
         price = (event.qty or 0) > 0 and ((event.paid or 0) / event.qty) or 0,
-        fee = 0, basis = basis, pnl = (event.paid or 0) - basis, channel = "vendor"
+        fee = 0, basis = basis, pnl = (event.paid or 0) - basis, channel = "vendor",
+        inferred = false
       }
     elseif kind == "post" then
       local key = postKey(event, index)
@@ -143,7 +144,8 @@ function Ledger.replay(events, market)
       state.trades[#state.trades + 1] = {
         t = event.t, itemId = event.itemId or (post and post.itemId), qty = quantity,
         price = price, fee = fee, basis = basis,
-        pnl = price * quantity - fee - basis, channel = "auction"
+        pnl = price * quantity - fee - basis, channel = "auction",
+        inferred = event.inferred == true
       }
     elseif kind == "cancel" then
       local key = postKey(event, index)

@@ -6,6 +6,8 @@ import { SCAN_PIPELINE_VERSION } from "@/lib/market-rules";
 // Quality index -> name mapping shared with the perf fixtures generator.
 export const QUALITY_NAMES = ["poor", "common", "uncommon", "rare", "epic", "legendary"] as const;
 
+export type AddonTier = { p: number; q: number };
+
 export type AddonScanItem = {
   itemId: number;
   name: string;
@@ -13,17 +15,31 @@ export type AddonScanItem = {
   category: string;
   subCategory: string;
   minPrice: number;
-  marketPrice: number; // quantity-weighted P10 unit price, copper
+  marketPrice: number; // quantity-weighted P10 unit price, copper (a statistic)
+  sellPrice: number; // depth-aware sell front, copper (the decision anchor)
+  p5Price: number;
   quantity: number;
   numAuctions: number;
+  sellerCount: number;
+  sellersInvisible: boolean;
+  bidOnlyCount: number;
+  inferredSold: number; // lower edge of the adjacent-scan disappearance estimate
+  supplyGrowth: number; // fraction per hour
   vendorPrice: number; // NPC sell price in copper; 0 = unsellable to vendors
+  tiers: AddonTier[]; // top of the price ladder, ascending
+  expiring: { soon: number; mid: number; late: number };
 };
+
+export type AddonBid = { itemId: number; count: number; highest: number };
 
 export type AddonScan = {
   scannedAt: Date;
   server: string;
   faction: string;
+  character: string | null;
+  total: number;
   items: AddonScanItem[];
+  bids: AddonBid[];
 };
 
 type LuaValue = string | number | boolean | null | { [key: string]: LuaValue };
@@ -149,14 +165,66 @@ function requirePositiveInt(value: unknown, field: string, itemId: string): numb
   return Math.round(value);
 }
 
-// vendorP is absent on scans predating the vendor-arbitrage radar and on
-// items GetItemInfo had not cached yet; absent means "no vendor price".
-function normalizeVendorPrice(value: unknown, itemId: string): number {
+function optionalNonNegative(value: unknown, field: string, itemId: string): number {
   if (value === undefined || value === null) return 0;
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-    throw new Error(`Addon scan item ${itemId}: vendorP must be a non-negative number, got ${JSON.stringify(value)}`);
+    throw new Error(`Addon scan item ${itemId}: ${field} must be a non-negative number, got ${JSON.stringify(value)}`);
   }
   return Math.round(value);
+}
+
+function optionalFinite(value: unknown, field: string, itemId: string): number {
+  if (value === undefined || value === null) return 0;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`Addon scan item ${itemId}: ${field} must be a finite number, got ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
+function normalizeTiers(value: unknown, itemId: string, fallback: { p: number; q: number }): AddonTier[] {
+  if (value === undefined || value === null) return [fallback];
+  if (typeof value !== "object") {
+    throw new Error(`Addon scan item ${itemId}: tiers must be a table, got ${JSON.stringify(value)}`);
+  }
+  const tiers = Object.entries(value as Record<string, unknown>).map(([key, entry]) => {
+    if (typeof entry !== "object" || entry === null) {
+      throw new Error(`Addon scan item ${itemId}: tier ${key} must be a table`);
+    }
+    const tier = entry as Record<string, unknown>;
+    return {
+      p: requirePositiveInt(tier.p, `tiers[${key}].p`, itemId),
+      q: requirePositiveInt(tier.q, `tiers[${key}].q`, itemId)
+    };
+  });
+  if (tiers.length === 0) return [fallback];
+  return tiers.sort((left, right) => left.p - right.p);
+}
+
+function normalizeExpiring(value: unknown, itemId: string) {
+  if (value === undefined || value === null) return { soon: 0, mid: 0, late: 0 };
+  const entry = value as Record<string, unknown>;
+  return {
+    soon: optionalNonNegative(entry.soon, "expiring.soon", itemId),
+    mid: optionalNonNegative(entry.mid, "expiring.mid", itemId),
+    late: optionalNonNegative(entry.late, "expiring.late", itemId)
+  };
+}
+
+function normalizeBids(value: unknown): AddonBid[] {
+  if (value === undefined || value === null) return [];
+  if (typeof value !== "object") throw new Error("Addon scan bids must be a table");
+  return Object.entries(value as Record<string, unknown>).map(([key, entry]) => {
+    const itemId = Number(key);
+    if (!Number.isInteger(itemId) || itemId <= 0) {
+      throw new Error(`Addon scan bid key must be a positive itemId, got ${JSON.stringify(key)}`);
+    }
+    const bid = (entry ?? {}) as Record<string, unknown>;
+    return {
+      itemId,
+      count: optionalNonNegative(bid.count, "bids.count", key),
+      highest: optionalNonNegative(bid.highest, "bids.highest", key)
+    };
+  });
 }
 
 export function normalizeAddonScan(raw: unknown): AddonScan {
@@ -164,11 +232,10 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
     throw new Error(`Addon scan payload must be an object, got ${JSON.stringify(raw)}`);
   }
   const scan = raw as Record<string, unknown>;
-  // Pipeline version gate: v1 scans carry mean-polluted prices and v2 scans
-  // carry a P50 marketPrice, which this realm's thin upper book made
-  // unusable. Only v3 (P10 marketPrice) may enter the store.
+  // Pipeline gate: v4 scans carry the sell front, the price ladder, seller
+  // identities and the adjacent-scan flow. Older shapes cannot be reinterpreted.
   if (scan.dataVersion !== SCAN_PIPELINE_VERSION) {
-    throw new Error(`Addon scan dataVersion must be ${SCAN_PIPELINE_VERSION} (P10 pricing pipeline), got ${JSON.stringify(scan.dataVersion)} — rescan in game with the current addon`);
+    throw new Error(`Addon scan dataVersion must be ${SCAN_PIPELINE_VERSION} (order-book pipeline), got ${JSON.stringify(scan.dataVersion)} — rescan in game with the current addon`);
   }
   if (typeof scan.scannedAt !== "number" || scan.scannedAt <= 0) {
     throw new Error(`Addon scan scannedAt must be a positive epoch, got ${JSON.stringify(scan.scannedAt)}`);
@@ -183,7 +250,8 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
     throw new Error("Addon scan items must be a non-empty table of itemId entries");
   }
 
-  const items = Object.entries(scan.items as Record<string, unknown>).map(([key, value]) => {
+  const items: AddonScanItem[] = [];
+  for (const [key, value] of Object.entries(scan.items as Record<string, unknown>)) {
     const itemId = Number(key);
     if (!Number.isInteger(itemId) || itemId <= 0) {
       throw new Error(`Addon scan item key must be a positive itemId, got ${JSON.stringify(key)}`);
@@ -192,28 +260,52 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
       throw new Error(`Addon scan item ${key} must be a table, got ${JSON.stringify(value)}`);
     }
     const entry = value as Record<string, unknown>;
+    const bidOnlyCount = optionalNonNegative(entry.bidOnly, "bidOnly", key);
+    const rawMin = typeof entry.minPrice === "number" ? entry.minPrice : 0;
+    // Bid-only entries carry no buyout; their demand is imported through
+    // `bids`, not through a zero-priced snapshot.
+    if (rawMin <= 0 && bidOnlyCount > 0) continue;
     if (typeof entry.name !== "string" || entry.name === "") {
       throw new Error(`Addon scan item ${key}: name must be a non-empty string`);
     }
     const qualityIndex = typeof entry.quality === "number" ? entry.quality : -1;
-    return {
+    const minPrice = requirePositiveInt(entry.minPrice, "minPrice", key);
+    const quantity = requirePositiveInt(entry.quantity, "quantity", key);
+    const numAuctions = requirePositiveInt(entry.numAuctions, "numAuctions", key);
+    const sellPrice = requirePositiveInt(entry.sellP ?? entry.sellPrice, "sellP", key);
+    items.push({
       itemId,
       name: entry.name,
       quality: QUALITY_NAMES[qualityIndex] ?? "unknown",
       category: typeof entry.itemClass === "string" && entry.itemClass !== "" ? entry.itemClass : "unknown",
       subCategory: typeof entry.itemSubClass === "string" && entry.itemSubClass !== "" ? entry.itemSubClass : "unknown",
-      minPrice: requirePositiveInt(entry.minPrice, "minPrice", key),
+      minPrice,
       marketPrice: requirePositiveInt(entry.marketPrice, "marketPrice", key),
-      quantity: requirePositiveInt(entry.quantity, "quantity", key),
-      numAuctions: requirePositiveInt(entry.numAuctions, "numAuctions", key),
-      vendorPrice: normalizeVendorPrice(entry.vendorP, key)
-    };
-  });
+      sellPrice,
+      p5Price: optionalNonNegative(entry.p5, "p5", key),
+      quantity,
+      numAuctions,
+      sellerCount: entry.sellers === undefined ? numAuctions : optionalNonNegative(entry.sellers, "sellers", key),
+      sellersInvisible: entry.sellersInvisible === true,
+      bidOnlyCount,
+      inferredSold: optionalNonNegative(entry.inferredSold, "inferredSold", key),
+      supplyGrowth: optionalFinite(entry.supplyGrowth, "supplyGrowth", key),
+      vendorPrice: optionalNonNegative(entry.vendorP, "vendorP", key),
+      tiers: normalizeTiers(entry.tiers, key, { p: minPrice, q: quantity }),
+      expiring: normalizeExpiring(entry.expiring, key)
+    });
+  }
+  if (items.length === 0) {
+    throw new Error("Addon scan contains no priced items (only bid-only entries)");
+  }
 
   return {
     scannedAt: new Date(scan.scannedAt * 1000),
     server: scan.server,
     faction: scan.faction,
-    items
+    character: typeof scan.character === "string" ? scan.character : null,
+    total: optionalNonNegative(scan.total, "total", "scan"),
+    items,
+    bids: normalizeBids(scan.bids)
   };
 }

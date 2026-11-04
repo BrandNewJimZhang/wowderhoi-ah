@@ -9,8 +9,17 @@ function scanItem(partial: Partial<AddonScanItem> & Pick<AddonScanItem, "itemId"
     subCategory: "Herb",
     minPrice: 90,
     marketPrice: 100,
+    sellPrice: 105,
+    p5Price: 92,
     quantity: 5,
     numAuctions: 2,
+    sellerCount: 2,
+    sellersInvisible: false,
+    bidOnlyCount: 0,
+    inferredSold: 0,
+    supplyGrowth: 0,
+    tiers: [{ p: 90, q: 5 }],
+    expiring: { soon: 0, mid: 0, late: 0 },
     vendorPrice: 0,
     ...partial
   };

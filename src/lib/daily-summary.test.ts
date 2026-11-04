@@ -6,7 +6,7 @@ const scannedAt = new Date("2026-07-23T14:30:00Z");
 describe("mergeScanIntoDailySummaries", () => {
   it("creates OHLCV rows for items without a summary today", () => {
     const { date, creates, updates } = mergeScanIntoDailySummaries(
-      [{ itemId: 2770, marketPrice: 210, quantity: 240 }],
+      [{ itemId: 2770, sellPrice: 210, quantity: 240 }],
       scannedAt,
       []
     );
@@ -20,8 +20,8 @@ describe("mergeScanIntoDailySummaries", () => {
   it("updates close and stretches high/low for repeat scans in a day", () => {
     const { creates, updates } = mergeScanIntoDailySummaries(
       [
-        { itemId: 2770, marketPrice: 180, quantity: 300 }, // dipped below existing low
-        { itemId: 13468, marketPrice: 999999, quantity: 2 } // new item mid-day
+        { itemId: 2770, sellPrice: 180, quantity: 300 }, // dipped below existing low
+        { itemId: 13468, sellPrice: 999999, quantity: 2 } // new item mid-day
       ],
       scannedAt,
       [{ itemId: 2770, highPrice: 220, lowPrice: 200 }]

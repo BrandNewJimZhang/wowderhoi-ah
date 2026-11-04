@@ -38,7 +38,9 @@ async function importLatestScan() {
   const response = await fetch(importUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(scan)
+    // The scan is the observation; the journal is the action record. Both
+    // travel together so the terminal can rebuild positions and P&L.
+    body: JSON.stringify({ scan, journal: parsed.WoWderhoiAH_Journal })
   });
   const body = await response.json();
   if (!response.ok && response.status !== 409) {
@@ -48,7 +50,7 @@ async function importLatestScan() {
   console.log(
     response.status === 409
       ? `Scan ${new Date(scan.scannedAt * 1000).toISOString()} already imported, skipping.`
-      : `Imported ${body.imported} items from scan ${body.scannedAt}.`
+      : `Imported ${body.imported} items, ${body.positions} positions and ${body.trades} trades from scan ${body.scannedAt}.`
   );
 }
 

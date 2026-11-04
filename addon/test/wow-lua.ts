@@ -90,6 +90,14 @@ export function loadAddon(options?: { locale?: string }) {
     // Run the shipped decision core inside the addon harness and read the
     // result back as JS. The terminal runs the same file through fengari in
     // src/lib/core/run-core.ts; a parity test compares the two.
+    ledgerReplay: (events: unknown[]): unknown => {
+      exec(`WowTest.ledgerResult = WowTest.ns.Ledger.replay(${toLua(events)}, "TestRealm|Alliance|Tester")`);
+      lua.lua_getglobal(state, to_luastring("WowTest"));
+      lua.lua_getfield(state, -1, to_luastring("ledgerResult"));
+      const result = fromLua(state, lua.lua_gettop(state));
+      lua.lua_pop(state, 2);
+      return result;
+    },
     coreEval: (input: unknown): unknown => {
       exec(`WowTest.coreResult = WowTest.ns.Core.evaluate(${toLua(input)})`);
       lua.lua_getglobal(state, to_luastring("WowTest"));
