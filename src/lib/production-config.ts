@@ -1,6 +1,8 @@
 // Player-configured production capacity. These are attention / craft-slot
 // budgets per in-game day, not client facts: the client exposes recipes,
 // not how many crafts a player intends to perform. Tune them per character.
+import { AH_FEE_RATE, DEFAULT_BUDGET_COPPER } from "@/lib/market-rules";
+
 export const productionCapacity: Record<string, number> = {
   裁缝: 40,
   制皮: 40,
@@ -19,7 +21,7 @@ export const productionCapacity: Record<string, number> = {
 };
 
 export const productionDefaults = {
-  feeRate: 0.05,
-  budgetCopper: 500_000,
+  feeRate: AH_FEE_RATE,
+  budgetCopper: DEFAULT_BUDGET_COPPER,
   maxCandidates: 120
 } as const;

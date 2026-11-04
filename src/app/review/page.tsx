@@ -13,12 +13,15 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 export const dynamic = "force-dynamic";
 
 export default async function ReviewPage() {
-  const [{ signals, phase }, trades, decisions, positions] = await Promise.all([
-    getMarketSignals(),
-    prisma.trade.findMany({ orderBy: { realizedAt: "desc" }, take: 100 }),
-    prisma.decision.findMany({ orderBy: { at: "desc" }, take: 30 }),
-    getPositions()
+  const bundle = await getMarketSignals();
+  const scope = bundle.scope;
+  const marketWhere = scope ? { marketId: scope.id } : {};
+  const [trades, decisions, positions] = await Promise.all([
+    prisma.trade.findMany({ where: marketWhere, orderBy: { realizedAt: "desc" }, take: 100 }),
+    prisma.decision.findMany({ where: marketWhere, orderBy: { at: "desc" }, take: 30 }),
+    getPositions(scope)
   ]);
+  const { signals, phase } = bundle;
   const realizedTrades = trades.map((trade) => ({
     itemId: trade.itemId,
     pnl: trade.pnl,

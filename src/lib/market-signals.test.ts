@@ -24,6 +24,7 @@ function historyItem(itemId: number, sellPrice: number): MarketHistory {
         sellersInvisible: false,
         bidOnlyCount: 0,
         soldProxyLow: 0,
+        soldProxyHigh: 0,
         supplyGrowth: 0,
         topTiers: [{ p: minPrice, q: 100 }, { p: Math.round(sellPrice * 0.75), q: 100 }],
         expiring: { soon: 1, mid: 2, late: 3 }
@@ -35,10 +36,12 @@ function historyItem(itemId: number, sellPrice: number): MarketHistory {
 
 function fetchers(universe: MarketHistory[]) {
   return {
+    getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0 }),
     getLatestSnapshotTime: async () => new Date("2026-07-20T10:00:00Z"),
     getEarliestSnapshotTime: async () => new Date("2026-07-20T10:00:00Z"),
     getMarketUniverse: async () => universe,
-    getPositions: async () => ({})
+    getPositions: async () => ({}),
+    getOwnSales: async () => ({})
   };
 }
 
@@ -69,6 +72,21 @@ describe("createMarketSignalSource", () => {
     expect(bundle.evaluation.actions.some((action) => action.kind === "buy")).toBe(true);
   });
 
+  it("scopes every market read to the selected realm and faction", async () => {
+    const seen: string[] = [];
+    const source = createMarketSignalSource({
+      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0 }),
+      getLatestSnapshotTime: async (scope) => { seen.push(scope?.id ?? "none"); return new Date("2026-07-20T10:00:00Z"); },
+      getEarliestSnapshotTime: async (scope) => { seen.push(scope?.id ?? "none"); return new Date("2026-07-20T10:00:00Z"); },
+      getMarketUniverse: async (scope) => { seen.push(scope?.id ?? "none"); return [historyItem(1, 200)]; },
+      getPositions: async (scope) => { seen.push(scope?.id ?? "none"); return {}; },
+      getOwnSales: async (scope) => { seen.push(scope?.id ?? "none"); return {}; }
+    });
+    const bundle = await source.getMarketSignals();
+    expect(bundle.scope?.id).toBe("m1");
+    expect(seen).toEqual(["m1", "m1", "m1", "m1", "m1"]);
+  });
+
   it("records decisions once per scan generation", async () => {
     const recorded: unknown[] = [];
     const source = createMarketSignalSource({
@@ -84,10 +102,12 @@ describe("createMarketSignalSource", () => {
     let generation = new Date("2026-07-20T10:00:00Z");
     let price = 200;
     const source = createMarketSignalSource({
+      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0 }),
       getLatestSnapshotTime: async () => generation,
       getEarliestSnapshotTime: async () => new Date("2026-07-20T10:00:00Z"),
       getMarketUniverse: async () => [historyItem(1, price)],
-      getPositions: async () => ({})
+      getPositions: async () => ({}),
+    getOwnSales: async () => ({})
     });
     const first = await source.getMarketSignals();
     generation = new Date("2026-07-20T10:15:00Z");
@@ -100,13 +120,15 @@ describe("createMarketSignalSource", () => {
   it("returns empty signals without caching when the store has no snapshots", async () => {
     let universeFetches = 0;
     const source = createMarketSignalSource({
+      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0 }),
       getLatestSnapshotTime: async () => null,
       getEarliestSnapshotTime: async () => null,
       getMarketUniverse: async () => {
         universeFetches += 1;
         return [];
       },
-      getPositions: async () => ({})
+      getPositions: async () => ({}),
+    getOwnSales: async () => ({})
     });
     expect((await source.getMarketSignals()).signals).toEqual([]);
     expect((await source.getMarketSignals()).signals).toEqual([]);

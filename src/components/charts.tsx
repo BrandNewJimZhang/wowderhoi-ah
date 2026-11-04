@@ -15,6 +15,7 @@ import {
 } from "recharts";
 import { formatWowMoney } from "@/lib/wow-money";
 import { fillCurve } from "@/lib/fill";
+import type { FillBasis } from "@/lib/core/types";
 
 const formatGold = (copper: number) => formatWowMoney(copper, { compact: true });
 const formatPercent = (value: number) => `${Math.round(value * 100)}%`;
@@ -162,7 +163,13 @@ export function OrderBookChart({ tiers, sellP, minPrice }: { tiers: BookTier[]; 
 
 // ======================= Fill probability ============================
 
-export function FillProbabilityChart({ tiers, hazardPerHour, inferred }: { tiers: BookTier[]; hazardPerHour: number; inferred: boolean }) {
+const FILL_BASIS_LABELS: Record<Exclude<FillBasis, "vendor">, string> = {
+  own: "基于自己的成交",
+  proxy: "基于公共推断消失（区间）",
+  prior: "基于阶段先验（尚无自己的成交）"
+};
+
+export function FillProbabilityChart({ tiers, hazardPerHour, basis }: { tiers: BookTier[]; hazardPerHour: number; basis: Exclude<FillBasis, "vendor"> }) {
   const data = fillCurve(tiers, hazardPerHour);
   if (data.length === 0) {
     return <div className="p-4 font-mono text-xs text-terminal-muted">没有盘口深度，无法估计成交概率</div>;
@@ -170,7 +177,7 @@ export function FillProbabilityChart({ tiers, hazardPerHour, inferred }: { tiers
   return (
     <div>
       <div className="mb-1 font-mono text-[10px] text-terminal-muted">
-        24 小时成交概率 · {inferred ? "基于推断消失速度" : "基于阶段先验（尚无自己的成交）"}
+        24 小时成交概率 · {FILL_BASIS_LABELS[basis]}
       </div>
       <ResponsiveContainer width="100%" height={240}>
         <ComposedChart data={data} margin={{ top: 18, right: 20, bottom: 8, left: 8 }}>

@@ -1,10 +1,9 @@
 import Link from "next/link";
 
 import { Hammer } from "lucide-react";
-import { solveProduction } from "@/lib/craft-lp";
 import { getMarketSignals } from "@/lib/market-signals";
 import { phaseLabels } from "@/lib/phase";
-import { productionCapacity, productionDefaults } from "@/lib/production-config";
+import { buildProductionPlan } from "@/lib/production-plan";
 import { dbRecipeToLp } from "@/lib/recipes";
 import { getRecipes } from "@/lib/repositories";
 import { Coins } from "@/components/coins";
@@ -15,21 +14,7 @@ export const dynamic = "force-dynamic";
 export default async function RecipesPage() {
   const [{ signals, phase }, recipeRows] = await Promise.all([getMarketSignals(), getRecipes()]);
   const recipes = recipeRows.map(dbRecipeToLp);
-  const prices = new Map(signals.map((signal) => [signal.itemId, signal.sellPrice]));
-  const vendorPrices = new Map(
-    signals.filter((signal) => signal.vendorPrice > 0).map((signal) => [signal.itemId, signal.vendorPrice])
-  );
-  const materialSupply = new Map(signals.map((signal) => [signal.itemId, signal.quantity]));
-  const budget = Number(process.env.AQT_BUDGET_COPPER) || productionDefaults.budgetCopper;
-  const solution = solveProduction(recipes, {
-    prices,
-    vendorPrices,
-    capacity: productionCapacity,
-    materialSupply,
-    budget,
-    feeRate: productionDefaults.feeRate,
-    maxCandidates: productionDefaults.maxCandidates
-  });
+  const { solution, budget } = buildProductionPlan(signals, recipes);
 
   return (
     <main className="terminal-grid min-h-screen bg-terminal-bg p-3 text-slate-200">

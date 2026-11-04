@@ -1,0 +1,35 @@
+// One market per terminal view. Snapshots, daily summaries, positions and
+// trades are scoped to a Market row (realm + faction); without this, two
+// characters or two realms mix their books into one signal. The scope is
+// the market of the newest snapshot unless AQT_MARKET=realm|faction pins it.
+import { prisma } from "@/lib/prisma";
+
+export type MarketScope = {
+  id: string;
+  realm: string;
+  faction: string;
+  cash: number;
+};
+
+export async function getMarketScope(): Promise<MarketScope | null> {
+  const override = process.env.AQT_MARKET;
+  if (override) {
+    const [realm, faction] = override.split("|");
+    if (!realm || !faction) {
+      throw new Error(`AQT_MARKET must be "realm|faction", got ${JSON.stringify(override)}`);
+    }
+    const market = await prisma.market.findUnique({ where: { realm_faction: { realm, faction } } });
+    if (!market) throw new Error(`AQT_MARKET points at ${realm}|${faction}, but no such market has been imported`);
+    return market;
+  }
+  const latest = await prisma.auctionSnapshot.findFirst({
+    where: { marketId: { not: null } },
+    orderBy: { timestamp: "desc" },
+    select: { marketId: true }
+  });
+  if (latest?.marketId) {
+    const market = await prisma.market.findUnique({ where: { id: latest.marketId } });
+    if (market) return market;
+  }
+  return prisma.market.findFirst({ orderBy: { createdAt: "asc" } });
+}

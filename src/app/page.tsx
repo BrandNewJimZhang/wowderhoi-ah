@@ -1,16 +1,19 @@
-import { Bell, CalendarClock, Hammer, RadioTower, Star } from "lucide-react";
+import { Bell, CalendarClock, RadioTower, Star } from "lucide-react";
 import { evaluateAlertRules } from "@/lib/alerts";
-import { computeCraftProfits, craftRecipes } from "@/lib/crafting";
 import {
   getAlertRules,
+  getRecipes,
   getUpcomingEvents,
   getWatchedItemIds
 } from "@/lib/repositories";
+import { buildProductionPlan } from "@/lib/production-plan";
+import { dbRecipeToLp } from "@/lib/recipes";
 import { getMarketSignals } from "@/lib/market-signals";
 import { describeFreshness } from "@/lib/freshness";
 import { phaseDescription, phaseLabels } from "@/lib/phase";
 import { QUALITY_NAMES } from "@/lib/addon-scan";
 import { allocateCapital } from "@/lib/portfolio";
+import { AH_FEE_RATE, DEFAULT_BUDGET_COPPER, portfolioRules } from "@/lib/market-rules";
 import { filterSortSignals, MARKET_PAGE_SIZE, paginate, parseMarketView } from "@/lib/market-filter";
 import { formatPercent } from "@/lib/utils";
 import { Coins } from "@/components/coins";
@@ -26,11 +29,12 @@ const qualityName = (value: number | string | undefined) =>
 
 export default async function Home({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const view = parseMarketView(await searchParams);
-  const [{ signals, latestSnapshotAt, phase, evaluation }, upcomingEvents, watchedIds, alertRules] = await Promise.all([
+  const [{ scope, signals, latestSnapshotAt, phase, evaluation }, upcomingEvents, watchedIds, alertRules, recipeRows] = await Promise.all([
     getMarketSignals(),
     getUpcomingEvents(),
     getWatchedItemIds(),
-    getAlertRules()
+    getAlertRules(),
+    getRecipes()
   ]);
   const freshness = describeFreshness(latestSnapshotAt, new Date());
   const watchedSignals = signals.filter((signal) => watchedIds.has(signal.itemId));
@@ -38,25 +42,29 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   // The opportunity list is Core.lua's evaluation, the same decision core
   // the addon runs in game. It is not a second radar implementation.
   const deals = evaluation.rows.slice(0, 12);
-  const priceByItemId = new Map(signals.map((signal) => [signal.itemId, signal.sellPrice]));
-  const capitalBudget = Number(process.env.AQT_BUDGET_COPPER) || 1_000_000;
+  const capitalBudget = Number(process.env.AQT_BUDGET_COPPER) || DEFAULT_BUDGET_COPPER;
   const sizing = allocateCapital(
     evaluation.rows.filter((row) => !row.vendor).map((row) => ({
       itemId: row.itemId,
       name: row.name,
       unitCost: row.ladderPrice,
       sellPrice: row.listP,
-      feeRate: 0.05,
+      feeRate: AH_FEE_RATE,
       fillProb: row.fillProb,
       residualValue: 0,
       samples: row.confidence === "high" ? 20 : row.confidence === "medium" ? 8 : 2
     })),
     capitalBudget,
-    { kappa: 0.25, maxItemExposure: 0.25, dailyBudget: 0.5, minSamplesForKelly: 10 }
+    {
+      kappa: portfolioRules.kellyFraction,
+      maxItemExposure: portfolioRules.maxItemExposure,
+      dailyBudget: portfolioRules.dailyBudget,
+      minSamplesForKelly: portfolioRules.minKellySamples
+    }
   );
-  const craftRows = computeCraftProfits(craftRecipes, priceByItemId);
-  const craftOk = craftRows.filter((row) => row.status === "ok");
-  const craftMissingCount = craftRows.length - craftOk.length;
+  // Same production plan as /recipes: one builder, so the dashboard and the
+  // full page can never price a recipe against different inputs.
+  const production = buildProductionPlan(signals, recipeRows.map(dbRecipeToLp));
   // The client table only ever receives the visible page; filtering and
   // sorting run here against the URL-provided view.
   const filtered = filterSortSignals(signals, view);
@@ -69,7 +77,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border border-terminal-border bg-terminal-panel px-4 py-3">
         <div>
           <h1 className="font-mono text-lg font-semibold uppercase text-terminal-amber">WoWderhoi AHelper</h1>
-          <p className="font-mono text-xs text-terminal-muted">无限服拍卖行情报与地精驾驶舱 · {phaseLabels[phase]}</p>
+          <p className="font-mono text-xs text-terminal-muted">
+            {scope ? `${scope.realm} · ${scope.faction}` : "未导入市场"} · 无限服拍卖行情报与地精驾驶舱 · {phaseLabels[phase]}
+          </p>
         </div>
         <div className="flex items-center gap-3 font-mono text-xs text-terminal-muted">
           <span className={freshness.stale ? "flex items-center gap-1 text-terminal-red" : "flex items-center gap-1 text-terminal-green"}>
@@ -103,6 +113,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                       <span>上限 <Coins copper={action.maxUnitPrice} /></span>
                       <span>净利 <Coins copper={action.expectedNet} /></span>
                       <span>成交率 {(action.fillProb * 100).toFixed(0)}%</span>
+                      {action.stop && <span className="text-terminal-amber">高于 <Coins copper={action.stop.ifPriceAbove} /> 放弃</span>}
                       <span className="text-slate-400">{action.reason}</span>
                     </span>
                   ) : (
@@ -130,7 +141,10 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                     {deal.name}
                     {deal.vendor
                       ? <span className="text-terminal-amber">NPC必赚 +<Coins copper={deal.netProfit} /></span>
-                      : <span className="text-terminal-green">+{deal.spreadPercent.toFixed(0)}%</span>}
+                      : <>
+                          <span className="text-[10px] text-terminal-muted">{deal.marketType === "commodity" ? "商品" : "物品"}</span>
+                          <span className="text-terminal-green">+{deal.spreadPercent.toFixed(0)}%</span>
+                        </>}
                   </Link>
                   <span className="flex items-center gap-3">
                     <Coins copper={deal.minPrice} />
@@ -206,23 +220,32 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
             </div>
           </Panel>
           <Panel>
-            <PanelHeader title="制造利润" action={<Hammer size={13} className="text-terminal-muted" />} />
+            <PanelHeader
+              title="制造利润"
+              action={<Link href="/recipes" className="font-mono text-xs text-terminal-muted hover:text-terminal-amber">完整计划 →</Link>}
+            />
             <div className="space-y-2 p-3 font-mono text-xs">
-              {craftOk.length === 0 && (
-                <div className="text-terminal-muted">扫描覆盖配方材料与成品后此处显示利润排行</div>
+              {recipeRows.length === 0 && (
+                <div className="text-terminal-muted">
+                  配方表尚未导入。运行 <span className="text-terminal-amber">npm run recipes:import</span>。
+                </div>
               )}
-              {craftOk.slice(0, 8).map((row) => (
-                <div key={row.recipe.name} className="flex items-center justify-between gap-2">
+              {recipeRows.length > 0 && production.solution.rows.length === 0 && (
+                <div className="text-terminal-muted">当前价格与产能下没有正利润的配方</div>
+              )}
+              {production.solution.rows.slice(0, 8).map((row) => (
+                <div key={row.recipe.id} className="flex items-center justify-between gap-2">
                   <span className="text-slate-100">{row.recipe.name}<span className="ml-1 text-[10px] text-terminal-muted">{row.recipe.profession}</span></span>
                   <span className="flex items-center gap-3">
-                    <span className={row.profit >= 0 ? "text-terminal-green" : "text-terminal-red"}><Coins copper={row.profit} /></span>
-                    <span className={row.marginPercent >= 0 ? "text-terminal-green" : "text-terminal-red"}>{formatPercent(row.marginPercent)}</span>
+                    <span className="text-terminal-muted">{row.volume} 次</span>
+                    <span className={row.unitProfit >= 0 ? "text-terminal-green" : "text-terminal-red"}><Coins copper={row.totalProfit} /></span>
+                    <span className={row.marginPercent >= 0 ? "text-terminal-green" : "text-terminal-red"}>{row.marginPercent.toFixed(0)}%</span>
                   </span>
                 </div>
               ))}
-              {craftMissingCount > 0 && (
+              {production.solution.excluded > 0 && (
                 <div className="border-t border-terminal-border pt-2 text-[10px] text-terminal-muted">
-                  另有 {craftMissingCount} 个配方因缺少价格数据未计算
+                  另有 {production.solution.excluded} 个配方因缺少价格数据未计算
                 </div>
               )}
             </div>

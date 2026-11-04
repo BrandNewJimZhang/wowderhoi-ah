@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Wallet } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getMarketSignals } from "@/lib/market-signals";
-import { getMarketContext, getPositions } from "@/lib/repositories";
+import { getPositions } from "@/lib/repositories";
 import { phaseLabels } from "@/lib/phase";
 import { Coins } from "@/components/coins";
 import { Panel, PanelHeader } from "@/components/ui/panel";
@@ -11,12 +11,16 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 export const dynamic = "force-dynamic";
 
 export default async function PortfolioPage() {
-  const [{ signals, phase }, positions, market, allTrades] = await Promise.all([
-    getMarketSignals(),
-    getPositions(),
-    getMarketContext(),
-    prisma.trade.findMany({ orderBy: { realizedAt: "desc" } })
+  const bundle = await getMarketSignals();
+  const scope = bundle.scope;
+  const [positions, allTrades] = await Promise.all([
+    getPositions(scope),
+    prisma.trade.findMany({
+      where: scope ? { marketId: scope.id } : {},
+      orderBy: { realizedAt: "desc" }
+    })
   ]);
+  const { signals, phase } = bundle;
   const priceById = new Map(signals.map((signal) => [signal.itemId, signal.sellPrice]));
   const nameById = new Map(signals.map((signal) => [signal.itemId, signal.name]));
   const rows = Object.entries(positions)
@@ -41,7 +45,7 @@ export default async function PortfolioPage() {
   const realized = allTrades.reduce((sum, trade) => sum + trade.pnl, 0);
   const fees = allTrades.reduce((sum, trade) => sum + trade.fee, 0);
   const inferred = allTrades.filter((trade) => trade.inferred).length;
-  const cash = market?.cash ?? 0;
+  const cash = scope?.cash ?? 0;
 
   return (
     <main className="terminal-grid min-h-screen bg-terminal-bg p-3 text-slate-200">

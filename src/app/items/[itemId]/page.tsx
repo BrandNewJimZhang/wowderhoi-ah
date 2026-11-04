@@ -16,7 +16,10 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 export default async function ItemDetail({ params }: { params: Promise<{ itemId: string }> }) {
   const { itemId } = await params;
   const numericItemId = Number(itemId);
-  const item = await getItemDetail(numericItemId);
+  // Resolve the market once through the signal bundle: the item page and the
+  // radar must read the same market even if a new scan lands mid-request.
+  const bundle = await getMarketSignals();
+  const item = await getItemDetail(numericItemId, bundle.scope);
   if (!item) notFound();
   const [watchedIds, alertRules] = await Promise.all([
     getWatchedItemIds(),
@@ -24,7 +27,6 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
   ]);
   const now = new Date();
   const hasSnapshots = item.snapshots.length > 0;
-  const bundle = await getMarketSignals();
   const signal = bundle.signals.find((entry) => entry.itemId === numericItemId)
     ?? (hasSnapshots ? buildMarketSignal(item, now, { phase: bundle.phase, index: bundle.priceIndex }) : null);
   const seasonality = buildWeekdaySeasonality(item.dailySummaries);
@@ -51,10 +53,14 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
   const latest = item.snapshots.at(-1);
   const tiers = (Array.isArray(latest?.topTiers) ? latest.topTiers : []) as BookTier[];
   const bookTiers = tiers.length > 0 ? tiers : latest ? [{ p: latest.minPrice, q: latest.quantity }] : [];
-  const inferredSold = latest?.soldProxyLow ?? 0;
-  const hazardPerHour = inferredSold > 0 && latest && latest.quantity > 0
-    ? Math.min(2, Math.max(0.001, inferredSold / (latest.quantity * 0.25)))
-    : 0.2;
+  // The fill curve is derived from the shared core's 24-hour fill
+  // probability, never from a second hazard formula: the chart and the
+  // recommendation must cite the same evidence tier.
+  const fillRow = bundle.evaluation.rows.find((row) => row.itemId === numericItemId);
+  const hazardPerHour = fillRow && fillRow.fillProb > 0 && fillRow.fillProb < 1
+    ? -Math.log(1 - fillRow.fillProb) / 24
+    : null;
+  const fillBasis = fillRow && fillRow.fillBasis !== "vendor" ? fillRow.fillBasis : "prior";
 
   return (
     <main className="terminal-grid min-h-screen bg-terminal-bg p-3 text-slate-200">
@@ -81,9 +87,11 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
           <Panel>
             <PanelHeader title="24 小时成交概率" />
             <div className="p-3">
-              {latest
-                ? <FillProbabilityChart tiers={bookTiers} hazardPerHour={hazardPerHour} inferred={inferredSold > 0} />
-                : <div className="p-4 font-mono text-xs text-terminal-muted">尚无扫描数据</div>}
+              {hazardPerHour !== null && fillRow
+                ? <FillProbabilityChart tiers={bookTiers} hazardPerHour={hazardPerHour} basis={fillBasis} />
+                : <div className="p-4 font-mono text-xs text-terminal-muted">
+                    {latest ? "该物品未通过当前阶段门槛，暂无成交概率估计；先看盘口与建议卖价。" : "尚无扫描数据"}
+                  </div>}
             </div>
           </Panel>
           <Panel>

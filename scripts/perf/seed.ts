@@ -35,8 +35,8 @@ async function insertChunked<T>(rows: T[], insert: (chunk: T[]) => Promise<unkno
   }
 }
 
-function dailySummariesFor(market: SyntheticMarket, newestScanMs: number) {
-  const rows: Array<{ itemId: number; date: Date; openPrice: number; closePrice: number; highPrice: number; lowPrice: number; volume: number }> = [];
+function dailySummariesFor(market: SyntheticMarket, newestScanMs: number, marketId: string) {
+  const rows: Array<{ itemId: number; marketId: string; date: Date; openPrice: number; closePrice: number; highPrice: number; lowPrice: number; volume: number }> = [];
   for (const item of market.items) {
     for (let start = 0; start < item.walk.length; start += SCANS_PER_DAY) {
       const day = item.walk.slice(start, start + SCANS_PER_DAY);
@@ -46,6 +46,7 @@ function dailySummariesFor(market: SyntheticMarket, newestScanMs: number) {
       date.setUTCHours(0, 0, 0, 0);
       rows.push({
         itemId: item.itemId,
+        marketId,
         date,
         openPrice: prices[0],
         closePrice: prices[prices.length - 1],
@@ -72,6 +73,9 @@ async function main() {
   const market = generateMarket({ itemCount, depth, seed: Number(values.seed) });
   const prisma = new PrismaClient({ datasourceUrl: databaseUrl });
   const newestScanMs = Date.now();
+  const marketRow = await prisma.market.create({
+    data: { realm: "PerfRealm", faction: "Alliance", cash: 0 }
+  });
 
   await insertChunked(
     market.items.map((item) => ({
@@ -90,6 +94,7 @@ async function main() {
       timestamp: new Date(newestScanMs - (item.walk.length - 1 - step) * SCAN_INTERVAL_MS),
       server: "PerfRealm",
       faction: "Alliance",
+      marketId: marketRow.id,
       minPrice: point.minPrice,
       marketPrice: point.marketPrice,
       quantity: point.quantity,
@@ -97,7 +102,7 @@ async function main() {
     }))
   );
   await insertChunked(snapshotRows, (chunk) => prisma.auctionSnapshot.createMany({ data: chunk }));
-  await insertChunked(dailySummariesFor(market, newestScanMs), (chunk) => prisma.dailySummary.createMany({ data: chunk }));
+  await insertChunked(dailySummariesFor(market, newestScanMs, marketRow.id), (chunk) => prisma.dailySummary.createMany({ data: chunk }));
 
   const counts = {
     items: await prisma.item.count(),

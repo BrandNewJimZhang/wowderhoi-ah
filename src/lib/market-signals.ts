@@ -6,14 +6,16 @@
 import { buildMarketSignal, type MarketSignal } from "@/lib/analytics";
 import { buildCoreInput } from "@/lib/core/from-market";
 import { runCore } from "@/lib/core/run-core";
-import type { CoreOutput } from "@/lib/core/types";
+import type { CoreOutput, OwnSales } from "@/lib/core/types";
 import { buildPriceIndex, type PriceIndex } from "@/lib/deflator";
 import type { MarketHistory } from "@/lib/market-data";
-import { marketPhases, type MarketPhase } from "@/lib/market-rules";
+import { DEFAULT_BUDGET_COPPER, marketPhases, type MarketPhase } from "@/lib/market-rules";
 import { resolvePhase } from "@/lib/phase";
-import { getEarliestSnapshotTime, getLatestSnapshotTime, getMarketUniverse, getPositions } from "@/lib/repositories";
+import { getEarliestSnapshotTime, getLatestSnapshotTime, getMarketUniverse, getOwnSales, getPositions } from "@/lib/repositories";
+import { getMarketScope, type MarketScope } from "@/lib/market-scope";
 
 export type MarketBundle = {
+  scope: MarketScope | null;
   signals: MarketSignal[];
   latestSnapshotAt: Date | null;
   phase: MarketPhase;
@@ -22,10 +24,12 @@ export type MarketBundle = {
 };
 
 type SignalFetchers = {
-  getLatestSnapshotTime: () => Promise<Date | null>;
-  getEarliestSnapshotTime: () => Promise<Date | null>;
-  getMarketUniverse: () => Promise<MarketHistory[]>;
-  getPositions: () => Promise<Record<number, { qty: number; cost: number }>>;
+  getMarketScope: () => Promise<MarketScope | null>;
+  getLatestSnapshotTime: (scope: MarketScope | null) => Promise<Date | null>;
+  getEarliestSnapshotTime: (scope: MarketScope | null) => Promise<Date | null>;
+  getMarketUniverse: (scope: MarketScope | null) => Promise<MarketHistory[]>;
+  getPositions: (scope: MarketScope | null) => Promise<Record<number, { qty: number; cost: number }>>;
+  getOwnSales: (scope: MarketScope | null) => Promise<OwnSales>;
   recordDecisions?: (bundle: MarketBundle) => Promise<void>;
 };
 
@@ -36,11 +40,12 @@ function configuredPhase(): MarketPhase | null {
 
 function configuredBudget(): number {
   const value = Number(process.env.AQT_BUDGET_COPPER);
-  return Number.isFinite(value) && value > 0 ? value : 1_000_000;
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_BUDGET_COPPER;
 }
 
-function emptyBundle(phase: MarketPhase): MarketBundle {
+function emptyBundle(phase: MarketPhase, scope: MarketScope | null = null): MarketBundle {
   return {
+    scope,
     signals: [],
     latestSnapshotAt: null,
     phase,
@@ -63,16 +68,17 @@ export function createMarketSignalSource(fetchers: SignalFetchers) {
 
   return {
     async getMarketSignals(): Promise<MarketBundle> {
-      const latestSnapshotAt = await fetchers.getLatestSnapshotTime();
+      const scope = await fetchers.getMarketScope();
+      const latestSnapshotAt = await fetchers.getLatestSnapshotTime(scope);
       if (latestSnapshotAt === null) {
-        cached = emptyBundle(configuredPhase() ?? "ignition");
+        cached = emptyBundle(configuredPhase() ?? "ignition", scope);
         cachedAtMs = null;
         return cached;
       }
       if (cachedAtMs === latestSnapshotAt.getTime()) return cached;
 
-      const universe = await fetchers.getMarketUniverse();
-      const earliestSnapshotAt = await fetchers.getEarliestSnapshotTime();
+      const universe = await fetchers.getMarketUniverse(scope);
+      const earliestSnapshotAt = await fetchers.getEarliestSnapshotTime(scope);
       const priced = universe.filter((item) => item.snapshots.length > 0);
       const now = new Date();
       const ageHours = earliestSnapshotAt
@@ -85,14 +91,16 @@ export function createMarketSignalSource(fetchers: SignalFetchers) {
       const pairs = signals
         .map((signal) => ({ signal, history: byItemId.get(signal.itemId) }))
         .filter((pair): pair is { signal: MarketSignal; history: MarketHistory } => pair.history !== undefined);
-      const positions = await fetchers.getPositions();
+      const [positions, ownSales] = await Promise.all([fetchers.getPositions(scope), fetchers.getOwnSales(scope)]);
       const input = buildCoreInput(pairs, {
         now,
         phase,
         positions,
+        ownSales,
         budgetCopper: configuredBudget()
       });
       cached = {
+        scope,
         signals,
         latestSnapshotAt,
         phase,
@@ -107,10 +115,12 @@ export function createMarketSignalSource(fetchers: SignalFetchers) {
 }
 
 const defaultSource = createMarketSignalSource({
+  getMarketScope,
   getLatestSnapshotTime,
   getEarliestSnapshotTime,
   getMarketUniverse,
   getPositions,
+  getOwnSales,
   recordDecisions: (bundle) => import("@/lib/decisions").then((module) => module.recordDecisions(bundle))
 });
 
