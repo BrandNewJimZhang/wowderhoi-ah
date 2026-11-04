@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MarketSignal } from "@/lib/analytics";
-import { alertMetricKeys, evaluateAlertRules, goldDenominatedMetrics } from "@/lib/alerts";
+import { alertMetricKeys, alertMetricLabels, evaluateAlertRules, formatAlertValue, goldDenominatedMetrics } from "@/lib/alerts";
 
 function signal(partial: Partial<MarketSignal> & Pick<MarketSignal, "itemId" | "name">): MarketSignal {
   return {
@@ -69,5 +69,14 @@ describe("evaluateAlertRules", () => {
     expect(goldDenominatedMetrics.has("sellRef")).toBe(true);
     expect(goldDenominatedMetrics.has("spreadPercent")).toBe(false);
     for (const key of goldDenominatedMetrics) expect(alertMetricKeys).toContain(key);
+  });
+
+  it("labels every metric and formats values with the metric's unit", () => {
+    // Both the cockpit and the item page render this table; a missing label
+    // must be a type error, not a raw English key in the UI.
+    for (const key of alertMetricKeys) expect(alertMetricLabels[key]).toBeTruthy();
+    expect(formatAlertValue("sellPrice", 123456)).toBe("12g 34s 56c");
+    expect(formatAlertValue("spreadPercent", 12.345)).toBe("12.35%");
+    expect(formatAlertValue("quantity", 1234.4)).toBe("1234");
   });
 });

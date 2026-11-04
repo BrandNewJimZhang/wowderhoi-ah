@@ -102,7 +102,9 @@ export default async function ReviewPage() {
 
       <div className="mb-3 flex flex-wrap items-center gap-4 border border-terminal-border bg-terminal-panel px-3 py-2 font-mono text-[11px] text-terminal-muted">
         <span>决策匹配：{policyEstimate.matched} / {policyEstimate.decisions}（覆盖率 {(policyEstimate.coverage * 100).toFixed(0)}%）</span>
-        <span>匹配后平均净利 <Coins copper={policyEstimate.estimate} /></span>
+        <span>
+          匹配后平均净利 {policyEstimate.matched > 0 ? <Coins copper={policyEstimate.estimate} /> : "—"}
+        </span>
         <span>有效样本 {policyEstimate.effectiveSampleSize.toFixed(1)}</span>
         <span>推断 {summary.inferredCount} 笔 · <Coins copper={summary.inferredRealized} /> 未计入</span>
         <span className="text-terminal-amber">描述性匹配，不是因果效应；要估计策略效果需要记录倾向并做探索。</span>

@@ -2,26 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { createAlertRule, deleteAlertRule } from "@/app/actions";
-import { alertMetricKeys, goldDenominatedMetrics, type AlertMetricKey } from "@/lib/alerts";
-import { formatWowMoney } from "@/lib/wow-money";
+import { alertMetricKeys, alertMetricLabels, formatAlertValue, goldDenominatedMetrics, type AlertMetricKey } from "@/lib/alerts";
 
 type AlertRuleRow = { id: string; metric: string; operator: string; threshold: number; enabled: boolean };
-
-// Keyed by the alert metric union, so adding a metric without a label is a
-// type error rather than an undefined <option>.
-const metricLabels: Record<AlertMetricKey, string> = {
-  sellPrice: "建议卖价",
-  minPrice: "最低价",
-  sellRef: "卖价中位（窗口）",
-  spreadPercent: "价差%（对卖价）",
-  trendPercent: "趋势%（对中位）",
-  quantity: "在售量",
-  numAuctions: "挂单数"
-};
-
-function thresholdLabel(rule: AlertRuleRow) {
-  return goldDenominatedMetrics.has(rule.metric) ? formatWowMoney(rule.threshold) : String(rule.threshold);
-}
 
 export function AlertRulePanel({ itemId, rules }: { itemId: number; rules: AlertRuleRow[] }) {
   const [metric, setMetric] = useState<string>("minPrice");
@@ -36,7 +19,7 @@ export function AlertRulePanel({ itemId, rules }: { itemId: number; rules: Alert
       {rules.map((rule) => (
         <div key={rule.id} className="flex items-center justify-between gap-2">
           <span>
-            {metricLabels[rule.metric as AlertMetricKey] ?? rule.metric} {rule.operator === "gt" ? ">" : "<"} {thresholdLabel(rule)}
+            {alertMetricLabels[rule.metric as AlertMetricKey] ?? rule.metric} {rule.operator === "gt" ? ">" : "<"} {formatAlertValue(rule.metric, rule.threshold)}
           </span>
           <button
             onClick={() => startTransition(() => deleteAlertRule(rule.id))}
@@ -51,7 +34,7 @@ export function AlertRulePanel({ itemId, rules }: { itemId: number; rules: Alert
       <div className="flex flex-wrap items-center gap-2 border-t border-terminal-border pt-2">
         <select value={metric} onChange={(event) => setMetric(event.target.value)} className={inputClass}>
           {alertMetricKeys.map((key) => (
-            <option key={key} value={key}>{metricLabels[key]}</option>
+            <option key={key} value={key}>{alertMetricLabels[key]}</option>
           ))}
         </select>
         <select value={operator} onChange={(event) => setOperator(event.target.value)} className={inputClass}>

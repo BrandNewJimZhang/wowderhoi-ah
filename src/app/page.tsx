@@ -1,5 +1,5 @@
 import { Bell, CalendarClock, RadioTower, Star } from "lucide-react";
-import { evaluateAlertRules } from "@/lib/alerts";
+import { alertMetricLabels, evaluateAlertRules, formatAlertValue, type AlertMetricKey } from "@/lib/alerts";
 import {
   getAlertRules,
   getRecipes,
@@ -7,7 +7,7 @@ import {
   getWatchedItemIds
 } from "@/lib/repositories";
 import { buildProductionPlan } from "@/lib/production-plan";
-import { dbRecipeToLp } from "@/lib/recipes";
+import { recipeToLp } from "@/lib/recipes";
 import { getMarketSignals } from "@/lib/market-signals";
 import { describeFreshness } from "@/lib/freshness";
 import { phaseDescription, phaseLabels } from "@/lib/phase";
@@ -68,7 +68,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   );
   // Same production plan as /recipes: one builder, so the dashboard and the
   // full page can never price a recipe against different inputs.
-  const production = buildProductionPlan(signals, recipeRows.map(dbRecipeToLp));
+  const production = buildProductionPlan(signals, recipeRows.map(recipeToLp));
   // The client table only ever receives the visible page; filtering and
   // sorting run here against the URL-provided view.
   const filtered = filterSortSignals(signals, view);
@@ -199,7 +199,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                 <div key={hit.rule.id} className="flex items-center justify-between gap-2">
                   <Link href={`/items/${hit.rule.itemId}`} className="text-slate-100 hover:text-terminal-amber">{hit.signal.name}</Link>
                   <span className="text-terminal-red">
-                    {hit.rule.metric} {hit.rule.operator === "gt" ? ">" : "<"} {hit.rule.threshold}（现 {hit.actual.toFixed(2)}）
+                    {alertMetricLabels[hit.rule.metric as AlertMetricKey] ?? hit.rule.metric}{" "}
+                    {hit.rule.operator === "gt" ? ">" : "<"} {formatAlertValue(hit.rule.metric, hit.rule.threshold)}
+                    （现 {formatAlertValue(hit.rule.metric, hit.actual)}）
                   </span>
                 </div>
               ))}
