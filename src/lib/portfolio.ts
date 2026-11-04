@@ -26,7 +26,6 @@ export type PositionSize = {
   name: string;
   qty: number;
   budget: number;
-  fraction: number;
   expectedNet: number;
   cappedBy: "kelly" | "item-exposure" | "daily-budget" | "capital" | "none";
   exploratory: boolean;
@@ -67,7 +66,6 @@ export function sizePosition(
     name: opportunity.name,
     qty,
     budget,
-    fraction,
     expectedNet: qty * win,
     cappedBy,
     exploratory: (opportunity.samples ?? 0) < config.minSamplesForKelly

@@ -51,16 +51,14 @@ local function addLot(state, itemId, quantity, unitCost, at)
   lots[#lots + 1] = { qty = quantity, unitCost = unitCost or 0, at = at }
 end
 
--- FIFO consumption. Returns the cost basis of the consumed units and the
--- quantity actually consumed. A sale larger than the booked position can
--- happen when the journal starts mid-history (the addon was installed
--- after the purchase); the shortfall is consumed at zero basis and
--- recorded, not hidden.
+-- FIFO consumption. Returns the cost basis of the consumed units. A sale
+-- larger than the booked position can happen when the journal starts
+-- mid-history (the addon was installed after the purchase); the shortfall
+-- is consumed at zero basis and recorded, not hidden.
 local function consume(state, itemId, quantity, at)
   local lots = state.lots[itemId]
   local remaining = quantity or 0
   local basis = 0
-  local consumed = 0
   if lots then
     while remaining > 0 and #lots > 0 do
       local lot = lots[1]
@@ -68,7 +66,6 @@ local function consume(state, itemId, quantity, at)
       basis = basis + take * lot.unitCost
       lot.qty = lot.qty - take
       remaining = remaining - take
-      consumed = consumed + take
       if lot.qty <= 0 then table.remove(lots, 1) end
     end
     if #lots == 0 then state.lots[itemId] = nil end
@@ -81,7 +78,7 @@ local function consume(state, itemId, quantity, at)
       missing = remaining
     }
   end
-  return basis, consumed
+  return basis
 end
 
 local function totalCost(lots)

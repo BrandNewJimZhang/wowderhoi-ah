@@ -52,7 +52,6 @@ export type ReplayError = {
 };
 
 export type ReplayState = {
-  lots: Record<number, JournalLot[]>;
   positions: Record<number, { qty: number; cost: number }>;
   openPosts: Record<string, { itemId?: number; qty: number; price: number; deposit: number; at: number; duration?: number }>;
   trades: JournalTrade[];
@@ -280,7 +279,6 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
   }
 
   return {
-    lots: Object.fromEntries(lots),
     positions,
     openPosts,
     trades,

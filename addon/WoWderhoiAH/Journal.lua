@@ -30,7 +30,7 @@ function Journal.ensure()
   local key = bookKey()
   local book = WoWderhoiAH_Journal.books[key]
   if not book then
-    book = { e = {}, dropped = 0, createdAt = time() }
+    book = { e = {}, dropped = 0 }
     WoWderhoiAH_Journal.books[key] = book
   end
   return book

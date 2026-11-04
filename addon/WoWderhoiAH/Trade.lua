@@ -366,8 +366,7 @@ local function recordPurchase(purchase, payload)
     name = purchase.name,
     qty = quantity,
     cost = cost,
-    via = purchase.via,
-    scanAt = WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.scannedAt
+    via = purchase.via
   })
   chatMessage(string.format(L.BOUGHT, purchase.name, quantity, coinString(cost)))
 end

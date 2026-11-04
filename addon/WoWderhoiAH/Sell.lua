@@ -151,8 +151,6 @@ local function planFor(itemId, duration, quantity)
   }, position, WAH.RULES, { deposit = deposit })
   if not plan then return nil, "noPrice", entry end
   plan.depositAvailable = depositAvailable
-  plan.commodity = entry.commodity
-  plan.name = entry.name
   return plan, nil, entry
 end
 
@@ -503,11 +501,6 @@ end
 
 local function render()
   if not sell then return end
-  local scan = currentScanItems()
-  local visible = 0
-  for _, entry in pairs(scan) do
-    if entry.minPrice and entry.minPrice > 0 then visible = visible + 1 end
-  end
   local capital = WAH.Ledger and WAH.Ledger.capital() or { cash = 0 }
   sell.status:SetText(string.format(L.SELL_STATUS_FMT,
     #bagItems, #owned, coinString(capital.cash or 0)))

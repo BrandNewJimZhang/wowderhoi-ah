@@ -6,25 +6,21 @@ import type { DailySummary, Item } from "@prisma/client";
 // invent one.
 export type MarketSnapshot = {
   timestamp: Date;
-  priced?: boolean;
   minPrice: number;
   marketPrice: number;
   quantity: number;
   numAuctions: number;
   sellPrice?: number;
-  p5Price?: number;
   sellerCount?: number;
   sellersInvisible?: boolean;
   // Scan-time book classification. Optional for fixtures and for rows
   // imported before the column existed.
   marketType?: string | null;
   bidOnlyCount?: number;
-  highestBid?: number;
   soldProxyLow?: number;
   soldProxyHigh?: number;
   supplyGrowth?: number;
   topTiers?: unknown;
-  expiring?: unknown;
 };
 
 export type MarketHistory = Omit<Item, "id" | "createdAt" | "updatedAt"> & {
