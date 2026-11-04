@@ -116,6 +116,13 @@ describe("buildCoreInput", () => {
     expect(input.market.items[1].marketType).toBe("item");
   });
 
+  it("carries item quality into the core rows", () => {
+    // The in-game builder hands the core the scan's quality; without it the
+    // terminal's radar rows fell back to "unknown" and lost their color.
+    const input = buildCoreInput(pairs(1), { now: LATEST, phase: "wave" });
+    expect(input.market.items[1].quality).toBe("common");
+  });
+
   it("prefers the store's first snapshot time when the caller knows it", () => {
     const tenDaysAgo = new Date("2026-07-11T00:00:00Z");
     const input = buildCoreInput(pairs(), { now: LATEST, phase: "settle", firstScanAt: tenDaysAgo });

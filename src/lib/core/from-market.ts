@@ -69,6 +69,9 @@ export function buildCoreInput(
     items[signal.itemId] = {
       itemId: signal.itemId,
       name: signal.name,
+      // The in-game builder passes the scan's quality; the terminal passes
+      // the item row's name so CoreRow quality is populated on both sides.
+      quality: signal.quality,
       itemClass: signal.category,
       itemSubClass: history.subCategory,
       // The scan classified the book; only rows without a captured
