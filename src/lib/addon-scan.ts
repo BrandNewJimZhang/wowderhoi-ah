@@ -8,7 +8,7 @@ export const QUALITY_NAMES = ["poor", "common", "uncommon", "rare", "epic", "leg
 
 export type AddonTier = { p: number; q: number };
 
-export type AddonMarketType = "commodity" | "item";
+type AddonMarketType = "commodity" | "item";
 
 export type AddonScanItem = {
   itemId: number;
