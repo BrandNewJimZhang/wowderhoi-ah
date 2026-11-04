@@ -8,7 +8,7 @@
 // Pricing pipeline version, stamped into every scan. Consumers (tooltip,
 // radar, desktop importer) reject any other value: a bump means the
 // meaning of the stored prices changed, not just their values.
-export const SCAN_PIPELINE_VERSION = 3;
+export const SCAN_PIPELINE_VERSION = 4;
 
 // The legacy P10-median radar rules. Kept until the executable-profit
 // radar lands; every new decision reads the phase rules below instead.

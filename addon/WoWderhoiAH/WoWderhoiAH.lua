@@ -1,4 +1,4 @@
--- WoWderhoiAH Scanner for WoW Forever (client 1.60.1).
+-- WoWderhoiAH scanner for WoW Forever (client 1.60.1).
 --
 -- A full scan is C_AuctionHouse.ReplicateItems(): one server roundtrip that
 -- replicates every listing, commodity and item auction alike. The 1.60
@@ -6,9 +6,22 @@
 -- CanSendAuctionQuery do not exist, and there is no paged fallback to fall
 -- back to. ReplicateItems is the supported replacement (the client's own
 -- docs point an "all items" query at it).
+--
+-- Pipeline v4 captures what the decision core actually needs:
+--   * every field the replicate row carries (bid, owner, sale status,
+--     remaining time), not just name/count/buyout/itemId;
+--   * a top-8 price ladder per item, so buying N units can be priced;
+--   * distinct sellers and expiry buckets, so competition and future
+--     supply are visible;
+--   * bid-only listings, the only direct demand signal the client exposes;
+--   * a tier-level capture table, so an adjacent scan can infer how much
+--     disappeared and whether it looked like a sale rather than an expiry.
+-- Nothing is inferred into a point estimate: sold quantity is recorded as
+-- a bounded lower edge and every consumer labels it "inferred".
 
 local ADDON_NAME, WAH = ...
 local L = WAH.L
+local Core = WAH.Core
 
 local PROCESS_PER_FRAME = 200
 local FRAME_BUDGET_MS = 8
@@ -17,9 +30,17 @@ local FRAME_BUDGET_MS = 8
 -- auto-rescan ticker blocked behind a scan that never finishes.
 local SCAN_TIMEOUT_SECONDS = 120
 local AUTO_SCAN_INTERVAL = 15 * 60
+local SEARCH_QUIET_SECONDS = 60
+local SERIES_CAP = 60000
+local HOUR, DAY = 3600, 86400
 
-local scanState = nil -- { itemsById, itemInfoCache, cursor, total, processing }
+local frame -- created below; scanner helpers close over it
+local scanState = nil -- { itemsById, itemInfoCache, cursor, total, processing, capture }
 local lastScanStartedAt = 0
+local scanFailures = 0
+local backoffUntil = 0
+local searchQuietUntil = 0
+local lastPhase = "steady"
 
 -- The auction house frame is named differently across client eras. The 1.60
 -- client ships the modern AuctionHouseFrame; the fallback keeps the shared
@@ -57,22 +78,61 @@ function WAH.itemIcon(itemId)
   return texture or "Interface\\Icons\\INV_Misc_QuestionMark"
 end
 
+local function chatMessage(text)
+  DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WoWderhoiAH|r " .. text)
+end
+
 local function autoScanOn()
   return WAH.settings and WAH.settings.autoScan
 end
 
-local frame = CreateFrame("Frame")
--- ReplicateItems publishes through the browse-result signals; item searches
--- publish through NEW_RESULTS_RECEIVED. Both are registered because the
--- client's exact signal depends on which query populated the results.
-frame:RegisterEvent("AUCTION_HOUSE_SHOW")
-frame:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
-frame:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_ADDED")
-frame:RegisterEvent("AUCTION_HOUSE_NEW_RESULTS_RECEIVED")
-frame:RegisterEvent("AUCTION_HOUSE_CLOSED")
+local function marketKey()
+  return GetRealmName() .. "|" .. (UnitFactionGroup("player") or "Unknown")
+end
+WAH.marketKey = marketKey
 
-local function chatMessage(text)
-  DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WoWderhoiAH|r " .. text)
+-- ============================ Time left ==============================
+
+-- GetReplicateItemTimeLeft returns either seconds or a coarse band,
+-- depending on the client build. Bands 0..4 are mapped to a conservative
+-- upper edge; anything larger is already seconds.
+local TIME_LEFT_BANDS = { [0] = 1800, [1] = 2 * HOUR, [2] = 12 * HOUR, [3] = 48 * HOUR, [4] = 48 * HOUR }
+local function timeLeftSeconds(value)
+  if type(value) ~= "number" then return nil end
+  if value > 4 then return value end
+  return TIME_LEFT_BANDS[value] or 48 * HOUR
+end
+
+local function expiryBucket(seconds)
+  if not seconds then return "late" end
+  if seconds < 2 * HOUR then return "soon" end
+  if seconds < 12 * HOUR then return "mid" end
+  return "late"
+end
+
+-- ============================== Capture ==============================
+
+local function newEntry(itemId, name, quality, cached)
+  return {
+    itemId = itemId,
+    name = name,
+    quality = quality,
+    itemClass = cached.class,
+    itemSubClass = cached.subClass,
+    vendorP = cached.vendorP,
+    minPrice = nil,
+    listings = {}, -- { price = unit price, count, timeLeft }
+    priceQty = {}, -- price -> quantity, the capture / sold-inference key
+    priceTimeLeft = {},
+    bidAmount = 0,
+    bidOnly = 0,
+    hasBuyout = false,
+    sellers = {},
+    sellerUnknown = false,
+    quantity = 0,
+    numAuctions = 0,
+    expiring = { soon = 0, mid = 0, late = 0 }
+  }
 end
 
 local function recordAuction(index)
@@ -80,12 +140,13 @@ local function recordAuction(index)
   -- level, levelType, minBid, minIncrement, buyoutPrice, bidAmount,
   -- highBidder, bidderFullName, owner, ownerFullName, saleStatus, itemID,
   -- hasAllInfo.
-  local name, _, count, quality, _, _, _, _, _, buyoutPrice, _, _, _, _, _, _, itemId =
-    C_AuctionHouse.GetReplicateItemInfo(index)
-  -- Bid-only listings carry no buyout and cannot be bought out; the terminal
-  -- prices what a buyer can pay today, so they are not part of the book.
-  if not (itemId and name and buyoutPrice and buyoutPrice > 0 and count and count > 0) then return end
-  local unitPrice = buyoutPrice / count
+  local name, _, count, quality, _, _, _, _, _, buyoutPrice, bidAmount, _, _,
+    owner, ownerFullName, saleStatus, itemId = C_AuctionHouse.GetReplicateItemInfo(index)
+  if not (itemId and name) then return end
+  local seller = owner or ownerFullName
+  local timeLeft = C_AuctionHouse.GetReplicateItemTimeLeft
+    and timeLeftSeconds(C_AuctionHouse.GetReplicateItemTimeLeft(index)) or nil
+
   local entry = scanState.itemsById[itemId]
   if not entry then
     local cached = scanState.itemInfoCache[itemId]
@@ -102,112 +163,341 @@ local function recordAuction(index)
       cached = { class = itemClass, subClass = itemSubClass, vendorP = vendorPrice or 0 }
       scanState.itemInfoCache[itemId] = cached
     end
-    entry = {
-      name = name,
-      quality = quality,
-      itemClass = cached.class,
-      itemSubClass = cached.subClass,
-      vendorP = cached.vendorP,
-      minPrice = unitPrice,
-      listings = {}, -- { price = unit price, count } for the weighted median
-      quantity = 0,
-      numAuctions = 0
-    }
+    entry = newEntry(itemId, name, quality, cached)
     scanState.itemsById[itemId] = entry
   end
-  if unitPrice < entry.minPrice then entry.minPrice = unitPrice end
-  entry.listings[#entry.listings + 1] = { price = unitPrice, count = count }
+
+  if seller then
+    entry.sellers[seller] = true
+  else
+    entry.sellerUnknown = true
+  end
+  if saleStatus ~= nil then entry.saleStatus = saleStatus end
+  if bidAmount and bidAmount > (entry.bidAmount or 0) then entry.bidAmount = bidAmount end
+
+  -- Bid-only listings carry no buyout and cannot be bought out. They are
+  -- still the only direct demand signal the client publishes, so they are
+  -- counted instead of silently dropped.
+  if not (buyoutPrice and buyoutPrice > 0 and count and count > 0) then
+    entry.bidOnly = entry.bidOnly + 1
+    return
+  end
+
+  local unitPrice = buyoutPrice / count
+  entry.hasBuyout = true
+  if not entry.minPrice or unitPrice < entry.minPrice then entry.minPrice = unitPrice end
+  entry.listings[#entry.listings + 1] = { price = unitPrice, count = count, timeLeft = timeLeft }
   entry.quantity = entry.quantity + count
   entry.numAuctions = entry.numAuctions + 1
+  entry.priceQty[unitPrice] = (entry.priceQty[unitPrice] or 0) + count
+  if timeLeft then
+    local current = entry.priceTimeLeft[unitPrice]
+    if not current or timeLeft < current then entry.priceTimeLeft[unitPrice] = timeLeft end
+  end
+  entry.expiring[expiryBucket(timeLeft)] = entry.expiring[expiryBucket(timeLeft)] + 1
 end
 
--- Quantity-weighted percentile: the unit price at which `fraction` of the
--- listed quantity sits at or below. This realm's upper book is noise — thin,
--- stale listings nobody transacts against — so only the bottom decile
--- reflects real trade. Percentiles shrug off bait stacks that wreck a mean.
-local function weightedPercentile(sortedListings, totalQuantity, fraction)
-  local threshold = totalQuantity * fraction
+-- Quantity-weighted percentile over the aggregated ladder.
+local function ladderPercentile(tiers, fraction)
+  local total = 0
+  for _, tier in ipairs(tiers) do total = total + tier.q end
+  if total <= 0 then return nil end
+  local threshold = total * fraction
   local cumulative = 0
-  for _, listing in ipairs(sortedListings) do
-    cumulative = cumulative + listing.count
-    if cumulative >= threshold then return listing.price end
+  for _, tier in ipairs(tiers) do
+    cumulative = cumulative + tier.q
+    if cumulative >= threshold then return tier.p end
   end
-  return sortedListings[#sortedListings].price
+  return tiers[#tiers].p
 end
 
--- Depth-aware sell front: the cheapest price with real quantity behind it.
--- Lone dump listings ahead of it sell out in minutes; undercutting them
--- gives gold away. Threshold: 3% of listed supply, at least 3 units.
-local function sellFrontPrice(sortedListings, totalQuantity)
-  local threshold = math.max(totalQuantity * 0.03, 3)
-  local cumulative = 0
-  for _, listing in ipairs(sortedListings) do
-    cumulative = cumulative + listing.count
-    if cumulative >= threshold then return listing.price end
+local function aggregateTiers(listings)
+  local byPrice = {}
+  for _, listing in ipairs(listings) do
+    local tier = byPrice[listing.price]
+    if not tier then
+      tier = { p = listing.price, q = 0 }
+      byPrice[listing.price] = tier
+    end
+    tier.q = tier.q + listing.count
   end
-  return sortedListings[#sortedListings].price
+  local tiers = {}
+  for _, tier in pairs(byPrice) do tiers[#tiers + 1] = tier end
+  table.sort(tiers, function(left, right)
+    if left.p == right.p then return left.q < right.q end
+    return left.p < right.p
+  end)
+  return tiers
+end
+
+local function topTiers(tiers, limit)
+  local top = {}
+  for index = 1, math.min(limit or 8, #tiers) do top[index] = tiers[index] end
+  return top
+end
+
+local function countSellers(entry)
+  local count = 0
+  for _ in pairs(entry.sellers) do count = count + 1 end
+  return count
+end
+
+-- ============================== Series ===============================
+
+local function ensureSeries()
+  WoWderhoiAH_Series = WoWderhoiAH_Series or { v = WAH.PIPELINE_VERSION, markets = {} }
+  local key = marketKey()
+  local market = WoWderhoiAH_Series.markets[key]
+  if not market then
+    market = { firstScanAt = time(), lastScanAt = time(), scanCount = 0, items = {} }
+    WoWderhoiAH_Series.markets[key] = market
+  end
+  return market
+end
+WAH.seriesMarket = ensureSeries
+
+local function appendPoint(series, item, nowTs)
+  local prevSell = series.sell[#series.sell]
+  local prevQ = series.q[#series.q]
+  local event = 0
+  if prevSell and prevSell > 0 and math.abs(item.sellP - prevSell) / prevSell >= 0.10 then event = 1 end
+  if prevQ and prevQ > 0 and math.abs(item.quantity - prevQ) / prevQ >= 0.25 then event = 1 end
+  series.t[#series.t + 1] = nowTs
+  series.min[#series.min + 1] = item.minPrice
+  series.sell[#series.sell + 1] = item.sellP
+  series.p10[#series.p10 + 1] = item.marketPrice
+  series.q[#series.q + 1] = item.quantity
+  series.n[#series.n + 1] = item.numAuctions
+  series.s[#series.s + 1] = item.sellers
+  series.d[#series.d + 1] = item.inferredSold or 0
+  series.e[#series.e + 1] = event
+end
+
+local function copyPoint(series, source, target)
+  target.t[#target.t + 1] = series.t[source]
+  target.min[#target.min + 1] = series.min[source]
+  target.sell[#target.sell + 1] = series.sell[source]
+  target.p10[#target.p10 + 1] = series.p10[source]
+  target.q[#target.q + 1] = series.q[source]
+  target.n[#target.n + 1] = series.n[source]
+  target.s[#target.s + 1] = series.s[source]
+  target.d[#target.d + 1] = series.d[source]
+  target.e[#target.e + 1] = series.e[source]
+end
+
+-- Layered retention: every scan for 24 hours, the last point per hour for
+-- a week, the last point per day for a month. Event points (a 10% sell-
+-- front move or a 25% supply move) survive the hourly fold.
+local function pruneSeries(series, nowTs)
+  local cutoff24, cutoff7, cutoff30 = nowTs - DAY, nowTs - 7 * DAY, nowTs - 30 * DAY
+  local kept = { t = {}, min = {}, sell = {}, p10 = {}, q = {}, n = {}, s = {}, d = {}, e = {} }
+  local lastHour, lastDay
+  for index = 1, #series.t do
+    local stamp = series.t[index]
+    if stamp >= cutoff30 then
+      local keep = false
+      if stamp >= cutoff24 then
+        keep = true
+      elseif stamp >= cutoff7 then
+        local hour = math.floor(stamp / HOUR)
+        if hour ~= lastHour then keep = true; lastHour = hour end
+        if series.e[index] == 1 then keep = true end
+      else
+        local day = math.floor(stamp / DAY)
+        if day ~= lastDay then keep = true; lastDay = day end
+        if series.e[index] == 1 then keep = true end
+      end
+      if keep then copyPoint(series, index, kept) end
+    end
+  end
+  return kept
+end
+
+local function enforceSeriesCap(market)
+  local total, count = 0, 0
+  for _, series in pairs(market.items) do
+    total = total + #series.t
+    count = count + 1
+  end
+  if total <= SERIES_CAP or count == 0 then return end
+  local perItem = math.max(8, math.floor(SERIES_CAP / count))
+  for itemId, series in pairs(market.items) do
+    if #series.t > perItem then
+      local trimmed = { t = {}, min = {}, sell = {}, p10 = {}, q = {}, n = {}, s = {}, d = {}, e = {} }
+      for index = #series.t - perItem + 1, #series.t do copyPoint(series, index, trimmed) end
+      market.items[itemId] = trimmed
+    end
+  end
+end
+
+local function recordSeries(items, nowTs)
+  local market = ensureSeries()
+  market.firstScanAt = math.min(market.firstScanAt or nowTs, nowTs)
+  market.lastScanAt = nowTs
+  market.scanCount = (market.scanCount or 0) + 1
+  for itemId, item in pairs(items) do
+    local series = market.items[itemId]
+    if not series then
+      series = { t = {}, min = {}, sell = {}, p10 = {}, q = {}, n = {}, s = {}, d = {}, e = {} }
+      market.items[itemId] = series
+    end
+    appendPoint(series, item, nowTs)
+    market.items[itemId] = pruneSeries(series, nowTs)
+  end
+  -- Drop items whose series was pruned to nothing.
+  for itemId, series in pairs(market.items) do
+    if #series.t == 0 then market.items[itemId] = nil end
+  end
+  enforceSeriesCap(market)
+end
+
+-- ============================== Finish ===============================
+
+local function previousCapture()
+  local capture = WoWderhoiAH_Capture
+  if type(capture) ~= "table" or capture.v ~= WAH.PIPELINE_VERSION then return nil end
+  if capture.market ~= marketKey() then return nil end
+  return capture
+end
+
+local function inferFlow(entry, previous, elapsedSeconds)
+  if not previous or elapsedSeconds <= 0 then return 0, 0 end
+  local sold = 0
+  for price, quantity in pairs(previous.q or {}) do
+    local remaining = entry.priceQty[price] or 0
+    local timeLeft = previous.t and previous.t[price]
+    -- A listing cannot have sold if its previous remaining time was shorter
+    -- than the gap between scans: that disappearance is an expiry.
+    if quantity > remaining and (not timeLeft or timeLeft > elapsedSeconds + 60) then
+      sold = sold + (quantity - remaining)
+    end
+  end
+  local elapsedHours = math.max(elapsedSeconds / HOUR, 1 / 60)
+  local supplyGrowth = 0
+  if previous.total and previous.total > 0 then
+    supplyGrowth = ((entry.quantity - previous.total) + sold) / (previous.total * elapsedHours)
+  end
+  return sold, supplyGrowth
 end
 
 local function finishScan(totalAuctions)
+  local nowTs = time()
+  local market = ensureSeries()
+  local phase = WAH.currentPhase and WAH.currentPhase() or "steady"
   local items = {}
+  local bids = {}
   local itemCount = 0
+  local previous = scanState.capture
+  local elapsedSeconds = previous and (nowTs - (previous.at or nowTs)) or 0
+  local captureItems = {}
+
   for itemId, entry in pairs(scanState.itemsById) do
-    table.sort(entry.listings, function(left, right) return left.price < right.price end)
-    items[itemId] = {
-      name = entry.name,
-      quality = entry.quality,
-      itemClass = entry.itemClass,
-      itemSubClass = entry.itemSubClass,
-      minPrice = math.floor(entry.minPrice + 0.5),
-      vendorP = entry.vendorP,
-      sellP = math.floor(sellFrontPrice(entry.listings, entry.quantity) + 0.5),
-      p5 = math.floor(weightedPercentile(entry.listings, entry.quantity, 0.05) + 0.5),
-      marketPrice = math.floor(weightedPercentile(entry.listings, entry.quantity, 0.10) + 0.5),
-      quantity = entry.quantity,
-      numAuctions = entry.numAuctions
-    }
     itemCount = itemCount + 1
+    if entry.bidOnly > 0 then
+      bids[itemId] = { count = entry.bidOnly, highest = math.floor((entry.bidAmount or 0) + 0.5) }
+    end
+    if entry.hasBuyout then
+      table.sort(entry.listings, function(left, right) return left.price < right.price end)
+      local tiers = aggregateTiers(entry.listings)
+      local storedTiers = topTiers(tiers, 8)
+      local marketType = Core.marketTypeFor({
+        itemClass = entry.itemClass,
+        quantity = entry.quantity,
+        numAuctions = entry.numAuctions
+      })
+      local sellP = Core.sellFront(tiers, {
+        rules = WAH.RULES.sellFront,
+        byCount = marketType == "item",
+        early = phase == "ignition"
+      })
+      local sellers = countSellers(entry)
+      local sellersInvisible = entry.sellerUnknown
+      if sellersInvisible then sellers = entry.numAuctions end
+      local sold, supplyGrowth = inferFlow(entry, previous and previous.items[itemId], elapsedSeconds)
+      items[itemId] = {
+        name = entry.name,
+        quality = entry.quality,
+        itemClass = entry.itemClass,
+        itemSubClass = entry.itemSubClass,
+        vendorP = entry.vendorP,
+        minPrice = math.floor((entry.minPrice or 0) + 0.5),
+        sellP = math.floor((sellP or entry.minPrice or 0) + 0.5),
+        p5 = math.floor((ladderPercentile(tiers, 0.05) or entry.minPrice or 0) + 0.5),
+        marketPrice = math.floor((ladderPercentile(tiers, 0.10) or entry.minPrice or 0) + 0.5),
+        quantity = entry.quantity,
+        numAuctions = entry.numAuctions,
+        sellers = sellers,
+        sellersInvisible = sellersInvisible,
+        bidOnly = entry.bidOnly,
+        tiers = storedTiers,
+        expiring = entry.expiring,
+        inferredSold = sold,
+        supplyGrowth = supplyGrowth,
+        elapsedHours = math.max(elapsedSeconds / HOUR, 1 / 60)
+      }
+      captureItems[itemId] = {
+        q = entry.priceQty,
+        t = entry.priceTimeLeft,
+        total = entry.quantity,
+        at = nowTs
+      }
+    elseif entry.bidOnly > 0 then
+      items[itemId] = {
+        name = entry.name,
+        quality = entry.quality,
+        itemClass = entry.itemClass,
+        itemSubClass = entry.itemSubClass,
+        vendorP = entry.vendorP,
+        minPrice = 0,
+        sellP = 0,
+        quantity = 0,
+        numAuctions = 0,
+        sellers = 0,
+        sellersInvisible = entry.sellerUnknown,
+        bidOnly = entry.bidOnly,
+        tiers = {},
+        expiring = entry.expiring,
+        inferredSold = 0,
+        supplyGrowth = 0
+      }
+    end
   end
-  -- Every stored point carries the pipeline's close price, so a pipeline
-  -- bump redefines what the whole series means. Drop points recorded by an
-  -- older pipeline on the first scan after a bump.
+
+  -- A pipeline bump redefines every field, so old data is discarded rather
+  -- than reinterpreted. The first v4 scan is also the first series point.
   local previousVersion = WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.dataVersion
   if previousVersion and previousVersion ~= WAH.PIPELINE_VERSION then
-    WoWderhoiAH_Points = nil
+    WoWderhoiAH_Series = nil
+    WoWderhoiAH_Capture = nil
   end
+
   WoWderhoiAH_ScanData = {
-    dataVersion = WAH.PIPELINE_VERSION, -- consumers reject anything else
-    scannedAt = time(),
+    dataVersion = WAH.PIPELINE_VERSION,
+    scannedAt = nowTs,
     server = GetRealmName(),
     faction = UnitFactionGroup("player"),
-    items = items
+    character = UnitName and UnitName("player") or nil,
+    total = totalAuctions or 0,
+    items = items,
+    bids = bids
   }
-  -- Accumulate per-item price points in game: c is the P10 close — the price
-  -- a buyer actually pays on this realm — and feeds the chart, the 7d P10
-  -- median and the deal radar alike. 7-day window, newest 192 points per
-  -- item (~48 h at the 15-minute auto-scan cadence).
-  WoWderhoiAH_Points = WoWderhoiAH_Points or {}
-  local nowTs = time()
-  local cutoff = nowTs - 7 * 24 * 3600
-  for itemId, item in pairs(items) do
-    local pts = WoWderhoiAH_Points[itemId] or {}
-    pts[#pts + 1] = { t = nowTs, c = item.marketPrice }
-    WoWderhoiAH_Points[itemId] = pts
-  end
-  for itemId, pts in pairs(WoWderhoiAH_Points) do
-    local pruned = {}
-    for _, point in ipairs(pts) do
-      if point.t >= cutoff then pruned[#pruned + 1] = point end
-    end
-    while #pruned > 192 do table.remove(pruned, 1) end
-    if #pruned == 0 then
-      WoWderhoiAH_Points[itemId] = nil
-    else
-      WoWderhoiAH_Points[itemId] = pruned
-    end
-  end
+  WoWderhoiAH_Capture = {
+    v = WAH.PIPELINE_VERSION,
+    at = nowTs,
+    market = marketKey(),
+    items = captureItems
+  }
+  recordSeries(items, nowTs)
+  -- The phase is a property of this scan; cache it so GUI/chat read one
+  -- answer instead of recomputing from slightly different clocks.
+  lastPhase = WAH.currentPhase and WAH.currentPhase() or phase
   scanState = nil
   WAH.scanRunning = false
+  scanFailures = 0
+  -- Write SavedVariables immediately so the desktop watcher sees this scan
+  -- in seconds, not at the next logout. Fall back silently on clients that
+  -- do not expose the API.
+  if C_AddOns and C_AddOns.SaveAddOns then pcall(C_AddOns.SaveAddOns) end
   chatMessage(string.format(
     L.SCAN_COMPLETE .. "%s",
     totalAuctions or 0, itemCount, autoScanOn() and L.SCAN_AUTO_ARMED or ""))
@@ -259,7 +549,12 @@ local function startScan()
     chatMessage(L.SCAN_ALREADY_RUNNING)
     return
   end
-  scanState = { itemsById = {}, itemInfoCache = {}, processing = false }
+  scanState = {
+    itemsById = {},
+    itemInfoCache = {},
+    processing = false,
+    capture = previousCapture()
+  }
   WAH.scanRunning = true
   lastScanStartedAt = time()
   chatMessage(L.SCAN_GETALL_START)
@@ -270,8 +565,26 @@ local function startScan()
     frame:SetScript("OnUpdate", nil)
     scanState = nil
     WAH.scanRunning = false
+    scanFailures = scanFailures + 1
+    -- Exponential backoff: a refused or lost replicate should not be
+    -- retried on the same 15-minute cadence that caused it.
+    backoffUntil = time() + math.min(120 * scanFailures, 600)
     chatMessage(L.SCAN_TIMEOUT)
   end)
+end
+
+frame = CreateFrame("Frame")
+-- ReplicateItems publishes through the browse-result signals; item searches
+-- publish through NEW_RESULTS_RECEIVED. Both are registered because the
+-- client's exact signal depends on which query populated the results.
+frame:RegisterEvent("AUCTION_HOUSE_SHOW")
+frame:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+frame:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_ADDED")
+frame:RegisterEvent("AUCTION_HOUSE_NEW_RESULTS_RECEIVED")
+frame:RegisterEvent("AUCTION_HOUSE_CLOSED")
+
+local function markPlayerSearch()
+  searchQuietUntil = time() + SEARCH_QUIET_SECONDS
 end
 
 frame:SetScript("OnEvent", function(_, event, payload)
@@ -289,11 +602,13 @@ frame:SetScript("OnEvent", function(_, event, payload)
     end
     return
   end
-  -- A NEW_RESULTS_RECEIVED with an itemKey belongs to an item search; only
-  -- the nil-payload form can announce a browse/replicate response. Letting
-  -- the item-search form through would make a player's search consume the
-  -- previous scan's replicate count while the new response is in flight.
-  if event == "AUCTION_HOUSE_NEW_RESULTS_RECEIVED" and payload ~= nil then return end
+  -- A NEW_RESULTS_RECEIVED with an itemKey belongs to an item search. Let
+  -- it through only as a "the player is using the AH" signal; the scan
+  -- itself only accepts the nil-payload form.
+  if event == "AUCTION_HOUSE_NEW_RESULTS_RECEIVED" and payload ~= nil then
+    markPlayerSearch()
+    return
+  end
   if not scanState or scanState.processing then return end
   -- A browse signal can fire before the replicate response arrives, and an
   -- unrelated browse can fire it later. Only a non-zero replicate count
@@ -307,34 +622,98 @@ frame:SetScript("OnEvent", function(_, event, payload)
 end)
 
 -- Auto-rescan: while the AH stays open, replicate again once the scan
--- interval elapses. The ticker is cheap; all real gating is in the check.
+-- interval elapses. Player searches pause the ticker so an automatic copy
+-- never overwrites the results the player is reading.
 C_Timer.NewTicker(20, function()
   if not autoScanOn() or scanState then return end
   if not ahIsOpen() then return end
+  if time() < backoffUntil then return end
+  if time() < searchQuietUntil then return end
   if time() - lastScanStartedAt < AUTO_SCAN_INTERVAL then return end
   chatMessage(L.AUTO_TRIGGER)
   startScan()
 end)
 
--- Single history authority: points accumulated across scans plus the 7d P10
--- median derived from them. GUI chart, tooltip history, and the deal radar
--- all read through here.
-function WAH.history(itemId)
-  local pts = WoWderhoiAH_Points and WoWderhoiAH_Points[itemId]
-  if not pts or #pts == 0 then return nil end
-  local prices = {}
-  for index, point in ipairs(pts) do prices[index] = point.c end
-  table.sort(prices)
-  local med7 = prices[math.ceil(#prices / 2)]
-  -- Distinct closes in the window. A flat series means one camper's ask
-  -- recorded over and over, so med7 is a price nothing traded against; the
-  -- deal radar refuses to discount from it.
-  local distinct = 1
-  for index = 2, #prices do
-    if prices[index] ~= prices[index - 1] then distinct = distinct + 1 end
+-- ============================== History ==============================
+
+-- The phase is derived from data age and market breadth, never the
+-- calendar. A manual override is available for the first hours after a
+-- server opens, when breadth lags behind reality.
+function WAH.currentPhase()
+  local override = WAH.settings and WAH.settings.phaseOverride
+  if override and override ~= "auto" then return override end
+  local scan = WoWderhoiAH_ScanData
+  if not scan or scan.dataVersion ~= WAH.PIPELINE_VERSION then return "ignition" end
+  local breadth = 0
+  for _, item in pairs(scan.items or {}) do
+    if item.minPrice and item.minPrice > 0 then breadth = breadth + 1 end
   end
-  return { pts = pts, med7 = med7, latest = pts[#pts].c, distinct = distinct }
+  local market = WAH.seriesMarket()
+  local firstScanAt = market and market.firstScanAt or scan.scannedAt or time()
+  local ageHours = math.max(0, (time() - firstScanAt) / HOUR)
+  return Core.phaseFor(ageHours, breadth, WAH.RULES.phaseBoundaries)
 end
+
+function WAH.scanAgeMinutes()
+  local scan = WoWderhoiAH_ScanData
+  if not scan or not scan.scannedAt then return nil end
+  return math.max(0, (time() - scan.scannedAt) / 60)
+end
+
+-- Single history authority. The decision core reads sellRef/samples; the
+-- tooltip and the legacy display read the remaining statistics. med7 is
+-- kept as a statistic (P10 median) and must not re-enter a decision.
+function WAH.history(itemId, windowHours)
+  local market = WAH.seriesMarket()
+  local series = market and market.items[itemId]
+  if not series or #series.t == 0 then return nil end
+  local phase = WAH.currentPhase()
+  local phaseRule = WAH.RULES.phaseHistory[phase] or { windowHours = 168 }
+  local window = windowHours or phaseRule.windowHours
+  if window <= 0 then window = 168 end
+  local cutoff = time() - window * HOUR
+  local sells, p10s, mins, quantities, pts = {}, {}, {}, {}, {}
+  for index = 1, #series.t do
+    if series.t[index] >= cutoff then
+      sells[#sells + 1] = series.sell[index]
+      p10s[#p10s + 1] = series.p10[index]
+      mins[#mins + 1] = series.min[index]
+      quantities[#quantities + 1] = series.q[index]
+      pts[#pts + 1] = { t = series.t[index], c = series.p10[index], sell = series.sell[index], q = series.q[index] }
+    end
+  end
+  if #sells == 0 then
+    local last = #series.t
+    sells[1], p10s[1], mins[1], quantities[1] = series.sell[last], series.p10[last], series.min[last], series.q[last]
+    pts[1] = { t = series.t[last], c = series.p10[last], sell = series.sell[last], q = series.q[last] }
+  end
+  local distinctSells = 1
+  local sortedSells = {}
+  for index, value in ipairs(sells) do sortedSells[index] = value end
+  table.sort(sortedSells)
+  for index = 2, #sortedSells do
+    if sortedSells[index] ~= sortedSells[index - 1] then distinctSells = distinctSells + 1 end
+  end
+  local minSell, maxSell = math.huge, 0
+  for _, value in ipairs(sells) do
+    if value < minSell then minSell = value end
+    if value > maxSell then maxSell = value end
+  end
+  return {
+    pts = pts,
+    samples = #sells,
+    sellRef = Core.median(sells),
+    latest = sells[#sells],
+    latestP10 = p10s[#p10s],
+    med7 = Core.median(p10s),
+    minSell = minSell,
+    maxSell = maxSell,
+    distinct = distinctSells,
+    windowHours = window
+  }
+end
+
+-- ============================== Commands =============================
 
 SLASH_WOWDERHOIAH1 = "/wahscan"
 SlashCmdList["WOWDERHOIAH"] = startScan
@@ -343,7 +722,23 @@ WAH.startScan = startScan
 SLASH_WOWDERHOIAHAUTO1 = "/wahauto"
 SlashCmdList["WOWDERHOIAHAUTO"] = function()
   WAH.settings.autoScan = not WAH.settings.autoScan
-  chatMessage(WAH.settings.autoScan
-    and L.AUTO_ON
-    or L.AUTO_OFF)
+  chatMessage(WAH.settings.autoScan and L.AUTO_ON or L.AUTO_OFF)
 end
+
+SLASH_WOWDERHOIAHPHASE1 = "/wahphase"
+SlashCmdList["WOWDERHOIAHPHASE"] = function(input)
+  local choice = (input or ""):lower()
+  if choice == "" then
+    chatMessage(string.format(L.PHASE_CURRENT, WAH.currentPhase(), WAH.settings.phaseOverride or "auto"))
+    return
+  end
+  local valid = { ignition = true, wave = true, settle = true, steady = true, auto = true }
+  if not valid[choice] then
+    chatMessage(L.PHASE_USAGE)
+    return
+  end
+  WAH.settings.phaseOverride = choice
+  chatMessage(string.format(L.PHASE_SET, choice))
+end
+
+WAH.lastPhase = function() return lastPhase end

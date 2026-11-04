@@ -4,7 +4,7 @@
 -- and the in-game radar can never classify the same scan differently.
 local ADDON_NAME, WAH = ...
 
-WAH.PIPELINE_VERSION = 3
+WAH.PIPELINE_VERSION = 4
 
 -- Legacy P10 radar thresholds; the executable-profit radar reads WAH.RULES.
 WAH.RADAR = {

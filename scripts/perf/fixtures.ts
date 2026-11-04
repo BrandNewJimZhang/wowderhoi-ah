@@ -3,6 +3,7 @@
 // mirroring the non-Gaussian shape real scans have, so median/percentile
 // code paths are exercised honestly. Same seed -> identical market.
 import { QUALITY_NAMES } from "@/lib/addon-scan";
+import { SCAN_PIPELINE_VERSION } from "@/lib/market-rules";
 
 export type SnapshotPoint = {
   minPrice: number;
@@ -109,19 +110,33 @@ export function buildScanPayload(market: SyntheticMarket, pointIndex: number, sc
     if (!point) {
       throw new Error(`buildScanPayload: pointIndex ${pointIndex} exceeds walk depth ${item.walk.length}`);
     }
+    const tiers = [
+      { p: point.minPrice, q: Math.max(1, Math.round(point.quantity * 0.05)) },
+      { p: point.marketPrice, q: Math.max(1, Math.round(point.quantity * 0.25)) },
+      { p: Math.round(point.marketPrice * 1.1), q: Math.max(1, Math.round(point.quantity * 0.4)) }
+    ];
     items[String(item.itemId)] = {
       name: item.name,
       quality: item.qualityIndex,
       itemClass: item.itemClass,
       itemSubClass: item.itemSubClass,
       minPrice: point.minPrice,
+      sellP: point.marketPrice,
+      p5: point.minPrice,
       marketPrice: point.marketPrice,
       quantity: point.quantity,
-      numAuctions: point.numAuctions
+      numAuctions: point.numAuctions,
+      sellers: Math.max(1, Math.round(point.numAuctions * 0.8)),
+      sellersInvisible: false,
+      bidOnly: 0,
+      tiers,
+      expiring: { soon: 1, mid: 2, late: 3 },
+      inferredSold: 0,
+      supplyGrowth: 0
     };
   }
   return {
-    dataVersion: 3,
+    dataVersion: SCAN_PIPELINE_VERSION,
     scannedAt: scannedAtEpochSeconds,
     server: "PerfRealm",
     faction: "Alliance",

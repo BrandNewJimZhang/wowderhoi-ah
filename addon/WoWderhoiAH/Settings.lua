@@ -9,7 +9,8 @@ local DEFAULTS = {
   autoScan = false, -- rescan every 15 minutes while the AH stays open
   tooltip = true, -- trader section on item tooltips
   chart = true, -- price chart panel beside the auction frame
-  tradeOnOpen = true -- open the WAH deal page with the auction house
+  tradeOnOpen = true, -- open the WAH deal page with the auction house
+  phaseOverride = "auto" -- "ignition" | "wave" | "settle" | "steady" | "auto"
 }
 
 WAH.settings = nil -- assigned at ADDON_LOADED once SavedVariables exist

@@ -16,6 +16,9 @@ local L = {
   AUTO_ON = "Auto-rescan ON: rescans every ~15 min while the AH is open. (persisted)",
   AUTO_OFF = "Auto-rescan OFF. (persisted)",
   AUTO_TRIGGER = "Auto-rescan: 15 minutes since the last scan.",
+  PHASE_CURRENT = "Market phase: %s (override: %s).",
+  PHASE_SET = "Market phase override set to %s.",
+  PHASE_USAGE = "Usage: /wahphase ignition|wave|settle|steady|auto",
   -- tooltip
   TT_SCAN_HEADER = "This scan (%d min ago)",
   TT_SCAN_STALE = "Scan data outdated — run /wahscan to refresh",
@@ -111,6 +114,9 @@ if GetLocale() == "zhCN" then
   L.AUTO_ON = "自动重扫已开启：拍卖行开着时每约 15 分钟重扫一次。（已保存）"
   L.AUTO_OFF = "自动重扫已关闭。（已保存）"
   L.AUTO_TRIGGER = "自动重扫：距上次扫描已 15 分钟。"
+  L.PHASE_CURRENT = "市场阶段：%s（手动覆盖：%s）。"
+  L.PHASE_SET = "市场阶段已手动设为 %s。"
+  L.PHASE_USAGE = "用法：/wahphase ignition|wave|settle|steady|auto"
   L.TT_SCAN_HEADER = "本次扫描（%d 分钟前）"
   L.TT_SCAN_STALE = "扫描数据已过期 — 请 /wahscan 重新扫描"
   L.TT_MIN = "最低价"

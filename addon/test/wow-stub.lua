@@ -24,6 +24,9 @@ local bed = { chat = {}, frames = {}, timers = {}, hooks = {}, listings = {}, it
 WowTest = bed
 
 local NOW = 1700000000 -- fixed clock; a real time() would make med7 windows flaky
+local clockOffset = 0
+-- Tests that need two adjacent scans advance this instead of sleeping.
+function bed.advance(seconds) clockOffset = clockOffset + (seconds or 0) end
 
 local function noop() end
 
@@ -174,11 +177,13 @@ function wipe(target)
 end
 
 function GetLocale() return bed.locale or "zhCN" end
-function time() return NOW end
+function time() return NOW + clockOffset end
 function date(format, when) return os.date(format, when or NOW) end
 function debugprofilestop() return 0 end -- never trip the per-frame yield budget
 function GetRealmName() return "TestRealm" end
 function UnitFactionGroup() return "Alliance" end
+function UnitName() return "Tester" end
+function GetMoney() return 1000000 end
 function GetCursorInfo() return bed.cursorInfo and bed.cursorInfo[1], bed.cursorInfo and bed.cursorInfo[2] end
 
 function FauxScrollFrame_GetOffset(frame) return frame._offset or 0 end
@@ -218,6 +223,12 @@ C_CurrencyInfo = {
   end
 }
 
+-- The addon calls SaveAddOns after every scan so the desktop watcher sees
+-- the news without waiting for a logout.
+C_AddOns = {
+  SaveAddOns = function() bed.savedCount = (bed.savedCount or 0) + 1 end
+}
+
 Enum = {
   AuctionHouseSortOrder = { Price = 0, Name = 1, Level = 2, Bid = 3, Buyout = 4, TimeRemaining = 5 },
   TooltipDataType = { Item = 0 }
@@ -251,9 +262,16 @@ C_AuctionHouse = {
     -- name, texture, count, quality, usable, level, levelType, minBid,
     -- minIncrement, buyoutPrice, bidAmount, highBidder, bidderFullName,
     -- owner, ownerFullName, saleStatus, itemID, hasAllInfo
+    local owner = item.owner
+    if owner == nil and item.sellerUnknown ~= true then owner = "Owner" end
     return item.name, "texture", item.count, item.quality or 1, true, 1, "Item",
-      item.minBid or 0, 0, item.buyout, 0, nil, nil, "Owner", "Owner-Realm", 0,
+      item.minBid or 0, 0, item.buyout, item.bid or 0, item.highBidder, nil,
+      owner, owner and (owner .. "-Realm") or nil, item.saleStatus or 0,
       item.itemId, true
+  end,
+  GetReplicateItemTimeLeft = function(index)
+    local item = ah.replicate[index]
+    return item and item.timeLeft or 3600
   end,
   MakeItemKey = function(itemId, itemLevel, itemSuffix, battlePetSpeciesID)
     return {
@@ -406,7 +424,13 @@ function bed.runScan(items)
       name = item.name,
       count = item.count or 1,
       buyout = item.buyout or item.unitPrice or 0,
-      quality = item.quality or 1
+      quality = item.quality or 1,
+      owner = item.owner,
+      sellerUnknown = item.sellerUnknown,
+      bid = item.bid,
+      highBidder = item.highBidder,
+      saleStatus = item.saleStatus,
+      timeLeft = item.timeLeft
     }
     ah.itemKeys[item.itemId] = {
       itemID = item.itemId,
@@ -452,12 +476,22 @@ function bed.setScan(items)
     byId[item.itemId] = {
       name = item.name,
       quality = item.quality or 2,
+      itemClass = item.itemClass,
       minPrice = item.minPrice,
       vendorP = item.vendorP or 0,
       sellP = item.sellP or item.minPrice,
+      p5 = item.p5,
       marketPrice = item.marketPrice or item.minPrice,
       quantity = item.quantity or 0,
-      numAuctions = item.numAuctions or 0
+      numAuctions = item.numAuctions or 0,
+      sellers = item.sellers or item.numAuctions or 0,
+      sellersInvisible = item.sellersInvisible or false,
+      bidOnly = item.bidOnly or 0,
+      tiers = item.tiers or { { p = item.minPrice, q = item.quantity or 1 } },
+      expiring = item.expiring or { soon = 0, mid = 0, late = 0 },
+      inferredSold = item.inferredSold or 0,
+      supplyGrowth = item.supplyGrowth or 0,
+      elapsedHours = item.elapsedHours or 0.25
     }
   end
   WoWderhoiAH_ScanData = {
@@ -465,20 +499,36 @@ function bed.setScan(items)
     scannedAt = NOW,
     server = "TestRealm",
     faction = "Alliance",
-    items = byId
+    character = "Tester",
+    total = #items,
+    items = byId,
+    bids = {}
+  }
+  WoWderhoiAH_Series = {
+    v = bed.ns.PIPELINE_VERSION,
+    markets = {
+      ["TestRealm|Alliance"] = { firstScanAt = NOW - 3600, lastScanAt = NOW, scanCount = 1, items = {} }
+    }
   }
 end
 
--- closes are P10 values oldest-first, one per scan, all inside the 7d window.
+-- closes are sell-front/P10 values oldest-first, one per scan, all inside
+-- the 7d window. v4 stores the full point, not just a scalar close.
 function bed.setPoints(entries)
-  WoWderhoiAH_Points = {}
+  local series = { v = bed.ns.PIPELINE_VERSION, markets = {
+    ["TestRealm|Alliance"] = { firstScanAt = NOW - 7 * 86400, lastScanAt = NOW, scanCount = 1, items = {} }
+  } }
   for _, entry in ipairs(entries) do
-    local points = {}
+    local point = { t = {}, min = {}, sell = {}, p10 = {}, q = {}, n = {}, s = {}, d = {}, e = {} }
     for index, close in ipairs(entry.closes) do
-      points[index] = { t = NOW - (#entry.closes - index) * 900, c = close }
+      point.t[index] = NOW - (#entry.closes - index) * 900
+      point.min[index], point.sell[index], point.p10[index] = close, close, close
+      point.q[index], point.n[index], point.s[index] = 100, 10, 2
+      point.d[index], point.e[index] = 0, 0
     end
-    WoWderhoiAH_Points[entry.itemId] = points
+    series.markets["TestRealm|Alliance"].items[entry.itemId] = point
   end
+  WoWderhoiAH_Series = series
 end
 
 function bed.setListings(listings) bed.listings = listings end
