@@ -96,6 +96,21 @@ local function marketKey()
   return GetRealmName() .. "|" .. (UnitFactionGroup("player") or "Unknown")
 end
 
+-- One definition of "the current scan". The pipeline version gates every
+-- reader: a scan written by another pipeline is treated as absent rather
+-- than reinterpreted field by field. Callers that must distinguish "no scan
+-- yet" from "scan from an old pipeline" inspect the raw global themselves.
+function WAH.currentScan()
+  local scan = WoWderhoiAH_ScanData
+  if type(scan) ~= "table" or scan.dataVersion ~= WAH.PIPELINE_VERSION then return nil end
+  return scan
+end
+
+function WAH.currentScanItems()
+  local scan = WAH.currentScan()
+  return scan and scan.items or {}
+end
+
 -- ============================ Time left ==============================
 
 -- GetReplicateItemTimeLeft returns either seconds or a coarse band,
@@ -672,8 +687,8 @@ end)
 function WAH.currentPhase()
   local override = WAH.settings and WAH.settings.phaseOverride
   if override and override ~= "auto" then return override end
-  local scan = WoWderhoiAH_ScanData
-  if not scan or scan.dataVersion ~= WAH.PIPELINE_VERSION then return "ignition" end
+  local scan = WAH.currentScan()
+  if not scan then return "ignition" end
   local breadth = 0
   for _, item in pairs(scan.items or {}) do
     if item.minPrice and item.minPrice > 0 then breadth = breadth + 1 end
@@ -685,7 +700,7 @@ function WAH.currentPhase()
 end
 
 function WAH.scanAgeMinutes()
-  local scan = WoWderhoiAH_ScanData
+  local scan = WAH.currentScan()
   if not scan or not scan.scannedAt then return nil end
   return math.max(0, (time() - scan.scannedAt) / 60)
 end
@@ -772,7 +787,7 @@ end
 -- capital. One builder, so the cockpit and the sell page cannot disagree
 -- about what the market state is.
 function WAH.coreInput()
-  local scan = WoWderhoiAH_ScanData
+  local scan = WAH.currentScan()
   local market = WAH.seriesMarket()
   local input = {
     now = time(),
@@ -784,7 +799,7 @@ function WAH.coreInput()
     capital = { cash = 0, mail = 0, escrow = 0, budget = 0 },
     capacity = { bagSlots = 20, stackSize = 20 }
   }
-  if not scan or scan.dataVersion ~= WAH.PIPELINE_VERSION then return input end
+  if not scan then return input end
   local override = WAH.settings and WAH.settings.phaseOverride
   if override and override ~= "auto" then input.phaseOverride = override end
   local ledger = WAH.Ledger and WAH.Ledger.current() or nil

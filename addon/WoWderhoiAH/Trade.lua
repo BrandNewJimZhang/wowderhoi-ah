@@ -39,9 +39,8 @@ local function chatMessage(text)
 end
 
 local function currentScan()
-  local scan = WoWderhoiAH_ScanData
-  if not scan or scan.dataVersion ~= WAH.PIPELINE_VERSION then return nil end
-  return scan.items
+  local scan = WAH.currentScan()
+  return scan and scan.items
 end
 
 local function auctionHouseOpen()

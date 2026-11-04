@@ -47,12 +47,6 @@ local function chatMessage(text)
   DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WAH|r " .. text)
 end
 
-local function currentScanItems()
-  local scan = WoWderhoiAH_ScanData
-  if not scan or scan.dataVersion ~= WAH.PIPELINE_VERSION then return {} end
-  return scan.items or {}
-end
-
 local function locationFor(entry)
   if entry.location then return entry.location end
   if ItemLocation and ItemLocation.CreateFromBagAndSlot then
@@ -135,7 +129,7 @@ local function planFor(itemId, duration, quantity)
     if candidate.itemId == itemId then entry = candidate break end
   end
   entry = entry or { itemId = itemId }
-  local scanned = currentScanItems()[itemId]
+  local scanned = WAH.currentScanItems()[itemId]
   if not scanned or not (scanned.sellP and scanned.sellP > 0) then
     return nil, "noScan", entry
   end
@@ -249,7 +243,7 @@ local function collectOwned()
       local quantity = info.quantity or 1
       local buyout = info.buyoutAmount or info.bidAmount or 0
       local unitPrice = quantity > 0 and buyout / quantity or 0
-      local scanned = currentScanItems()[itemId]
+      local scanned = WAH.currentScanItems()[itemId]
       local sellP = scanned and scanned.sellP
       local seconds = info.timeLeftSeconds
       if not seconds and info.timeLeft and C_AuctionHouse.GetTimeLeftBandInfo then

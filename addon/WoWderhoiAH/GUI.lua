@@ -20,9 +20,8 @@ local function historyFor(itemId, windowHours)
 end
 
 local function currentItem(itemId)
-  local scan = WoWderhoiAH_ScanData
-  if not scan or scan.dataVersion ~= WAH.PIPELINE_VERSION then return nil end
-  return scan.items and scan.items[itemId]
+  local scan = WAH.currentScan()
+  return scan and scan.items and scan.items[itemId]
 end
 
 local function phaseLabel(phase)
@@ -69,8 +68,11 @@ local function appendTraderSection(tooltip)
   if not itemId then return end
   lastTooltipItemId = itemId
   local scanned = currentItem(itemId)
-  local staleScan = not scanned and WoWderhoiAH_ScanData
-    and WoWderhoiAH_ScanData.dataVersion ~= WAH.PIPELINE_VERSION and WoWderhoiAH_ScanData.items ~= nil
+  -- Inspect the raw global on purpose: this is the one place that must tell
+  -- "no scan yet" apart from "a scan from another pipeline is on disk".
+  local raw = WoWderhoiAH_ScanData
+  local staleScan = not scanned and type(raw) == "table"
+    and raw.dataVersion ~= WAH.PIPELINE_VERSION and raw.items ~= nil
   local entry = historyFor(itemId)
   if not scanned and not entry and not staleScan then return end
   tooltip.wahAppended = true
@@ -81,7 +83,7 @@ local function appendTraderSection(tooltip)
   end
   local phase = WAH.currentPhase and WAH.currentPhase() or "steady"
   if scanned then
-    local age = math.floor((time() - (WoWderhoiAH_ScanData.scannedAt or time())) / 60)
+    local age = math.floor(WAH.scanAgeMinutes() or 0)
     local stale = age >= 30
     tooltip:AddDoubleLine(string.format(L.TT_SCAN_HEADER, age) .. " |cff888888" .. phaseLabel(phase) .. "|r", "")
     -- Sell front leads every other price: it is the action anchor.

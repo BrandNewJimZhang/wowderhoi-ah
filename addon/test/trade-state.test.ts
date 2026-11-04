@@ -21,4 +21,15 @@ describe("auction house state", () => {
     lua.openTab();
     expect(lua.eval("WowTest.ns.tradeFrame():IsShown()")).toBe(true);
   });
+
+  it("treats a scan from another pipeline as no scan", () => {
+    // Every reader goes through WAH.currentScan(); a stored scan whose
+    // fields have a different meaning must not be reinterpreted as current.
+    const lua = loadAddon();
+    lua.setScan([{ itemId: 2589, name: "Linen Cloth", minPrice: 100, sellP: 120, numAuctions: 2, quantity: 10 }]);
+    lua.exec("WoWderhoiAH_ScanData.dataVersion = WowTest.ns.PIPELINE_VERSION - 1");
+    expect(lua.eval("WowTest.ns.currentScan()")).toBeNull();
+    lua.openTab();
+    expect(lua.anyChat("本次会话尚未扫描")).toBe(true);
+  });
 });

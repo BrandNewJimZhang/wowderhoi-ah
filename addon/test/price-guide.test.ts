@@ -48,4 +48,13 @@ describe("/wahprice", () => {
     lua.exec("SlashCmdList['WOWDERHOIAHPRICE']('')");
     expect(lua.lastChat()).toContain("没有价格数据");
   });
+
+  it("ignores a scan from another pipeline", () => {
+    const lua = loadAddon();
+    lua.setScan([{ itemId: MAGEWEAVE, name: "Mageweave Cloth", minPrice: 8000, sellP: 8400, numAuctions: 6, quantity: 40 }]);
+    lua.exec("WoWderhoiAH_ScanData.dataVersion = WowTest.ns.PIPELINE_VERSION - 1");
+    lua.exec("WowTest.cursorInfo = { 'item', 4338 }");
+    lua.exec("SlashCmdList['WOWDERHOIAHPRICE']('')");
+    expect(lua.lastChat()).toContain("没有价格数据");
+  });
 });
