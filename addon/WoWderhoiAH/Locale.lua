@@ -30,7 +30,7 @@ local L = {
   TT_SUPPLY = "Supply",
   TT_SUPPLY_FMT = "%d listed / %d auctions / %d sellers",
   TT_LADDER = "Book",
-  TT_INFERRED = "Inferred sold",
+  TT_INFERRED = "Inferred disappearances",
   TT_INFERRED_FMT = "%d-%d units (inferred interval)",
   TT_P10_STAT = "P10 (stat)",
   TT_SELL_REF = "Sell-front median",
@@ -176,7 +176,7 @@ if GetLocale() == "zhCN" then
   L.TT_SUPPLY = "供给"
   L.TT_SUPPLY_FMT = "在售 %d 件 / %d 笔 / %d 卖家"
   L.TT_LADDER = "盘口"
-  L.TT_INFERRED = "推断成交"
+  L.TT_INFERRED = "推断消失"
   L.TT_INFERRED_FMT = "%d-%d 件（推断区间）"
   L.TT_P10_STAT = "P10（统计）"
   L.TT_SELL_REF = "建议卖价中位"
