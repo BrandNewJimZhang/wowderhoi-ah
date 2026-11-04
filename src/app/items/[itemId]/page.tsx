@@ -151,16 +151,16 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-xs">
                     <div><div className="text-terminal-muted">最低价</div><div><Coins copper={signal.minPrice} /></div></div>
-                    <div><div className="text-terminal-muted">建议卖价中位</div><div><Coins copper={signal.sellRef} /></div></div>
-                    <div><div className="text-terminal-muted">价差</div><div className={signal.spreadPercent >= 15 ? "text-terminal-green" : ""}>{signal.spreadPercent.toFixed(0)}%</div></div>
-                    <div><div className="text-terminal-muted">趋势</div><div className={signal.trendPercent >= 0 ? "text-terminal-red" : "text-terminal-green"}>{formatPercent(signal.trendPercent)}</div></div>
+                    <div><div className="text-terminal-muted">建议卖价中位（n={signal.sellSamples}）</div><div><Coins copper={signal.sellRef} /></div></div>
+                    <div><div className="text-terminal-muted">价差（对建议卖价）</div><div className={signal.spreadPercent >= 15 ? "text-terminal-green" : ""}>{signal.spreadPercent.toFixed(0)}%</div></div>
+                    <div><div className="text-terminal-muted">趋势（对卖价中位）</div><div className={signal.trendPercent >= 0 ? "text-terminal-red" : "text-terminal-green"}>{formatPercent(signal.trendPercent)}</div></div>
                     <div><div className="text-terminal-muted">P10（统计）</div><div><Coins copper={signal.price} /></div></div>
                     {latest && latest.p5Price > 0 && (
                       <div><div className="text-terminal-muted">P5（统计）</div><div><Coins copper={latest.p5Price} /></div></div>
                     )}
                     <div><div className="text-terminal-muted">真实卖价</div><div>{signal.realSellPrice !== null ? <Coins copper={signal.realSellPrice} /> : "—"}</div></div>
                     <div><div className="text-terminal-muted">卖家数</div><div>{signal.sellerCount}{signal.sellersInvisible ? "（不可见）" : ""}</div></div>
-                    <div><div className="text-terminal-muted">环比上次</div><div className={signal.changePercent >= 0 ? "text-terminal-red" : "text-terminal-green"}>{formatPercent(signal.changePercent)}</div></div>
+                    <div><div className="text-terminal-muted">环比上次扫描</div><div className={signal.changePercent >= 0 ? "text-terminal-red" : "text-terminal-green"}>{formatPercent(signal.changePercent)}</div></div>
                     <div><div className="text-terminal-muted">在售量</div><div>{signal.quantity.toLocaleString()}</div></div>
                     <div><div className="text-terminal-muted">挂单数</div><div>{signal.numAuctions.toLocaleString()}</div></div>
                   </div>

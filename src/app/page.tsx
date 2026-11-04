@@ -213,7 +213,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                   </span>
                   <span className="flex items-center gap-3">
                     <Coins copper={signal.sellPrice} />
-                    <span className={signal.changePercent >= 0 ? "text-terminal-red" : "text-terminal-green"}>{formatPercent(signal.changePercent)}</span>
+                    <span title="相对上次扫描的建议卖价" className={signal.changePercent >= 0 ? "text-terminal-red" : "text-terminal-green"}>{formatPercent(signal.changePercent)}</span>
                   </span>
                 </div>
               ))}

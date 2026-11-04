@@ -10,9 +10,9 @@ type AlertRuleRow = { id: string; metric: string; operator: string; threshold: n
 const metricLabels: Record<string, string> = {
   sellPrice: "建议卖价",
   minPrice: "最低价",
-  sellRef: "卖价中位",
-  spreadPercent: "价差%",
-  trendPercent: "趋势%",
+  sellRef: "卖价中位（窗口）",
+  spreadPercent: "价差%（对卖价）",
+  trendPercent: "趋势%（对中位）",
   quantity: "在售量",
   numAuctions: "挂单数"
 };

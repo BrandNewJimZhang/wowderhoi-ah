@@ -153,6 +153,9 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
           </tbody>
         </table>
       </div>
+      <div className="border-t border-terminal-border px-3 py-2 font-mono text-[10px] text-terminal-muted">
+        价差% = (建议卖价 − 最低价) / 建议卖价 · 趋势% = 相对阶段窗口的建议卖价中位 · 环比% = 相对上次扫描的建议卖价
+      </div>
     </div>
   );
 }
