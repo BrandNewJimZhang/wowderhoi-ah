@@ -151,6 +151,28 @@ describe("forever replicate scan v4", () => {
     expect(lua.number("WoWderhoiAH_ScanData.items[2589].inferredSoldHigh")).toBe(0);
   });
 
+  it("folds an old hour to its close, not its open", () => {
+    const lua = auctionPage();
+    const series = "WoWderhoiAH_Series.markets['TestRealm|Alliance'].items[2589]";
+    const scan = (sell: number) => lua.runScan([
+      { itemId: 2589, name: "Linen", count: 10, buyout: sell * 10 }
+    ]);
+    // Three scans inside one hour; the moves stay under the 10% event
+    // threshold so only the hourly close should survive the fold.
+    scan(1000);
+    lua.exec("WowTest.advance(900)");
+    scan(1050);
+    lua.exec("WowTest.advance(900)");
+    scan(1080);
+    // 25 hours later the three points are in the 24h–7d bucket; the fresh
+    // scan is inside the full-resolution window.
+    lua.exec("WowTest.advance(25 * 3600)");
+    scan(1090);
+    expect(lua.number(`#${series}.t`)).toBe(2);
+    expect(lua.number(`${series}.sell[1]`)).toBe(1080);
+    expect(lua.number(`${series}.sell[2]`)).toBe(1090);
+  });
+
   it("does not skip a row when the per-frame budget boundary falls mid-book", () => {
     const lua = auctionPage();
     // PROCESS_PER_FRAME is 200 and the stub clock never trips the time
