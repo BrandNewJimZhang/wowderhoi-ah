@@ -327,13 +327,17 @@ local function recordSeries(items, nowTs)
   market.lastScanAt = nowTs
   market.scanCount = (market.scanCount or 0) + 1
   for itemId, item in pairs(items) do
-    local series = market.items[itemId]
-    if not series then
-      series = { t = {}, min = {}, sell = {}, p10 = {}, q = {}, n = {}, s = {}, d = {}, e = {} }
-      market.items[itemId] = series
+    -- Demand-only rows carry no price; keeping their zeros in the series
+    -- would drag every sell-median and chart toward 0.
+    if item.minPrice and item.minPrice > 0 then
+      local series = market.items[itemId]
+      if not series then
+        series = { t = {}, min = {}, sell = {}, p10 = {}, q = {}, n = {}, s = {}, d = {}, e = {} }
+        market.items[itemId] = series
+      end
+      appendPoint(series, item, nowTs)
+      market.items[itemId] = pruneSeries(series, nowTs)
     end
-    appendPoint(series, item, nowTs)
-    market.items[itemId] = pruneSeries(series, nowTs)
   end
   -- Drop items whose series was pruned to nothing.
   for itemId, series in pairs(market.items) do
@@ -405,7 +409,6 @@ local function finishScan(totalAuctions)
   local market = ensureSeries()
   local phase = WAH.currentPhase and WAH.currentPhase() or "steady"
   local items = {}
-  local bids = {}
   local itemCount = 0
   local previous = scanState.capture
   local elapsedSeconds = previous and (nowTs - (previous.at or nowTs)) or 0
@@ -413,9 +416,6 @@ local function finishScan(totalAuctions)
 
   for itemId, entry in pairs(scanState.itemsById) do
     itemCount = itemCount + 1
-    if entry.bidOnly > 0 then
-      bids[itemId] = { count = entry.bidOnly, highest = math.floor((entry.bidAmount or 0) + 0.5) }
-    end
     if entry.hasBuyout then
       table.sort(entry.listings, function(left, right) return left.price < right.price end)
       local tiers = aggregateTiers(entry.listings)
@@ -449,6 +449,7 @@ local function finishScan(totalAuctions)
         sellers = sellers,
         sellersInvisible = sellersInvisible,
         bidOnly = entry.bidOnly,
+        highestBid = math.floor((entry.bidAmount or 0) + 0.5),
         tiers = storedTiers,
         expiring = entry.expiring,
         inferredSoldLow = soldLow,
@@ -476,6 +477,7 @@ local function finishScan(totalAuctions)
         sellers = 0,
         sellersInvisible = entry.sellerUnknown,
         bidOnly = entry.bidOnly,
+        highestBid = math.floor((entry.bidAmount or 0) + 0.5),
         tiers = {},
         expiring = entry.expiring,
         inferredSoldLow = 0,
@@ -501,8 +503,7 @@ local function finishScan(totalAuctions)
     character = UnitName and UnitName("player") or nil,
     cash = GetMoney and GetMoney() or 0,
     total = totalAuctions or 0,
-    items = items,
-    bids = bids
+    items = items
   }
   WoWderhoiAH_Capture = {
     v = WAH.PIPELINE_VERSION,
