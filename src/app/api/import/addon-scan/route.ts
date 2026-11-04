@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { normalizeAddonScan } from "@/lib/addon-scan";
 import { mergeScanIntoDailySummaries } from "@/lib/daily-summary";
 import { diffScanItems } from "@/lib/scan-import";
-import { parseJournal, replayJournal } from "@/lib/journal";
+import { bookForCharacter, parseJournal, replayJournal } from "@/lib/journal";
 
 // Imports one addon snapshot plus the character's action journal. The
 // snapshot is the market observation; the journal is the only clean
@@ -19,6 +19,15 @@ export async function POST(request: Request) {
     scan = normalizeAddonScan(rawScan);
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 400 });
+  }
+  // Validate the journal attribution before any write: a journal that cannot
+  // be tied to a character must not leave a half-imported market behind.
+  const journalPresent = payload.journal !== undefined && payload.journal !== null;
+  if (journalPresent && !scan.character) {
+    return NextResponse.json(
+      { error: "A journal-bearing scan must name its character; the ledger cannot be attributed" },
+      { status: 400 }
+    );
   }
 
   // Market identity lives in the Market row; snapshots reference it and do
@@ -36,8 +45,10 @@ export async function POST(request: Request) {
 
   const market = await prisma.market.upsert({
     where: { realm_faction: { realm: scan.server, faction: scan.faction } },
-    create: { realm: scan.server, faction: scan.faction, cash: scan.cash },
-    update: { cash: scan.cash }
+    create: { realm: scan.server, faction: scan.faction, cash: scan.cash, character: scan.character ?? "" },
+    // A scan-only import carries no character, so it must not erase the one
+    // the last journal-bearing scan recorded.
+    update: { cash: scan.cash, ...(scan.character ? { character: scan.character } : {}) }
   });
 
   // Full-table reads instead of `in` filters: the item table is small and
@@ -56,12 +67,16 @@ export async function POST(request: Request) {
   });
   const { date, creates, updates } = mergeScanIntoDailySummaries(pricedItems, scan.scannedAt, market.id, existingDayRows);
 
-  const books = parseJournal(payload.journal);
-  const bookKey = [scan.server, scan.faction, scan.character].join("|");
-  const book = books.find((candidate) => candidate.key === bookKey)
-    ?? books.find((candidate) => candidate.key.startsWith(`${scan.server}|${scan.faction}|`))
-    ?? null;
-  const replay = book ? replayJournal(book.events) : null;
+  const book = bookForCharacter(
+    parseJournal(payload.journal),
+    scan.character ? [scan.server, scan.faction, scan.character].join("|") : null
+  );
+  // A v4 addon writes the journal global on every load, so a journal-bearing
+  // scan is authoritative even when this character has no events yet: an
+  // empty book rebuilds an empty ledger instead of leaving a previous
+  // character's positions next to this scan's cash. A scan-only payload
+  // (tooling) leaves the ledger untouched.
+  const replay = journalPresent ? replayJournal(book?.events ?? []) : null;
 
   // One transaction for the whole import: the snapshot, the derived daily
   // rows and the journal projection land all-or-nothing.

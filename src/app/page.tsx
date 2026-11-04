@@ -82,7 +82,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
         <div>
           <h1 className="font-mono text-lg font-semibold uppercase text-terminal-amber">WoWderhoi AHelper</h1>
           <p className="font-mono text-xs text-terminal-muted">
-            {scope ? `${scope.realm} · ${scope.faction}` : "未导入市场"} · 无限服拍卖行情报与地精驾驶舱 · {phaseLabels[phase]}
+            {scope ? `${scope.realm} · ${scope.faction} · 角色 ${scope.character || "未知"}` : "未导入市场"} · 无限服拍卖行情报与地精驾驶舱 · {phaseLabels[phase]}
           </p>
         </div>
         <div className="flex items-center gap-3 font-mono text-xs text-terminal-muted">

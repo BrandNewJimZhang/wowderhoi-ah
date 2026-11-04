@@ -9,6 +9,8 @@ export type MarketScope = {
   realm: string;
   faction: string;
   cash: number;
+  // Character whose scan produced the ledger; "" when the import carried none.
+  character: string;
 };
 
 export async function getMarketScope(): Promise<MarketScope | null> {

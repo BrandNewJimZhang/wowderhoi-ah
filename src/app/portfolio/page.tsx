@@ -41,7 +41,9 @@ export default async function PortfolioPage() {
         <div>
           <div className="font-mono text-xs uppercase text-terminal-muted">组合与资金</div>
           <h1 className="flex items-center gap-2 font-mono text-lg font-semibold text-terminal-amber"><Wallet size={18} /> 头寸账本</h1>
-          <p className="font-mono text-xs text-terminal-muted">{phaseLabels[phase]} · 账本由游戏内 Journal 重放而来</p>
+          <p className="font-mono text-xs text-terminal-muted">
+            {scope ? `角色 ${scope.character || "未知"}` : "未导入市场"} · {phaseLabels[phase]} · 账本由游戏内 Journal 重放而来，跟随最近一次扫描的角色
+          </p>
         </div>
         <div className="flex gap-3 font-mono text-xs">
           <Link href="/" className="text-terminal-muted hover:text-terminal-amber">驾驶舱</Link>

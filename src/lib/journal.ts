@@ -124,6 +124,15 @@ export function parseJournal(raw: unknown): JournalBook[] {
   });
 }
 
+// The journal is per character, but the terminal's positions and trades are
+// market-scoped because they pair with that market's cash. Pick the book of
+// the character that produced the scan and never fall back to another one:
+// an alt's book would report positions the scanning character does not hold.
+export function bookForCharacter(books: JournalBook[], key: string | null): JournalBook | null {
+  if (!key) return null;
+  return books.find((book) => book.key === key) ?? null;
+}
+
 function postKey(event: JournalEvent, index: number): string {
   return String(event.auctionID ?? `event:${index}`);
 }

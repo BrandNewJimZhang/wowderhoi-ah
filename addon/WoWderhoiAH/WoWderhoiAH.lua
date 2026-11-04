@@ -261,11 +261,7 @@ local function appendPoint(series, item, nowTs)
   series.t[#series.t + 1] = nowTs
   series.min[#series.min + 1] = item.minPrice
   series.sell[#series.sell + 1] = item.sellP
-  series.p10[#series.p10 + 1] = item.marketPrice
   series.q[#series.q + 1] = item.quantity
-  series.n[#series.n + 1] = item.numAuctions
-  series.s[#series.s + 1] = item.sellers
-  series.d[#series.d + 1] = item.inferredSoldLow or 0
   series.e[#series.e + 1] = event
 end
 
@@ -273,11 +269,7 @@ local function copyPoint(series, source, target)
   target.t[#target.t + 1] = series.t[source]
   target.min[#target.min + 1] = series.min[source]
   target.sell[#target.sell + 1] = series.sell[source]
-  target.p10[#target.p10 + 1] = series.p10[source]
   target.q[#target.q + 1] = series.q[source]
-  target.n[#target.n + 1] = series.n[source]
-  target.s[#target.s + 1] = series.s[source]
-  target.d[#target.d + 1] = series.d[source]
   target.e[#target.e + 1] = series.e[source]
 end
 
@@ -286,7 +278,7 @@ end
 -- front move or a 25% supply move) survive the hourly fold.
 local function pruneSeries(series, nowTs)
   local cutoff24, cutoff7, cutoff30 = nowTs - DAY, nowTs - 7 * DAY, nowTs - 30 * DAY
-  local kept = { t = {}, min = {}, sell = {}, p10 = {}, q = {}, n = {}, s = {}, d = {}, e = {} }
+  local kept = { t = {}, min = {}, sell = {}, q = {}, e = {} }
   local lastHour, lastDay
   for index = 1, #series.t do
     local stamp = series.t[index]
@@ -319,7 +311,7 @@ local function enforceSeriesCap(market)
   local perItem = math.max(8, math.floor(SERIES_CAP / count))
   for itemId, series in pairs(market.items) do
     if #series.t > perItem then
-      local trimmed = { t = {}, min = {}, sell = {}, p10 = {}, q = {}, n = {}, s = {}, d = {}, e = {} }
+      local trimmed = { t = {}, min = {}, sell = {}, q = {}, e = {} }
       for index = #series.t - perItem + 1, #series.t do copyPoint(series, index, trimmed) end
       market.items[itemId] = trimmed
     end
@@ -335,7 +327,7 @@ local function recordSeries(items, nowTs)
     if item.minPrice and item.minPrice > 0 then
       local series = market.items[itemId]
       if not series then
-        series = { t = {}, min = {}, sell = {}, p10 = {}, q = {}, n = {}, s = {}, d = {}, e = {} }
+        series = { t = {}, min = {}, sell = {}, q = {}, e = {} }
         market.items[itemId] = series
       end
       appendPoint(series, item, nowTs)
@@ -703,7 +695,6 @@ function WAH.history(itemId, windowHours)
       sells[#sells + 1] = series.sell[index]
       pts[#pts + 1] = {
         t = series.t[index],
-        c = series.p10[index],
         sell = series.sell[index],
         min = series.min[index],
         q = series.q[index],
@@ -715,7 +706,7 @@ function WAH.history(itemId, windowHours)
     local last = #series.t
     sells[1] = series.sell[last]
     pts[1] = {
-      t = series.t[last], c = series.p10[last], sell = series.sell[last],
+      t = series.t[last], sell = series.sell[last],
       min = series.min[last], q = series.q[last], event = series.e[last]
     }
   end

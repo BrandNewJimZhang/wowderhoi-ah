@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseSavedVariables } from "@/lib/addon-scan";
-import { parseJournal, replayJournal, type JournalEvent } from "@/lib/journal";
+import { bookForCharacter, parseJournal, replayJournal, type JournalEvent } from "@/lib/journal";
 import { loadAddon } from "../../addon/test/wow-lua";
 
 const EVENTS: JournalEvent[] = [
@@ -105,5 +105,24 @@ WoWderhoiAH_Journal = {
   it("returns no books for an absent journal", () => {
     expect(parseJournal(undefined)).toEqual([]);
     expect(parseJournal({})).toEqual([]);
+  });
+});
+
+describe("bookForCharacter", () => {
+  const books = [
+    { key: "TestRealm|Alliance|Main", events: [{ k: "buy", t: 1, itemId: 2589, qty: 4, cost: 400 }], dropped: 0 },
+    { key: "TestRealm|Alliance|Alt", events: [], dropped: 0 }
+  ];
+
+  it("returns the scanning character's own book", () => {
+    expect(bookForCharacter(books, "TestRealm|Alliance|Alt")?.key).toBe("TestRealm|Alliance|Alt");
+  });
+
+  it("never falls back to another character's book", () => {
+    // The market ledger pairs positions with the cash of the character that
+    // produced the scan. Replaying an alt's book next to this character's
+    // cash would report positions that character does not hold.
+    expect(bookForCharacter(books, "TestRealm|Alliance|New")).toBeNull();
+    expect(bookForCharacter(books, null)).toBeNull();
   });
 });

@@ -36,7 +36,7 @@ function historyItem(itemId: number, sellPrice: number): MarketHistory {
 
 function fetchers(universe: MarketHistory[]) {
   return {
-    getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0 }),
+    getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0, character: "Tester" }),
     getLatestSnapshotTime: async () => new Date("2026-07-20T10:00:00Z"),
     getEarliestSnapshotTime: async () => new Date("2026-07-20T10:00:00Z"),
     getMarketUniverse: async () => universe,
@@ -75,7 +75,7 @@ describe("createMarketSignalSource", () => {
   it("scopes every market read to the selected realm and faction", async () => {
     const seen: string[] = [];
     const source = createMarketSignalSource({
-      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0 }),
+      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0, character: "Tester" }),
       getLatestSnapshotTime: async (scope) => { seen.push(scope?.id ?? "none"); return new Date("2026-07-20T10:00:00Z"); },
       getEarliestSnapshotTime: async (scope) => { seen.push(scope?.id ?? "none"); return new Date("2026-07-20T10:00:00Z"); },
       getMarketUniverse: async (scope) => { seen.push(scope?.id ?? "none"); return [historyItem(1, 200)]; },
@@ -102,7 +102,7 @@ describe("createMarketSignalSource", () => {
     let generation = new Date("2026-07-20T10:00:00Z");
     let price = 200;
     const source = createMarketSignalSource({
-      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0 }),
+      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0, character: "Tester" }),
       getLatestSnapshotTime: async () => generation,
       getEarliestSnapshotTime: async () => new Date("2026-07-20T10:00:00Z"),
       getMarketUniverse: async () => [historyItem(1, price)],
@@ -133,7 +133,7 @@ describe("createMarketSignalSource", () => {
       return item;
     });
     const bundle = await createMarketSignalSource({
-      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0 }),
+      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0, character: "Tester" }),
       getLatestSnapshotTime: async () => latest,
       getEarliestSnapshotTime: async () => earliest,
       getMarketUniverse: async () => universe,
@@ -148,7 +148,7 @@ describe("createMarketSignalSource", () => {
   it("returns empty signals without caching when the store has no snapshots", async () => {
     let universeFetches = 0;
     const source = createMarketSignalSource({
-      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0 }),
+      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0, character: "Tester" }),
       getLatestSnapshotTime: async () => null,
       getEarliestSnapshotTime: async () => null,
       getMarketUniverse: async () => {

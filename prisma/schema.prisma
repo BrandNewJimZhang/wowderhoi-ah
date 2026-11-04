@@ -13,6 +13,9 @@ model Market {
   realm     String
   faction   String
   cash      Int       @default(0) // latest scan's player cash, copper
+  // Character whose scan (and journal) produced cash, positions and trades.
+  // Empty for scan-only imports that carry no character.
+  character String   @default("")
   createdAt DateTime @default(now()) @map("created_at")
 
   snapshots AuctionSnapshot[]
