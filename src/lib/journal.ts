@@ -6,7 +6,6 @@
 export type JournalEvent = {
   k: string;
   t: number;
-  m?: string;
   itemId?: number;
   qty?: number;
   cost?: number;
@@ -53,7 +52,6 @@ export type ReplayError = {
 };
 
 export type ReplayState = {
-  market: string;
   lots: Record<number, JournalLot[]>;
   positions: Record<number, { qty: number; cost: number }>;
   openPosts: Record<string, { itemId?: number; qty: number; price: number; deposit: number; at: number; duration?: number }>;
@@ -102,8 +100,7 @@ export function parseJournal(raw: unknown): JournalBook[] {
       const event = (entry ?? {}) as Record<string, unknown>;
       const parsed: JournalEvent = {
         k: typeof event.k === "string" ? event.k : "",
-        t: toNumber(event.t, index),
-        m: typeof event.m === "string" ? event.m : undefined
+        t: toNumber(event.t, index)
       };
       for (const field of ["itemId", "qty", "cost", "paid", "price", "fee", "deposit", "duration", "refund", "lostDeposit"] as const) {
         if (typeof event[field] === "number") parsed[field] = event[field] as number;
@@ -131,7 +128,7 @@ function postKey(event: JournalEvent, index: number): string {
   return String(event.auctionID ?? `event:${index}`);
 }
 
-export function replayJournal(events: JournalEvent[], market = "local"): ReplayState {
+export function replayJournal(events: JournalEvent[]): ReplayState {
   const lots = new Map<number, JournalLot[]>();
   const positions: Record<number, { qty: number; cost: number }> = {};
   const openPosts: ReplayState["openPosts"] = {};
@@ -274,7 +271,6 @@ export function replayJournal(events: JournalEvent[], market = "local"): ReplayS
   }
 
   return {
-    market,
     lots: Object.fromEntries(lots),
     positions,
     openPosts,

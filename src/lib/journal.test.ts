@@ -64,7 +64,7 @@ describe("replayJournal", () => {
 
   it("matches the Lua ledger for the same journal", () => {
     const fromLua = loadAddon().ledgerReplay(EVENTS) as Record<string, unknown>;
-    const fromTs = replayJournal(EVENTS, "TestRealm|Alliance|Tester");
+    const fromTs = replayJournal(EVENTS);
     expect(fromTs.positions).toEqual(fromLua.positions);
     // Both open-post sets are empty; Lua's empty table crosses the bridge
     // as an array, so compare the keys rather than the container shape.

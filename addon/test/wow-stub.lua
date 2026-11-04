@@ -647,7 +647,7 @@ function bed.setScan(items)
   WoWderhoiAH_Series = {
     v = bed.ns.PIPELINE_VERSION,
     markets = {
-      ["TestRealm|Alliance"] = { firstScanAt = NOW - 3600, lastScanAt = NOW, scanCount = 1, items = {} }
+      ["TestRealm|Alliance"] = { firstScanAt = NOW - 3600, items = {} }
     }
   }
 end
@@ -656,7 +656,7 @@ end
 -- the 7d window. v4 stores the full point, not just a scalar close.
 function bed.setPoints(entries)
   local series = { v = bed.ns.PIPELINE_VERSION, markets = {
-    ["TestRealm|Alliance"] = { firstScanAt = NOW - 7 * 86400, lastScanAt = NOW, scanCount = 1, items = {} }
+    ["TestRealm|Alliance"] = { firstScanAt = NOW - 7 * 86400, items = {} }
   } }
   for _, entry in ipairs(entries) do
     local point = { t = {}, min = {}, sell = {}, p10 = {}, q = {}, n = {}, s = {}, d = {}, e = {} }

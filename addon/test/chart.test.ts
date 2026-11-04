@@ -96,8 +96,6 @@ describe("time-series chart", () => {
       markets: {
         "TestRealm|Alliance": {
           firstScanAt: 1699990000,
-          lastScanAt: 1700000000,
-          scanCount: 4,
           items: {
             4338: {
               t: [1699990000, 1699990900, 1699999800, 1700000000],

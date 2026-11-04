@@ -61,7 +61,7 @@ export async function POST(request: Request) {
   const book = books.find((candidate) => candidate.key === bookKey)
     ?? books.find((candidate) => candidate.key.startsWith(`${scan.server}|${scan.faction}|`))
     ?? null;
-  const replay = book ? replayJournal(book.events, market.id) : null;
+  const replay = book ? replayJournal(book.events) : null;
 
   // One transaction for the whole import: the snapshot, the derived daily
   // rows and the journal projection land all-or-nothing.
