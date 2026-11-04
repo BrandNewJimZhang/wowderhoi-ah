@@ -1,5 +1,5 @@
 import { createServer, type Server } from "node:net";
-import { spawn, execFileSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import process from "node:process";
 
 // Cross-platform host helpers for the perf driver. The previous run.ts

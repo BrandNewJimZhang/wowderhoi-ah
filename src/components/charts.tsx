@@ -130,15 +130,16 @@ export function TimeSeriesChart({ data }: { data: TimePoint[] }) {
 export type BookTier = { p: number; q: number };
 
 export function OrderBookChart({ tiers, sellP, minPrice }: { tiers: BookTier[]; sellP: number; minPrice: number }) {
-  const data = useMemo(() => {
-    let cumulative = 0;
-    return [...tiers]
+  const data = useMemo(
+    () => [...tiers]
       .sort((left, right) => left.p - right.p)
-      .map((tier) => {
-        cumulative += tier.q;
-        return { price: tier.p, qty: tier.q, cumulative };
-      });
-  }, [tiers]);
+      .reduce<Array<{ price: number; qty: number; cumulative: number }>>((rows, tier) => {
+        const previous = rows.length === 0 ? 0 : rows[rows.length - 1].cumulative;
+        rows.push({ price: tier.p, qty: tier.q, cumulative: previous + tier.q });
+        return rows;
+      }, []),
+    [tiers]
+  );
   if (data.length === 0) {
     return <div className="p-4 font-mono text-xs text-terminal-muted">本次扫描没有盘口数据</div>;
   }

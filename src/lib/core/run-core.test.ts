@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { runCore } from "@/lib/core/run-core";
-import { CORE_NOW, commodityInput } from "@/lib/core/fixtures";
+import { commodityInput } from "@/lib/core/fixtures";
 import type { CoreInput } from "@/lib/core/types";
 
 describe("Core.evaluate through fengari", () => {

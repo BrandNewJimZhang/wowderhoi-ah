@@ -2,7 +2,7 @@
 // page or route: production input is built from the imported scan.
 import type { CoreInput } from "@/lib/core/types";
 
-export const CORE_NOW = 1_700_000_000;
+const CORE_NOW = 1_700_000_000;
 
 export function commodityInput(overrides?: {
   ageHours?: number;

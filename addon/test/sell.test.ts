@@ -4,7 +4,7 @@
 // tests drive the real Lua and assert on the ledger, not on the pixels.
 
 import { describe, expect, it } from "vitest";
-import { loadAddon, type WowLua } from "./wow-lua";
+import { loadAddon } from "./wow-lua";
 
 const LINEN = 2589;
 const MAGEWEAVE = 4338;
