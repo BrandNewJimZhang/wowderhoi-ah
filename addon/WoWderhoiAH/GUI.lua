@@ -622,7 +622,8 @@ local function printPrice(itemId)
   local lines = { string.format(L.PRICE_HEADER, name) }
   if scanned and scanned.sellP then
     lines[#lines + 1] = string.format(L.PRICE_SELL, coinString(scanned.sellP))
-    lines[#lines + 1] = string.format(L.PRICE_LIST, coinString(math.max((scanned.vendorP or 0) + 1, scanned.sellP - 1)))
+    local undercut = (WAH.RULES.sellFront and WAH.RULES.sellFront.undercutCopper) or 1
+    lines[#lines + 1] = string.format(L.PRICE_LIST, coinString(math.max((scanned.vendorP or 0) + 1, scanned.sellP - undercut)))
   end
   if scanned then
     lines[#lines + 1] = string.format(L.PRICE_MIN, coinString(scanned.minPrice))
@@ -713,7 +714,7 @@ SlashCmdList["WOWDERHOIAHDIAG"] = function()
     C_AuctionHouse.IsThrottledMessageSystemReady and C_AuctionHouse.IsThrottledMessageSystemReady() or "n/a")))
   local journal = WAH.Journal and WAH.Journal.count() or 0
   local ledger = WAH.Ledger and WAH.Ledger.current() or nil
-  diagLine(string.format("journal: %d events | realized %s | escrow %s | fees %s | deposits lost %s",
+  diagLine(string.format("journal: %d events | realized (incl. inferred) %s | escrow %s | fees %s | deposits lost %s",
     journal,
     coinString(ledger and ledger.capital.realized or 0),
     coinString(ledger and ledger.capital.escrow or 0),

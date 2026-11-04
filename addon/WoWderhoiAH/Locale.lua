@@ -52,7 +52,7 @@ local L = {
   CHART_HILO = "H %s  L %s%s",
   CHART_EMPTY = "not enough scans in this window",
   LOADED = "loaded. %d items in price history. /wahscan to scan, /wah for status.",
-  STATUS_FMT = "history: %d items | %s | phase %s | realized %s | escrow %s",
+  STATUS_FMT = "history: %d items | %s | phase %s | realized (incl. inferred) %s | escrow %s",
   STATUS_NO_SCAN = "no scan stored",
   STATUS_LAST_SCAN = "last scan %s, %d items (saved to disk)",
   -- price guide
@@ -198,7 +198,7 @@ if GetLocale() == "zhCN" then
   L.CHART_HILO = "高 %s  低 %s%s"
   L.CHART_EMPTY = "该时间窗内扫描次数不足"
   L.LOADED = "已加载。价格历史 %d 种商品。/wahscan 扫描，/wah 查看状态。"
-  L.STATUS_FMT = "历史：%d 种商品 | %s | 阶段 %s | 已实现 %s | 押金占用 %s"
+  L.STATUS_FMT = "历史：%d 种商品 | %s | 阶段 %s | 已实现（含推断） %s | 押金占用 %s"
   L.STATUS_NO_SCAN = "尚无扫描记录"
   L.STATUS_LAST_SCAN = "上次扫描 %s，%d 种商品（已保存到磁盘）"
   L.PRICE_HEADER = "价格指引 — %s"
