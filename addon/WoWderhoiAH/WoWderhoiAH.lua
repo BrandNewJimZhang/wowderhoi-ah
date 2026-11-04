@@ -110,9 +110,8 @@ end
 
 -- ============================== Capture ==============================
 
-local function newEntry(itemId, name, quality, cached)
+local function newEntry(name, quality, cached)
   return {
-    itemId = itemId,
     name = name,
     quality = quality,
     itemClass = cached.class,
@@ -140,7 +139,7 @@ local function recordAuction(index)
   -- highBidder, bidderFullName, owner, ownerFullName, saleStatus, itemID,
   -- hasAllInfo.
   local name, _, count, quality, _, _, _, _, _, buyoutPrice, bidAmount, _, _,
-    owner, ownerFullName, saleStatus, itemId = C_AuctionHouse.GetReplicateItemInfo(index)
+    owner, ownerFullName, _, itemId = C_AuctionHouse.GetReplicateItemInfo(index)
   if not (itemId and name) then return end
   local seller = owner or ownerFullName
   local timeLeft = C_AuctionHouse.GetReplicateItemTimeLeft
@@ -162,7 +161,7 @@ local function recordAuction(index)
       cached = { class = itemClass, subClass = itemSubClass, vendorP = vendorPrice or 0 }
       scanState.itemInfoCache[itemId] = cached
     end
-    entry = newEntry(itemId, name, quality, cached)
+    entry = newEntry(name, quality, cached)
     scanState.itemsById[itemId] = entry
   end
 
@@ -171,7 +170,6 @@ local function recordAuction(index)
   else
     entry.sellerUnknown = true
   end
-  if saleStatus ~= nil then entry.saleStatus = saleStatus end
   if bidAmount and bidAmount > (entry.bidAmount or 0) then entry.bidAmount = bidAmount end
 
   -- Bid-only listings carry no buyout and cannot be bought out. They are
@@ -240,7 +238,7 @@ local function ensureSeries()
   local key = marketKey()
   local market = WoWderhoiAH_Series.markets[key]
   if not market then
-    market = { firstScanAt = time(), lastScanAt = time(), scanCount = 0, items = {} }
+    market = { firstScanAt = time(), items = {} }
     WoWderhoiAH_Series.markets[key] = market
   end
   return market
@@ -324,8 +322,6 @@ end
 local function recordSeries(items, nowTs)
   local market = ensureSeries()
   market.firstScanAt = math.min(market.firstScanAt or nowTs, nowTs)
-  market.lastScanAt = nowTs
-  market.scanCount = (market.scanCount or 0) + 1
   for itemId, item in pairs(items) do
     -- Demand-only rows carry no price; keeping their zeros in the series
     -- would drag every sell-median and chart toward 0.
@@ -357,7 +353,7 @@ end
 
 -- Disappearances between two scans, as an interval.
 --
---   high  units that left their (owner, count, price) key and were not
+--   high  units that left their (owner, unitPrice) key and were not
 --         expiring. Includes sales, cancellations and repricing.
 --   low   units that left an owner entirely. A price change keeps the
 --         owner's total, so repricing is excluded; cancellations remain.
@@ -460,8 +456,7 @@ local function finishScan(totalAuctions)
       captureItems[itemId] = {
         keys = entry.flowKeys,
         t = entry.flowTimeLeft,
-        total = entry.quantity,
-        at = nowTs
+        total = entry.quantity
       }
     elseif entry.bidOnly > 0 then
       items[itemId] = {

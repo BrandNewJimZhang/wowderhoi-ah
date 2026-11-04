@@ -52,7 +52,6 @@ function Journal.append(event)
   end
   local book = Journal.ensure()
   event.t = event.t or time()
-  event.m = event.m or bookKey()
   book.e[#book.e + 1] = event
   while #book.e > Journal.CAP do
     table.remove(book.e, 1)
