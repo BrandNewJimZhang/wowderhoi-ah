@@ -1,8 +1,10 @@
 import type { MarketSignal } from "@/lib/analytics";
 
-export type SignalSortKey = "sellPrice" | "minPrice" | "sellRef" | "spreadPercent" | "trendPercent" | "changePercent" | "quantity" | "numAuctions";
+// The runtime allow-list and the type come from one array: a new sortable
+// column cannot be added to one and forgotten in the other.
+const SORT_KEYS = ["sellPrice", "minPrice", "sellRef", "spreadPercent", "trendPercent", "changePercent", "quantity", "numAuctions"] as const;
 
-const SORT_KEYS: readonly SignalSortKey[] = ["sellPrice", "minPrice", "sellRef", "spreadPercent", "trendPercent", "changePercent", "quantity", "numAuctions"];
+export type SignalSortKey = (typeof SORT_KEYS)[number];
 
 export type MarketView = { query: string; category: string; sortKey: SignalSortKey; sortAsc: boolean; page: number };
 

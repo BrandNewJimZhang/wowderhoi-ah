@@ -2,12 +2,14 @@
 
 import { useState, useTransition } from "react";
 import { createAlertRule, deleteAlertRule } from "@/app/actions";
-import { alertMetricKeys, goldDenominatedMetrics } from "@/lib/alerts";
+import { alertMetricKeys, goldDenominatedMetrics, type AlertMetricKey } from "@/lib/alerts";
 import { formatWowMoney } from "@/lib/wow-money";
 
 type AlertRuleRow = { id: string; metric: string; operator: string; threshold: number; enabled: boolean };
 
-const metricLabels: Record<string, string> = {
+// Keyed by the alert metric union, so adding a metric without a label is a
+// type error rather than an undefined <option>.
+const metricLabels: Record<AlertMetricKey, string> = {
   sellPrice: "建议卖价",
   minPrice: "最低价",
   sellRef: "卖价中位（窗口）",
@@ -34,7 +36,7 @@ export function AlertRulePanel({ itemId, rules }: { itemId: number; rules: Alert
       {rules.map((rule) => (
         <div key={rule.id} className="flex items-center justify-between gap-2">
           <span>
-            {metricLabels[rule.metric] ?? rule.metric} {rule.operator === "gt" ? ">" : "<"} {thresholdLabel(rule)}
+            {metricLabels[rule.metric as AlertMetricKey] ?? rule.metric} {rule.operator === "gt" ? ">" : "<"} {thresholdLabel(rule)}
           </span>
           <button
             onClick={() => startTransition(() => deleteAlertRule(rule.id))}
