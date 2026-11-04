@@ -122,7 +122,9 @@ function Ledger.replay(events, market)
         itemId = event.itemId,
         qty = event.qty or 0,
         price = event.price or 0,
-        deposit = event.deposit or 0
+        deposit = event.deposit or 0,
+        at = event.t,
+        duration = event.duration
       }
       state.capital.escrow = state.capital.escrow + (event.deposit or 0)
     elseif kind == "sold" then
@@ -146,8 +148,10 @@ function Ledger.replay(events, market)
     elseif kind == "cancel" then
       local key = postKey(event, index)
       local post = posts[key]
-      local refund = event.refund or (post and post.deposit) or 0
-      state.capital.escrow = math.max(0, state.capital.escrow - refund)
+      local lost = event.lostDeposit or 0
+      local refund = event.refund or ((post and post.deposit or 0) - lost)
+      state.capital.escrow = math.max(0, state.capital.escrow - refund - lost)
+      state.capital.depositsLost = state.capital.depositsLost + lost
       posts[key] = nil
     elseif kind == "expire" then
       local key = postKey(event, index)

@@ -340,8 +340,10 @@ local function awaitPurchase(purchase)
 end
 
 local function recordPurchase(purchase, payload)
-  local quantity = payload and payload.quantity or purchase.qty
-  local unitPrice = payload and payload.unitPrice
+  -- AUCTION_HOUSE_PURCHASE_COMPLETED carries the auctionID, not a table.
+  local detail = type(payload) == "table" and payload or nil
+  local quantity = detail and detail.quantity or purchase.qty
+  local unitPrice = detail and detail.unitPrice
   local cost = unitPrice and unitPrice * quantity or purchase.cost
   WAH.recordEvent({
     k = "buy",
@@ -609,7 +611,8 @@ local function createTradeFrame()
   local scanButton = headerButton(L.FULL_SCAN, dealsButton, 78, function()
     if WAH.startScan then WAH.startScan() end
   end)
-  headerButton(L.OPTIONS, scanButton, 56, function() WAH.openSettings() end)
+  local optionsButton = headerButton(L.OPTIONS, scanButton, 56, function() WAH.openSettings() end)
+  headerButton(L.SELL_PAGE, optionsButton, 50, function() if WAH.openSell then WAH.openSell() end end)
 
   -- Table header row: fixed columns, right-aligned numbers.
   local HEADER_Y = -70

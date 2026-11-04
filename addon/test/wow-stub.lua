@@ -231,7 +231,8 @@ C_AddOns = {
 
 Enum = {
   AuctionHouseSortOrder = { Price = 0, Name = 1, Level = 2, Bid = 3, Buyout = 4, TimeRemaining = 5 },
-  TooltipDataType = { Item = 0 }
+  TooltipDataType = { Item = 0 },
+  ItemCommodityStatus = { Unknown = 0, Item = 1, Commodity = 2 }
 }
 
 -- ====================== Modern auction house ==========================
@@ -282,7 +283,15 @@ C_AuctionHouse = {
     }
   end,
   GetItemKeyInfo = function(itemKey)
-    return itemKey and ah.itemKeys[itemKey.itemID]
+    local info = itemKey and ah.itemKeys[itemKey.itemID]
+    if not info and itemKey then
+      info = { itemID = itemKey.itemID, isCommodity = bed.commodityItems and bed.commodityItems[itemKey.itemID] or false }
+      ah.itemKeys[itemKey.itemID] = info
+    end
+    if info and info.isCommodity == nil then
+      info.isCommodity = bed.commodityItems and bed.commodityItems[itemKey.itemID] or false
+    end
+    return info
   end,
   SendBrowseQuery = function(query)
     bed.browseQuery = query
@@ -326,6 +335,135 @@ C_AuctionHouse = {
   end,
   IsThrottledMessageSystemReady = function() return true end
 }
+
+
+-- ===================== Sell side and owned auctions ===================
+
+-- Bag fixtures: { bag, slot, itemId, count, name, commodity }.
+bed.bagContents = {}
+bed.bagSlots = {}
+bed.commodityItems = {}
+bed.ownedAuctions = {}
+bed.lastAuctionID = 5000
+
+function bed.setBag(items)
+  bed.bagContents, bed.bagSlots, bed.commodityItems = {}, {}, {}
+  for _, item in ipairs(items) do
+    bed.bagContents[item.bag .. ":" .. item.slot] = {
+      itemID = item.itemId,
+      stackCount = item.count,
+      itemName = item.name,
+      iconFileID = 0,
+      quality = item.quality or 1
+    }
+    bed.bagSlots[item.bag] = math.max(bed.bagSlots[item.bag] or 0, item.slot)
+    if item.commodity then bed.commodityItems[item.itemId] = true end
+  end
+end
+
+function bed.setOwned(rows)
+  bed.ownedAuctions = {}
+  for _, row in ipairs(rows) do
+    bed.ownedAuctions[row.auctionID] = {
+      auctionID = row.auctionID,
+      itemKey = { itemID = row.itemId },
+      quantity = row.quantity or 1,
+      buyoutAmount = row.buyoutAmount or 0,
+      timeLeftSeconds = row.timeLeftSeconds or 3600,
+      status = 1
+    }
+  end
+end
+
+local function ownedList()
+  local list = {}
+  for _, row in pairs(bed.ownedAuctions) do list[#list + 1] = row end
+  table.sort(list, function(left, right) return left.auctionID < right.auctionID end)
+  return list
+end
+
+ItemLocation = {}
+function ItemLocation:CreateFromBagAndSlot(bag, slot)
+  return { bag = bag, slot = slot }
+end
+
+C_Container = {
+  GetContainerNumSlots = function(bag) return bed.bagSlots[bag] or 0 end,
+  GetContainerItemInfo = function(bag, slot) return bed.bagContents[bag .. ":" .. slot] end
+}
+
+C_AuctionHouse.GetItemKeyFromItem = function(item)
+  local info = item and bed.bagContents[item.bag .. ":" .. item.slot]
+  return { itemID = info and info.itemID or 0, itemLevel = 0, itemSuffix = 0, battlePetSpeciesID = 0 }
+end
+
+C_AuctionHouse.GetItemCommodityStatus = function(item)
+  local info = item and bed.bagContents[item.bag .. ":" .. item.slot]
+  if info and bed.commodityItems[info.itemID] then return Enum.ItemCommodityStatus.Commodity end
+  return Enum.ItemCommodityStatus.Item
+end
+
+C_AuctionHouse.CalculateItemDeposit = function(item, duration, quantity)
+  return (quantity or 1) * (duration or 24) * 2
+end
+
+C_AuctionHouse.CalculateCommodityDeposit = function(itemId, duration, quantity)
+  return (quantity or 1) * (duration or 24) * 3
+end
+
+C_AuctionHouse.PostItem = function(item, duration, quantity, bid, buyout)
+  local info = bed.bagContents[item.bag .. ":" .. item.slot]
+  bed.posted = { itemId = info and info.itemID, duration = duration, quantity = quantity,
+    bid = bid, buyout = buyout, commodity = false }
+  bed.lastAuctionID = bed.lastAuctionID + 1
+  bed.ownedAuctions[bed.lastAuctionID] = {
+    auctionID = bed.lastAuctionID,
+    itemKey = { itemID = info and info.itemID or 0 },
+    quantity = quantity,
+    buyoutAmount = buyout * quantity,
+    timeLeftSeconds = duration * 3600,
+    status = 1
+  }
+  bed.fireEvent("AUCTION_HOUSE_AUCTION_CREATED", bed.lastAuctionID)
+  return false
+end
+
+C_AuctionHouse.PostCommodity = function(item, duration, quantity, unitPrice)
+  local info = bed.bagContents[item.bag .. ":" .. item.slot]
+  bed.posted = { itemId = info and info.itemID, duration = duration, quantity = quantity,
+    unitPrice = unitPrice, commodity = true }
+  bed.lastAuctionID = bed.lastAuctionID + 1
+  bed.ownedAuctions[bed.lastAuctionID] = {
+    auctionID = bed.lastAuctionID,
+    itemKey = { itemID = info and info.itemID or 0 },
+    quantity = quantity,
+    buyoutAmount = unitPrice * quantity,
+    timeLeftSeconds = duration * 3600,
+    status = 1
+  }
+  bed.fireEvent("AUCTION_HOUSE_AUCTION_CREATED", bed.lastAuctionID)
+  return false
+end
+
+C_AuctionHouse.ConfirmPostItem = function() end
+C_AuctionHouse.ConfirmPostCommodity = function() end
+
+C_AuctionHouse.GetTimeLeftBandInfo = function(band)
+  return 0, ({ 1800, 7200, 43200, 172800 })[band + 1] or 172800
+end
+
+C_AuctionHouse.QueryOwnedAuctions = function()
+  bed.fireEvent("OWNED_AUCTIONS_UPDATED")
+end
+C_AuctionHouse.GetNumOwnedAuctions = function() return #ownedList() end
+C_AuctionHouse.GetOwnedAuctionInfo = function(index) return ownedList()[index] end
+C_AuctionHouse.CanCancelAuction = function(auctionID) return bed.ownedAuctions[auctionID] ~= nil end
+C_AuctionHouse.GetCancelCost = function(auctionID) return bed.cancelCost or 10 end
+C_AuctionHouse.CancelAuction = function(auctionID)
+  bed.cancelled = auctionID
+  bed.ownedAuctions[auctionID] = nil
+  bed.fireEvent("OWNED_AUCTIONS_UPDATED")
+end
 
 -- ============================== Test bed ==============================
 

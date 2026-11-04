@@ -99,6 +99,9 @@ export function loadAddon(options?: { locale?: string }) {
       return result;
     },
     setScan: (items: unknown[]) => exec(`WowTest.setScan(${toLua(items)})`),
+    setBag: (items: unknown[]) => exec(`WowTest.setBag(${toLua(items)})`),
+    setOwned: (rows: unknown[]) => exec(`WowTest.setOwned(${toLua(rows)})`),
+    advance: (seconds: number) => exec(`WowTest.advance(${seconds})`),
     setPoints: (entries: unknown[]) => exec(`WowTest.setPoints(${toLua(entries)})`),
     runScan: (items: unknown[]) => exec(`WowTest.runScan(${toLua(items)})`),
     openTab: () => exec("WowTest.openTab()"),
