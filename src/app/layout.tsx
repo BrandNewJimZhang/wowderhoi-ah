@@ -7,7 +7,7 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 
 export const metadata: Metadata = {
   title: "WoWderhoi AHelper",
-  description: "面向魔兽世界经典版拍卖行交易者的短周期市场情报终端。"
+  description: "面向《魔兽世界：无限》拍卖行交易者的短周期市场情报终端。"
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
