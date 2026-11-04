@@ -27,9 +27,12 @@ describe("gen-lua-rules", () => {
     for (const phase of ["ignition", "wave", "settle", "steady"]) {
       expect(lua).toContain(`${phase} = {`);
     }
-    for (const type of ["vendor", "commodity", "item"]) {
+    for (const type of ["commodity", "item"]) {
       expect(lua).toContain(`${type} = {`);
     }
+    // Vendor arbitrage bypasses the gate matrix; compiling a vendor block
+    // would ship thresholds no code reads.
+    expect(lua).not.toContain("vendor = {");
     expect(lua).toContain("minUnitProfit = 250"); // steady/item is the strictest
   });
 });

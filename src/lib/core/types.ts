@@ -34,7 +34,7 @@ export type CoreMarketItem = {
   ownSamples?: number;
   ownElapsedHours?: number;
   demandPrior?: number;
-  marketType?: Exclude<MarketType, "vendor">;
+  marketType?: MarketType;
   history?: { samples?: number };
 };
 
@@ -58,7 +58,7 @@ export type CoreRow = {
   itemId: number;
   name: string;
   quality?: number | string;
-  marketType: Exclude<MarketType, "vendor">;
+  marketType: MarketType;
   vendor: boolean;
   minPrice: number;
   ladderPrice: number;

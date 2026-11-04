@@ -10,7 +10,7 @@ import {
   type MarketType
 } from "@/lib/market-rules";
 
-const marketTypes: readonly MarketType[] = ["vendor", "commodity", "item"];
+const marketTypes: readonly MarketType[] = ["commodity", "item"];
 
 describe("phase rules", () => {
   it("defines every market type in every phase", () => {
@@ -55,15 +55,6 @@ describe("phase rules", () => {
     }
   });
 
-  it("keeps vendor arbitrage free of market-risk floors in every phase", () => {
-    for (const phase of marketPhases) {
-      const vendor = marketTypeRules[phase].vendor;
-      expect(vendor.minSpread).toBe(0);
-      expect(vendor.maxSpread).toBe(1);
-      expect(vendor.minNet).toBe(0);
-      expect(vendor.minUnitProfit).toBe(0);
-    }
-  });
 });
 
 describe("pricing constants", () => {

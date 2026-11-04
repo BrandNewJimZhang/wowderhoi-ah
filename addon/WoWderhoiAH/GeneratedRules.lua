@@ -52,14 +52,6 @@ WAH.RULES = {
 },
   marketTypeRules = {
   ignition = {
-    vendor = {
-      minListings = 1,
-      minSellers = 1,
-      minSpread = 0,
-      maxSpread = 1,
-      minNet = 0,
-      minUnitProfit = 0
-    },
     commodity = {
       minListings = 1,
       minSellers = 1,
@@ -78,14 +70,6 @@ WAH.RULES = {
     }
   },
   wave = {
-    vendor = {
-      minListings = 1,
-      minSellers = 1,
-      minSpread = 0,
-      maxSpread = 1,
-      minNet = 0,
-      minUnitProfit = 0
-    },
     commodity = {
       minListings = 3,
       minSellers = 2,
@@ -104,14 +88,6 @@ WAH.RULES = {
     }
   },
   settle = {
-    vendor = {
-      minListings = 1,
-      minSellers = 1,
-      minSpread = 0,
-      maxSpread = 1,
-      minNet = 0,
-      minUnitProfit = 0
-    },
     commodity = {
       minListings = 5,
       minSellers = 3,
@@ -130,14 +106,6 @@ WAH.RULES = {
     }
   },
   steady = {
-    vendor = {
-      minListings = 1,
-      minSellers = 1,
-      minSpread = 0,
-      maxSpread = 1,
-      minNet = 0,
-      minUnitProfit = 0
-    },
     commodity = {
       minListings = 8,
       minSellers = 4,

@@ -42,7 +42,9 @@ export const sellFrontRules = {
 } as const;
 
 export type MarketPhase = "ignition" | "wave" | "settle" | "steady";
-export type MarketType = "vendor" | "commodity" | "item";
+// The types the gate matrix applies to. Vendor arbitrage is not a gate: the
+// NPC always buys, so the core takes that branch before any rule lookup.
+export type MarketType = "commodity" | "item";
 
 // Phase is derived from data age and market breadth, never from the
 // calendar: a server restart or a late scan would make dates lie.
@@ -79,22 +81,18 @@ export type MarketTypeRule = {
 // and a larger absolute edge because competition has arrived.
 export const marketTypeRules: Record<MarketPhase, Record<MarketType, MarketTypeRule>> = {
   ignition: {
-    vendor: { minListings: 1, minSellers: 1, minSpread: 0, maxSpread: 1, minNet: 0, minUnitProfit: 0 },
     commodity: { minListings: 1, minSellers: 1, minSpread: 0.2, maxSpread: 0.85, minNet: 5000, minUnitProfit: 50 },
     item: { minListings: 1, minSellers: 1, minSpread: 0.25, maxSpread: 0.8, minNet: 10000, minUnitProfit: 100 }
   },
   wave: {
-    vendor: { minListings: 1, minSellers: 1, minSpread: 0, maxSpread: 1, minNet: 0, minUnitProfit: 0 },
     commodity: { minListings: 3, minSellers: 2, minSpread: 0.12, maxSpread: 0.6, minNet: 10000, minUnitProfit: 75 },
     item: { minListings: 2, minSellers: 1, minSpread: 0.18, maxSpread: 0.7, minNet: 20000, minUnitProfit: 150 }
   },
   settle: {
-    vendor: { minListings: 1, minSellers: 1, minSpread: 0, maxSpread: 1, minNet: 0, minUnitProfit: 0 },
     commodity: { minListings: 5, minSellers: 3, minSpread: 0.08, maxSpread: 0.5, minNet: 20000, minUnitProfit: 100 },
     item: { minListings: 3, minSellers: 1, minSpread: 0.15, maxSpread: 0.6, minNet: 30000, minUnitProfit: 200 }
   },
   steady: {
-    vendor: { minListings: 1, minSellers: 1, minSpread: 0, maxSpread: 1, minNet: 0, minUnitProfit: 0 },
     commodity: { minListings: 8, minSellers: 4, minSpread: 0.06, maxSpread: 0.4, minNet: 30000, minUnitProfit: 125 },
     item: { minListings: 3, minSellers: 1, minSpread: 0.12, maxSpread: 0.5, minNet: 50000, minUnitProfit: 250 }
   }
