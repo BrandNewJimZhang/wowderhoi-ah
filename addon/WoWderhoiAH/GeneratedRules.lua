@@ -44,6 +44,9 @@ WAH.RULES = {
     minSamples = 48
   }
 },
+  fill = {
+  ownSalesWindowDays = 7
+},
   portfolio = {
   kellyFraction = 0.25,
   minKellySamples = 10,

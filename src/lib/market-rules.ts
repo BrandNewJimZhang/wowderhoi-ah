@@ -23,6 +23,11 @@ export const SCAN_INTERVAL_MINUTES = 15;
 // cockpit, the signal bundle and the production network.
 export const DEFAULT_BUDGET_COPPER = 1_000_000;
 
+// Evidence window for own fills. A collected sale is the only clean label
+// the client ever gives; the addon ledger and the terminal query must read
+// the same window or their fill estimates describe different populations.
+export const fillRules = { ownSalesWindowDays: 7 } as const;
+
 // Depth-aware sell front. The upper book is noise (thin, stale listings
 // nobody trades against), so sellP is the cheapest price with real
 // quantity behind it, then undercut by one copper.

@@ -227,7 +227,8 @@ end
 -- public disappearance is an inference. Inferred trades are excluded.
 function Ledger.salesSince(windowSeconds, nowTs)
   local state = Ledger.current()
-  local cutoff = (nowTs or time()) - (windowSeconds or 7 * 24 * 3600)
+  local defaultDays = (WAH.RULES and WAH.RULES.fill and WAH.RULES.fill.ownSalesWindowDays) or 7
+  local cutoff = (nowTs or time()) - (windowSeconds or defaultDays * 24 * 3600)
   local byItem = {}
   for _, trade in ipairs(state.trades or {}) do
     local quantity = trade.qty or 0
@@ -244,10 +245,13 @@ function Ledger.salesSince(windowSeconds, nowTs)
       if trade.t > record.lastAt then record.lastAt = trade.t end
     end
   end
-  -- The scan interval (15 minutes) is the resolution floor: several sales
-  -- reconciled in one pass still describe a rate over at least that long.
+  -- The scan interval is the resolution floor: sales reconciled in one
+  -- pass still describe a rate over at least that long. Read it from the
+  -- compiled rule so the in-game rate and the terminal's getOwnSales
+  -- cannot disagree if the cadence changes.
+  local scanFloorHours = (WAH.RULES and WAH.RULES.scanIntervalMinutes or 15) / 60
   for _, record in pairs(byItem) do
-    record.elapsedHours = math.max((record.lastAt - record.firstAt) / 3600, 0.25)
+    record.elapsedHours = math.max((record.lastAt - record.firstAt) / 3600, scanFloorHours)
   end
   return byItem
 end

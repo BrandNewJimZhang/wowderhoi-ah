@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { type MarketHistory } from "@/lib/market-data";
 import type { OwnSales } from "@/lib/core/types";
-import { SCAN_INTERVAL_MINUTES } from "@/lib/market-rules";
+import { SCAN_INTERVAL_MINUTES, fillRules } from "@/lib/market-rules";
 import type { MarketScope } from "@/lib/market-scope";
 
 export async function getMarketUniverse(scope: MarketScope | null): Promise<MarketHistory[]> {
@@ -92,7 +92,7 @@ export async function getPositions(scope: MarketScope | null): Promise<Record<nu
 // only. Inferred journal rows are excluded because they are disappearances,
 // not sales, and vendor/decompose channels are not market evidence.
 export async function getOwnSales(scope: MarketScope | null): Promise<OwnSales> {
-  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const since = new Date(Date.now() - fillRules.ownSalesWindowDays * 24 * 60 * 60 * 1000);
   const rows = await prisma.trade.findMany({
     where: {
       ...(scope ? { marketId: scope.id } : {}),
