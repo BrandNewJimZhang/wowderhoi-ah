@@ -48,7 +48,7 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
     const params = new URLSearchParams();
     if (next.query) params.set("q", next.query);
     if (next.category) params.set("cat", next.category);
-    if (next.sortKey !== "quantity") params.set("sort", next.sortKey);
+    if (next.sortKey !== "spreadPercent") params.set("sort", next.sortKey);
     if (next.sortAsc) params.set("dir", "asc");
     if (next.page > 1) params.set("page", String(next.page));
     const search = params.toString();
