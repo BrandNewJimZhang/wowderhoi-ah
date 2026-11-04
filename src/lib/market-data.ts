@@ -5,8 +5,6 @@ import type { DailySummary, Item } from "@prisma/client";
 // exercise: a test that does not care about the ladder should not have to
 // invent one.
 export type MarketSnapshot = {
-  id?: string;
-  itemId?: number;
   timestamp: Date;
   priced?: boolean;
   minPrice: number;
@@ -27,10 +25,7 @@ export type MarketSnapshot = {
 };
 
 export type MarketHistory = Omit<Item, "id" | "createdAt" | "updatedAt"> & {
-  id?: string;
-  createdAt?: Date;
-  updatedAt?: Date;
   snapshots: MarketSnapshot[];
-  dailySummaries: Array<Omit<DailySummary, "id" | "itemId" | "item" | "marketId"> & Partial<Pick<DailySummary, "id" | "itemId" | "marketId">>>;
+  dailySummaries: Array<Omit<DailySummary, "id" | "itemId" | "item" | "marketId">>;
 };
 
