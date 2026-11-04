@@ -659,12 +659,12 @@ function bed.setPoints(entries)
     ["TestRealm|Alliance"] = { firstScanAt = NOW - 7 * 86400, items = {} }
   } }
   for _, entry in ipairs(entries) do
-    local point = { t = {}, min = {}, sell = {}, p10 = {}, q = {}, n = {}, s = {}, d = {}, e = {} }
+    -- Same parallel arrays the addon writes: t, min, sell, q, e.
+    local point = { t = {}, min = {}, sell = {}, q = {}, e = {} }
     for index, close in ipairs(entry.closes) do
       point.t[index] = NOW - (#entry.closes - index) * 900
-      point.min[index], point.sell[index], point.p10[index] = close, close, close
-      point.q[index], point.n[index], point.s[index] = 100, 10, 2
-      point.d[index], point.e[index] = 0, 0
+      point.min[index], point.sell[index] = close, close
+      point.q[index], point.e[index] = 100, 0
     end
     series.markets["TestRealm|Alliance"].items[entry.itemId] = point
   end
