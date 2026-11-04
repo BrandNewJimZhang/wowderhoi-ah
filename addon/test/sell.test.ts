@@ -163,6 +163,19 @@ describe("owned auctions", () => {
     expect(lua.eval("WowTest.ns.Sell.state().owned[2].undercut")).toBe(true);
   });
 
+  it("does not infer sales from an owned list the client never queried", () => {
+    const lua = page();
+    lua.exec("WowTest.ns.Sell.select(2589)");
+    lua.exec("WowTest.ns.Sell.postSelected()");
+    lua.advance(61);
+    // Before QueryOwnedAuctions answers, the client's owned list is empty;
+    // refreshing the page must not read that as "every posting sold".
+    lua.exec("C_AuctionHouse.GetNumOwnedAuctions = function() return 0 end");
+    lua.exec("C_AuctionHouse.QueryOwnedAuctions = function() end");
+    lua.exec("WowTest.ns.Sell.refresh()");
+    expect(lua.number("WowTest.ns.Journal.count()")).toBe(2); // buy + post
+  });
+
   it("does not reconcile a posting younger than a minute", () => {
     const lua = page();
     lua.exec("WowTest.ns.Sell.select(2589)");

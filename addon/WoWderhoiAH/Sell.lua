@@ -33,6 +33,11 @@ local bagItems = {}
 local selected = nil
 local owned = {}
 local ownedLoaded = false
+-- True only after the client answered QueryOwnedAuctions. Before that the
+-- owned list is merely "whatever was last rendered", and treating its holes
+-- as sales would book every open posting as sold the first time the page
+-- opens.
+local ownedSynced = false
 local pendingPost = nil
 local cancelling = {}
 local lastError = nil
@@ -277,7 +282,7 @@ end
 -- certainly sold. The client exposes no sale event outside the mailbox, so
 -- this is recorded as an inferred sale at the posted price and labelled.
 local function reconcile()
-  if not ownedLoaded then return 0 end
+  if not ownedSynced or not ownedLoaded then return 0 end
   local ledger = WAH.Ledger and WAH.Ledger.current()
   if not ledger then return 0 end
   local present = {}
@@ -621,12 +626,9 @@ end
 
 function Sell.refresh()
   collectBag()
-  if mode == "owned" then
-    refreshOwned()
-  else
-    collectOwned()
-    reconcile()
-  end
+  -- Always ask the client for a fresh owned list; the response event is the
+  -- only place that may reconcile, because only then is the list complete.
+  refreshOwned()
   render()
 end
 
@@ -636,7 +638,7 @@ function Sell.setMode(nextMode)
     sell.sellTab:SetText(mode == "sell" and ("|cffffd100" .. L.SELL_TAB .. "|r") or L.SELL_TAB)
     sell.ownedTab:SetText(mode == "owned" and ("|cffffd100" .. L.OWNED_TAB .. "|r") or L.OWNED_TAB)
   end
-  if mode == "owned" then refreshOwned() else collectOwned() end
+  refreshOwned()
   render()
 end
 
@@ -680,6 +682,10 @@ events:SetScript("OnEvent", function(_, event, ...)
   if event == "AUCTION_HOUSE_CLOSED" then
     if sell then sell:Hide() end
     pendingPost = nil
+    -- The owned list belonged to the session that just closed; the next
+    -- page view must wait for a fresh query before reconciling again.
+    ownedSynced = false
+    ownedLoaded = false
     return
   end
   if event == "AUCTION_HOUSE_AUCTION_CREATED" then
@@ -691,6 +697,9 @@ events:SetScript("OnEvent", function(_, event, ...)
     return
   end
   if event == "OWNED_AUCTIONS_UPDATED" then
+    -- The client has now answered a QueryOwnedAuctions: this list is the
+    -- whole account's current postings, so reconcile may treat gaps as sales.
+    ownedSynced = true
     collectOwned()
     reconcile()
     if sell and sell:IsShown() then render() end
