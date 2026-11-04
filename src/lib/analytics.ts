@@ -1,14 +1,17 @@
 // Snapshot-based market signals. Every statistic here follows the same
 // philosophy as the in-game scanner: medians and percentiles over raw
 // snapshots, never means over daily aggregates — means inherit every
-// bait listing, and daily closes erase the hourly structure of the AH.
+// bait listing, and daily averages erase the hourly structure of the AH.
+// Where the snapshot retention does not reach back to the phase window,
+// older days contribute their closing sell front (a median-compatible
+// statistic), never a daily mean.
 //
 // The anchor is the sell front. P10 remains a statistic; it is not a
 // reference price and must not drive a recommendation.
 import type { MarketHistory, MarketSnapshot } from "@/lib/market-data";
 import { phaseWindowHours } from "@/lib/phase";
 import type { MarketPhase } from "@/lib/market-rules";
-import { realPrice, type PriceIndex } from "@/lib/deflator";
+import { realPrice, utcDateKey, type PriceIndex } from "@/lib/deflator";
 
 export type MarketSignal = {
   itemId: number;
@@ -59,7 +62,20 @@ export function buildMarketSignal(
   const windowHours = phaseWindowHours(phase) || 168;
   const windowStart = now.getTime() - windowHours * 60 * 60 * 1000;
   const windowSnapshots = snapshots.filter((snapshot) => snapshot.timestamp.getTime() >= windowStart);
-  const prices = windowSnapshots.map(sellOf).filter((value) => value > 0);
+  const snapshotPrices = windowSnapshots.map(sellOf).filter((value) => value > 0);
+  // The universe query keeps only the last 48 snapshots (about 12 hours),
+  // which is shorter than the wave, settle and steady windows. Days older
+  // than the snapshot window contribute their closing sell front — the
+  // same statistic the median is defined over — so a 7-day reference is
+  // not silently truncated to half a day. The current day's close is
+  // derived from these snapshots and is never counted twice.
+  const oldestSnapshotDay = snapshots.length > 0 ? utcDateKey(snapshots[0].timestamp) : null;
+  const dailyPrices = item.dailySummaries
+    .filter((summary) => summary.date.getTime() >= windowStart)
+    .filter((summary) => oldestSnapshotDay === null || utcDateKey(summary.date) < oldestSnapshotDay)
+    .map((summary) => summary.closePrice)
+    .filter((value) => value > 0);
+  const prices = [...dailyPrices, ...snapshotPrices];
   const sellPrice = sellOf(latest);
   const sellRef = prices.length > 0 ? median(prices) : sellPrice;
   // The sample count must describe the median's inputs, not every row in the

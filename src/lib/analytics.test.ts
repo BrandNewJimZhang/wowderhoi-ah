@@ -79,6 +79,35 @@ describe("buildMarketSignal", () => {
     expect(signal.sellRef).toBe(100); // lower median of [100, 110]
   });
 
+  it("extends the reference window with daily closes beyond snapshot retention", () => {
+    // The universe query only keeps the last 48 snapshots (about 12 hours
+    // at the scan cadence), so a 7-day steady window could never be built
+    // from snapshots alone. Older days arrive as their closing sell front;
+    // the current day's close is derived from the same scans and must not
+    // be counted twice.
+    const item = history([
+      { daysAgo: 1 / 24, sellPrice: 100 },
+      { daysAgo: 2 / 24, sellPrice: 100 },
+      { daysAgo: 3 / 24, sellPrice: 100 }
+    ]);
+    item.dailySummaries = [
+      { date: new Date("2026-07-20T00:00:00Z"), openPrice: 400, closePrice: 400, highPrice: 420, lowPrice: 380, volume: 10 },
+      { date: new Date("2026-07-21T00:00:00Z"), openPrice: 400, closePrice: 400, highPrice: 420, lowPrice: 380, volume: 10 },
+      { date: new Date("2026-07-22T00:00:00Z"), openPrice: 400, closePrice: 400, highPrice: 420, lowPrice: 380, volume: 10 },
+      { date: new Date("2026-07-23T00:00:00Z"), openPrice: 400, closePrice: 400, highPrice: 420, lowPrice: 380, volume: 10 },
+      // Today's close comes from these snapshots; counting it again would
+      // let one scan generation masquerade as a day of history.
+      { date: new Date("2026-07-24T00:00:00Z"), openPrice: 999, closePrice: 999, highPrice: 999, lowPrice: 999, volume: 10 }
+    ];
+    const steady = buildMarketSignal(item, now, { phase: "steady" });
+    expect(steady.sellRef).toBe(400);
+    expect(steady.sellSamples).toBe(7); // 4 daily closes + 3 snapshots
+    // A 6-hour wave window excludes every older daily close.
+    const wave = buildMarketSignal(item, now, { phase: "wave" });
+    expect(wave.sellRef).toBe(100);
+    expect(wave.sellSamples).toBe(3);
+  });
+
   it("measures spread at the current sell front, not the window reference", () => {
     const signal = buildMarketSignal(
       history([
