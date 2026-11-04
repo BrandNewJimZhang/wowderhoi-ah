@@ -12,9 +12,11 @@ The market snapshot machine becomes a closed-loop goblin system.
   runs the same file through fengari; a parity test compares both paths.
 - **Scan pipeline v4**: every replicate field (bid, owner, sale status,
   remaining time), top-8 price ladder, distinct sellers, expiry buckets,
-  bid-only demand, and a tier-level inferred flow range. Layered series
-  retention with a 60k point cap, `SaveAddOns` after each scan, player
-  search quieting and timeout backoff.
+  bid-only demand, and a tier-level inferred flow interval: the lower edge
+  is units that left an owner (sales + cancels, repricing excluded), the
+  upper edge is units that left a price key (also repricing). Layered
+  series retention with a 60k point cap, `SaveAddOns` after each scan,
+  player search quieting and timeout backoff.
 - **Journal and ledger**: append-only actions (buy/post/cancel/sold/
   expire/craft/vendor/disenchant), replayed into FIFO lots, positions,
   escrow, fees, lost deposits and realized P&L. The terminal replays the
@@ -37,6 +39,34 @@ The market snapshot machine becomes a closed-loop goblin system.
 - **Performance gates** for the core, journal, LP, scan validation and
   SavedVariables size.
 - Design documents: `docs/economic-system.md`, `docs/launch-runbook.md`.
+
+### Fixed
+
+- **Fill evidence is labelled**: own auction sales (≥3 samples) drive the
+  hazard first, public disappearances second, the phase prior last; every
+  row carries `fillBasis`, and the item chart derives its curve from the
+  same core output instead of a second formula.
+- **Spread is executable**: gates measure the live sell front against the
+  cheapest unit, never a historical median; ignition ignores pre-open
+  history entirely.
+- **Expiry loss** is the deposit plus the gap between cost and the NPC
+  floor, not the whole cost — the goods come back.
+- **Terminal reads are market-scoped**: snapshots, daily summaries,
+  positions, trades and decisions are filtered by `Market`
+  (realm + faction); `AQT_MARKET` can pin a market explicitly.
+- **Own-fill labels** flow from the journal ledger in game and the `Trade`
+  table on the terminal with identical filters (auction channel, inferred
+  rows excluded, 7-day window).
+- Fixed a shadowed locale key that printed a literal `%s` in `/wah`
+  status, and money formatting in the same status line.
+
+### Removed
+
+- Legacy P10 radar thresholds (`WAH.RADAR`, `dealRadarRules`), the
+  thirteen-recipe TBC crafting table, demo history, event-study and
+  experiment-summary helpers, and dead fields (`med7`, `distinct`,
+  `p5`/`p10` in the core contract, write-only recipe columns,
+  `Market.openedAt`, unused locale keys and Ledger/Journal helpers).
 
 ### Changed
 
