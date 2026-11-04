@@ -33,10 +33,14 @@ describe("forever replicate scan v4", () => {
     expect(lua.number("WoWderhoiAH_ScanData.items[2589].numAuctions")).toBe(2);
     expect(lua.number("WoWderhoiAH_ScanData.items[2589].vendorP")).toBe(100);
     expect(lua.number("WoWderhoiAH_ScanData.total")).toBe(2);
-    const p10 = lua.number(
-      "WoWderhoiAH_Series.markets['TestRealm|Alliance'].items[2589].p10[1]"
+    const seriesSell = lua.number(
+      "WoWderhoiAH_Series.markets['TestRealm|Alliance'].items[2589].sell[1]"
     );
-    expect(p10).toBe(1000);
+    expect(seriesSell).toBe(1000);
+    // The series stores only the arrays its consumers read; P10, listing
+    // count, seller count and inferred flow live on the scan snapshot and
+    // are imported from there, not duplicated per history point.
+    expect(lua.eval("WoWderhoiAH_Series.markets['TestRealm|Alliance'].items[2589].p10")).toBeNull();
     expect(lua.number("WowTest.savedCount")).toBeGreaterThan(0);
   });
 

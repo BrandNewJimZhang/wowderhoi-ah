@@ -334,7 +334,7 @@ local function renderTime(entry, windowHours)
   local minPrice, maxPrice = math.huge, 0
   local maxSupply = 0
   for _, point in ipairs(points) do
-    local sell = point.sell or point.c
+    local sell = point.sell
     local low = point.min or sell
     if sell < minPrice then minPrice = sell end
     if low < minPrice then minPrice = low end
@@ -401,7 +401,7 @@ local function renderTime(entry, windowHours)
       dotCount = dotCount + 1
       local dot = ensureDot(dotCount)
       dot:ClearAllPoints()
-      dot:SetPoint("CENTER", chart, "BOTTOMLEFT", xFor(point.t), yFor(point.sell or point.c))
+      dot:SetPoint("CENTER", chart, "BOTTOMLEFT", xFor(point.t), yFor(point.sell))
       dot:SetColorTexture(1, 0.8, 0.3, 1)
       dot:Show()
     end
