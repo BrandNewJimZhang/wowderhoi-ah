@@ -149,17 +149,14 @@ model Decision {
 }
 
 // Forever recipe network, imported from data/recipes.forever.json.
-// `products` is a list because some recipes produce several items; the
-// first product is duplicated into productItemId for cheap joins.
+// `products` is a list because some recipes produce several items; the LP
+// only reads the fields below, so the table does not mirror source-only
+// metadata (effect, rank, skill-up range, expansion).
 model Recipe {
   id              Int      @id
   name            String
   profession      String
   category        String
-  expansion       String   @default("forever")
-  effect          String?
-  minRank         Int?     @map("min_rank")
-  skillUpRange    Json?    @map("skill_up_range")
   materials       Json // [{ itemId, name, qty }]
   products        Json // [{ itemId, name, qty, quality?, ilvl? }]
   createdAt       DateTime @default(now()) @map("created_at")

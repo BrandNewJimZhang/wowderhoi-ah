@@ -18,10 +18,6 @@ async function main() {
     name: recipe.name,
     profession: recipe.profession,
     category: recipe.category,
-    expansion: recipe.expansion,
-    effect: recipe.effect,
-    minRank: recipe.minRank ?? undefined,
-    skillUpRange: recipe.skillUpRange ?? undefined,
     materials: recipe.materials,
     products: recipe.products,
   }));
