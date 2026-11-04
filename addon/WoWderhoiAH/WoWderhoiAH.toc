@@ -11,6 +11,7 @@
 
 Locale.lua
 GeneratedRules.lua
+Core.lua
 Settings.lua
 WoWderhoiAH.lua
 GUI.lua

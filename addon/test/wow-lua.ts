@@ -10,6 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { lua, lauxlib, lualib, to_luastring, to_jsstring } from "fengari";
+import { fromLua, toLua } from "@/lib/core/lua-bridge";
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ADDON_DIR = path.join(TEST_DIR, "..", "WoWderhoiAH");
@@ -23,22 +24,7 @@ function tocFiles() {
     .filter((line) => line.toLowerCase().endsWith(".lua"));
 }
 
-// JS fixture -> Lua table literal. Arrays become sequences, objects become
-// string-keyed tables; itemIds travel as a field, never as a key, because a
-// JS object key is a string and the addon indexes by number.
-export function toLua(value: unknown): string {
-  if (value === null || value === undefined) return "nil";
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  // JSON leaves non-ASCII as raw UTF-8, which Lua reads verbatim. Control
-  // characters would come out as \uXXXX, which Lua cannot parse -- no
-  // fixture needs them, and the load would fail loudly if one did.
-  if (typeof value === "string") return JSON.stringify(value);
-  if (Array.isArray(value)) return `{${value.map(toLua).join(",")}}`;
-  const fields = Object.entries(value as Record<string, unknown>)
-    .filter(([, entry]) => entry !== undefined)
-    .map(([key, entry]) => `[${JSON.stringify(key)}]=${toLua(entry)}`);
-  return `{${fields.join(",")}}`;
-}
+export { toLua };
 
 export type WowLua = ReturnType<typeof loadAddon>;
 
@@ -101,6 +87,17 @@ export function loadAddon(options?: { locale?: string }) {
     text: (expression: string) => String(evaluate(expression)),
     number: (expression: string) => Number(evaluate(expression)),
 
+    // Run the shipped decision core inside the addon harness and read the
+    // result back as JS. The terminal runs the same file through fengari in
+    // src/lib/core/run-core.ts; a parity test compares the two.
+    coreEval: (input: unknown): unknown => {
+      exec(`WowTest.coreResult = WowTest.ns.Core.evaluate(${toLua(input)})`);
+      lua.lua_getglobal(state, to_luastring("WowTest"));
+      lua.lua_getfield(state, -1, to_luastring("coreResult"));
+      const result = fromLua(state, lua.lua_gettop(state));
+      lua.lua_pop(state, 2);
+      return result;
+    },
     setScan: (items: unknown[]) => exec(`WowTest.setScan(${toLua(items)})`),
     setPoints: (entries: unknown[]) => exec(`WowTest.setPoints(${toLua(entries)})`),
     runScan: (items: unknown[]) => exec(`WowTest.runScan(${toLua(items)})`),
