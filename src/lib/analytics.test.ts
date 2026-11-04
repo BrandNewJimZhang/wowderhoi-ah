@@ -66,6 +66,19 @@ describe("buildMarketSignal", () => {
     expect(signal.changePercent).toBeCloseTo(((110 - 120) / 120) * 100, 5);
   });
 
+  it("counts only priced observations in the window sample size", () => {
+    const signal = buildMarketSignal(
+      history([
+        { daysAgo: 3, sellPrice: 100 },
+        { daysAgo: 2, sellPrice: 0 },
+        { daysAgo: 0, sellPrice: 110 }
+      ]),
+      now
+    );
+    expect(signal.sellSamples).toBe(2); // the zero-priced row is not evidence
+    expect(signal.sellRef).toBe(100); // lower median of [100, 110]
+  });
+
   it("measures spread at the current sell front, not the window reference", () => {
     const signal = buildMarketSignal(
       history([

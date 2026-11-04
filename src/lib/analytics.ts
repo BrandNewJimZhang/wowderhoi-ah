@@ -62,7 +62,9 @@ export function buildMarketSignal(
   const prices = windowSnapshots.map(sellOf).filter((value) => value > 0);
   const sellPrice = sellOf(latest);
   const sellRef = prices.length > 0 ? median(prices) : sellPrice;
-  const sellSamples = windowSnapshots.length;
+  // The sample count must describe the median's inputs, not every row in the
+  // window: a legacy or demand-only row carries no usable sell price.
+  const sellSamples = prices.length;
   const previousSell = previous ? sellOf(previous) : 0;
   return {
     itemId: item.itemId,
