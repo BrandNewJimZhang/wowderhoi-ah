@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { buildMarketSignal, buildWeekdaySeasonality } from "@/lib/analytics";
 import { getItemDetail, getWatchedItemIds } from "@/lib/repositories";
+import { getMarketSignals } from "@/lib/market-signals";
 import { prisma } from "@/lib/prisma";
 import { formatPercent } from "@/lib/utils";
 import { Coins } from "@/components/coins";
@@ -23,7 +24,9 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
   ]);
   const now = new Date();
   const hasSnapshots = item.snapshots.length > 0;
-  const signal = hasSnapshots ? buildMarketSignal(item, now) : null;
+  const bundle = await getMarketSignals();
+  const signal = bundle.signals.find((entry) => entry.itemId === numericItemId)
+    ?? (hasSnapshots ? buildMarketSignal(item, now, { phase: bundle.phase, index: bundle.priceIndex }) : null);
   const seasonality = buildWeekdaySeasonality(item.dailySummaries);
   const weekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
   const latestSnapshot = item.snapshots[item.snapshots.length - 1];
@@ -134,6 +137,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
                     <div><div className="text-terminal-muted">价差</div><div className={signal.spreadPercent >= 15 ? "text-terminal-green" : ""}>{signal.spreadPercent.toFixed(0)}%</div></div>
                     <div><div className="text-terminal-muted">趋势</div><div className={signal.trendPercent >= 0 ? "text-terminal-red" : "text-terminal-green"}>{formatPercent(signal.trendPercent)}</div></div>
                     <div><div className="text-terminal-muted">P10（统计）</div><div><Coins copper={signal.price} /></div></div>
+                    <div><div className="text-terminal-muted">真实卖价</div><div>{signal.realSellPrice !== null ? <Coins copper={signal.realSellPrice} /> : "—"}</div></div>
                     <div><div className="text-terminal-muted">卖家数</div><div>{signal.sellerCount}{signal.sellersInvisible ? "（不可见）" : ""}</div></div>
                     <div><div className="text-terminal-muted">环比上次</div><div className={signal.changePercent >= 0 ? "text-terminal-red" : "text-terminal-green"}>{formatPercent(signal.changePercent)}</div></div>
                     <div><div className="text-terminal-muted">在售量</div><div>{signal.quantity.toLocaleString()}</div></div>

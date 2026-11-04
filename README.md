@@ -11,152 +11,195 @@
 
 **English** | [中文](#中文)
 
-Auction house price intelligence and short-swing trading kit for
+Auction house intelligence and a closed-loop goblin trading system for
 World of Warcraft: Forever (client 1.60.1, Interface 16001), with a
 maintenance line for TBC Anniversary 2.5.6.
 
 </div>
 
-Two parts, one fully local data loop — no Battle.net API:
+The system is built around one loop:
 
-- **In-game addon** (`addon/WoWderhoiAH`) — replicates the auction house,
-  accumulates price history scan-to-scan, and provides tooltip market
-  data, dual-window price charts, and a standalone **WAH trade page**:
-  deal radar, verified item-auction buying, commodity market buying, and
-  a `/wahprice` sell guide. The addon *is* the data backend.
-- **Desktop terminal** (Next.js 16) — a Bloomberg-style dark,
-  high-density interface: market monitor table, intraday/daily charts,
-  price alerts and watchlists, crafting profit rankings.
+```text
+events -> state -> decision -> action -> learning
+```
 
-New here? Start with [docs/first-day.md](docs/first-day.md) — the full
-path from installing the addon to your first real price curve, ~30 min.
+- **Events**: full auction-house scans (order book, sellers, expiry,
+  bid-only demand) plus the player's own buys, postings, cancellations,
+  sales, expiries, crafts, vendor sales and disenchants.
+- **State**: positions from a replayable journal, deployable capital,
+  capacity, and beliefs about fill probability and competition.
+- **Decision**: one Lua decision core, `Core.lua`, runs in game and in the
+  terminal through fengari. It prices the sell front, the ladder cost,
+  executable quantity, net profit and fill probability under the current
+  phase's gates.
+- **Action**: an in-game cockpit with conditional buy/sell plans and a
+  sell page; a terminal cockpit with the same action list.
+- **Learning**: own fills are the only clean label. Public disappearances
+  are a bounded prior; inferred sales are labeled as inferred. The review
+  page shows decision matching, alpha decay and the next controlled
+  experiment.
+
+Read [docs/economic-system.md](docs/economic-system.md) for the design and
+[docs/launch-runbook.md](docs/launch-runbook.md) for the first-day and
+first-week operating procedure.
 
 ## Branches
 
-The repository has two long-lived targets and no `main`:
+There is no `main`:
 
 | Branch | Target client | Role |
 |---|---|---|
 | `forever` (default) | WoW Forever 1.60.1, Interface 16001 | Development trunk |
 | `anniversary` | TBC Anniversary 2.5.6, Interface 20506 | Maintenance line |
 
-Shared work — the terminal, pricing math, radar rules, tooltip and chart
-logic — lands on `forever` first and is merged into `anniversary`.
-Client-specific files (`WoWderhoiAH.toc`, the scan acquisition and buy
-paths in the addon, and the branch's docs) are resolved in favour of the
-target branch. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Shared work — the terminal, the decision core, pricing math, rules,
+tooltip and chart logic — lands on `forever` first and is merged into
+`anniversary`. Client-specific files (the `.toc`, scan acquisition,
+buy/sell API paths) stay per branch. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Features
+## In game
 
-### Deal radar (same rules in game and terminal)
+- `/wahscan` — `C_AuctionHouse.ReplicateItems()` full scan. Pipeline v4
+  stores the top-8 price ladder, distinct sellers, expiry buckets,
+  bid-only demand and an inferred flow range from the previous scan.
+- `/wahauto` — rescan every ~15 minutes while the AH stays open, pausing
+  while the player searches and backing off after a timeout.
+- `/wahphase ignition|wave|settle|steady|auto` — override the phase when
+  the automatic breadth/age rule lags the real market.
+- `/wahtrade` — cockpit: executable-profit radar with buy quantity, ladder
+  price, suggested sell price, net profit and fill probability; vendor
+  arbitrage first; live price book and verified buying.
+- `/wahsell` — sell page: bag stacks, sell front, deposit for 12/24/48
+  hours, sale and expiry breakevens, undercut-and-post, owned auctions,
+  undercut warnings, cancel/requote. Posting uses `PostItem` /
+  `PostCommodity`; if the client blocks the call, the page degrades to a
+  manual price assistant and records nothing.
+- `/wahprice` — hold an item on the cursor (or pass a link): sell front,
+  list price, ladder, supply, sell-front median and trend.
+- `/wahdiag` — the live-client checklist: time-left semantics, owner
+  visibility, `SaveAddOns`, posting APIs, deposit arithmetic, owned
+  auctions, throttle, journal/ledger totals and phase.
+- Tooltip: sell front first, then ladder, supply/sellers, inferred flow,
+  P10 as a statistics line, and trend against the sell-front median.
+- Chart: order-book staircase by default; windowed trend (1h/6h/24h/7d/all)
+  with sell-front and minimum lines, supply bars, log axis for wide
+  ranges and breaks across scanning gaps.
 
-- **Vendor arbitrage**: listings below the NPC sell price — zero market
-  risk, no history needed.
-- **P10 median discount**: min price 15%+ below the 7-day P10 median,
-  gated by liquidity (3+ auctions), history depth (3+ scans), and
-  absolute profit (5s+) — filters out discounts nobody will ever buy.
-- Sorting: vendor arbitrage first, then by absolute profit. The in-game
-  WAH page searches straight from a radar row and verifies the live price
-  before buying.
+Every action is written to `WoWderhoiAH_Journal`. `Ledger.lua` replays it
+into lots, FIFO positions, open postings, escrow, fees, lost deposits and
+realized P&L. A vanished owned auction older than a minute is booked as
+an **inferred** sale at the posted price and labelled everywhere.
 
-### Price statistics
+## Terminal
 
-- Every scan produces a **quantity-weighted percentile ladder**
-  (min/P5/P10): P10 is the market price; min/P5 mark the very bottom of
-  the book. The upper book is thin and stale — nothing trades against
-  it — so only the bottom decile reflects real prices. Percentiles shrug
-  off bait listings that wreck any mean.
-- **Sell front** (depth-aware): the cheapest price with real quantity
-  behind it — undercutting *it* matters; undercutting a lone dump
-  listing just gives gold away.
-- Price history accumulates inside the addon (`WoWderhoiAH_Points`,
-  7 days × 192 points); the 7-day P10 median, trend, and range all
-  derive from it. No desktop write-back.
+- **Cockpit** (`/`): phase banner, the shared action list, executable
+  opportunities, market monitor, alerts, watchlist, crafting snapshot and
+  the event calendar.
+- **Market table**: sell price, minimum, sell-front median, spread,
+  trend, change, supply and listings; server-side filter/sort/paging.
+- **Item page**: order-book ladder, 24-hour fill-probability curve,
+  windowed intraday trend, daily candles and weekday seasonality.
+- **Portfolio** (`/portfolio`): cash from the last scan, position value
+  and cost, unrealized and realized P&L, fees, recent trades with the
+  inferred flag.
+- **Manufacturing** (`/recipes`): 2,595 Forever recipes solved as a linear
+  program with profession, material-supply and budget constraints; dual
+  variables are shown as shadow prices; LP volumes are floored and profit
+  is recomputed from the integer plan.
+- **Review** (`/review`): decision matching, alpha-decay windows, the next
+  listing experiment, and the discipline that thresholds are calibrated
+  from own fills, not from public asks.
 
-### In game
-
-- `/wahscan` full scan: `C_AuctionHouse.ReplicateItems()` replicates
-  every listing, commodity and item auction alike in one server response;
-  `/wahauto` auto-rescan (~every 15 min) while the AH stays open.
-- Tooltip market data: sell front leads (orange), then min price,
-  P5/P10, supply, 7-day P10 median and trend.
-- Price charts beside the auction house: last 3 hours / last 48 hours,
-  plotting the P10 series.
-- **WAH trade page** (addon compartment button, `/wahtrade`, or
-  automatically with the AH): deal radar and a live price book. Item
-  auctions are bought out by auction ID after re-reading the live price;
-  commodities are purchased by quantity at the verified market price,
-  with the client's own confirmation dialog showing the final total.
-- **`/wahprice`** sell guide: hold an item on the cursor (or pass a link)
-  and print the sell front, min, P5/P10, supply, 7-day median and trend.
-  The modern client has no sell-slot API an addon can read, so posting
-  stays a manual step.
-
-### Terminal
-
-- Market monitor: search, category filter, sorting, server-side paging —
-  handles real 2400+ item scans.
-- Item terminal page: intraday (scan-to-scan) chart, daily candles,
-  day-of-week seasonality.
-- Price alert rules and watchlists.
-- Crafting profit ranking (curated recipe table; verify before trusting
-  large positions).
-- Self-hosted item icons (`npm run icons:fetch`, one-shot).
-
-## Stack
-
-Next.js 16 + React Server Components + TypeScript · TailwindCSS ·
-Prisma + SQLite · Recharts · WoW Lua addon (Interface 16001).
-
-## Development
+## Data pipeline
 
 ```powershell
 Copy-Item .env.example .env
 npm install
 npm run db:push
-npm run db:seed   # calendar only; market data always comes from real scans
+npm run recipes:import   # project data/recipes.forever.json into SQLite
 npm run dev
 ```
 
-Open `http://localhost:3000`. Tests and perf gates:
-
-```powershell
-npm run test        # vitest, including the addon Lua harness
-npm run typecheck
-npm run perf:seed   # deterministic synthetic market (leaves dev.db alone)
-npm run perf:run    # page/import latency budget gate
-```
-
-## Data pipeline (in-game addon)
-
-1. Copy `addon/WoWderhoiAH` into the Forever client's addon directory,
-   e.g. `<game dir>\Interface\AddOns\WoWderhoiAH` (the exact data folder
-   is whatever the launcher uses; the file `WoWderhoiAH.toc` must sit
-   directly inside `WoWderhoiAH`).
-2. In game, open the AH and run `/wahscan` (or enable `/wahauto`).
-3. Log out briefly or `/reload` — the client only writes
-   SavedVariables to disk on exit/reload.
-4. Point `AQT_SAVEDVARS_PATH` in `.env` at that file, then:
+In game, scan (`/wahscan`), then log out or `/reload` once, or rely on the
+addon's `C_AddOns.SaveAddOns()` after each scan. Point
+`AQT_SAVEDVARS_PATH` at the SavedVariables file and run:
 
 ```powershell
 npm run addon:watch
 ```
 
-The watcher POSTs every new scan to `/api/import/addon-scan`;
-duplicate scan timestamps are skipped automatically.
+The watcher posts `{ scan, journal }` to `/api/import/addon-scan`. The
+import is transactional: the snapshot, daily OHLC (built from the sell
+front), positions and trades land all-or-nothing; duplicate scan
+timestamps are skipped. `WoWderhoiAH_Capture` is the previous scan's
+tier-level identity table, used only for the flow estimate.
+
+### Recipe data
+
+```powershell
+npm run recipes:fetch    # public wuxianwow MCP -> data/recipes.forever.json
+npm run recipes:import   # dataset -> Recipe table
+```
+
+The committed dataset contains all 2,595 recipes (1,147 new in 1.60) with
+authoritative material and product item IDs. The importer replaces the
+table on every run, so a partial import cannot masquerade as the
+catalogue.
+
+## Development
+
+```powershell
+npm test             # vitest, including the shipped Lua in the Forever stub
+npm run typecheck
+npm run build
+npm run perf:seed    # deterministic synthetic market, leaves dev.db alone
+npm run perf:run     # page/import latency budgets
+```
+
+The Lua harness (`addon/test`) loads the addon files verbatim in the order
+the `.toc` declares, so the code under test is the code that ships.
+`Core.lua` is also loaded by `src/lib/core/run-core.ts`; a parity test
+compares the two load paths.
+
+Performance gates cover 866-item core evaluation, core-input assembly,
+5,000-event journal replay, a 120-candidate LP solve, 9,000-item scan
+validation and the SavedVariables size budget. The core budget is looser
+than the client frame budget because the terminal runs Lua in fengari;
+the addon runs the same file natively.
 
 ## Key modules
 
-- `addon/WoWderhoiAH/WoWderhoiAH.lua` — replicate scanner, quantity-weighted percentiles, scan-to-scan history.
-- `addon/WoWderhoiAH/Trade.lua` — standalone WAH page: deal radar, live price book, item/commodity buying.
-- `addon/WoWderhoiAH/GUI.lua` — tooltip injection, `/wahprice`, and the 3h/48h price charts.
-- `scripts/watch-savedvars.ts` — SavedVariables watcher and importer.
-- `src/lib/addon-scan.ts` — SavedVariables parsing and scan validation (single entry point).
-- `src/lib/analytics.ts` — 7d P10 median signals, deal radar rules, seasonality.
-- `src/app/page.tsx` — market overview: deal radar, monitor table, alerts/watchlist/crafting.
-- `src/app/items/[itemId]/page.tsx` — item terminal, intraday and daily charts.
-- `scripts/perf/` — deterministic perf benchmarks and latency budget gates.
-- `docs/in-game-design-review.md` — feature-design review and roadmap.
+| Path | Role |
+|---|---|
+| `addon/WoWderhoiAH/Core.lua` | Pure decision core: sell front, ladder, executable quantity, fill probability, phase gates, conditional plans |
+| `addon/WoWderhoiAH/WoWderhoiAH.lua` | v4 replicate scanner, order book, series retention, flow inference |
+| `addon/WoWderhoiAH/Journal.lua` / `Ledger.lua` | Append-only actions and the FIFO/P&L projection |
+| `addon/WoWderhoiAH/Trade.lua` / `Sell.lua` | Cockpit, price book, sell page, owned auctions |
+| `addon/WoWderhoiAH/GUI.lua` | Tooltip, order-book/trend charts, `/wahdiag` |
+| `src/lib/core/run-core.ts` | fengari runner for the shipped `Core.lua` |
+| `src/lib/market-rules.ts` | Single rule source: phases, market types, fees, sell front |
+| `src/lib/analytics.ts` / `phase.ts` / `deflator.ts` | Signals, phase, real prices |
+| `src/lib/journal.ts` | Journal parser and replay, parity-tested against Lua |
+| `src/lib/craft-lp.ts` / `recipes.ts` | Production network and the Forever catalogue |
+| `src/lib/portfolio.ts` / `off-policy.ts` / `experiments.ts` | Sizing, evaluation, controlled experiments |
+| `src/app/api/import/addon-scan/route.ts` | Transactional scan + journal import |
+| `scripts/fetch-recipes.ts` / `import-recipes.ts` | Recipe dataset refresh and projection |
+| `scripts/perf/` | HTTP-level latency budget gates |
+| `docs/economic-system.md` / `docs/launch-runbook.md` | Design and operating procedure |
+
+## Limits and safety
+
+- The client exposes **no sale-history API**. Own fills and posted-price
+  inferences are the only demand labels; everything else is a range.
+- `PostItem`, `PostCommodity` and `CancelAuction` are marked
+  `HasRestrictions`. The addon never retries a blocked call and never
+  pretends a listing exists.
+- There is no automatic shopping or automatic posting loop. Every
+  purchase and posting goes through the client's confirmation.
+- Public deal feeds are not alpha. The edge comes from execution,
+  private fills, production capacity and capital allocation.
+- Phase thresholds and production capacities are starting priors. They
+  are calibrated from real fills and are expected to change.
 
 ## License & contributing
 
@@ -170,64 +213,60 @@ an issue; see [CONTRIBUTING.md](CONTRIBUTING.md). Security notes in
 
 ## 中文
 
-[English](#wowderhoi-ahelper) | **中文**
+**English** | [中文](#中文)
 
 </div>
 
-《魔兽世界：无限》（WoW Forever，客户端 1.60.1，Interface 16001）的拍卖行价格情报与短线交易工具；仓库另保留 TBC 周年服 2.5.6 维护线。
+《魔兽世界：无限》（WoW Forever，客户端 1.60.1，Interface 16001）的拍卖行情报与**闭环地精交易系统**；仓库另保留 TBC 周年服 2.5.6 维护线。
 
-两个部件，一条本地数据闭环，不依赖 Battle.net API：
+### 一句话
 
-- **游戏内插件**（`addon/WoWderhoiAH`）——复制整个拍卖行、逐次积累价格历史，提供 tooltip 行情、双窗口价格走势图，以及独立的 **WAH 交易页**：捡漏雷达、核验后按拍卖 ID 一口价购买、按数量购买商品、`/wahprice` 卖价指引。插件即数据后端。
-- **桌面终端**（Next.js 16）——类 Bloomberg 的深色高密度界面：市场监控表、盘中/日线图表、预警与关注列表、制造利润排行。
+不是更准的雷达，而是把玩家经济行为做成一个闭环：
 
-新用户从 [docs/first-day.md](docs/first-day.md) 开始：从安装插件到看到第一条真实价格曲线的完整路径，约 30 分钟。
+```text
+事件 → 状态 → 决策 → 行动 → 学习
+```
+
+- **事件**：全量拍卖行扫描（盘口、卖家、到期、竞价需求）+ 玩家自己的买/挂/撤/成交/流拍/制造/卖店/分解。
+- **状态**：可从 Journal 重放的头寸、可动用资金、产能、成交概率与竞争信念。
+- **决策**：唯一一份 `Core.lua`，游戏内与桌面通过 fengari 运行同一份代码；按当前阶段门槛计算卖价前沿、阶梯成本、可执行数量、净利与成交率。
+- **行动**：游戏内驾驶舱（条件买卖计划）+ 卖出页；桌面对应同一份行动清单。
+- **学习**：只有自己的成交是干净标签；公共消失只是区间先验，推断成交处处标注。复盘页展示决策匹配、alpha 衰减与下一次受控实验。
+
+完整设计见 [docs/economic-system.md](docs/economic-system.md)，开服与首周操作见 [docs/launch-runbook.md](docs/launch-runbook.md)。
 
 ### 分支
 
-仓库保留两个长期目标，不再有 `main`：
+不再有 `main`：`forever`（默认，无限 1.60.1）与 `anniversary`（TBC 2.5.6 维护线）。共享代码先落 `forever`，再合并进 `anniversary`；客户端专属文件（`.toc`、扫描采集、买卖 API 路径）各自保留。
 
-| 分支 | 目标客户端 | 角色 |
-|---|---|---|
-| `forever`（默认） | 无限 1.60.1，Interface 16001 | 开发主线 |
-| `anniversary` | TBC 周年服 2.5.6，Interface 20506 | 维护线 |
+### 游戏内
 
-共享代码（桌面终端、定价数学、雷达规则、tooltip 与图表）先落到 `forever`，再合并进 `anniversary`；客户端专属文件（`WoWderhoiAH.toc`、插件的扫描采集与购买路径、各分支文档）按目标分支保留。详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+- `/wahscan` 全量扫描（v4：盘口阶梯、卖家、到期桶、竞价需求、消失量区间）；`/wahauto` 自动重扫；`/wahphase` 手动阶段。
+- `/wahtrade` 驾驶舱：可执行净利榜（可买数量 / 买价 / 建议卖价 / 净利 / 成交率），NPC 必赚优先；实时价格簿与核验购买。
+- `/wahsell` 卖出与在售：押金 12/24/48 小时、售出/流拍保本价、压价上架、被压价提示、撤单重挂；客户端拦截时降级为价格助手，不假装成功。
+- `/wahprice` 卖价指引；`/wahdiag` 十项开服排雷。
+- 提示框以建议卖价领衔；图表默认盘口阶梯，走势图支持 1h/6h/24h/7d/全部、对数轴与扫描空洞断线。
 
-### 核心功能
+### 桌面
 
-**捡漏雷达**（游戏内与终端同一套规则）
+驾驶舱、市场监控、盘口/成交概率/走势图、组合、制造（2,595 条配方 + LP 影子价格）、复盘（决策匹配、alpha 衰减、实验设计）。
 
-- **NPC 必赚**：挂单价低于 NPC 收购价，零市场风险，无需历史数据。
-- **P10中位折扣**：最低价低于 7 日P10中位 15% 以上，且同时过三道闸门——流动性（≥3 个挂单）、历史深度（≥3 次扫描）、绝对利润（≥5 银）——滤掉没人接盘的垃圾折扣。
-- 排序：NPC 必赚优先，其余按绝对利润降序。游戏内 WAH 页可直接从雷达行发起搜索，核验实时价格后购买。
+### 数据管道
 
-**价格统计**
+```powershell
+Copy-Item .env.example .env
+npm install
+npm run db:push
+npm run recipes:import
+npm run dev
+```
 
-- 每次扫描产出**量加权百分位阶梯**（最低/P5/P10）：P10 是市价，最低/P5 标出订单簿最底部。上层挂单又薄又陈、根本没有成交，只有底部十分位才反映真实价格；百分位天然抗钓鱼挂单。
-- **建议卖价**（深度感知卖价前沿）：有真实量支撑的最低价，而非孤立甩卖单——压过它才有意义，压过甩卖单只是白送钱。
-- 价格历史由插件逐次扫描自行积累（`WoWDerhoiAH_Points`，7 天 × 192 点），7 日P10中位、趋势、区间全部由它派生，无需桌面端回写。
+游戏内扫描后小退/`/reload`，或依赖每次扫描后的 `SaveAddOns`；配置 `AQT_SAVEDVARS_PATH` 后运行 `npm run addon:watch`。导入是事务式的：快照、日线、头寸与成交一起落库；重复扫描时间戳自动跳过。
 
-**游戏内**
+### 边界
 
-- `/wahscan` 全量扫描：`C_AuctionHouse.ReplicateItems()` 一次服务器响应复制全部挂单（商品与物品拍卖都在内）；`/wahauto` 在拍卖行开着时每约 15 分钟自动重扫。
-- tooltip 行情：建议卖价领衔（橙色标注），随后最低价、P5/P10、供给、7 日P10中位与趋势。
-- 拍卖行旁价格走势图：最近 3 小时 / 最近 48 小时双窗口，绘制 P10 低位价序列。
-- **WAH 交易页**（插件列表按钮、`/wahtrade`，或随拍卖行自动打开）：捡漏雷达 + 实时价格簿。物品拍卖在重读实时价格后按拍卖 ID 一口价买下；商品按核验后的市价按数量购买，最终总价由客户端自己的确认框显示。
-- **`/wahprice`** 卖价指引：把物品拿在鼠标上（或传入链接），打印建议卖价、最低价、P5/P10、供给、7 日中位与趋势。现代客户端没有插件可读的出售槽接口，因此上架仍需手动输入价格。
+客户端没有成交历史接口；`PostItem`/`PostCommodity`/`CancelAuction` 带调用限制；插件不做全自动扫货或上架；公共捡漏信号不是 alpha；阶段阈值与产能是待校准的先验。
 
-**终端**
+### 许可与贡献
 
-- 市场监控表：搜索、分类过滤、排序、服务端分页，扛得住 2400+ 商品的真实扫描。
-- 商品终端页：盘中走势、日线 K 线、星期几季节性。
-- 价格预警规则与关注列表。
-- 制造利润排行（人工整理配方表；大额投入前请游戏内核对）。
-- 自托管商品图标（`npm run icons:fetch` 一次性抓取）。
-
-### 本地开发与数据采集
-
-开发命令与数据管道步骤见上方英文版（命令相同）：`npm run dev` 起终端，游戏内 `/wahscan` 扫描后小退/`/reload` 落盘，`npm run addon:watch` 自动入库。Lua 插件现在有离线测试环境（`addon/test`，`npm test` 会跑真实插件代码）。关键模块清单同上。
-
-### 功能设计评审
-
-游戏内功能目前仍以“采集 + 捡漏”为核心，卖出、成交验证、多笔购买和风险分层都还不完整。完整评审与优先级路线见 [docs/in-game-design-review.md](docs/in-game-design-review.md)。
+[AGPL-3.0-or-later](LICENSE)。欢迎 PR，但每个 PR 必须关联 issue；见 [CONTRIBUTING.md](CONTRIBUTING.md)。

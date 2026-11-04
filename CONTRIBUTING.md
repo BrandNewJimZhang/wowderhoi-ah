@@ -34,12 +34,15 @@ keep that branch's client-specific files:
 
 - `addon/WoWderhoiAH/WoWderhoiAH.toc`
 - the scan acquisition path in `addon/WoWderhoiAH/WoWderhoiAH.lua`
-- the buy/sell paths in `addon/WoWderhoiAH/Trade.lua`
+- the buy/sell API paths in `addon/WoWderhoiAH/Trade.lua` and
+  `addon/WoWderhoiAH/Sell.lua`
 - branch-specific docs and README badges
 
-Everything else — the terminal, `src/lib/market-rules.ts`, pricing math,
-tooltip and chart code — is meant to stay identical on both branches.
-A fix that applies to both should not be written twice.
+Shared by design: `Core.lua` (pure pricing and plans), `Journal.lua`,
+`Ledger.lua`, `GUI.lua` (tooltip and charts), `src/lib/market-rules.ts`,
+`src/lib/analytics.ts`, `src/lib/core/`, `src/lib/journal.ts`,
+`src/lib/craft-lp.ts`, the recipe dataset and the whole terminal. A fix
+that applies to both should not be written twice.
 
 ## 中文
 
@@ -70,8 +73,11 @@ A fix that applies to both should not be written twice.
 
 - `addon/WoWderhoiAH/WoWderhoiAH.toc`
 - `addon/WoWderhoiAH/WoWderhoiAH.lua` 里的扫描采集路径
-- `addon/WoWderhoiAH/Trade.lua` 里的买卖路径
+- `addon/WoWderhoiAH/Trade.lua` 与 `Sell.lua` 里的买卖 API 路径
 - 分支专属文档与 README 徽章
 
-其余部分——桌面终端、`src/lib/market-rules.ts`、定价数学、tooltip 与
-图表——应在两个分支保持一致。两边都适用的修复不要写两遍。
+按设计共享：`Core.lua`（纯定价与计划）、`Journal.lua`、`Ledger.lua`、
+`GUI.lua`（tooltip 与图表）、`src/lib/market-rules.ts`、
+`src/lib/analytics.ts`、`src/lib/core/`、`src/lib/journal.ts`、
+`src/lib/craft-lp.ts`、配方数据集与整个桌面终端。两边都适用的修复不要
+写两遍。

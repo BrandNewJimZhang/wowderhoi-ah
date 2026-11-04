@@ -1,5 +1,66 @@
 # Changelog
 
+## v0.4.0 — 2026-11-05
+
+The market snapshot machine becomes a closed-loop goblin system.
+
+### Added
+
+- **Shared decision core** (`addon/WoWderhoiAH/Core.lua`): sell front,
+  ladder cost, executable quantity, fee/deposit breakevens, fill
+  probability, phase gates and conditional buy/sell plans. The terminal
+  runs the same file through fengari; a parity test compares both paths.
+- **Scan pipeline v4**: every replicate field (bid, owner, sale status,
+  remaining time), top-8 price ladder, distinct sellers, expiry buckets,
+  bid-only demand, and a tier-level inferred flow range. Layered series
+  retention with a 60k point cap, `SaveAddOns` after each scan, player
+  search quieting and timeout backoff.
+- **Journal and ledger**: append-only actions (buy/post/cancel/sold/
+  expire/craft/vendor/disenchant), replayed into FIFO lots, positions,
+  escrow, fees, lost deposits and realized P&L. The terminal replays the
+  same events with parity tests.
+- **Sell page** (`/wahsell`): bag stacks, client deposits for 12/24/48h,
+  sale and expiry breakevens, undercut-and-post, owned auctions, undercut
+  warnings and cancel/requote. Blocked posting degrades to a manual price
+  assistant; nothing is recorded as if it succeeded.
+- **Executable-profit radar**: buy quantity, ladder price, suggested sell
+  price, net profit and fill probability, vendor first; P10 is demoted to
+  a statistics line everywhere.
+- **Charts v2**: order-book staircase, labelled 24h fill-probability
+  curve, windowed trend (1h/6h/24h/7d/all) with sell-front and minimum
+  lines, supply bars, log axis and scanning-gap breaks.
+- **`/wahdiag`** live-client checklist and `/wahphase` manual override.
+- **Terminal**: phase resolution, real-price deflator, cockpit action
+  list, portfolio, review, and a production network over all 2,595
+  Forever recipes with LP shadow prices, fractional-Kelly sizing,
+  controlled experiments, off-policy evaluation and alpha-decay windows.
+- **Performance gates** for the core, journal, LP, scan validation and
+  SavedVariables size.
+- Design documents: `docs/economic-system.md`, `docs/launch-runbook.md`.
+
+### Changed
+
+- The deal radar no longer uses a 7-day P10 median as its reference;
+  every percentage is anchored on the sell front and names its window.
+- `WoWderhoiAH_Points` is replaced by `WoWderhoiAH_Series` (v4); old
+  pipeline data is discarded on the first v4 scan.
+- Daily OHLC is built from the sell front instead of P10.
+- `fengari` is a runtime dependency because the terminal runs the shipped
+  Lua decision core.
+- The recipe dataset is fetched from the public wuxianwow MCP into
+  `data/recipes.forever.json` and projected into SQLite.
+
+### Fixed
+
+- Bid-only listings are no longer dropped at the scanner; they are
+  imported as demand instead of zero-priced snapshots.
+- Purchases update the scan ladder from the surviving search rows so the
+  radar cannot advertise a price nobody can pay.
+- Deposits are charged once: refunded on sale/cancel, lost only on
+  expiry.
+- A purchase is only recorded after the client confirms it; an
+  unconfirmed purchase is reported, not invented.
+
 ## v0.3.0 — 2026-11-05
 
 ### Changed

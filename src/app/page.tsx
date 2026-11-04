@@ -10,6 +10,7 @@ import { getMarketSignals } from "@/lib/market-signals";
 import { describeFreshness } from "@/lib/freshness";
 import { phaseDescription, phaseLabels } from "@/lib/phase";
 import { QUALITY_NAMES } from "@/lib/addon-scan";
+import { allocateCapital } from "@/lib/portfolio";
 import { filterSortSignals, MARKET_PAGE_SIZE, paginate, parseMarketView } from "@/lib/market-filter";
 import { formatPercent } from "@/lib/utils";
 import { Coins } from "@/components/coins";
@@ -38,6 +39,21 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   // the addon runs in game. It is not a second radar implementation.
   const deals = evaluation.rows.slice(0, 12);
   const priceByItemId = new Map(signals.map((signal) => [signal.itemId, signal.sellPrice]));
+  const capitalBudget = Number(process.env.AQT_BUDGET_COPPER) || 1_000_000;
+  const sizing = allocateCapital(
+    evaluation.rows.filter((row) => !row.vendor).map((row) => ({
+      itemId: row.itemId,
+      name: row.name,
+      unitCost: row.ladderPrice,
+      sellPrice: row.listP,
+      feeRate: 0.05,
+      fillProb: row.fillProb,
+      residualValue: 0,
+      samples: row.confidence === "high" ? 20 : row.confidence === "medium" ? 8 : 2
+    })),
+    capitalBudget,
+    { kappa: 0.25, maxItemExposure: 0.25, dailyBudget: 0.5, minSamplesForKelly: 10 }
+  );
   const craftRows = computeCraftProfits(craftRecipes, priceByItemId);
   const craftOk = craftRows.filter((row) => row.status === "ok");
   const craftMissingCount = craftRows.length - craftOk.length;
@@ -140,6 +156,23 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           </Panel>
         </div>
         <div className="space-y-3">
+          <Panel>
+            <PanelHeader title="仓位建议" action={<span className="font-mono text-xs text-terminal-muted">分数凯利 · 预算 {capitalBudget / 10000}g</span>} />
+            <div className="space-y-2 p-3 font-mono text-xs">
+              {sizing.length === 0 && <div className="text-terminal-muted">当前没有通过风险预算的行动。</div>}
+              {sizing.map((row) => (
+                <div key={row.itemId} className="flex items-center justify-between gap-2">
+                  <Link href={`/items/${row.itemId}`} className="text-slate-100 hover:text-terminal-amber">{row.name}</Link>
+                  <span className="flex items-center gap-3 text-terminal-muted">
+                    <span>{row.qty} 件</span>
+                    <span>占用 <Coins copper={row.budget} /></span>
+                    <span className={row.expectedNet >= 0 ? "text-terminal-green" : "text-terminal-red"}>净利 <Coins copper={row.expectedNet} /></span>
+                    <span>{row.exploratory ? "探索" : row.cappedBy === "item-exposure" ? "敞口上限" : row.cappedBy === "daily-budget" ? "日预算" : "凯利"}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Panel>
           <Panel>
             <PanelHeader title="触发的预警" action={<Bell size={13} className={triggeredAlerts.length > 0 ? "text-terminal-red" : "text-terminal-muted"} />} />
             <div className="space-y-2 p-3 font-mono text-xs">
