@@ -4,27 +4,37 @@ import { filterSortSignals, paginate, parseMarketView } from "@/lib/market-filte
 
 function makeSignal(partial: Partial<MarketSignal> & Pick<MarketSignal, "itemId" | "name">): MarketSignal {
   return {
-    price: 100,
+    sellPrice: 100,
     minPrice: 90,
+    p5Price: 90,
+    price: 100,
     category: "unknown",
     quality: "common",
     quantity: 0,
     numAuctions: 0,
+    sellerCount: 0,
+    sellersInvisible: false,
+    bidOnlyCount: 0,
+    inferredSold: 0,
+    supplyGrowth: 0,
     vendorPrice: 0,
-    med7: 100,
-    med7Samples: 1,
-    med7Distinct: 1,
-    discountPercent: 0,
+    sellRef: 100,
+    sellSamples: 1,
+    sellDistinct: 1,
+    p10Median: 100,
+    spreadPercent: 10,
+    trendPercent: 0,
     changePercent: 0,
+    realSellPrice: null,
     ...partial
   };
 }
 
 const signals = [
-  makeSignal({ itemId: 1, name: "魔铁矿石", category: "矿石", price: 300, changePercent: -5 }),
-  makeSignal({ itemId: 2, name: "精金矿石", category: "矿石", price: 900, changePercent: 10 }),
-  makeSignal({ itemId: 3, name: "梦叶草", category: "草药", price: 150, changePercent: 2 }),
-  makeSignal({ itemId: 4, name: "碎骨头", category: "垃圾", price: 800 })
+  makeSignal({ itemId: 1, name: "魔铁矿石", category: "矿石", sellPrice: 300, changePercent: -5 }),
+  makeSignal({ itemId: 2, name: "精金矿石", category: "矿石", sellPrice: 900, changePercent: 10 }),
+  makeSignal({ itemId: 3, name: "梦叶草", category: "草药", sellPrice: 150, changePercent: 2 }),
+  makeSignal({ itemId: 4, name: "碎骨头", category: "垃圾", sellPrice: 800 })
 ];
 
 describe("filterSortSignals", () => {
@@ -37,18 +47,18 @@ describe("filterSortSignals", () => {
     expect(filterSortSignals(signals, { category: "草药" }).map((signal) => signal.itemId)).toEqual([3]);
   });
 
-  it("filters out items below a minimum unit price", () => {
+  it("filters out items below a minimum sell price", () => {
     const cheapAllowed = filterSortSignals(signals, { minPriceCopper: 200 });
     expect(cheapAllowed.map((signal) => signal.itemId)).toEqual([1, 2, 4]);
   });
 
   it("sorts by a numeric key in both directions", () => {
-    expect(filterSortSignals(signals, { sortKey: "price" }).map((signal) => signal.itemId)).toEqual([2, 4, 1, 3]);
+    expect(filterSortSignals(signals, { sortKey: "sellPrice" }).map((signal) => signal.itemId)).toEqual([2, 4, 1, 3]);
     expect(filterSortSignals(signals, { sortKey: "changePercent", sortAsc: true }).map((signal) => signal.itemId)[0]).toBe(1);
   });
 
   it("composes query, category, and sort without mutating the input", () => {
-    const result = filterSortSignals(signals, { query: "矿", category: "矿石", sortKey: "price", sortAsc: true });
+    const result = filterSortSignals(signals, { query: "矿", category: "矿石", sortKey: "sellPrice", sortAsc: true });
     expect(result.map((signal) => signal.itemId)).toEqual([1, 2]);
     expect(signals[0].itemId).toBe(1);
   });
@@ -56,14 +66,14 @@ describe("filterSortSignals", () => {
 
 describe("parseMarketView", () => {
   it("returns defaults for empty params", () => {
-    expect(parseMarketView({})).toEqual({ query: "", category: "", sortKey: "quantity", sortAsc: false, page: 1 });
+    expect(parseMarketView({})).toEqual({ query: "", category: "", sortKey: "spreadPercent", sortAsc: false, page: 1 });
   });
 
   it("reads query, category, sort key, direction, and page", () => {
-    expect(parseMarketView({ q: "矿石", cat: "矿石", sort: "price", dir: "asc", page: "3" })).toEqual({
+    expect(parseMarketView({ q: "矿石", cat: "矿石", sort: "sellPrice", dir: "asc", page: "3" })).toEqual({
       query: "矿石",
       category: "矿石",
-      sortKey: "price",
+      sortKey: "sellPrice",
       sortAsc: true,
       page: 3
     });
@@ -71,13 +81,13 @@ describe("parseMarketView", () => {
 
   it("falls back to defaults on an unknown sort key or invalid page", () => {
     const view = parseMarketView({ sort: "evil'); DROP TABLE", page: "-4" });
-    expect(view.sortKey).toBe("quantity");
+    expect(view.sortKey).toBe("spreadPercent");
     expect(view.page).toBe(1);
     expect(parseMarketView({ page: "abc" }).page).toBe(1);
   });
 
   it("uses the first value when a param repeats", () => {
-    expect(parseMarketView({ q: ["a", "b"], sort: ["med7", "price"] })).toMatchObject({ query: "a", sortKey: "med7" });
+    expect(parseMarketView({ q: ["a", "b"], sort: ["sellRef", "sellPrice"] })).toMatchObject({ query: "a", sortKey: "sellRef" });
   });
 });
 

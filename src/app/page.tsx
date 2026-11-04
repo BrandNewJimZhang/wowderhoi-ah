@@ -1,5 +1,4 @@
 import { Bell, CalendarClock, Hammer, RadioTower, Star } from "lucide-react";
-import { buildDealRadar } from "@/lib/analytics";
 import { evaluateAlertRules } from "@/lib/alerts";
 import { computeCraftProfits, craftRecipes } from "@/lib/crafting";
 import {
@@ -9,6 +8,8 @@ import {
 } from "@/lib/repositories";
 import { getMarketSignals } from "@/lib/market-signals";
 import { describeFreshness } from "@/lib/freshness";
+import { phaseDescription, phaseLabels } from "@/lib/phase";
+import { QUALITY_NAMES } from "@/lib/addon-scan";
 import { filterSortSignals, MARKET_PAGE_SIZE, paginate, parseMarketView } from "@/lib/market-filter";
 import { formatPercent } from "@/lib/utils";
 import { Coins } from "@/components/coins";
@@ -19,9 +20,12 @@ import { WatchStar } from "@/components/watch-star";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import Link from "next/link";
 
+const qualityName = (value: number | string | undefined) =>
+  typeof value === "number" ? QUALITY_NAMES[value] ?? "unknown" : value ?? "unknown";
+
 export default async function Home({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const view = parseMarketView(await searchParams);
-  const [{ signals, latestSnapshotAt }, upcomingEvents, watchedIds, alertRules] = await Promise.all([
+  const [{ signals, latestSnapshotAt, phase, evaluation }, upcomingEvents, watchedIds, alertRules] = await Promise.all([
     getMarketSignals(),
     getUpcomingEvents(),
     getWatchedItemIds(),
@@ -30,10 +34,10 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   const freshness = describeFreshness(latestSnapshotAt, new Date());
   const watchedSignals = signals.filter((signal) => watchedIds.has(signal.itemId));
   const triggeredAlerts = evaluateAlertRules(alertRules, signals);
-  // Deal radar: same rule set as the in-game radar (vendor arbitrage plus
-  // guarded P10 median discount), so both surfaces flag identical listings.
-  const deals = buildDealRadar(signals).slice(0, 12);
-  const priceByItemId = new Map(signals.map((signal) => [signal.itemId, signal.price]));
+  // The opportunity list is Core.lua's evaluation, the same decision core
+  // the addon runs in game. It is not a second radar implementation.
+  const deals = evaluation.rows.slice(0, 12);
+  const priceByItemId = new Map(signals.map((signal) => [signal.itemId, signal.sellPrice]));
   const craftRows = computeCraftProfits(craftRecipes, priceByItemId);
   const craftOk = craftRows.filter((row) => row.status === "ok");
   const craftMissingCount = craftRows.length - craftOk.length;
@@ -49,38 +53,40 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border border-terminal-border bg-terminal-panel px-4 py-3">
         <div>
           <h1 className="font-mono text-lg font-semibold uppercase text-terminal-amber">WoWderhoi AHelper</h1>
-          <p className="font-mono text-xs text-terminal-muted">周年服拍卖行情报与短线交易终端</p>
+          <p className="font-mono text-xs text-terminal-muted">无限服拍卖行情报与地精驾驶舱 · {phaseLabels[phase]}</p>
         </div>
         <div className="flex items-center gap-3 font-mono text-xs text-terminal-muted">
           <span className={freshness.stale ? "flex items-center gap-1 text-terminal-red" : "flex items-center gap-1 text-terminal-green"}>
             <RadioTower size={14} /> 数据更新于 {freshness.label}
           </span>
           <span className="flex items-center gap-1"><Bell size={14} /> 预警就绪</span>
+          <span className="max-w-[360px] truncate text-terminal-muted" title={phaseDescription(phase)}>{phaseDescription(phase)}</span>
         </div>
       </div>
 
       <div className="grid gap-3 xl:grid-cols-[1fr_360px]">
         <div className="space-y-3">
           <Panel>
-            <PanelHeader title="捡漏雷达" action={<span className="font-mono text-xs text-terminal-green">NPC必赚 + 最低价 vs 7日P10中位</span>} />
+            <PanelHeader title="可执行机会" action={<span className="font-mono text-xs text-terminal-green">NPC必赚 + 最低价 vs 建议卖价</span>} />
             <div className="space-y-2 p-3 font-mono text-xs">
               {deals.length === 0 && (
                 <div className="text-terminal-muted">
-                  {signals.length === 0 ? "暂无市场数据。进游戏 /wahscan 扫描。" : "当前没有满足流动性与利润门槛的捡漏挂单。"}
+                  {signals.length === 0 ? "暂无市场数据。进游戏 /wahscan 扫描。" : `当前没有满足${phaseLabels[phase]}门槛的可执行机会。`}
                 </div>
               )}
               {deals.map((deal) => (
                 <div key={deal.itemId} className="flex items-center justify-between gap-2">
-                  <Link href={`/items/${deal.itemId}`} className={`inline-flex items-center gap-2 ${qualityColorClass(deal.quality)}`}>
+                  <Link href={`/items/${deal.itemId}`} className={`inline-flex items-center gap-2 ${qualityColorClass(qualityName(deal.quality))}`}>
                     <ItemIcon itemId={deal.itemId} size={16} />
                     {deal.name}
                     {deal.vendor
-                      ? <span className="text-terminal-amber">NPC必赚 +<Coins copper={deal.profit} /></span>
-                      : <span className="text-terminal-green">-{deal.discountPercent.toFixed(0)}%</span>}
+                      ? <span className="text-terminal-amber">NPC必赚 +<Coins copper={deal.netProfit} /></span>
+                      : <span className="text-terminal-green">+{deal.spreadPercent.toFixed(0)}%</span>}
                   </Link>
                   <span className="flex items-center gap-3">
                     <Coins copper={deal.minPrice} />
-                    <span className="text-terminal-muted">{deal.vendor ? "NPC价" : "P10中位"} <Coins copper={deal.reference} /></span>
+                    <span className="text-terminal-muted">{deal.vendor ? "NPC价" : "建议卖价"} <Coins copper={deal.sellP} /></span>
+                    <span className="text-terminal-muted">净利 <Coins copper={deal.netProfit} /></span>
                   </span>
                 </div>
               ))}
@@ -126,7 +132,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                     <Link href={`/items/${signal.itemId}`} className={`inline-flex items-center gap-1 ${qualityColorClass(signal.quality)}`}><ItemIcon itemId={signal.itemId} size={16} />{signal.name}</Link>
                   </span>
                   <span className="flex items-center gap-3">
-                    <Coins copper={signal.price} />
+                    <Coins copper={signal.sellPrice} />
                     <span className={signal.changePercent >= 0 ? "text-terminal-red" : "text-terminal-green"}>{formatPercent(signal.changePercent)}</span>
                   </span>
                 </div>

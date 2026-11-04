@@ -44,3 +44,14 @@ export async function getLatestSnapshotTime() {
   const row = await prisma.auctionSnapshot.findFirst({ orderBy: { timestamp: "desc" }, select: { timestamp: true } });
   return row?.timestamp ?? null;
 }
+
+export async function getEarliestSnapshotTime() {
+  const row = await prisma.auctionSnapshot.findFirst({ orderBy: { timestamp: "asc" }, select: { timestamp: true } });
+  return row?.timestamp ?? null;
+}
+
+// The journal projection as a plain itemId -> position map for Core.lua.
+export async function getPositions(): Promise<Record<number, { qty: number; cost: number }>> {
+  const rows = await prisma.position.findMany({ select: { itemId: true, qty: true, costBasis: true } });
+  return Object.fromEntries(rows.map((row) => [row.itemId, { qty: row.qty, cost: row.costBasis }]));
+}

@@ -6,32 +6,42 @@ function signal(partial: Partial<MarketSignal> & Pick<MarketSignal, "itemId" | "
   return {
     category: "unknown",
     quality: "common",
-    price: 100,
+    sellPrice: 100,
     minPrice: 90,
+    p5Price: 90,
+    price: 100,
     quantity: 0,
     numAuctions: 0,
+    sellerCount: 0,
+    sellersInvisible: false,
+    bidOnlyCount: 0,
+    inferredSold: 0,
+    supplyGrowth: 0,
     vendorPrice: 0,
-    med7: 100,
-    med7Samples: 1,
-    med7Distinct: 1,
-    discountPercent: 0,
+    sellRef: 100,
+    sellSamples: 1,
+    sellDistinct: 1,
+    p10Median: 100,
+    spreadPercent: 10,
+    trendPercent: 0,
     changePercent: 0,
+    realSellPrice: null,
     ...partial
   };
 }
 
 const signals = [
-  signal({ itemId: 23424, name: "魔铁矿石", price: 5000, discountPercent: 22 }),
-  signal({ itemId: 22785, name: "梦叶草", price: 800, quantity: 2000 })
+  signal({ itemId: 23424, name: "魔铁矿石", sellPrice: 5000, spreadPercent: 22 }),
+  signal({ itemId: 22785, name: "梦叶草", sellPrice: 800, quantity: 2000 })
 ];
 
 describe("evaluateAlertRules", () => {
   it("triggers gt/lt rules against the matching item's metric", () => {
     const triggered = evaluateAlertRules(
       [
-        { id: "a", itemId: 23424, metric: "discountPercent", operator: "gt", threshold: 15, enabled: true },
+        { id: "a", itemId: 23424, metric: "spreadPercent", operator: "gt", threshold: 15, enabled: true },
         { id: "b", itemId: 22785, metric: "quantity", operator: "gt", threshold: 1000, enabled: true },
-        { id: "c", itemId: 23424, metric: "price", operator: "gt", threshold: 999999, enabled: true }
+        { id: "c", itemId: 23424, metric: "sellPrice", operator: "gt", threshold: 999999, enabled: true }
       ],
       signals
     );
@@ -42,8 +52,8 @@ describe("evaluateAlertRules", () => {
   it("skips disabled rules and rules for unscanned items", () => {
     const triggered = evaluateAlertRules(
       [
-        { id: "a", itemId: 23424, metric: "price", operator: "gt", threshold: 1, enabled: false },
-        { id: "b", itemId: 99999, metric: "price", operator: "gt", threshold: 1, enabled: true }
+        { id: "a", itemId: 23424, metric: "sellPrice", operator: "gt", threshold: 1, enabled: false },
+        { id: "b", itemId: 99999, metric: "sellPrice", operator: "gt", threshold: 1, enabled: true }
       ],
       signals
     );
@@ -57,9 +67,9 @@ describe("evaluateAlertRules", () => {
   });
 
   it("marks price-shaped metrics as gold denominated for UI conversion", () => {
-    expect(goldDenominatedMetrics.has("price")).toBe(true);
-    expect(goldDenominatedMetrics.has("med7")).toBe(true);
-    expect(goldDenominatedMetrics.has("discountPercent")).toBe(false);
+    expect(goldDenominatedMetrics.has("sellPrice")).toBe(true);
+    expect(goldDenominatedMetrics.has("sellRef")).toBe(true);
+    expect(goldDenominatedMetrics.has("spreadPercent")).toBe(false);
     for (const key of goldDenominatedMetrics) expect(alertMetricKeys).toContain(key);
   });
 });

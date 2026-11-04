@@ -1,8 +1,8 @@
 import type { MarketSignal } from "@/lib/analytics";
 
-export type SignalSortKey = "price" | "minPrice" | "med7" | "discountPercent" | "changePercent" | "quantity" | "numAuctions";
+export type SignalSortKey = "sellPrice" | "minPrice" | "sellRef" | "spreadPercent" | "trendPercent" | "changePercent" | "quantity" | "numAuctions" | "p10Median";
 
-const SORT_KEYS: readonly SignalSortKey[] = ["price", "minPrice", "med7", "discountPercent", "changePercent", "quantity", "numAuctions"];
+const SORT_KEYS: readonly SignalSortKey[] = ["sellPrice", "minPrice", "sellRef", "spreadPercent", "trendPercent", "changePercent", "quantity", "numAuctions", "p10Median"];
 
 export type MarketView = { query: string; category: string; sortKey: SignalSortKey; sortAsc: boolean; page: number };
 
@@ -17,7 +17,8 @@ export function parseMarketView(params: Record<string, string | string[] | undef
   return {
     query: first(params.q),
     category: first(params.cat),
-    sortKey: SORT_KEYS.includes(sort as SignalSortKey) ? (sort as SignalSortKey) : "quantity",
+    // The cockpit opens on the widest executable spread, not on Supply.
+    sortKey: SORT_KEYS.includes(sort as SignalSortKey) ? (sort as SignalSortKey) : "spreadPercent",
     sortAsc: first(params.dir) === "asc",
     page: Number.isInteger(page) && page > 0 ? page : 1
   };
@@ -33,7 +34,7 @@ export function filterSortSignals(
   let rows = signals;
   if (query) rows = rows.filter((signal) => signal.name.toLowerCase().includes(query));
   if (view.category) rows = rows.filter((signal) => signal.category === view.category);
-  if (view.minPriceCopper) rows = rows.filter((signal) => signal.price >= view.minPriceCopper!);
+  if (view.minPriceCopper) rows = rows.filter((signal) => signal.sellPrice >= view.minPriceCopper!);
   if (view.sortKey) {
     const key = view.sortKey;
     const direction = view.sortAsc ? 1 : -1;

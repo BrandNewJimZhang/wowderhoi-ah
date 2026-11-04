@@ -15,10 +15,11 @@ import { WatchStar } from "@/components/watch-star";
 import { ItemIcon } from "@/components/item-icon";
 
 const sortableColumns: Array<{ key: SignalSortKey; heading: string }> = [
-  { key: "price", heading: "P10" },
+  { key: "sellPrice", heading: "建议卖价" },
   { key: "minPrice", heading: "最低价" },
-  { key: "med7", heading: "7日P10中位" },
-  { key: "discountPercent", heading: "折扣%" },
+  { key: "sellRef", heading: "卖价中位" },
+  { key: "spreadPercent", heading: "价差%" },
+  { key: "trendPercent", heading: "趋势%" },
   { key: "changePercent", heading: "环比%" },
   { key: "quantity", heading: "在售量" },
   { key: "numAuctions", heading: "挂单数" }
@@ -113,7 +114,7 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
         </span>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[880px] border-collapse font-mono text-xs">
+        <table className="w-full min-w-[1080px] border-collapse font-mono text-xs">
           <thead className="bg-terminal-panel2 text-[10px] uppercase text-terminal-muted">
             <tr>
               <th className="border-b border-terminal-border px-2 py-2 text-center">★</th>
@@ -139,10 +140,11 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
                     {signal.name}
                   </Link>
                 </td>
-                <td className="px-3 py-2 text-right"><Coins copper={signal.price} /></td>
+                <td className="px-3 py-2 text-right"><Coins copper={signal.sellPrice} /></td>
                 <td className="px-3 py-2 text-right"><Coins copper={signal.minPrice} /></td>
-                <td className="px-3 py-2 text-right"><Coins copper={signal.med7} /></td>
-                <td className={signal.discountPercent >= 15 ? "px-3 py-2 text-right text-terminal-green" : "px-3 py-2 text-right text-slate-300"}>{signal.discountPercent.toFixed(0)}%</td>
+                <td className="px-3 py-2 text-right"><Coins copper={signal.sellRef} /></td>
+                <td className={signal.spreadPercent >= 15 ? "px-3 py-2 text-right text-terminal-green" : "px-3 py-2 text-right text-slate-300"}>{signal.spreadPercent.toFixed(0)}%</td>
+                <td className={signal.trendPercent >= 0 ? "px-3 py-2 text-right text-terminal-red" : "px-3 py-2 text-right text-terminal-green"}>{formatPercent(signal.trendPercent)}</td>
                 <td className={signal.changePercent >= 0 ? "px-3 py-2 text-right text-terminal-red" : "px-3 py-2 text-right text-terminal-green"}>{formatPercent(signal.changePercent)}</td>
                 <td className="px-3 py-2 text-right text-slate-300">{signal.quantity.toLocaleString()}</td>
                 <td className="px-3 py-2 text-right text-slate-300">{signal.numAuctions.toLocaleString()}</td>

@@ -4,11 +4,11 @@ import type { MarketSignal } from "@/lib/analytics";
 // share this list as the single authority. Every entry is a real
 // snapshot-derived statistic; gold-denominated ones are marked so the
 // UI can convert user input from gold to copper.
-export const alertMetricKeys = ["price", "minPrice", "med7", "discountPercent", "quantity"] as const;
+export const alertMetricKeys = ["sellPrice", "minPrice", "sellRef", "spreadPercent", "trendPercent", "quantity", "numAuctions"] as const;
 
 export type AlertMetricKey = (typeof alertMetricKeys)[number];
 
-export const goldDenominatedMetrics: ReadonlySet<string> = new Set(["price", "minPrice", "med7"]);
+export const goldDenominatedMetrics: ReadonlySet<string> = new Set(["sellPrice", "minPrice", "sellRef"]);
 
 type RuleShape = {
   id: string;

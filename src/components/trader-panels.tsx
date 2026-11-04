@@ -8,11 +8,13 @@ import { formatWowMoney } from "@/lib/wow-money";
 type AlertRuleRow = { id: string; metric: string; operator: string; threshold: number; enabled: boolean };
 
 const metricLabels: Record<string, string> = {
-  price: "P10 市价",
+  sellPrice: "建议卖价",
   minPrice: "最低价",
-  med7: "7日P10中位",
-  discountPercent: "折扣%",
-  quantity: "在售量"
+  sellRef: "卖价中位",
+  spreadPercent: "价差%",
+  trendPercent: "趋势%",
+  quantity: "在售量",
+  numAuctions: "挂单数"
 };
 
 function thresholdLabel(rule: AlertRuleRow) {
