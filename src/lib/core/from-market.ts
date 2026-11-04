@@ -53,7 +53,7 @@ export function buildCoreInput(
     if (!latest) continue;
     const previous = ordered.at(-2);
     // Same definition as the in-game scan: the gap between the two newest
-    // snapshots, floored at the 15-minute scan interval.
+    // snapshots, floored at the compiled scan interval.
     const scanFloor = SCAN_INTERVAL_MINUTES / 60;
     const elapsedHours = previous
       ? Math.max((latest.timestamp.getTime() - previous.timestamp.getTime()) / (60 * 60 * 1000), scanFloor)

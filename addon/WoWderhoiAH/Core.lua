@@ -14,6 +14,15 @@ local Core = {}
 
 local function round(value) return math.floor(value + 0.5) end
 
+-- The elapsed-time floor is the compiled scan cadence. A gap shorter than
+-- one scan interval is a manual rescan, not a rate the model should
+-- extrapolate; the scanner, the ledger and the terminal importer all read
+-- the same constant, so both sides estimate the same hazard from the same
+-- pair of scans.
+local function scanFloorHours()
+  return ((WAH.RULES and WAH.RULES.scanIntervalMinutes) or 15) / 60
+end
+
 local function copyList(list)
   local out = {}
   for index, value in ipairs(list or {}) do out[index] = value end
@@ -181,10 +190,11 @@ function Core.fillProbability(input)
   local ownSamples = input.ownSamples or 0
   local sold = input.sold or 0
   local supply = input.supply or 0
-  local elapsed = math.max(input.elapsedHours or 0.25, 0.25)
+  local floor = scanFloorHours()
+  local elapsed = math.max(input.elapsedHours or floor, floor)
   local hazard, basis, spread
   if ownSamples >= 3 and ownSold > 0 then
-    local rate = ownSold / math.max(input.ownElapsedHours or 1, 0.25)
+    local rate = ownSold / math.max(input.ownElapsedHours or 1, floor)
     local quantity = math.max(input.qty or 1, 1)
     hazard = rate / quantity
     basis = "own"
@@ -335,6 +345,7 @@ function Core.evaluate(input)
   local capacity = input.capacity or {}
   local positions = input.positions or {}
   local feeRate = rules.feeRate or 0.05
+  local scanFloor = scanFloorHours()
 
   local breadth = 0
   for _, item in pairs(items) do
@@ -445,7 +456,7 @@ function Core.evaluate(input)
             ownElapsedHours = item.ownElapsedHours or 0,
             sold = item.inferredSoldLow or 0,
             supply = item.quantity or 0,
-            elapsedHours = item.elapsedHours or 0.25
+            elapsedHours = item.elapsedHours or scanFloor
           })
           local confidence = Core.confidenceFor(samples, sellers, qty, phase)
           -- No fill evidence at all: history depth can still make the trade

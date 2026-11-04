@@ -104,6 +104,21 @@ describe("forever replicate scan v4", () => {
     expect(lua.number("WoWderhoiAH_ScanData.items[2589].supplyGrowth")).toBe(0);
   });
 
+  it("floors the flow window at one scan interval, not at one minute", () => {
+    const lua = auctionPage();
+    lua.runScan([
+      { itemId: 2589, name: "Linen", count: 100, buyout: 10000, timeLeft: 7200 }
+    ]);
+    // A manual rescan a minute later is not a sale rate: the model must
+    // read the compiled cadence, the same floor the terminal importer uses.
+    lua.exec("WowTest.advance(60)");
+    lua.runScan([
+      { itemId: 2589, name: "Linen", count: 60, buyout: 6000, timeLeft: 7140 }
+    ]);
+    const floor = lua.number("WowTest.ns.RULES.scanIntervalMinutes") / 60;
+    expect(lua.number("WoWderhoiAH_ScanData.items[2589].elapsedHours")).toBeCloseTo(floor, 5);
+  });
+
   it("separates a reprice from a sale in the interval", () => {
     const lua = auctionPage();
     lua.runScan([

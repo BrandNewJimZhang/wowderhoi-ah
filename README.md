@@ -64,8 +64,9 @@ buy/sell API paths) stay per branch. See [CONTRIBUTING.md](CONTRIBUTING.md).
 - `/wahscan` — `C_AuctionHouse.ReplicateItems()` full scan. Pipeline v4
   stores the top-8 price ladder, distinct sellers, expiry buckets,
   bid-only demand and an inferred flow range from the previous scan.
-- `/wahauto` — rescan every ~15 minutes while the AH stays open, pausing
-  while the player searches and backing off after a timeout.
+- `/wahauto` — rescan on the compiled scan interval (15 minutes by
+  default) while the AH stays open, pausing while the player searches and
+  backing off after a timeout.
 - `/wahphase ignition|wave|settle|steady|auto` — override the phase when
   the automatic breadth/age rule lags the real market.
 - `/wahtrade` — cockpit: executable-profit radar with buy quantity, ladder

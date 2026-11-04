@@ -31,10 +31,15 @@ local FRAME_BUDGET_MS = 8
 local SCAN_TIMEOUT_SECONDS = 120
 -- Compiled from src/lib/market-rules.ts; the terminal's elapsed-time floor
 -- reads the same constant, so the ticker and the fill model stay aligned.
-local AUTO_SCAN_INTERVAL = (WAH.RULES.scanIntervalMinutes or 15) * 60
+local SCAN_MINUTES = WAH.RULES.scanIntervalMinutes or 15
+local AUTO_SCAN_INTERVAL = SCAN_MINUTES * 60
 local SEARCH_QUIET_SECONDS = 60
 local SERIES_CAP = 60000
 local HOUR, DAY = 3600, 86400
+-- A gap shorter than one scan interval is a manual rescan: the flow model
+-- must not extrapolate a sale rate from it. The terminal importer and the
+-- shared core floor at the same compiled value.
+local SCAN_FLOOR_HOURS = AUTO_SCAN_INTERVAL / HOUR
 
 local frame -- created below; scanner helpers close over it
 local scanState = nil -- { itemsById, itemInfoCache, cursor, total, processing, capture }
@@ -392,7 +397,7 @@ local function inferFlow(entry, previous, elapsedSeconds)
     if quantity > remaining then low = low + (quantity - remaining) end
   end
   low = math.min(low, high)
-  local elapsedHours = math.max(elapsedSeconds / HOUR, 1 / 60)
+  local elapsedHours = math.max(elapsedSeconds / HOUR, SCAN_FLOOR_HOURS)
   local supplyGrowth = 0
   if previous.total and previous.total > 0 then
     -- Use the lower edge: assuming fewer sales can only overstate new supply,
@@ -453,7 +458,7 @@ local function finishScan(totalAuctions)
         inferredSoldLow = soldLow,
         inferredSoldHigh = soldHigh,
         supplyGrowth = supplyGrowth,
-        elapsedHours = math.max(elapsedSeconds / HOUR, 1 / 60)
+        elapsedHours = math.max(elapsedSeconds / HOUR, SCAN_FLOOR_HOURS)
       }
       captureItems[itemId] = {
         keys = entry.flowKeys,
@@ -518,7 +523,8 @@ local function finishScan(totalAuctions)
   if C_AddOns and C_AddOns.SaveAddOns then pcall(C_AddOns.SaveAddOns) end
   chatMessage(string.format(
     L.SCAN_COMPLETE .. "%s",
-    totalAuctions or 0, itemCount, autoScanOn() and L.SCAN_AUTO_ARMED or ""))
+    totalAuctions or 0, itemCount,
+    autoScanOn() and string.format(L.SCAN_AUTO_ARMED, SCAN_MINUTES) or ""))
 end
 
 local function processReplicateChunk()
@@ -648,7 +654,7 @@ C_Timer.NewTicker(20, function()
   if time() < backoffUntil then return end
   if time() < searchQuietUntil then return end
   if time() - lastScanStartedAt < AUTO_SCAN_INTERVAL then return end
-  chatMessage(L.AUTO_TRIGGER)
+  chatMessage(string.format(L.AUTO_TRIGGER, SCAN_MINUTES))
   startScan()
 end)
 
@@ -737,7 +743,7 @@ WAH.startScan = startScan
 SLASH_WOWDERHOIAHAUTO1 = "/wahauto"
 SlashCmdList["WOWDERHOIAHAUTO"] = function()
   WAH.settings.autoScan = not WAH.settings.autoScan
-  chatMessage(WAH.settings.autoScan and L.AUTO_ON or L.AUTO_OFF)
+  chatMessage(WAH.settings.autoScan and string.format(L.AUTO_ON, SCAN_MINUTES) or L.AUTO_OFF)
 end
 
 SLASH_WOWDERHOIAHPHASE1 = "/wahphase"

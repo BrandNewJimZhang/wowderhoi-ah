@@ -66,6 +66,23 @@ describe("fill evidence hierarchy", () => {
     expect(result.basis).toBe("prior");
     expect(result.point).toBeCloseTo(1 - Math.exp(-0.35), 3);
   });
+
+  it("floors the proxy window at the compiled scan interval", () => {
+    // Ten units vanished from a hundred over an unstated gap. With a
+    // 30-minute cadence the floor is half an hour, so the hazard is
+    // 10 / (100 * 0.5) = 0.2/hour — not the old hardcoded quarter hour.
+    const lua = loadAddon();
+    lua.exec("WowTest.ns.RULES.scanIntervalMinutes = 30");
+    const text = lua.text(
+      `(function()
+        local _, _, point, basis = WowTest.ns.Core.fillProbability({ horizonHours = 1, sold = 10, supply = 100 })
+        return string.format("%.4f|%s", point, basis)
+      end)()`
+    );
+    const [point, basis] = text.split("|");
+    expect(basis).toBe("proxy");
+    expect(Number(point)).toBeCloseTo(1 - Math.exp(-0.2), 4);
+  });
 });
 
 describe("ledger own-sale labels", () => {
@@ -85,7 +102,8 @@ describe("ledger own-sale labels", () => {
         return sales[2589].qty .. "|" .. sales[2589].samples .. "|" .. string.format("%.2f", sales[2589].elapsedHours)
       end)()`
     );
-    expect(text).toBe("8|2|0.25");
+    const floor = (lua.number("WowTest.ns.RULES.scanIntervalMinutes") / 60).toFixed(2);
+    expect(text).toBe(`8|2|${floor}`);
     expect(lua.text("(function() local s = WowTest.ns.Ledger.salesSince(3600, " + now + ") return tostring(s[2770] and s[2770].qty) end)()"))
       .toBe("2");
   });

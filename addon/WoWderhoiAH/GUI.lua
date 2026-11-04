@@ -111,7 +111,7 @@ local function appendTraderSection(tooltip)
       if trend ~= "" then tooltip:AddDoubleLine("  " .. L.TT_TREND, trend) end
     end
     local range = rangeText(entry)
-    if range then tooltip:AddDoubleLine("  " .. L.TT_RANGE, range) end
+    if range then tooltip:AddDoubleLine("  " .. string.format(L.TT_RANGE, window), range) end
   end
   tooltip:AddLine(" ")
   tooltip:Show()

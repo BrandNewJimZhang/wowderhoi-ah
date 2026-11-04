@@ -6,7 +6,7 @@ local ADDON_NAME, WAH = ...
 local L = WAH.L
 
 local DEFAULTS = {
-  autoScan = false, -- rescan every 15 minutes while the AH stays open
+  autoScan = false, -- rescan on the compiled cadence while the AH stays open
   tooltip = true, -- trader section on item tooltips
   chart = true, -- price chart panel beside the auction frame
   tradeOnOpen = true, -- open the WAH deal page with the auction house
@@ -31,8 +31,9 @@ end)
 local panel = CreateFrame("Frame")
 panel.name = "WoWderhoi AHelper"
 
+local scanMinutes = (WAH.RULES and WAH.RULES.scanIntervalMinutes) or 15
 local OPTIONS = {
-  { key = "autoScan", label = L.OPT_AUTOSCAN, tip = L.OPT_AUTOSCAN_TIP },
+  { key = "autoScan", label = L.OPT_AUTOSCAN, tip = string.format(L.OPT_AUTOSCAN_TIP, scanMinutes) },
   { key = "tooltip", label = L.OPT_TOOLTIP, tip = L.OPT_TOOLTIP_TIP },
   { key = "chart", label = L.OPT_CHART, tip = L.OPT_CHART_TIP },
   { key = "tradeOnOpen", label = L.OPT_TRADE_ON_OPEN, tip = L.OPT_TRADE_ON_OPEN_TIP }
