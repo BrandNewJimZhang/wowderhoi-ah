@@ -442,6 +442,7 @@ local function finishScan(totalAuctions)
         quality = entry.quality,
         itemClass = entry.itemClass,
         itemSubClass = entry.itemSubClass,
+        marketType = marketType,
         vendorP = entry.vendorP,
         minPrice = math.floor((entry.minPrice or 0) + 0.5),
         sellP = math.floor((sellP or entry.minPrice or 0) + 0.5),
@@ -796,6 +797,9 @@ function WAH.coreInput()
         quality = entry.quality,
         itemClass = entry.itemClass,
         itemSubClass = entry.itemSubClass,
+        -- The scan's classification, not a re-derivation from a book that
+        -- purchases have already thinned.
+        marketType = entry.marketType,
         vendorP = entry.vendorP,
         minPrice = entry.minPrice,
         sellP = entry.sellP,
