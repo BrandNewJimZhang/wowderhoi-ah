@@ -125,7 +125,7 @@ local function newEntry(name, quality, cached)
     itemSubClass = cached.subClass,
     vendorP = cached.vendorP,
     minPrice = nil,
-    listings = {}, -- { price = unit price, count, timeLeft }
+    listings = {}, -- { price = unit price, count }
     flowKeys = {}, -- owner|unitPrice -> quantity, matched across scans
     ownerTotals = {}, -- owner -> quantity across all prices, detects repricing
     flowTimeLeft = {}, -- flow key -> shortest remaining time seen
@@ -190,7 +190,7 @@ local function recordAuction(index)
   local unitPrice = buyoutPrice / count
   entry.hasBuyout = true
   if not entry.minPrice or unitPrice < entry.minPrice then entry.minPrice = unitPrice end
-  entry.listings[#entry.listings + 1] = { price = unitPrice, count = count, timeLeft = timeLeft, owner = seller }
+  entry.listings[#entry.listings + 1] = { price = unitPrice, count = count }
   entry.quantity = entry.quantity + count
   entry.numAuctions = entry.numAuctions + 1
   local flowKey = (seller or "?") .. "|" .. unitPrice
