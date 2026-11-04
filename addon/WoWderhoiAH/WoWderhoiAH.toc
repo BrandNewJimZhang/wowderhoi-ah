@@ -1,11 +1,12 @@
-## Interface: 20506
+## Interface: 16001
 ## Title: WoWderhoi AHelper
-## Notes: Auction house scanner and price intelligence for the WoWderhoi AH terminal.
+## Notes: Auction house scanner and price intelligence for WoW Forever.
 ## Author: Jim Zhang
-## Version: 0.2.1
+## Version: 0.3.0
 ## IconTexture: Interface\AddOns\WoWderhoiAH\logo.tga
 ## Category: Auctions
 ## Category-zhCN: 拍卖
+## AddonCompartmentFunc: WoWderhoiAH_OnAddonCompartmentClick
 ## SavedVariables: WoWderhoiAH_ScanData, WoWderhoiAH_Settings, WoWderhoiAH_Points
 
 Locale.lua

@@ -6,10 +6,10 @@ local ADDON_NAME, WAH = ...
 local L = WAH.L
 
 local DEFAULTS = {
-  autoScan = false, -- rescan whenever the getAll cooldown elapses at the AH
+  autoScan = false, -- rescan every 15 minutes while the AH stays open
   tooltip = true, -- trader section on item tooltips
   chart = true, -- price chart panel beside the auction frame
-  verboseScan = false -- per-page progress messages during paged scans
+  tradeOnOpen = true -- open the WAH deal page with the auction house
 }
 
 WAH.settings = nil -- assigned at ADDON_LOADED once SavedVariables exist
@@ -34,7 +34,7 @@ local OPTIONS = {
   { key = "autoScan", label = L.OPT_AUTOSCAN, tip = L.OPT_AUTOSCAN_TIP },
   { key = "tooltip", label = L.OPT_TOOLTIP, tip = L.OPT_TOOLTIP_TIP },
   { key = "chart", label = L.OPT_CHART, tip = L.OPT_CHART_TIP },
-  { key = "verboseScan", label = L.OPT_VERBOSE, tip = L.OPT_VERBOSE_TIP }
+  { key = "tradeOnOpen", label = L.OPT_TRADE_ON_OPEN, tip = L.OPT_TRADE_ON_OPEN_TIP }
 }
 
 panel:SetScript("OnShow", function(self)

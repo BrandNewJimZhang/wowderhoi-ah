@@ -7,11 +7,12 @@
 import { describe, expect, it } from "vitest";
 import { loadAddon, type WowLua } from "./wow-lua";
 
-// The page pins two corners to AuctionFrame, so the client's height decides
-// the panel's. Tests set it explicitly instead of inheriting a default.
-function layout(auctionFrameHeight = 447): WowLua {
+// The page is a fixed-size panel anchored beside the modern auction house;
+// the client's frame height no longer drives its row count. The height is
+// still asserted per size so the row count follows the panel it draws.
+function layout(auctionFrameHeight = 700): WowLua {
   const lua = loadAddon();
-  lua.exec(`AuctionFrame:SetSize(800, ${auctionFrameHeight})`);
+  lua.exec(`AuctionHouseFrame:SetSize(1000, ${auctionFrameHeight})`);
   lua.openTab();
   return lua;
 }
@@ -42,9 +43,9 @@ describe("trade panel layout", () => {
   it("fits the row count to the panel instead of assuming one", () => {
     const tall = layout();
     const short = layout(360);
-    // 447 - 70 above - 38 below = 339 of panel; 72 goes to the header block
-    // and 8 to the bottom border, leaving 11 whole 22px rows.
-    expect(tall.visibleRows()).toBe(11);
+    // The panel caps at 520 tall; 520 - 70 above - 38 below - 72 header - 8
+    // border leaves 332, or 15 whole 22px rows.
+    expect(tall.visibleRows()).toBe(15);
     expect(short.visibleRows()).toBeLessThan(tall.visibleRows());
     // The count that matters is the one that still clears the bottom edge,
     // at whatever height the client hands the page.

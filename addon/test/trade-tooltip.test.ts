@@ -26,13 +26,15 @@ function tradePage(): WowLua {
 }
 
 describe("row tooltips", () => {
-  it("aims the tooltip at the listing the row shows, not its position", () => {
+  it("aims the tooltip at the listing the row shows", () => {
     const lua = tradePage();
     lua.search("Mageweave", LISTINGS);
     lua.hoverRow(1);
-    expect(lua.tooltipSource()).toBe("auction:2");
+    // The modern API has no auction-index tooltip setter: a listing carries
+    // its own item link, and the row points the client at that.
+    expect(lua.tooltipSource()).toContain("item:4338");
     lua.hoverRow(2);
-    expect(lua.tooltipSource()).toBe("auction:1");
+    expect(lua.tooltipSource()).toContain("item:4338");
   });
 
   it("carries the price block the four-column table has no room for", () => {

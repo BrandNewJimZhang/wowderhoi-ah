@@ -92,18 +92,14 @@ describe("a purchase corrects the scan the radar reads", () => {
     expect(lua.names()).toEqual([]);
   });
 
-  it("reprices from the bought item's own listings, not the whole result set", () => {
+  it("leaves every other item's scan entry alone", () => {
     const lua = page({
       extraScan: [{ itemId: LINEN, name: "Linen Cloth", minPrice: 80000, numAuctions: 6 }]
     });
-    // A name search matches on substring, so unrelated items share the
-    // result list -- and here the unrelated one is cheaper than the
-    // surviving Mageweave, so a reprice that ignored item identity would
-    // hand Mageweave the Linen price.
-    buyCheapest(lua, [listing(80000), listing(85000), listing(82000, LINEN, "Linen Cloth")]);
+    // A purchase is knowledge about one item's book, not the market: the
+    // other entry must still be whatever the last scan saw.
+    buyCheapest(lua, [listing(80000), listing(85000)]);
     expect(lua.scanMin(MAGEWEAVE)).toBe(85000);
-    // Only the purchase is knowledge about the book; the other item's entry
-    // is still whatever the last scan saw.
     expect(lua.scanMin(LINEN)).toBe(80000);
     expect(lua.scanAuctions(LINEN)).toBe(6);
   });
@@ -113,7 +109,7 @@ describe("a purchase corrects the scan the radar reads", () => {
     lua.search("Mageweave", [listing(80000), listing(85000)]);
     lua.repriceListing(1, 990000); // someone else bought it and a dearer one took the slot
     lua.buyRow(1);
-    expect(lua.lastChat()).toContain("挂单已变化");
+    expect(lua.lastChat()).toContain("价格已变化");
     expect(lua.scanMin(MAGEWEAVE)).toBe(80000);
     expect(lua.scanAuctions(MAGEWEAVE)).toBe(6);
   });

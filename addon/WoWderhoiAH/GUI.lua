@@ -4,6 +4,8 @@
 
 local ADDON_NAME, WAH = ...
 local L = WAH.L
+local coinString = WAH.coinString
+local getItemInfo = WAH.getItemInfo
 
 local EPOCH_DAY = 24 * 60 * 60
 
@@ -31,7 +33,7 @@ local function rangeText(entry)
   if maxClose == 0 or maxClose == minClose then return nil end
   local percentile = (entry.latest - minClose) / (maxClose - minClose) * 100
   return string.format(L.TT_RANGE_NOW,
-    GetCoinTextureString(minClose), GetCoinTextureString(maxClose), percentile)
+    coinString(minClose), coinString(maxClose), percentile)
 end
 
 -- Trader tooltip section: everywhere an item tooltip renders
@@ -70,17 +72,17 @@ local function appendTraderSection(tooltip)
     -- Sell front leads every other price: it is the action anchor
     -- (what to list at), the rest is context. Orange to stand out.
     if scanned.sellP then
-      tooltip:AddDoubleLine("  |cffff9933" .. L.TT_SELLP .. "|r", GetCoinTextureString(scanned.sellP))
+      tooltip:AddDoubleLine("  |cffff9933" .. L.TT_SELLP .. "|r", coinString(scanned.sellP))
     end
-    tooltip:AddDoubleLine("  " .. L.TT_MIN, GetCoinTextureString(scanned.minPrice))
-    if scanned.p5 then tooltip:AddDoubleLine("  P5", GetCoinTextureString(scanned.p5)) end
-    tooltip:AddDoubleLine("  P10", GetCoinTextureString(scanned.marketPrice))
+    tooltip:AddDoubleLine("  " .. L.TT_MIN, coinString(scanned.minPrice))
+    if scanned.p5 then tooltip:AddDoubleLine("  P5", coinString(scanned.p5)) end
+    tooltip:AddDoubleLine("  P10", coinString(scanned.marketPrice))
     tooltip:AddDoubleLine("  " .. L.TT_SUPPLY, string.format(L.TT_SUPPLY_FMT, scanned.quantity, scanned.numAuctions))
   end
   if entry then
     if scanned then tooltip:AddLine(" ") end
     tooltip:AddDoubleLine(L.TT_HISTORY_HEADER, "")
-    tooltip:AddDoubleLine("  " .. L.TT_MED7, GetCoinTextureString(entry.med7))
+    tooltip:AddDoubleLine("  " .. L.TT_MED7, coinString(entry.med7))
     local trend = trendText(scanned and scanned.marketPrice or entry.latest, entry.med7)
     if trend ~= "" then tooltip:AddDoubleLine("  " .. L.TT_TREND, trend) end
     local range = rangeText(entry)
@@ -145,7 +147,7 @@ local function coinLabel(amount)
   elseif amount >= COPPER_PER_GOLD then
     amount = amount - amount % COPPER_PER_SILVER
   end
-  return GetCoinTextureString(amount)
+  return coinString(amount)
 end
 
 local function createPlot(layout)
@@ -267,16 +269,20 @@ function WoWderhoiAH_UpdateChart(itemId)
   -- Follow the tooltip: anchored beside the AH when it is open,
   -- beside the game tooltip otherwise.
   chart:ClearAllPoints()
-  if AuctionFrame and AuctionFrame:IsShown() then
-    chart:SetPoint("TOPLEFT", AuctionFrame, "TOPRIGHT", -2, -12)
+  local auctionHouse = WAH.ahFrame and WAH.ahFrame()
+  local tradePage = WAH.tradeFrame and WAH.tradeFrame()
+  if tradePage and tradePage:IsShown() then
+    chart:SetPoint("TOPLEFT", tradePage, "TOPRIGHT", 4, -12)
+  elseif auctionHouse and auctionHouse:IsShown() then
+    chart:SetPoint("TOPLEFT", auctionHouse, "TOPRIGHT", 4, -12)
   elseif GameTooltip:IsShown() then
     chart:SetPoint("TOPRIGHT", GameTooltip, "TOPLEFT", -4, 0)
   else
     chart:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
   end
-  local itemName = GetItemInfo(itemId) or ("item:" .. itemId)
+  local itemName = getItemInfo(itemId) or ("item:" .. itemId)
   chart.title:SetText(itemName)
-  chart.subtitle:SetText(string.format(L.CHART_SUBTITLE, #entry.pts, GetCoinTextureString(entry.latest)))
+  chart.subtitle:SetText(string.format(L.CHART_SUBTITLE, #entry.pts, coinString(entry.latest)))
 
   local now = time()
   for _, plot in ipairs(chart.plots) do
@@ -321,4 +327,62 @@ SlashCmdList["WOWDERHOIAHSTATUS"] = function()
   end
   DEFAULT_CHAT_FRAME:AddMessage(string.format(
     "|cff33ff99WoWderhoi AHelper|r " .. L.STATUS_FMT, historyCount, scanInfo))
+end
+
+-- The modern auction house has no sell-item query an addon can read, so
+-- posting guidance is command-driven: hold an item on the cursor (or pass
+-- its link) and /wahprice prints the same numbers the sell prefill used to
+-- write into the price fields.
+local function printPrice(itemId)
+  local name = getItemInfo(itemId) or ("item:" .. tostring(itemId))
+  local scanned = WoWderhoiAH_ScanData
+    and WoWderhoiAH_ScanData.dataVersion == WAH.PIPELINE_VERSION
+    and WoWderhoiAH_ScanData.items and WoWderhoiAH_ScanData.items[itemId]
+  local entry = historyFor(itemId)
+  if not scanned and not entry then
+    DEFAULT_CHAT_FRAME:AddMessage(string.format(
+      "|cff33ff99WoWderhoiAH|r " .. L.PRICE_NO_DATA, name))
+    return
+  end
+  local lines = { string.format(L.PRICE_HEADER, name) }
+  if scanned and scanned.sellP then
+    lines[#lines + 1] = string.format(L.PRICE_SELL, coinString(scanned.sellP))
+  end
+  if scanned then
+    lines[#lines + 1] = string.format(L.PRICE_MIN, coinString(scanned.minPrice))
+    if scanned.p5 then
+      lines[#lines + 1] = string.format(L.PRICE_P5, coinString(scanned.p5))
+    end
+    lines[#lines + 1] = string.format(L.PRICE_P10, coinString(scanned.marketPrice))
+    lines[#lines + 1] = string.format(L.PRICE_SUPPLY, scanned.quantity, scanned.numAuctions)
+  end
+  if entry then
+    lines[#lines + 1] = string.format(L.PRICE_MED7, coinString(entry.med7))
+    if entry.med7 > 0 then
+      lines[#lines + 1] = string.format(L.PRICE_TREND,
+        (entry.latest - entry.med7) / entry.med7 * 100)
+    end
+  end
+  for _, line in ipairs(lines) do
+    DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WAH|r " .. line)
+  end
+end
+
+SLASH_WOWDERHOIAHPRICE1 = "/wahprice"
+SlashCmdList["WOWDERHOIAHPRICE"] = function(input)
+  local itemId
+  if input and input ~= "" then
+    itemId = tonumber(input:match("item:(%d+)")) or tonumber(input)
+  end
+  if not itemId then
+    -- GetCursorInfo's second return is the item id for item cursors and nil
+    -- for money/spells, which is exactly the guard this command needs.
+    local _, cursorItemId = GetCursorInfo()
+    itemId = cursorItemId
+  end
+  if not itemId then
+    DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WoWderhoiAH|r " .. L.PRICE_USAGE)
+    return
+  end
+  printPrice(itemId)
 end

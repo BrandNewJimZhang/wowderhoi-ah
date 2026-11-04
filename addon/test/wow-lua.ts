@@ -103,6 +103,7 @@ export function loadAddon(options?: { locale?: string }) {
 
     setScan: (items: unknown[]) => exec(`WowTest.setScan(${toLua(items)})`),
     setPoints: (entries: unknown[]) => exec(`WowTest.setPoints(${toLua(entries)})`),
+    runScan: (items: unknown[]) => exec(`WowTest.runScan(${toLua(items)})`),
     openTab: () => exec("WowTest.openTab()"),
     findDeals: () => exec("WowTest.clickButton(WowTest.ns.L.FIND_DEALS)"),
     search: (query: string, listings: unknown[]) =>
@@ -122,6 +123,7 @@ export function loadAddon(options?: { locale?: string }) {
       return Array.from({ length: count }, (_, index) => String(evaluate(`WowTest.cellText(${index + 1}, ${slot})`)));
     },
     lastChat: () => String(evaluate("WowTest.lastChat()")),
+    anyChat: (text: string) => Boolean(evaluate(`WowTest.anyChat(${toLua(text)})`)),
 
     panelHeight: () => Number(evaluate("WowTest.panelHeight()")),
     clearance: (side: "LEFT" | "RIGHT" | "TOP" | "BOTTOM") =>
