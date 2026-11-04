@@ -6,10 +6,10 @@ import { loadAddon } from "../../addon/test/wow-lua";
 const EVENTS: JournalEvent[] = [
   { k: "buy", t: 100, itemId: 2589, qty: 10, cost: 10000 },
   { k: "buy", t: 110, itemId: 2589, qty: 10, cost: 20000 },
-  { k: "post", t: 120, auctionID: 7, itemId: 2589, qty: 15, price: 1500, duration: 24, deposit: 500 },
+  { k: "post", t: 120, auctionID: 7, itemId: 2589, qty: 15, price: 1500, deposit: 500 },
   { k: "sold", t: 130, auctionID: 7, itemId: 2589, qty: 15, price: 1500, fee: 1125 },
   { k: "vendor", t: 140, itemId: 2589, qty: 3, paid: 4000 },
-  { k: "post", t: 150, auctionID: 8, itemId: 2589, qty: 2, price: 1600, duration: 24, deposit: 300 },
+  { k: "post", t: 150, auctionID: 8, itemId: 2589, qty: 2, price: 1600, deposit: 300 },
   { k: "expire", t: 160, auctionID: 8 },
   { k: "buy", t: 170, itemId: 1000, qty: 5, cost: 5000 },
   { k: "de", t: 180, itemId: 1000, qty: 5, outputs: [{ itemId: 2000, qty: 2 }, { itemId: 2001, qty: 1 }] }
@@ -34,7 +34,7 @@ describe("replayJournal", () => {
   it("labels an inferred sale and books it at the posted price", () => {
     const state = replayJournal([
       { k: "buy", t: 1, itemId: 1, qty: 1, cost: 100 },
-      { k: "post", t: 2, auctionID: 1, itemId: 1, qty: 1, price: 200, duration: 24, deposit: 10 },
+      { k: "post", t: 2, auctionID: 1, itemId: 1, qty: 1, price: 200, deposit: 10 },
       { k: "sold", t: 3, auctionID: 1, itemId: 1, qty: 1, price: 200, fee: 10, inferred: true }
     ]);
     expect(state.trades[0].inferred).toBe(true);

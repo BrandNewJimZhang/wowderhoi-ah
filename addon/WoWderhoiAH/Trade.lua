@@ -356,10 +356,8 @@ local function recordPurchase(purchase, payload)
   WAH.recordEvent({
     k = "buy",
     itemId = purchase.itemId,
-    name = purchase.name,
     qty = quantity,
-    cost = cost,
-    via = purchase.via
+    cost = cost
   })
   chatMessage(string.format(L.BOUGHT, purchase.name, quantity, coinString(cost)))
 end

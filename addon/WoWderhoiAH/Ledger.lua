@@ -29,10 +29,12 @@ local function newState(market)
     positions = {}, -- [itemId] = { qty, cost }
     openPosts = {}, -- [auctionID] = { itemId, qty, price, deposit }
     trades = {}, -- realized sales
+    -- Cash is not part of the ledger: GetMoney() is the only live source,
+    -- and a snapshot taken at the last rebuild would go stale the moment the
+    -- player loots or pays. Capital is the projection of what the journal
+    -- can prove.
     capital = {
-      cash = 0,
       escrow = 0,
-      mail = 0, -- not observable without a mailbox; always 0 today
       realized = 0,
       fees = 0,
       depositsLost = 0
@@ -126,8 +128,7 @@ function Ledger.replay(events, market)
         qty = event.qty or 0,
         price = event.price or 0,
         deposit = event.deposit or 0,
-        at = event.t,
-        duration = event.duration
+        at = event.t
       }
       state.capital.escrow = state.capital.escrow + (event.deposit or 0)
     elseif kind == "sold" then
@@ -197,7 +198,6 @@ function Ledger.rebuild()
   local events = WAH.Journal and WAH.Journal.current() or {}
   local market = WAH.Journal and WAH.Journal.bookKey() or "local"
   local state = Ledger.replay(events, market)
-  state.capital.cash = GetMoney and GetMoney() or 0
   WoWderhoiAH_Ledger = state
   return state
 end

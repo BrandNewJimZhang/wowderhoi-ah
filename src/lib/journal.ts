@@ -9,13 +9,11 @@ export type JournalEvent = {
   itemId?: number;
   qty?: number;
   cost?: number;
-  via?: string;
   paid?: number;
   price?: number;
   fee?: number;
   auctionID?: number | string;
   deposit?: number;
-  duration?: number;
   refund?: number;
   lostDeposit?: number;
   outputs?: Array<{ itemId: number; qty: number }>;
@@ -53,12 +51,10 @@ export type ReplayError = {
 
 export type ReplayState = {
   positions: Record<number, { qty: number; cost: number }>;
-  openPosts: Record<string, { itemId?: number; qty: number; price: number; deposit: number; at: number; duration?: number }>;
+  openPosts: Record<string, { itemId?: number; qty: number; price: number; deposit: number; at: number }>;
   trades: JournalTrade[];
   capital: {
-    cash: number;
     escrow: number;
-    mail: number;
     realized: number;
     fees: number;
     depositsLost: number;
@@ -101,11 +97,10 @@ export function parseJournal(raw: unknown): JournalBook[] {
         k: typeof event.k === "string" ? event.k : "",
         t: toNumber(event.t, index)
       };
-      for (const field of ["itemId", "qty", "cost", "paid", "price", "fee", "deposit", "duration", "refund", "lostDeposit"] as const) {
+      for (const field of ["itemId", "qty", "cost", "paid", "price", "fee", "deposit", "refund", "lostDeposit"] as const) {
         if (typeof event[field] === "number") parsed[field] = event[field] as number;
       }
       if (typeof event.auctionID === "number" || typeof event.auctionID === "string") parsed.auctionID = event.auctionID;
-      if (typeof event.via === "string") parsed.via = event.via;
       if (event.inferred === true) parsed.inferred = true;
       const outputs = numericEntries(event.outputs).map((output) => {
         const row = (output ?? {}) as Record<string, unknown>;
@@ -142,7 +137,7 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
   const openPosts: ReplayState["openPosts"] = {};
   const trades: JournalTrade[] = [];
   const errors: ReplayError[] = [];
-  const capital = { cash: 0, escrow: 0, mail: 0, realized: 0, fees: 0, depositsLost: 0 };
+  const capital = { escrow: 0, realized: 0, fees: 0, depositsLost: 0 };
 
   const addLot = (itemId: number | undefined, quantity: number, unitCost: number, at: number) => {
     if (!itemId || quantity <= 0) return;
@@ -210,8 +205,7 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
           qty: event.qty ?? 0,
           price: event.price ?? 0,
           deposit: event.deposit ?? 0,
-          at,
-          duration: event.duration
+          at
         };
         capital.escrow += event.deposit ?? 0;
         break;

@@ -165,7 +165,6 @@ local function onAuctionCreated(auctionID)
     itemId = post.itemId,
     qty = post.qty,
     price = post.price,
-    duration = post.duration,
     deposit = post.deposit
   })
   chatMessage(string.format(L.SELL_POSTED, post.name, post.qty, coinString(post.price)))
@@ -207,7 +206,6 @@ local function postItem(itemId, duration, quantity)
     name = entry.name,
     qty = qty,
     price = plan.listP,
-    duration = durationValue,
     deposit = plan.deposit
   }
   local ok, needsConfirmation = pcall(function()
@@ -448,7 +446,6 @@ local function ensureFrame()
     button:SetSize(42, 20)
     button:SetPoint("LEFT", anchor, "RIGHT", 6, 0)
     button:SetText(string.format(L.SELL_HOURS, duration))
-    button.duration = duration
     button:SetScript("OnClick", function()
       selectedDuration = duration
       WAH.Sell.render()
@@ -500,9 +497,10 @@ end
 
 local function render()
   if not sell then return end
-  local capital = WAH.Ledger and WAH.Ledger.capital() or { cash = 0 }
+  -- Same source as the decision core: the purse is what GetMoney reports
+  -- now, not a snapshot taken at the last journal rebuild.
   sell.status:SetText(string.format(L.SELL_STATUS_FMT,
-    #bagItems, #owned, coinString(capital.cash or 0)))
+    #bagItems, #owned, coinString(GetMoney and GetMoney() or 0)))
 
   if mode == "sell" then
     sell.bagScroll:Show()

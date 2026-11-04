@@ -12,7 +12,7 @@ function record(lua: WowLua, event: Record<string, unknown>) {
 describe("journal and ledger", () => {
   it("turns a buy into a position at its unit cost", () => {
     const lua = loadAddon();
-    record(lua, { k: "buy", itemId: 2589, qty: 10, cost: 8000, via: "commodity" });
+    record(lua, { k: "buy", itemId: 2589, qty: 10, cost: 8000 });
     expect(lua.number("WowTest.ns.Ledger.positions()[2589].qty")).toBe(10);
     expect(lua.number("WowTest.ns.Ledger.positions()[2589].cost")).toBe(8000);
     expect(lua.number("WowTest.ns.Journal.count()")).toBe(1);
@@ -41,7 +41,7 @@ describe("journal and ledger", () => {
   it("refunds a deposit on sale and charges the auction fee once", () => {
     const lua = loadAddon();
     record(lua, { k: "buy", itemId: 2589, qty: 10, cost: 8000 });
-    record(lua, { k: "post", auctionID: 7, itemId: 2589, qty: 10, price: 1200, duration: 24, deposit: 500 });
+    record(lua, { k: "post", auctionID: 7, itemId: 2589, qty: 10, price: 1200, deposit: 500 });
     expect(lua.number("WowTest.ns.Ledger.capital().escrow")).toBe(500);
     record(lua, { k: "sold", auctionID: 7, itemId: 2589, qty: 10, price: 1200, fee: 600 });
     // 12000 - 600 - 8000 = 3400; deposit is refunded, not an expense.
@@ -54,7 +54,7 @@ describe("journal and ledger", () => {
   it("loses the deposit on expiry and keeps the goods", () => {
     const lua = loadAddon();
     record(lua, { k: "buy", itemId: 2589, qty: 5, cost: 5000 });
-    record(lua, { k: "post", auctionID: 9, itemId: 2589, qty: 5, price: 1200, duration: 24, deposit: 300 });
+    record(lua, { k: "post", auctionID: 9, itemId: 2589, qty: 5, price: 1200, deposit: 300 });
     record(lua, { k: "expire", auctionID: 9 });
     expect(lua.number("WowTest.ns.Ledger.capital().depositsLost")).toBe(300);
     expect(lua.number("WowTest.ns.Ledger.capital().escrow")).toBe(0);
@@ -64,7 +64,7 @@ describe("journal and ledger", () => {
   it("refunds the deposit on cancellation without realizing a trade", () => {
     const lua = loadAddon();
     record(lua, { k: "buy", itemId: 2589, qty: 5, cost: 5000 });
-    record(lua, { k: "post", auctionID: 11, itemId: 2589, qty: 5, price: 1200, duration: 24, deposit: 300 });
+    record(lua, { k: "post", auctionID: 11, itemId: 2589, qty: 5, price: 1200, deposit: 300 });
     record(lua, { k: "cancel", auctionID: 11 });
     expect(lua.number("WowTest.ns.Ledger.capital().escrow")).toBe(0);
     expect(lua.number("WowTest.ns.Ledger.capital().depositsLost")).toBe(0);
@@ -86,7 +86,7 @@ describe("journal and ledger", () => {
   it("replays idempotently: rebuilding twice yields the same ledger", () => {
     const lua = loadAddon();
     record(lua, { k: "buy", itemId: 2589, qty: 10, cost: 8000 });
-    record(lua, { k: "post", auctionID: 3, itemId: 2589, qty: 4, price: 1200, duration: 24, deposit: 200 });
+    record(lua, { k: "post", auctionID: 3, itemId: 2589, qty: 4, price: 1200, deposit: 200 });
     record(lua, { k: "sold", auctionID: 3, itemId: 2589, qty: 4, price: 1200, fee: 240 });
     const first = lua.eval("(function() local l = WowTest.ns.Ledger.rebuild() return l.capital.realized .. '|' .. l.capital.escrow .. '|' .. l.positions[2589].qty end)()");
     const second = lua.eval("(function() local l = WowTest.ns.Ledger.rebuild() return l.capital.realized .. '|' .. l.capital.escrow .. '|' .. l.positions[2589].qty end)()");
