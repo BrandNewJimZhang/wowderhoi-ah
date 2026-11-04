@@ -43,7 +43,8 @@ export type CoreInput = {
   now: number;
   phaseOverride?: MarketPhase;
   market: {
-    scannedAt?: number;
+    // Only used when no phaseOverride is supplied; every production caller
+    // resolves the phase from the store and hands it down.
     firstScanAt?: number;
     items: Record<number, CoreMarketItem>;
   };
@@ -108,15 +109,10 @@ export type CoreAction =
 
 export type CoreOutput = {
   phase: MarketPhase;
-  ageHours: number;
-  breadth: number;
-  dataAgeMinutes: number;
   rows: CoreRow[];
   actions: CoreAction[];
-  diagnostics: {
-    considered: number;
-    matched: number;
-    excluded: Record<string, number>;
-  };
+  // Why rows fell out of the radar, keyed by gate. Read by the core's own
+  // tests; the UIs explain exclusions per row instead.
+  diagnostics: { excluded: Record<string, number> };
 };
 

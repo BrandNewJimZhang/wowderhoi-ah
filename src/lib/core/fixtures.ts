@@ -16,7 +16,6 @@ export function commodityInput(overrides?: {
     now: CORE_NOW,
     phaseOverride: overrides?.phase,
     market: {
-      scannedAt: CORE_NOW,
       firstScanAt: CORE_NOW - ageHours * 3600,
       items: overrides?.items ?? {
         2589: {

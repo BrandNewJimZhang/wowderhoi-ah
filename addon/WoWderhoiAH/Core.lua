@@ -563,16 +563,11 @@ function Core.evaluate(input)
 
   return {
     phase = phase,
-    ageHours = ageHours,
-    breadth = breadth,
-    dataAgeMinutes = math.max(0, (now - (market.scannedAt or now)) / 60),
     rows = rows,
     actions = actions,
-    diagnostics = {
-      considered = breadth,
-      matched = #rows,
-      excluded = excluded
-    }
+    -- Why rows fell out of the radar, keyed by gate. The UIs explain
+    -- exclusions per row; the core's own tests read this table.
+    diagnostics = { excluded = excluded }
   }
 end
 

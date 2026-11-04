@@ -3,12 +3,16 @@
 // decision core only rerun when a new scan lands, so filter/sort/page
 // interactions pay one cheap timestamp probe instead of recomputing the
 // whole market on every request.
+//
+// The phase is the exception. It is a function of wall-clock age, and a
+// generation can cross a boundary without a new scan; it is therefore
+// recomputed on every request, exactly like WAH.currentPhase runs in game.
 import { buildMarketSignal, type MarketSignal } from "@/lib/analytics";
 import { buildCoreInput } from "@/lib/core/from-market";
 import { runCore } from "@/lib/core/run-core";
 import type { CoreOutput, OwnSales } from "@/lib/core/types";
 import { buildPriceIndex, type PriceIndex } from "@/lib/deflator";
-import type { MarketHistory } from "@/lib/market-data";
+import type { MarketHistory, MarketSnapshot } from "@/lib/market-data";
 import { resolveBudgetCopper, resolvePhaseOverride } from "@/lib/config";
 import type { MarketPhase } from "@/lib/market-rules";
 import { resolvePhase } from "@/lib/phase";
@@ -32,6 +36,17 @@ type SignalFetchers = {
   getPositions: (scope: MarketScope | null) => Promise<Record<number, { qty: number; cost: number }>>;
   getOwnSales: (scope: MarketScope | null) => Promise<OwnSales>;
   recordDecisions?: (bundle: MarketBundle) => Promise<void>;
+  // Injectable clock so the phase-boundary behaviour is testable.
+  now?: () => Date;
+};
+
+type CacheEntry = {
+  scopeId: string | null;
+  latestAtMs: number;
+  earliestAtMs: number | null;
+  breadth: number;
+  phase: MarketPhase;
+  bundle: MarketBundle;
 };
 
 function emptyBundle(phase: MarketPhase, scope: MarketScope | null = null): MarketBundle {
@@ -43,43 +58,60 @@ function emptyBundle(phase: MarketPhase, scope: MarketScope | null = null): Mark
     priceIndex: { dates: [], values: [], baseDate: "" },
     evaluation: {
       phase,
-      ageHours: 0,
-      breadth: 0,
-      dataAgeMinutes: 0,
       rows: [],
       actions: [],
-      diagnostics: { considered: 0, matched: 0, excluded: {} }
+      diagnostics: { excluded: {} }
     }
   };
 }
 
+function newest(snapshots: MarketSnapshot[]): MarketSnapshot {
+  return snapshots.reduce((latest, snapshot) => (snapshot.timestamp > latest.timestamp ? snapshot : latest));
+}
+
+function ageHours(now: Date, firstScanAtMs: number | null): number {
+  if (firstScanAtMs === null) return 0;
+  return Math.max(0, (now.getTime() - firstScanAtMs) / (60 * 60 * 1000));
+}
+
 export function createMarketSignalSource(fetchers: SignalFetchers) {
-  let cachedAtMs: number | null = null;
-  let cached: MarketBundle = emptyBundle("ignition");
+  let cached: CacheEntry | null = null;
+  const nowOf = fetchers.now ?? (() => new Date());
 
   return {
     async getMarketSignals(): Promise<MarketBundle> {
       const scope = await fetchers.getMarketScope();
       const latestSnapshotAt = await fetchers.getLatestSnapshotTime(scope);
       if (latestSnapshotAt === null) {
-        cached = emptyBundle(resolvePhaseOverride() ?? "ignition", scope);
-        cachedAtMs = null;
-        return cached;
+        cached = null;
+        return emptyBundle(resolvePhaseOverride() ?? "ignition", scope);
       }
-      if (cachedAtMs === latestSnapshotAt.getTime()) return cached;
+      const now = nowOf();
+      const latestAtMs = latestSnapshotAt.getTime();
+      if (cached !== null && cached.scopeId === (scope?.id ?? null) && cached.latestAtMs === latestAtMs) {
+        const currentPhase = resolvePhaseOverride() ?? resolvePhase(ageHours(now, cached.earliestAtMs), cached.breadth);
+        if (currentPhase === cached.phase) return cached.bundle;
+      }
 
       const universe = await fetchers.getMarketUniverse(scope);
       const earliestSnapshotAt = await fetchers.getEarliestSnapshotTime(scope);
-      const priced = universe.filter((item) => item.snapshots.length > 0);
-      const now = new Date();
-      const ageHours = earliestSnapshotAt
-        ? Math.max(0, (now.getTime() - earliestSnapshotAt.getTime()) / (60 * 60 * 1000))
-        : 0;
-      const phase = resolvePhaseOverride() ?? resolvePhase(ageHours, priced.length);
+      // Breadth counts the items the newest scan actually listed, matching
+      // WAH.currentPhase's scan.items loop. An item that dropped out of the
+      // book keeps its history but no longer counts toward market breadth.
+      const breadth = universe.filter(
+        (item) => item.snapshots.length > 0 && newest(item.snapshots).timestamp.getTime() === latestAtMs
+      ).length;
+      const phase = resolvePhaseOverride() ?? resolvePhase(ageHours(now, earliestSnapshotAt?.getTime() ?? null), breadth);
       const priceIndex = buildPriceIndex(universe);
-      const signals = priced.map((item) => buildMarketSignal(item, now, { phase, index: priceIndex }));
+      const signals = universe
+        .filter((item) => item.snapshots.length > 0)
+        .map((item) => buildMarketSignal(item, now, { phase, index: priceIndex, currentAt: latestSnapshotAt }));
       const byItemId = new Map(universe.map((item) => [item.itemId, item]));
+      // The addon's radar only evaluates the current scan. A stale signal
+      // describes a book that is gone, so it stays in the monitor but never
+      // becomes an action, a position or an alert input.
       const pairs = signals
+        .filter((signal) => !signal.stale)
         .map((signal) => ({ signal, history: byItemId.get(signal.itemId) }))
         .filter((pair): pair is { signal: MarketSignal; history: MarketHistory } => pair.history !== undefined);
       const [positions, ownSales] = await Promise.all([fetchers.getPositions(scope), fetchers.getOwnSales(scope)]);
@@ -96,7 +128,7 @@ export function createMarketSignalSource(fetchers: SignalFetchers) {
         // fills from GetMoney().
         cashCopper: scope?.cash ?? 0
       });
-      cached = {
+      const bundle: MarketBundle = {
         scope,
         signals,
         latestSnapshotAt,
@@ -104,9 +136,16 @@ export function createMarketSignalSource(fetchers: SignalFetchers) {
         priceIndex,
         evaluation: runCore(input)
       };
-      cachedAtMs = latestSnapshotAt.getTime();
-      if (fetchers.recordDecisions) await fetchers.recordDecisions(cached);
-      return cached;
+      cached = {
+        scopeId: scope?.id ?? null,
+        latestAtMs,
+        earliestAtMs: earliestSnapshotAt?.getTime() ?? null,
+        breadth,
+        phase,
+        bundle
+      };
+      if (fetchers.recordDecisions) await fetchers.recordDecisions(bundle);
+      return bundle;
     }
   };
 }

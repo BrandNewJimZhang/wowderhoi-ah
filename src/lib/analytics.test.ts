@@ -177,6 +177,15 @@ describe("buildMarketSignal", () => {
     expect(signal.sellersInvisible).toBe(false);
   });
 
+  it("flags an item whose newest price row predates the current scan", () => {
+    const item = history([{ daysAgo: 1, sellPrice: 100 }]);
+    const scannedAt = new Date(now.getTime() - 60 * 60 * 1000);
+    const signal = buildMarketSignal(item, now, { currentAt: scannedAt });
+    expect(signal.stale).toBe(true);
+    // Without an explicit generation the latest row is the current book.
+    expect(buildMarketSignal(item, now).stale).toBe(false);
+  });
+
   it("throws on an item with no snapshots instead of inventing a signal", () => {
     expect(() => buildMarketSignal(history([]), now)).toThrow(/no snapshots/i);
   });

@@ -34,6 +34,10 @@ export type MarketSignal = {
   inferredSoldHigh: number; // lost from a price key: also repricing
   supplyGrowth: number; // fraction per hour
   vendorPrice: number; // NPC sell price, copper; 0 = unsellable
+  // True when the item had no priced listing in the newest scan generation:
+  // its prices describe a book that no longer exists and must not feed a
+  // recommendation or an alert.
+  stale: boolean;
   sellRef: number; // median sell front over the phase window
   sellSamples: number;
   spreadPercent: number; // (sellPrice - minPrice) / sellPrice
@@ -49,7 +53,7 @@ function sellOf(snapshot: MarketSnapshot): number {
 export function buildMarketSignal(
   item: MarketHistory,
   now: Date,
-  options?: { phase?: MarketPhase; index?: PriceIndex }
+  options?: { phase?: MarketPhase; index?: PriceIndex; currentAt?: Date }
 ): MarketSignal {
   const snapshots = [...item.snapshots].sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
   if (snapshots.length === 0) {
@@ -99,6 +103,7 @@ export function buildMarketSignal(
     inferredSoldHigh: Math.max(latest.soldProxyHigh ?? 0, latest.soldProxyLow ?? 0),
     supplyGrowth: latest.supplyGrowth ?? 0,
     vendorPrice: item.vendorPrice,
+    stale: latest.timestamp.getTime() < (options?.currentAt ?? latest.timestamp).getTime(),
     sellRef,
     sellSamples,
     // The spread is the executable gap at today's sell front. sellRef is

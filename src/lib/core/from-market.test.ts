@@ -60,6 +60,7 @@ function signal(itemId: number): MarketSignal {
     inferredSoldHigh: 0,
     supplyGrowth: 0,
     vendorPrice: 0,
+    stale: false,
     sellRef: 1000,
     sellSamples: 2,
     spreadPercent: 30,
@@ -88,8 +89,6 @@ describe("buildCoreInput", () => {
   it("uses the oldest snapshot as the market's first scan", () => {
     const input = buildCoreInput(pairs(), { now: LATEST, phase: "wave" });
     expect(input.market.firstScanAt).toBe(EARLIEST.getTime() / 1000);
-    const output = runCore(input);
-    expect(output.ageHours).toBeCloseTo(24, 5);
   });
 
   it("keeps scanned cash and the planning budget as separate inputs", () => {

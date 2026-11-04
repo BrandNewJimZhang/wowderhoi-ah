@@ -138,6 +138,7 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
                   <Link href={`/items/${signal.itemId}`} className={`inline-flex items-center gap-2 ${qualityColorClass(signal.quality)}`}>
                     <ItemIcon itemId={signal.itemId} />
                     {signal.name}
+                    {signal.stale && <span className="text-[10px] text-terminal-muted" title="最近一次扫描中已无在售挂单：价格是上次有货时的值，不参与推荐与预警">已下架</span>}
                   </Link>
                 </td>
                 <td className="px-3 py-2 text-right"><Coins copper={signal.sellPrice} /></td>
@@ -154,7 +155,7 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
         </table>
       </div>
       <div className="border-t border-terminal-border px-3 py-2 font-mono text-[10px] text-terminal-muted">
-        价差% = (建议卖价 − 最低价) / 建议卖价 · 趋势% = 相对阶段窗口的建议卖价中位 · 环比% = 相对上次扫描的建议卖价
+        价差% = (建议卖价 − 最低价) / 建议卖价 · 趋势% = 相对阶段窗口的建议卖价中位 · 环比% = 相对上次扫描的建议卖价 · 已下架 = 最近一次扫描已无该物品挂单
       </div>
     </div>
   );

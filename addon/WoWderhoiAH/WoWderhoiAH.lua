@@ -764,7 +764,6 @@ function WAH.coreInput()
   local input = {
     now = time(),
     market = {
-      scannedAt = scan and scan.scannedAt or nil,
       firstScanAt = market and market.firstScanAt or nil,
       items = {}
     },

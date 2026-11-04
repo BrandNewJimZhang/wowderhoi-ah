@@ -33,7 +33,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
   // priced rows; the demand row is shown as is.
   const latest = item.snapshots.at(-1);
   const signal = bundle.signals.find((entry) => entry.itemId === numericItemId)
-    ?? (latest ? buildMarketSignal(item, now, { phase: bundle.phase, index: bundle.priceIndex }) : null);
+    ?? (latest ? buildMarketSignal(item, now, { phase: bundle.phase, index: bundle.priceIndex, currentAt: bundle.latestSnapshotAt ?? latest.timestamp }) : null);
   const seasonality = buildWeekdaySeasonality(item.dailySummaries);
   const weekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
   const demand = item.demandSnapshot;
@@ -153,6 +153,11 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
             <PanelHeader title="行情概要" />
             <div className="space-y-3 p-4 font-mono text-sm">
               {!signal && !demand && <div className="text-xs text-terminal-muted">尚无扫描数据</div>}
+              {signal?.stale && (
+                <div className="border border-terminal-border bg-terminal-panel2 px-2 py-1 text-xs text-terminal-amber">
+                  最近一次扫描中已无该物品的在售挂单，下方价格是上次有货时的值。
+                </div>
+              )}
               {signal && (
                 <>
                   <div>

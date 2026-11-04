@@ -54,7 +54,7 @@ function coreInput(itemCount: number): CoreInput {
   return {
     now: NOW,
     phaseOverride: "wave",
-    market: { scannedAt: NOW, firstScanAt: NOW - 30 * 3600, items },
+    market: { firstScanAt: NOW - 30 * 3600, items },
     capital: { cash: 1_000_000, budget: 1_000_000 },
     capacity: { bagSlots: 20, stackSize: 20 }
   };

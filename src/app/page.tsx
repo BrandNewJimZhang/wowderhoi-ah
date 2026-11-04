@@ -39,7 +39,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   ]);
   const freshness = describeFreshness(latestSnapshotAt, new Date());
   const watchedSignals = signals.filter((signal) => watchedIds.has(signal.itemId));
-  const triggeredAlerts = evaluateAlertRules(alertRules, signals);
+  // Alerts and the action list only see the newest scan's book: a price
+  // from an item that is no longer listed must not page the trader.
+  const triggeredAlerts = evaluateAlertRules(alertRules, signals.filter((signal) => !signal.stale));
   // The opportunity list is Core.lua's evaluation, the same decision core
   // the addon runs in game. It is not a second radar implementation.
   const deals = evaluation.rows.slice(0, 12);
@@ -219,6 +221,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                   </span>
                   <span className="flex items-center gap-3">
                     <Coins copper={signal.sellPrice} />
+                    {signal.stale && <span className="text-[10px] text-terminal-muted" title="最近一次扫描中已无在售挂单，价格是上次有货时的值">已下架</span>}
                     <span title="相对上次扫描的建议卖价" className={signal.changePercent >= 0 ? "text-terminal-red" : "text-terminal-green"}>{formatPercent(signal.changePercent)}</span>
                   </span>
                 </div>
