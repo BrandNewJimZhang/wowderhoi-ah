@@ -273,29 +273,42 @@ local function copyPoint(series, source, target)
   target.e[#target.e + 1] = series.e[source]
 end
 
--- Layered retention: every scan for 24 hours, the last point per hour for
--- a week, the last point per day for a month. Event points (a 10% sell-
--- front move or a 25% supply move) survive the hourly fold.
+-- Drop the last kept point from every array in `kept`.
+local function popKept(kept)
+  kept.t[#kept.t] = nil
+  kept.min[#kept.min] = nil
+  kept.sell[#kept.sell] = nil
+  kept.q[#kept.q] = nil
+  kept.e[#kept.e] = nil
+end
+
+-- Layered retention: every scan for 24 hours, the LAST point of each hour
+-- for a week, the last point of each day for a month. A close is the
+-- statistic the charts and the sell median read, so a folded hour keeps
+-- its close rather than its open. Event points (a 10% sell-front move or a
+-- 25% supply move) survive the fold in addition to the close.
 local function pruneSeries(series, nowTs)
   local cutoff24, cutoff7, cutoff30 = nowTs - DAY, nowTs - 7 * DAY, nowTs - 30 * DAY
   local kept = { t = {}, min = {}, sell = {}, q = {}, e = {} }
   local lastHour, lastDay
+  local lastIsEvent = false -- event points are never replaced by a later close
   for index = 1, #series.t do
     local stamp = series.t[index]
     if stamp >= cutoff30 then
-      local keep = false
+      local event = series.e[index] == 1
       if stamp >= cutoff24 then
-        keep = true
+        copyPoint(series, index, kept)
       elseif stamp >= cutoff7 then
         local hour = math.floor(stamp / HOUR)
-        if hour ~= lastHour then keep = true; lastHour = hour end
-        if series.e[index] == 1 then keep = true end
+        if hour == lastHour and not lastIsEvent then popKept(kept) else lastHour = hour end
+        copyPoint(series, index, kept)
+        lastIsEvent = event
       else
         local day = math.floor(stamp / DAY)
-        if day ~= lastDay then keep = true; lastDay = day end
-        if series.e[index] == 1 then keep = true end
+        if day == lastDay and not lastIsEvent then popKept(kept) else lastDay = day end
+        copyPoint(series, index, kept)
+        lastIsEvent = event
       end
-      if keep then copyPoint(series, index, kept) end
     end
   end
   return kept
