@@ -323,11 +323,26 @@ local function repriceAfterPurchase(bought)
   local tiers = {}
   for price, count in pairs(tiersByPrice) do tiers[#tiers + 1] = { p = price, q = count } end
   table.sort(tiers, function(left, right) return left.p < right.p end)
+  -- Rebuild the front with the same rule the scanner used: item auctions
+  -- measure depth in listings, commodities in units, and ignition asks for
+  -- a shallower front. The market type is the one the scan recorded; deriving
+  -- it again from the surviving rows would flip a stack-bearing item auction
+  -- to commodity as the book shrinks.
+  local marketType = scanned.marketType or WAH.Core.marketTypeFor({
+    itemClass = scanned.itemClass,
+    quantity = scanned.quantity,
+    numAuctions = scanned.numAuctions
+  })
+  local phase = WAH.currentPhase and WAH.currentPhase() or "steady"
   scanned.minPrice = cheapest
   scanned.tiers = tiers
   scanned.quantity = quantity
   scanned.numAuctions = listings
-  scanned.sellP = WAH.Core.sellFront(tiers, { rules = WAH.RULES.sellFront }) or cheapest
+  scanned.sellP = WAH.Core.sellFront(tiers, {
+    rules = WAH.RULES.sellFront,
+    byCount = marketType == "item",
+    early = phase == "ignition"
+  }) or cheapest
 end
 
 local function awaitPurchase(purchase)

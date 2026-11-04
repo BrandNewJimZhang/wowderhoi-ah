@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fillCurve } from "@/lib/fill";
+import { bandFromInterval, fillCurve } from "@/lib/fill";
 
 describe("fillCurve", () => {
   it("returns no points for an empty book", () => {
@@ -31,5 +31,17 @@ describe("fillCurve", () => {
     expect(points[0].fill).toBeLessThanOrEqual(1);
     expect(points[0].band[0]).toBeGreaterThanOrEqual(0);
     expect(points[0].band[1]).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("bandFromInterval", () => {
+  it("uses the wider side of the core's interval as the relative band", () => {
+    expect(bandFromInterval(0.5, 0.4, 0.6)).toBeCloseTo(0.2, 6);
+    expect(bandFromInterval(0.8, 0.4, 0.9)).toBeCloseTo(0.5, 6);
+  });
+
+  it("falls back to the default when the point is not an estimate", () => {
+    expect(bandFromInterval(0, 0, 0)).toBe(0.35);
+    expect(bandFromInterval(1, 0.5, 1)).toBeCloseTo(0.5, 6);
   });
 });

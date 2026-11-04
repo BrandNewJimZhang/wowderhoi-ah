@@ -109,6 +109,33 @@ describe("a purchase corrects the scan the cockpit reads", () => {
   });
 });
 
+describe("the post-purchase front uses the scanner's own rule", () => {
+  it("measures an item auction's depth in listings, not units", () => {
+    const lua = loadAddon();
+    lua.setScan([
+      {
+        itemId: MAGEWEAVE, name: "Mageweave Cloth", minPrice: 100, sellP: 300,
+        numAuctions: 4, sellers: 4, quantity: 6, itemClass: "Armor",
+        tiers: [{ p: 100, q: 1 }, { p: 200, q: 3 }, { p: 300, q: 1 }, { p: 400, q: 1 }]
+      }
+    ]);
+    lua.setPoints([{ itemId: MAGEWEAVE, closes: CLOSES }]);
+    lua.openTab();
+    lua.search("Mageweave", [
+      { itemId: MAGEWEAVE, name: "Mageweave Cloth", count: 1, buyout: 100 },
+      { itemId: MAGEWEAVE, name: "Mageweave Cloth", count: 3, buyout: 600 },
+      { itemId: MAGEWEAVE, name: "Mageweave Cloth", count: 1, buyout: 300 },
+      { itemId: MAGEWEAVE, name: "Mageweave Cloth", count: 1, buyout: 400 }
+    ]);
+    lua.buyRow(1);
+    lua.exec("WowTest.fireEvent('AUCTION_HOUSE_PURCHASE_COMPLETED')");
+    // Three listings survive. The by-listing front is the third cheapest
+    // (400); a quantity-weighted front would stop inside the 3-stack at
+    // 200, pricing the same book two different ways.
+    expect(lua.number("WoWderhoiAH_ScanData.items[4338].sellP")).toBe(400);
+  });
+});
+
 describe("a confirmed purchase becomes a ledger fact", () => {
   it("records the item auction on AUCTION_HOUSE_PURCHASE_COMPLETED", () => {
     const lua = page();

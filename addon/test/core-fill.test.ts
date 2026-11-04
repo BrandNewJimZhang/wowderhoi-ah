@@ -12,12 +12,12 @@ function fill(input: Record<string, number | string>) {
     .join(", ");
   const text = lua.text(
     `(function()
-      local low, high, point, basis = WowTest.ns.Core.fillProbability({ ${fields} })
-      return string.format("%.4f|%.4f|%.4f|%s", low, high, point, basis)
+      local low, high, point, basis, hazard = WowTest.ns.Core.fillProbability({ ${fields} })
+      return string.format("%.4f|%.4f|%.4f|%s|%.4f", low, high, point, basis, hazard)
     end)()`
   );
-  const [low, high, point, basis] = text.split("|");
-  return { low: Number(low), high: Number(high), point: Number(point), basis };
+  const [low, high, point, basis, hazard] = text.split("|");
+  return { low: Number(low), high: Number(high), point: Number(point), basis, hazard: Number(hazard) };
 }
 
 describe("fill evidence hierarchy", () => {
@@ -65,6 +65,15 @@ describe("fill evidence hierarchy", () => {
     const result = fill({ horizonHours: 1, phase: "ignition", marketType: "commodity", qty: 10 });
     expect(result.basis).toBe("prior");
     expect(result.point).toBeCloseTo(1 - Math.exp(-0.35), 3);
+  });
+
+  it("returns the hazard behind the point so the chart cannot refit its own curve", () => {
+    // The terminal's fill curve is anchored to this hazard. Reversing the
+    // point estimate in the chart made an exactly-certain fill (the hazard
+    // cap at long horizons) look like no estimate at all.
+    const result = fill({ horizonHours: 24, phase: "ignition", marketType: "commodity", qty: 1 });
+    expect(result.hazard).toBeCloseTo(0.35, 4);
+    expect(1 - Math.exp(-result.hazard * 24)).toBeCloseTo(result.point, 4);
   });
 
   it("floors the proxy window at the compiled scan interval", () => {

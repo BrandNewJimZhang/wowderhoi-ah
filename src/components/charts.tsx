@@ -171,8 +171,8 @@ const FILL_BASIS_LABELS: Record<Exclude<FillBasis, "vendor">, string> = {
   prior: "基于阶段先验（尚无自己的成交）"
 };
 
-export function FillProbabilityChart({ tiers, hazardPerHour, basis, quantity }: { tiers: BookTier[]; hazardPerHour: number; basis: Exclude<FillBasis, "vendor">; quantity: number }) {
-  const data = fillCurve(tiers, hazardPerHour, 24, 0.35, quantity);
+export function FillProbabilityChart({ tiers, hazardPerHour, basis, quantity, band = 0.35 }: { tiers: BookTier[]; hazardPerHour: number; basis: Exclude<FillBasis, "vendor">; quantity: number; band?: number }) {
+  const data = fillCurve(tiers, hazardPerHour, 24, band, quantity);
   if (data.length === 0) {
     return <div className="p-4 font-mono text-xs text-terminal-muted">没有盘口深度，无法估计成交概率</div>;
   }

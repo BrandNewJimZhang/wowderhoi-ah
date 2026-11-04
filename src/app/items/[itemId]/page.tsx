@@ -9,6 +9,7 @@ import { qualityColorClass } from "@/lib/quality";
 import { ItemIcon } from "@/components/item-icon";
 import { describeFreshness } from "@/lib/freshness";
 import { SCAN_INTERVAL_MINUTES } from "@/lib/market-rules";
+import { bandFromInterval } from "@/lib/fill";
 import { CandlestickChart, FillProbabilityChart, OrderBookChart, TimeSeriesChart, type BookTier } from "@/components/charts";
 import { AlertRulePanel } from "@/components/trader-panels";
 import { WatchStar } from "@/components/watch-star";
@@ -62,10 +63,15 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
   // probability, never from a second hazard formula: the chart and the
   // recommendation must cite the same evidence tier.
   const fillRow = bundle.evaluation.rows.find((row) => row.itemId === numericItemId);
-  const hazardPerHour = fillRow && fillRow.fillProb > 0 && fillRow.fillProb < 1
-    ? -Math.log(1 - fillRow.fillProb) / 24
-    : null;
-  const fillBasis = fillRow && fillRow.fillBasis !== "vendor" ? fillRow.fillBasis : "prior";
+  // The hazard and the interval come from the core's own estimate. Inverting
+  // fillProb here made an exactly-certain fill (the hazard cap at a 24-hour
+  // horizon) look like no estimate at all.
+  const fillEstimate = fillRow && !fillRow.vendor ? fillRow : null;
+  const hazardPerHour = fillEstimate?.fillHazard && fillEstimate.fillHazard > 0 ? fillEstimate.fillHazard : null;
+  const fillBasis = fillEstimate && fillEstimate.fillBasis !== "vendor" ? fillEstimate.fillBasis : "prior";
+  const fillBand = fillEstimate
+    ? bandFromInterval(fillEstimate.fillProb, fillEstimate.fillProbLow, fillEstimate.fillProbHigh)
+    : 0.35;
 
   return (
     <main className="terminal-grid min-h-screen bg-terminal-bg p-3 text-slate-200">
@@ -97,10 +103,14 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
           <Panel>
             <PanelHeader title="24 小时成交概率" />
             <div className="p-3">
-              {hazardPerHour !== null && fillRow
-                ? <FillProbabilityChart tiers={bookTiers} hazardPerHour={hazardPerHour} basis={fillBasis} quantity={fillRow.execQty} />
+              {hazardPerHour !== null && fillEstimate
+                ? <FillProbabilityChart tiers={bookTiers} hazardPerHour={hazardPerHour} basis={fillBasis} quantity={fillEstimate.execQty} band={fillBand} />
                 : <div className="p-4 font-mono text-xs text-terminal-muted">
-                    {latest ? "该物品未通过当前阶段门槛，暂无成交概率估计；先看盘口与建议卖价。" : "尚无扫描数据"}
+                    {fillRow?.vendor
+                      ? "NPC 收购价高于挂单价：成交由商人保证，无需挂单成交估计。"
+                      : latest
+                        ? "该物品未通过当前阶段门槛，暂无成交概率估计；先看盘口与建议卖价。"
+                        : "尚无扫描数据"}
                   </div>}
             </div>
           </Panel>

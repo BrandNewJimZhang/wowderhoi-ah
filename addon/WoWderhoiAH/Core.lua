@@ -213,7 +213,9 @@ function Core.fillProbability(input)
   local point = 1 - math.exp(-hazard * horizon)
   local low = math.max(0, point * (1 - spread))
   local high = math.min(1, point * (1 + spread))
-  return low, high, point, basis
+  -- The hazard is returned so a chart can anchor its curve to this estimate
+  -- instead of inverting a point that the cap can round to exactly 1.
+  return low, high, point, basis, hazard
 end
 
 function Core.phaseFor(ageHours, breadth, boundaries)
@@ -446,7 +448,7 @@ function Core.evaluate(input)
         elseif net < ((marketRules and marketRules.minNet) or 0) then
           excluded.net = excluded.net + 1
         else
-          local low, high, point, fillBasis = Core.fillProbability({
+          local low, high, point, fillBasis, fillHazard = Core.fillProbability({
             horizonHours = 24,
             phase = phase,
             marketType = marketType,
@@ -479,6 +481,7 @@ function Core.evaluate(input)
             fillProb = point,
             fillProbLow = low,
             fillProbHigh = high,
+            fillHazard = fillHazard,
             fillBasis = fillBasis,
             confidence = confidence,
             supplyGrowth = item.supplyGrowth or 0,
@@ -544,12 +547,15 @@ function Core.evaluate(input)
       local item = items[itemId]
       local sellP = item and (item.sellP or Core.sellFront(item.tiers or {}, { rules = rules.sellFront }))
       if sellP then
+        -- Net against the price the listing will carry, not the raw front:
+        -- the undercut is real money and the two must not disagree.
+        local price = Core.listPrice(sellP, item and item.vendorP or 0, rules)
         actions[#actions + 1] = {
           kind = "sell",
           itemId = itemId,
           qty = position.qty,
-          price = Core.listPrice(sellP, item and item.vendorP or 0, rules),
-          netIfSold = round(Core.netIfSold(sellP, position.qty, position.cost / position.qty, feeRate)),
+          price = price,
+          netIfSold = round(Core.netIfSold(price, position.qty, position.cost / position.qty, feeRate)),
           reason = "持仓卖出计划"
         }
       end

@@ -7,6 +7,14 @@
 export type FillTier = { p: number; q: number };
 export type FillPoint = { price: number; fill: number; band: [number, number] };
 
+// The core reports the interval around its point estimate. The chart must
+// draw the same uncertainty: a hardcoded band (35%) would show a prior
+// estimate as tighter than the recommendation it is derived from.
+export function bandFromInterval(point: number, low: number, high: number, fallback = 0.35): number {
+  if (!(point > 0)) return fallback;
+  return Math.max(0, (point - low) / point, (high - point) / point);
+}
+
 export function fillCurve(
   tiers: FillTier[],
   hazardPerHour: number,
