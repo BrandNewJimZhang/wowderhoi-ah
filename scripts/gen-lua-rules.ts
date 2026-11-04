@@ -5,6 +5,7 @@
 //   npm run gen:lua-rules
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { demandBands } from "@/lib/demand";
 import {
   AH_FEE_RATE,
   SCAN_PIPELINE_VERSION,
@@ -63,6 +64,8 @@ WAH.RULES = {
   portfolio = ${luaTable(portfolioRules, "")},
   marketTypeRules = ${luaTable(marketTypeRules, "")}
 }
+
+WAH.DEMAND = ${luaTable(demandBands, "")}
 `;
 }
 

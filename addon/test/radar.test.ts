@@ -85,6 +85,33 @@ describe("executable-profit radar", () => {
     expect(radar([lonely], "ignition").names()).toEqual(["No History"]);
   });
 
+  it("ranks ignition opportunities by the demand prior, not only by net", () => {
+    const shared = {
+      itemId: 0, name: "", minPrice: 8000, sellP: 10000,
+      numAuctions: 6, sellers: 3, quantity: 70,
+      tiers: [{ p: 8000, q: 20 }, { p: 9000, q: 50 }],
+      closes: [10000, 11000, 12000]
+    };
+    const bag = { ...shared, itemId: 10, name: "Bag", itemClass: "Container", itemSubClass: "Bag" };
+    const armor = { ...shared, itemId: 11, name: "Armor", itemClass: "Armor", itemSubClass: "Mail" };
+    const lua = loadAddon();
+    lua.setScan([armor, bag].map((candidate) => ({
+      itemId: candidate.itemId,
+      name: candidate.name,
+      minPrice: candidate.minPrice,
+      sellP: candidate.sellP,
+      numAuctions: candidate.numAuctions,
+      sellers: candidate.sellers,
+      quantity: candidate.quantity,
+      itemClass: candidate.itemClass,
+      itemSubClass: candidate.itemSubClass,
+      tiers: candidate.tiers
+    })));
+    lua.setPoints([{ itemId: 10, closes: bag.closes }, { itemId: 11, closes: armor.closes }]);
+    lua.openTab();
+    expect(lua.names()).toEqual(["Bag", "Armor"]);
+  });
+
   it("does not use a flat P10 series as a veto — the sell front is the anchor", () => {
     // The old radar refused a flat series because P10 was the reference.
     // Core prices the spread against the sell front; a flat history is

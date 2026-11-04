@@ -179,6 +179,7 @@ the addon runs the same file natively.
 | `src/lib/core/run-core.ts` | fengari runner for the shipped `Core.lua` |
 | `src/lib/market-rules.ts` | Single rule source: phases, market types, fees, sell front |
 | `src/lib/analytics.ts` / `phase.ts` / `deflator.ts` | Signals, phase, real prices |
+| `src/data/demand-bands.json` / `src/lib/demand.ts` | Opening-week demand priors, compiled into `WAH.DEMAND` |
 | `src/lib/journal.ts` | Journal parser and replay, parity-tested against Lua |
 | `src/lib/craft-lp.ts` / `recipes.ts` | Production network and the Forever catalogue |
 | `src/lib/portfolio.ts` / `off-policy.ts` / `experiments.ts` | Sizing, evaluation, controlled experiments |

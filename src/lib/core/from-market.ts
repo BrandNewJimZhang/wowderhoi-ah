@@ -2,6 +2,7 @@
 // shape is assembled in-game by WAH.coreInput(), so the decision core sees
 // identical market, history, position and capital fields on both sides.
 import type { MarketSignal } from "@/lib/analytics";
+import { demandFor } from "@/lib/demand";
 import type { CoreInput, CoreMarketItem, Tier } from "@/lib/core/types";
 import type { MarketHistory } from "@/lib/market-data";
 import type { MarketPhase } from "@/lib/market-rules";
@@ -62,6 +63,7 @@ export function buildCoreInput(
       inferredSold: signal.inferredSold,
       supplyGrowth: signal.supplyGrowth,
       elapsedHours: 0.25,
+      demandPrior: demandFor(signal.category, history.subCategory),
       tiers: parseTiers(latest.topTiers, { p: signal.minPrice, q: Math.max(signal.quantity, 1) }),
       history: {
         sellRef: signal.sellRef,

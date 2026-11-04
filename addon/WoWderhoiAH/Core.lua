@@ -235,6 +235,24 @@ function Core.marketTypeFor(item)
   return "item"
 end
 
+-- Demand prior for the opening weeks. The table is generated from
+-- src/data/demand-bands.json; a missing match is neutral (1.0).
+function Core.demandFor(category, subCategory)
+  local function matches(names, value)
+    for _, name in ipairs(names or {}) do
+      if name == "*" then return true end
+      if value and name:lower() == value:lower() then return true end
+    end
+    return false
+  end
+  for _, band in ipairs(WAH.DEMAND or {}) do
+    if matches(band.classes, category) and matches(band.subClasses, subCategory) then
+      return band.weight or 1
+    end
+  end
+  return 1
+end
+
 function Core.confidenceFor(samples, sellers, executable, phase)
   if phase == "ignition" then
     -- Ignition has no history by construction; confidence comes from
@@ -254,8 +272,9 @@ local function scoreFor(phase, row, supplyGrowth)
   local fill = row.fillProb or 0
   local confidence = CONFIDENCE_WEIGHT[row.confidence] or 0.45
   if phase == "ignition" then
-    -- No history: rank by absolute net times the prior fill chance.
-    return row.netProfit * fill
+    -- No history: rank by absolute net times the prior fill chance and
+    -- the structural demand prior.
+    return row.netProfit * fill * (row.demandPrior or 1)
   elseif phase == "wave" then
     -- Supply is still arriving; a fast-decaying edge is not an edge.
     return row.netProfit * fill / math.max(supplyGrowth or 0.1, 0.1)
@@ -357,7 +376,8 @@ function Core.evaluate(input)
             fillProbHigh = 1,
             confidence = "high",
             supplyGrowth = 0,
-            bidOnly = item.bidOnly or 0
+            bidOnly = item.bidOnly or 0,
+            demandPrior = item.demandPrior or 1
           }
           row.reason = reasonFor(row)
           row.score = scoreFor(phase, row, 0)
@@ -416,7 +436,8 @@ function Core.evaluate(input)
             fillProbHigh = high,
             confidence = confidence,
             supplyGrowth = item.supplyGrowth or 0,
-            bidOnly = item.bidOnly or 0
+            bidOnly = item.bidOnly or 0,
+            demandPrior = item.demandPrior or 1
           }
           row.reason = reasonFor(row)
           row.score = scoreFor(phase, row, item.supplyGrowth)

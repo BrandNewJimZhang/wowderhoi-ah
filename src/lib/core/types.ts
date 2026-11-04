@@ -28,6 +28,7 @@ export type CoreMarketItem = {
   inferredSold?: number;
   supplyGrowth?: number;
   elapsedHours?: number;
+  demandPrior?: number;
   marketType?: "commodity" | "item";
   history?: { sellRef?: number; samples?: number; latest?: number; distinct?: number };
 };
@@ -66,6 +67,7 @@ export type CoreRow = {
   confidence: Confidence;
   supplyGrowth: number;
   bidOnly: number;
+  demandPrior: number;
   reason: string;
   score?: number;
 };

@@ -101,6 +101,31 @@ describe("Core.evaluate through fengari", () => {
     expect(sell && sell.kind === "sell" && sell.price).toBe(999);
   });
 
+  it("ranks ignition opportunities by the structural demand prior", () => {
+    const shared = {
+      itemClass: "Trade Goods",
+      marketType: "commodity" as const,
+      vendorP: 0,
+      minPrice: 700,
+      sellP: 1000,
+      quantity: 200,
+      numAuctions: 10,
+      sellers: 4,
+      tiers: [{ p: 700, q: 20 }, { p: 800, q: 100 }],
+      history: { sellRef: 1100, samples: 0 }
+    };
+    const input = commodityInput({
+      ageHours: 1,
+      items: {
+        1: { ...shared, itemId: 1, name: "Bag", demandPrior: 2 },
+        2: { ...shared, itemId: 2, name: "Armor", demandPrior: 1 }
+      }
+    });
+    const output = runCore(input);
+    expect(output.phase).toBe("ignition");
+    expect(output.rows.map((row) => row.itemId)).toEqual([1, 2]);
+  });
+
   it("does not let a bid-only item enter the pricing book", () => {
     const input = commodityInput({ phase: "wave" });
     input.market.items[999] = {

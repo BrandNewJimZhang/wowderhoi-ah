@@ -797,6 +797,7 @@ function WAH.coreInput()
         inferredSold = entry.inferredSold,
         supplyGrowth = entry.supplyGrowth,
         elapsedHours = entry.elapsedHours,
+        demandPrior = Core.demandFor(entry.itemClass, entry.itemSubClass),
         history = history and {
           sellRef = history.sellRef,
           samples = history.samples,

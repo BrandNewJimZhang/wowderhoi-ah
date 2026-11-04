@@ -615,6 +615,7 @@ function bed.setScan(items)
       name = item.name,
       quality = item.quality or 2,
       itemClass = item.itemClass,
+      itemSubClass = item.itemSubClass,
       minPrice = item.minPrice,
       vendorP = item.vendorP or 0,
       sellP = item.sellP or item.minPrice,
