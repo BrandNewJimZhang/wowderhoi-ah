@@ -59,7 +59,8 @@ async function main() {
   console.log(`Watching ${savedVarsPath}`);
   console.log(`Posting new scans to ${importUrl}`);
   await importLatestScan().catch((error) => console.error(error));
-  // WoW rewrites SavedVariables on logout//reload; mtime polling is enough.
+  // The addon asks the client to flush SavedVariables after every scan;
+  // mtime polling picks that up, and logout/reload still rewrites the file.
   watchFile(savedVarsPath!, { interval: 5000 }, () => {
     void importLatestScan().catch((error) => console.error(error));
   });

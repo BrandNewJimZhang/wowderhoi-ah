@@ -95,6 +95,10 @@ async function main() {
       marketId: marketRow.id,
       minPrice: point.minPrice,
       marketPrice: point.marketPrice,
+      // The fixture's sell front is its market price; seeding zero here would
+      // make every terminal signal read a zero sell price and measure a dead
+      // page instead of the real analytics path.
+      sellPrice: point.marketPrice,
       quantity: point.quantity,
       numAuctions: point.numAuctions
     }))
