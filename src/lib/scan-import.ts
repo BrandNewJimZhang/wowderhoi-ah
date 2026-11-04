@@ -28,21 +28,24 @@ export function diffScanItems(items: AddonScanItem[], existing: ExistingItemRow[
         vendorPrice: item.vendorPrice
       });
     } else {
-      // Class data arrives lazily in the modern client: a scan can report
-      // "unknown" before the item record loads. Never let that overwrite a
-      // known class, but do let a later loaded class fix an earlier unknown.
-      const category = item.category === "unknown" ? current.category : item.category;
-      const subCategory = item.subCategory === "unknown" ? current.subCategory : item.subCategory;
+      // Item data arrives lazily in the modern client: a scan can report
+      // "unknown" before the item record loads, and that miss reports a zero
+      // vendor price too. Never let an unresolved row overwrite known data,
+      // but do let a later loaded record fix an earlier unknown.
+      const unresolved = item.category === "unknown";
+      const category = unresolved ? current.category : item.category;
+      const subCategory = unresolved ? current.subCategory : item.subCategory;
+      const vendorPrice = unresolved && current.vendorPrice > 0 ? current.vendorPrice : item.vendorPrice;
       if (
         current.name !== item.name
         || current.quality !== item.quality
         || current.category !== category
         || current.subCategory !== subCategory
-        || current.vendorPrice !== item.vendorPrice
+        || current.vendorPrice !== vendorPrice
       ) {
         updates.push({
           itemId: item.itemId,
-          data: { name: item.name, quality: item.quality, category, subCategory, vendorPrice: item.vendorPrice }
+          data: { name: item.name, quality: item.quality, category, subCategory, vendorPrice }
         });
       }
     }

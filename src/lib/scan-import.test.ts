@@ -71,6 +71,16 @@ describe("diffScanItems", () => {
     expect(diff.updates).toEqual([]);
   });
 
+  it("never lets a lazy-load miss reset a known vendor price", () => {
+    // An unresolved item record reports vendorPrice 0 as well as an unknown
+    // class. That zero is "not loaded yet", not "unsellable".
+    const diff = diffScanItems(
+      [scanItem({ itemId: 1, name: "梦叶草", category: "unknown", subCategory: "unknown", vendorPrice: 0 })],
+      [{ itemId: 1, name: "梦叶草", quality: "common", category: "Trade Goods", subCategory: "Herb", vendorPrice: 120 }]
+    );
+    expect(diff.updates).toEqual([]);
+  });
+
   it("fills in a class once the client loads the item record", () => {
     const diff = diffScanItems(
       [scanItem({ itemId: 1, name: "梦叶草" })],
