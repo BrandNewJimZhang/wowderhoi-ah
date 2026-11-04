@@ -132,6 +132,13 @@ function Core.netIfSold(listPrice, quantity, unitCost, feeRate)
   return listPrice * quantity * (1 - fee) - unitCost * quantity
 end
 
+-- One authority for the listing price. The floor keeps the listing above
+-- the vendor price; the undercut is a compiled rule, not a local constant.
+function Core.listPrice(sellP, vendorP, rules)
+  local undercut = (rules and rules.sellFront and rules.sellFront.undercutCopper) or 1
+  return math.max((vendorP or 0) + 1, (sellP or 0) - undercut)
+end
+
 function Core.sellBreakeven(unitCost, feeRate)
   local fee = feeRate or 0
   if fee >= 1 then return nil end
@@ -364,7 +371,7 @@ function Core.evaluate(input)
         early = phase == "ignition"
       })
       local vendorP = item.vendorP or 0
-      local listP = math.max(vendorP + 1, (sellP or minPrice) - (rules.sellFront and rules.sellFront.undercutCopper or 1))
+      local listP = Core.listPrice(sellP or minPrice, vendorP, rules)
 
       -- Class 1: vendor arbitrage. The NPC always buys, so no history,
       -- no spread window and no profit floor apply. Budget and bag space
@@ -530,7 +537,7 @@ function Core.evaluate(input)
           kind = "sell",
           itemId = itemId,
           qty = position.qty,
-          price = math.max((item and item.vendorP or 0) + 1, sellP - (rules.sellFront and rules.sellFront.undercutCopper or 1)),
+          price = Core.listPrice(sellP, item and item.vendorP or 0, rules),
           netIfSold = round(Core.netIfSold(sellP, position.qty, position.cost / position.qty, feeRate)),
           reason = "持仓卖出计划"
         }
@@ -561,8 +568,7 @@ function Core.sellPlan(item, position, rules, opts)
   local feeRate = config.feeRate or 0.05
   local sellP = item.sellP or Core.sellFront(item.tiers or {}, { rules = config.sellFront })
   if not sellP then return nil end
-  local undercut = (config.sellFront and config.sellFront.undercutCopper) or 1
-  local listP = math.max((item.vendorP or 0) + 1, sellP - undercut)
+  local listP = Core.listPrice(sellP, item.vendorP, config)
   local quantity = position.qty or 1
   local unitCost = position.cost and position.cost / quantity or 0
   local deposit = (opts and opts.deposit) or 0

@@ -38,6 +38,13 @@ describe("decision core parity", () => {
     }
   });
 
+  it("prices every listing from the same sell-front rule", () => {
+    const lua = loadAddon();
+    // Undercut one copper, but never at or below the vendor price.
+    expect(lua.number("WowTest.ns.Core.listPrice(8400, 100, WowTest.ns.RULES)")).toBe(8399);
+    expect(lua.number("WowTest.ns.Core.listPrice(50, 100, WowTest.ns.RULES)")).toBe(101);
+  });
+
   it("exposes the sell plan arithmetic through the same core", () => {
     const lua = loadAddon();
     const plan = lua.eval(

@@ -622,8 +622,8 @@ local function printPrice(itemId)
   local lines = { string.format(L.PRICE_HEADER, name) }
   if scanned and scanned.sellP then
     lines[#lines + 1] = string.format(L.PRICE_SELL, coinString(scanned.sellP))
-    local undercut = (WAH.RULES.sellFront and WAH.RULES.sellFront.undercutCopper) or 1
-    lines[#lines + 1] = string.format(L.PRICE_LIST, coinString(math.max((scanned.vendorP or 0) + 1, scanned.sellP - undercut)))
+    lines[#lines + 1] = string.format(L.PRICE_LIST,
+      coinString(WAH.Core.listPrice(scanned.sellP, scanned.vendorP, WAH.RULES)))
   end
   if scanned then
     lines[#lines + 1] = string.format(L.PRICE_MIN, coinString(scanned.minPrice))
