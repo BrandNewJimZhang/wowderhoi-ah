@@ -698,6 +698,8 @@ SlashCmdList["WOWDERHOIAHDIAG"] = function()
   diagLine(string.format("PostItem/PostCommodity: %s/%s",
     C_AuctionHouse.PostItem and "present" or "missing",
     C_AuctionHouse.PostCommodity and "present" or "missing"))
+  diagLine(string.format("ItemLocation:CreateFromBagAndSlot: %s",
+    ItemLocation and ItemLocation.CreateFromBagAndSlot and "available" or "missing"))
   local deposit = "n/a"
   if C_AuctionHouse.CalculateCommodityDeposit then
     local ok, value = pcall(C_AuctionHouse.CalculateCommodityDeposit, 2589, 24, 1)
