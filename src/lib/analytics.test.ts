@@ -28,8 +28,6 @@ function history(
     vendorPrice: overrides?.vendorPrice ?? 0,
     snapshots: snapshots.map((snap) => ({
       timestamp: new Date(now.getTime() - snap.daysAgo * DAY),
-      server: "TestRealm",
-      faction: "Alliance",
       minPrice: snap.minPrice ?? Math.round(snap.sellPrice * 0.9),
       marketPrice: snap.marketPrice ?? snap.sellPrice,
       sellPrice: snap.sellPrice,

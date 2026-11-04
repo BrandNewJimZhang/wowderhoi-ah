@@ -80,7 +80,7 @@ describe("system performance gates", () => {
       subCategory: "Herb",
       vendorPrice: 0,
       snapshots: [{
-        timestamp: new Date(NOW * 1000), server: "R", faction: "A",
+        timestamp: new Date(NOW * 1000),
         minPrice: 100 + index, marketPrice: 110 + index, sellPrice: 120 + index,
         quantity: 200, numAuctions: 10
       }],

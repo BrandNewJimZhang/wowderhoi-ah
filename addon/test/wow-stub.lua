@@ -626,6 +626,7 @@ function bed.setScan(items)
       sellers = item.sellers or item.numAuctions or 0,
       sellersInvisible = item.sellersInvisible or false,
       bidOnly = item.bidOnly or 0,
+      highestBid = item.highestBid or 0,
       tiers = item.tiers or { { p = item.minPrice, q = item.quantity or 1 } },
       expiring = item.expiring or { soon = 0, mid = 0, late = 0 },
       inferredSoldLow = item.inferredSoldLow or 0,
@@ -641,8 +642,7 @@ function bed.setScan(items)
     faction = "Alliance",
     character = "Tester",
     total = #items,
-    items = byId,
-    bids = {}
+    items = byId
   }
   WoWderhoiAH_Series = {
     v = bed.ns.PIPELINE_VERSION,

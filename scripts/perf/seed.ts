@@ -92,8 +92,6 @@ async function main() {
     item.walk.map((point, step) => ({
       itemId: item.itemId,
       timestamp: new Date(newestScanMs - (item.walk.length - 1 - step) * SCAN_INTERVAL_MS),
-      server: "PerfRealm",
-      faction: "Alliance",
       marketId: marketRow.id,
       minPrice: point.minPrice,
       marketPrice: point.marketPrice,

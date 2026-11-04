@@ -21,8 +21,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 400 });
   }
 
+  // Market identity lives in the Market row; snapshots reference it and do
+  // not duplicate the realm/faction strings.
   const duplicate = await prisma.auctionSnapshot.findFirst({
-    where: { timestamp: scan.scannedAt, server: scan.server, faction: scan.faction },
+    where: {
+      timestamp: scan.scannedAt,
+      market: { is: { realm: scan.server, faction: scan.faction } }
+    },
     select: { id: true }
   });
   if (duplicate) {
@@ -31,7 +36,7 @@ export async function POST(request: Request) {
 
   const market = await prisma.market.upsert({
     where: { realm_faction: { realm: scan.server, faction: scan.faction } },
-    create: { realm: scan.server, faction: scan.faction },
+    create: { realm: scan.server, faction: scan.faction, cash: scan.cash },
     update: { cash: scan.cash }
   });
 
@@ -42,14 +47,15 @@ export async function POST(request: Request) {
     select: { itemId: true, name: true, quality: true, category: true, subCategory: true, vendorPrice: true }
   });
   const itemDiff = diffScanItems(scan.items, existingItems);
-  const dayProbe = mergeScanIntoDailySummaries(scan.items, scan.scannedAt, market.id, []);
+  // Daily OHLC is a price series: demand-only snapshots carry no price.
+  const pricedItems = scan.items.filter((item) => item.priced);
+  const dayProbe = mergeScanIntoDailySummaries(pricedItems, scan.scannedAt, market.id, []);
   const existingDayRows = await prisma.dailySummary.findMany({
     where: { marketId: market.id, date: dayProbe.date },
     select: { itemId: true, highPrice: true, lowPrice: true }
   });
-  const { date, creates, updates } = mergeScanIntoDailySummaries(scan.items, scan.scannedAt, market.id, existingDayRows);
+  const { date, creates, updates } = mergeScanIntoDailySummaries(pricedItems, scan.scannedAt, market.id, existingDayRows);
 
-  const rawItems = ((rawScan as Record<string, unknown>).items ?? {}) as Record<string, unknown>;
   const books = parseJournal(payload.journal);
   const bookKey = [scan.server, scan.faction, scan.character].join("|");
   const book = books.find((candidate) => candidate.key === bookKey)
@@ -66,9 +72,8 @@ export async function POST(request: Request) {
       data: scan.items.map((item) => ({
         itemId: item.itemId,
         timestamp: scan.scannedAt,
-        server: scan.server,
-        faction: scan.faction,
         marketId: market.id,
+        priced: item.priced,
         minPrice: item.minPrice,
         marketPrice: item.marketPrice,
         sellPrice: item.sellPrice,
@@ -78,12 +83,12 @@ export async function POST(request: Request) {
         sellerCount: item.sellerCount,
         sellersInvisible: item.sellersInvisible,
         bidOnlyCount: item.bidOnlyCount,
+        highestBid: item.highestBid,
         soldProxyLow: item.inferredSoldLow,
         soldProxyHigh: item.inferredSoldHigh,
         supplyGrowth: item.supplyGrowth,
         topTiers: item.tiers,
-        expiring: item.expiring,
-        rawPayload: (rawItems[String(item.itemId)] ?? undefined) as Prisma.InputJsonValue | undefined
+        expiring: item.expiring
       }))
     }),
     ...(creates.length > 0 ? [prisma.dailySummary.createMany({ data: creates })] : []),
@@ -129,7 +134,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     imported: scan.items.length,
-    bidOnly: scan.bids.length,
+    bidOnly: scan.items.filter((item) => item.bidOnlyCount > 0).length,
     scannedAt: scan.scannedAt.toISOString(),
     marketId: market.id,
     positions: replay ? Object.keys(replay.positions).length : 0,

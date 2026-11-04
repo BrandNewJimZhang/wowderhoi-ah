@@ -26,13 +26,21 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
     prisma.alertRule.findMany({ where: { itemId: numericItemId } })
   ]);
   const now = new Date();
-  const hasSnapshots = item.snapshots.length > 0;
+  // A scan can carry two kinds of rows: priced observations (price history)
+  // and demand-only rows (bid-only listings, no buyout). Charts and the
+  // signal must only ever see priced rows; the demand row is shown as is.
+  const latestScan = item.snapshots.at(-1);
+  const priceSnapshots = item.snapshots.filter((snapshot) => snapshot.priced !== false);
+  const latest = priceSnapshots.at(-1);
   const signal = bundle.signals.find((entry) => entry.itemId === numericItemId)
-    ?? (hasSnapshots ? buildMarketSignal(item, now, { phase: bundle.phase, index: bundle.priceIndex }) : null);
+    ?? (latest ? buildMarketSignal({ ...item, snapshots: priceSnapshots }, now, { phase: bundle.phase, index: bundle.priceIndex }) : null);
   const seasonality = buildWeekdaySeasonality(item.dailySummaries);
   const weekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-  const latestSnapshot = item.snapshots[item.snapshots.length - 1];
-  const freshness = describeFreshness(latestSnapshot?.timestamp ?? null, now);
+  const demand = [...item.snapshots].reverse().find((snapshot) => (snapshot.bidOnlyCount ?? 0) > 0) ?? null;
+  const expiring = latest?.expiring && typeof latest.expiring === "object"
+    ? latest.expiring as { soon?: number; mid?: number; late?: number }
+    : null;
+  const freshness = describeFreshness(latestScan?.timestamp ?? null, now);
   const candleData = item.dailySummaries.map((summary) => ({
     label: summary.date.toISOString().slice(5, 10),
     open: summary.openPrice,
@@ -43,14 +51,13 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
   }));
   // Intraday view: raw scan snapshots. AH prices swing hour to hour;
   // with auto-rescan every ~15 min this is the actual trading chart.
-  const intradayData = item.snapshots.slice(-48).map((snapshot) => ({
+  const intradayData = priceSnapshots.slice(-48).map((snapshot) => ({
     ts: snapshot.timestamp.getTime(),
     price: snapshot.sellPrice ?? snapshot.marketPrice,
     min: snapshot.minPrice,
     volume: snapshot.quantity,
     event: undefined
   }));
-  const latest = item.snapshots.at(-1);
   const tiers = (Array.isArray(latest?.topTiers) ? latest.topTiers : []) as BookTier[];
   const bookTiers = tiers.length > 0 ? tiers : latest ? [{ p: latest.minPrice, q: latest.quantity }] : [];
   // The fill curve is derived from the shared core's 24-hour fill
@@ -82,6 +89,11 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
               {latest
                 ? <OrderBookChart tiers={bookTiers} sellP={latest.sellPrice} minPrice={latest.minPrice} />
                 : <div className="p-4 font-mono text-xs text-terminal-muted">尚无扫描数据</div>}
+              {expiring && ((expiring.soon ?? 0) + (expiring.mid ?? 0) + (expiring.late ?? 0) > 0) && (
+                <div className="mt-2 border-t border-terminal-border pt-2 font-mono text-[11px] text-terminal-muted">
+                  到期分布：2 小时内 {expiring.soon ?? 0} 笔 · 2–12 小时 {expiring.mid ?? 0} 笔 · 12 小时以上 {expiring.late ?? 0} 笔
+                </div>
+              )}
             </div>
           </Panel>
           <Panel>
@@ -132,7 +144,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
           <Panel>
             <PanelHeader title="行情概要" />
             <div className="space-y-3 p-4 font-mono text-sm">
-              {!signal && <div className="text-xs text-terminal-muted">尚无扫描数据</div>}
+              {!signal && !demand && <div className="text-xs text-terminal-muted">尚无扫描数据</div>}
               {signal && (
                 <>
                   <div>
@@ -145,6 +157,9 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
                     <div><div className="text-terminal-muted">价差</div><div className={signal.spreadPercent >= 15 ? "text-terminal-green" : ""}>{signal.spreadPercent.toFixed(0)}%</div></div>
                     <div><div className="text-terminal-muted">趋势</div><div className={signal.trendPercent >= 0 ? "text-terminal-red" : "text-terminal-green"}>{formatPercent(signal.trendPercent)}</div></div>
                     <div><div className="text-terminal-muted">P10（统计）</div><div><Coins copper={signal.price} /></div></div>
+                    {latest && latest.p5Price > 0 && (
+                      <div><div className="text-terminal-muted">P5（统计）</div><div><Coins copper={latest.p5Price} /></div></div>
+                    )}
                     <div><div className="text-terminal-muted">真实卖价</div><div>{signal.realSellPrice !== null ? <Coins copper={signal.realSellPrice} /> : "—"}</div></div>
                     <div><div className="text-terminal-muted">卖家数</div><div>{signal.sellerCount}{signal.sellersInvisible ? "（不可见）" : ""}</div></div>
                     <div><div className="text-terminal-muted">环比上次</div><div className={signal.changePercent >= 0 ? "text-terminal-red" : "text-terminal-green"}>{formatPercent(signal.changePercent)}</div></div>
@@ -152,6 +167,15 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
                     <div><div className="text-terminal-muted">挂单数</div><div>{signal.numAuctions.toLocaleString()}</div></div>
                   </div>
                 </>
+              )}
+              {demand && (
+                <div className="border-t border-terminal-border pt-3">
+                  <div className="text-xs uppercase text-terminal-muted">竞价需求</div>
+                  <div className="mt-1 grid grid-cols-2 gap-3 text-xs">
+                    <div><div className="text-terminal-muted">竞价笔数</div><div>{demand.bidOnlyCount ?? 0}</div></div>
+                    <div><div className="text-terminal-muted">最高竞价</div><div><Coins copper={demand.highestBid ?? 0} /></div></div>
+                  </div>
+                </div>
               )}
             </div>
           </Panel>

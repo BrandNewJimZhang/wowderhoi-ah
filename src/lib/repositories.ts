@@ -8,7 +8,9 @@ export async function getMarketUniverse(scope: MarketScope | null): Promise<Mark
   const marketId = scope?.id;
   return prisma.item.findMany({
     include: {
-      snapshots: { where: marketId ? { marketId } : {}, orderBy: { timestamp: "asc" }, take: -48 },
+      // Price series only: demand-only rows carry no price and must never
+      // reach the signal layer.
+      snapshots: { where: marketId ? { marketId, priced: true } : { priced: true }, orderBy: { timestamp: "asc" }, take: -48 },
       dailySummaries: { where: marketId ? { marketId } : {}, orderBy: { date: "asc" }, take: -30 }
     },
     orderBy: { name: "asc" }
@@ -21,6 +23,8 @@ export async function getItemDetail(itemId: number, scope: MarketScope | null) {
   return prisma.item.findUnique({
     where: { itemId },
     include: {
+      // The item page shows both the price history and the latest demand
+      // row, so it keeps every snapshot and filters in the view.
       snapshots: { where: marketId ? { marketId } : {}, orderBy: { timestamp: "asc" }, take: -96 },
       dailySummaries: { where: marketId ? { marketId } : {}, orderBy: { date: "asc" }, take: -60 }
     }

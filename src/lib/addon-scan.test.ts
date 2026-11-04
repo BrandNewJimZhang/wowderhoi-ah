@@ -43,10 +43,8 @@ WoWderhoiAH_ScanData = {
 \t\t\t["quality"] = 1,
 \t\t\t["minPrice"] = 0,
 \t\t\t["bidOnly"] = 2,
+\t\t\t["highestBid"] = 500,
 \t\t},
-\t},
-\t["bids"] = {
-\t\t[700] = { ["count"] = 2, ["highest"] = 500 },
 \t},
 }
 WoWderhoiAH_Settings = {
@@ -82,15 +80,22 @@ describe("normalizeAddonScan", () => {
     expect(scan.faction).toBe("Alliance");
     expect(scan.character).toBe("Tester");
     expect(scan.total).toBe(15);
-    // The bid-only entry is demand, not a zero-priced snapshot.
-    expect(scan.items).toHaveLength(2);
-    expect(scan.bids).toEqual([{ itemId: 700, count: 2, highest: 500 }]);
+    // Bid-only entries are demand observations, not zero-priced markets.
+    expect(scan.items).toHaveLength(3);
+    expect(scan.items.find((item) => item.itemId === 700)).toMatchObject({
+      priced: false,
+      bidOnlyCount: 2,
+      highestBid: 500,
+      minPrice: 0,
+      quantity: 0
+    });
     const copperOre = scan.items.find((item) => item.itemId === 2770);
     expect(copperOre).toMatchObject({
       itemId: 2770,
       name: "铜矿石",
       quality: "common",
       category: "商品",
+      priced: true,
       subCategory: "金属与矿石",
       minPrice: 150,
       marketPrice: 183,

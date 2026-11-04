@@ -34,12 +34,12 @@
 
 - 元数据：`dataVersion`、`scannedAt`、`server`、`faction`、`character`、`cash`、`total`。
 - `items[itemId]`：名称、品质、物品类别、NPC 价、最低价、建议卖价（深度感知）、P5、P10、
-  在售量、挂单数、卖家数、卖家是否可见、竞价单数、top-8 盘口阶梯、到期桶
+  在售量、挂单数、卖家数、卖家是否可见、竞价单数、最高竞价、top-8 盘口阶梯、到期桶
   （soon/mid/late）、推断消失量区间（`inferredSoldLow`/`inferredSoldHigh`）、供给增速。
   下沿是“离开某卖家”的数量（成交+撤单，排除换价），上沿是“离开某价位”的数量
   （还包含换价重挂）；卖家不可见时下沿为 0。
-- `bids[itemId]`：仅竞价条目的数量与最高竞价。竞价是客户端唯一直接暴露的需求信号，
-  不再被入口过滤。
+  只有竞价、没有一口价的条目 `minPrice = 0`，作为纯需求行导入：价格列全部为 0，
+  仅 `bidOnly` / `highestBid` 有意义。
 
 ### 2.2 `WoWderhoiAH_Series`（v4）
 
@@ -85,7 +85,9 @@ Ledger 是 Journal 的纯投影：
 ### 2.5 SQLite / Prisma
 
 - `Market`：realm+faction，最近一次扫描的现金。
-- `AuctionSnapshot`：v4 全字段 + `topTiers` / `expiring` / `rawPayload`。
+- `AuctionSnapshot`：v4 全字段 + `topTiers` / `expiring`；`priced = false` 标记纯需求行，
+  所有价格序列查询都必须过滤 `priced: true`。市场身份只存在 `Market` 行，快照不重复
+  存 realm/faction。
 - `Position` / `Trade`：每次导入从 Journal 重建，整体替换，幂等。
 - `Decision`：每次扫描代际写入一次，记录阶段、候选、选中行动、理由与上下文。
 - `Recipe`：`data/recipes.forever.json` 的投影，导入时整体替换。

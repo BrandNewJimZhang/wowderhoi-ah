@@ -12,8 +12,6 @@ function item(itemId: number, snaps: Array<{ day: string; sell: number }>): Mark
     vendorPrice: 0,
     snapshots: snaps.map((snap) => ({
       timestamp: new Date(`${snap.day}T12:00:00Z`),
-      server: "TestRealm",
-      faction: "Alliance",
       minPrice: snap.sell - 10,
       marketPrice: snap.sell,
       sellPrice: snap.sell,

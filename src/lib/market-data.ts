@@ -8,8 +8,7 @@ export type MarketSnapshot = {
   id?: string;
   itemId?: number;
   timestamp: Date;
-  server: string;
-  faction: string;
+  priced?: boolean;
   minPrice: number;
   marketPrice: number;
   quantity: number;
@@ -19,12 +18,12 @@ export type MarketSnapshot = {
   sellerCount?: number;
   sellersInvisible?: boolean;
   bidOnlyCount?: number;
+  highestBid?: number;
   soldProxyLow?: number;
   soldProxyHigh?: number;
   supplyGrowth?: number;
   topTiers?: unknown;
   expiring?: unknown;
-  rawPayload?: unknown;
 };
 
 export type MarketHistory = Omit<Item, "id" | "createdAt" | "updatedAt"> & {

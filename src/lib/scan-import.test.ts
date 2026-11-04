@@ -7,6 +7,7 @@ function scanItem(partial: Partial<AddonScanItem> & Pick<AddonScanItem, "itemId"
     quality: "common",
     category: "Trade Goods",
     subCategory: "Herb",
+    priced: true,
     minPrice: 90,
     marketPrice: 100,
     sellPrice: 105,
@@ -16,6 +17,7 @@ function scanItem(partial: Partial<AddonScanItem> & Pick<AddonScanItem, "itemId"
     sellerCount: 2,
     sellersInvisible: false,
     bidOnlyCount: 0,
+    highestBid: 0,
     inferredSoldLow: 0,
     inferredSoldHigh: 0,
     supplyGrowth: 0,
@@ -77,6 +79,21 @@ describe("diffScanItems", () => {
     expect(diff.updates).toEqual([{
       itemId: 1,
       data: { name: "梦叶草", quality: "common", category: "Trade Goods", subCategory: "Herb", vendorPrice: 0 }
+    }]);
+  });
+
+  it("creates an item row for demand-only entries so a bid-only market stays visible", () => {
+    const diff = diffScanItems(
+      [scanItem({ itemId: 700, name: "Bid Only", priced: false, minPrice: 0, marketPrice: 0, sellPrice: 0, p5Price: 0, quantity: 0, numAuctions: 0, sellerCount: 0, bidOnlyCount: 2, highestBid: 500, tiers: [] })],
+      []
+    );
+    expect(diff.creates).toEqual([{
+      itemId: 700,
+      name: "Bid Only",
+      quality: "common",
+      category: "Trade Goods",
+      subCategory: "Herb",
+      vendorPrice: 0
     }]);
   });
 

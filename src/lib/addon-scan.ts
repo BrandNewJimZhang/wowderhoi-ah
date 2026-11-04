@@ -14,6 +14,9 @@ export type AddonScanItem = {
   quality: string;
   category: string;
   subCategory: string;
+  // False for demand-only rows: the item had bid-only listings and no
+  // buyout, so all price and supply columns are zero.
+  priced: boolean;
   minPrice: number;
   marketPrice: number; // quantity-weighted P10 unit price, copper (a statistic)
   sellPrice: number; // depth-aware sell front, copper (the decision anchor)
@@ -23,6 +26,7 @@ export type AddonScanItem = {
   sellerCount: number;
   sellersInvisible: boolean;
   bidOnlyCount: number;
+  highestBid: number; // highest current bid among bid-only listings, copper
   inferredSoldLow: number; // units that left an owner across scans (sales + cancels)
   inferredSoldHigh: number; // units that left a price key (also repricing)
   supplyGrowth: number; // fraction per hour
@@ -30,8 +34,6 @@ export type AddonScanItem = {
   tiers: AddonTier[]; // top of the price ladder, ascending
   expiring: { soon: number; mid: number; late: number };
 };
-
-export type AddonBid = { itemId: number; count: number; highest: number };
 
 export type AddonScan = {
   scannedAt: Date;
@@ -41,7 +43,6 @@ export type AddonScan = {
   cash: number;
   total: number;
   items: AddonScanItem[];
-  bids: AddonBid[];
 };
 
 type LuaValue = string | number | boolean | null | { [key: string]: LuaValue };
@@ -212,23 +213,6 @@ function normalizeExpiring(value: unknown, itemId: string) {
   };
 }
 
-function normalizeBids(value: unknown): AddonBid[] {
-  if (value === undefined || value === null) return [];
-  if (typeof value !== "object") throw new Error("Addon scan bids must be a table");
-  return Object.entries(value as Record<string, unknown>).map(([key, entry]) => {
-    const itemId = Number(key);
-    if (!Number.isInteger(itemId) || itemId <= 0) {
-      throw new Error(`Addon scan bid key must be a positive itemId, got ${JSON.stringify(key)}`);
-    }
-    const bid = (entry ?? {}) as Record<string, unknown>;
-    return {
-      itemId,
-      count: optionalNonNegative(bid.count, "bids.count", key),
-      highest: optionalNonNegative(bid.highest, "bids.highest", key)
-    };
-  });
-}
-
 export function normalizeAddonScan(raw: unknown): AddonScan {
   if (typeof raw !== "object" || raw === null) {
     throw new Error(`Addon scan payload must be an object, got ${JSON.stringify(raw)}`);
@@ -271,42 +255,46 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
     if (inferredSoldHigh < inferredSoldLow) {
       throw new Error(`Addon scan item ${key}: inferredSoldHigh (${inferredSoldHigh}) is below inferredSoldLow (${inferredSoldLow})`);
     }
-    const rawMin = typeof entry.minPrice === "number" ? entry.minPrice : 0;
-    // Bid-only entries carry no buyout; their demand is imported through
-    // `bids`, not through a zero-priced snapshot.
-    if (rawMin <= 0 && bidOnlyCount > 0) continue;
     if (typeof entry.name !== "string" || entry.name === "") {
       throw new Error(`Addon scan item ${key}: name must be a non-empty string`);
     }
     const qualityIndex = typeof entry.quality === "number" ? entry.quality : -1;
-    const minPrice = requirePositiveInt(entry.minPrice, "minPrice", key);
-    const quantity = requirePositiveInt(entry.quantity, "quantity", key);
-    const numAuctions = requirePositiveInt(entry.numAuctions, "numAuctions", key);
-    const sellPrice = requirePositiveInt(entry.sellP ?? entry.sellPrice, "sellP", key);
+    // A bid-only item has no buyout on any listing: it is a demand-only
+    // observation and its price columns are zero by definition.
+    const priced = typeof entry.minPrice === "number" && entry.minPrice > 0;
+    if (!priced && bidOnlyCount === 0) {
+      throw new Error(`Addon scan item ${key}: minPrice must be positive unless the entry has bid-only demand`);
+    }
+    const minPrice = priced ? requirePositiveInt(entry.minPrice, "minPrice", key) : 0;
+    const quantity = priced ? requirePositiveInt(entry.quantity, "quantity", key) : 0;
+    const numAuctions = priced ? requirePositiveInt(entry.numAuctions, "numAuctions", key) : 0;
+    const sellPrice = priced ? requirePositiveInt(entry.sellP ?? entry.sellPrice, "sellP", key) : 0;
     items.push({
       itemId,
       name: entry.name,
       quality: QUALITY_NAMES[qualityIndex] ?? "unknown",
       category: typeof entry.itemClass === "string" && entry.itemClass !== "" ? entry.itemClass : "unknown",
       subCategory: typeof entry.itemSubClass === "string" && entry.itemSubClass !== "" ? entry.itemSubClass : "unknown",
+      priced,
       minPrice,
-      marketPrice: requirePositiveInt(entry.marketPrice, "marketPrice", key),
+      marketPrice: priced ? requirePositiveInt(entry.marketPrice, "marketPrice", key) : 0,
       sellPrice,
-      p5Price: optionalNonNegative(entry.p5, "p5", key),
+      p5Price: priced ? optionalNonNegative(entry.p5, "p5", key) : 0,
       quantity,
       numAuctions,
-      sellerCount: entry.sellers === undefined ? numAuctions : optionalNonNegative(entry.sellers, "sellers", key),
+      sellerCount: !priced ? 0 : entry.sellers === undefined ? numAuctions : optionalNonNegative(entry.sellers, "sellers", key),
       sellersInvisible: entry.sellersInvisible === true,
       bidOnlyCount,
+      highestBid: optionalNonNegative(entry.highestBid, "highestBid", key),
       inferredSoldLow,
       inferredSoldHigh,
       supplyGrowth: optionalFinite(entry.supplyGrowth, "supplyGrowth", key),
       vendorPrice: optionalNonNegative(entry.vendorP, "vendorP", key),
-      tiers: normalizeTiers(entry.tiers, key, { p: minPrice, q: quantity }),
+      tiers: priced ? normalizeTiers(entry.tiers, key, { p: minPrice, q: quantity }) : [],
       expiring: normalizeExpiring(entry.expiring, key)
     });
   }
-  if (items.length === 0) {
+  if (!items.some((item) => item.priced)) {
     throw new Error("Addon scan contains no priced items (only bid-only entries)");
   }
 
@@ -317,7 +305,6 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
     character: typeof scan.character === "string" ? scan.character : null,
     cash: optionalNonNegative(scan.cash, "cash", "scan"),
     total: optionalNonNegative(scan.total, "total", "scan"),
-    items,
-    bids: normalizeBids(scan.bids)
+    items
   };
 }

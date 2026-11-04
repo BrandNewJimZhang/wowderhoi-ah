@@ -46,9 +46,12 @@ model AuctionSnapshot {
   id               String   @id @default(cuid())
   itemId           Int      @map("item_id")
   timestamp        DateTime
-  server           String
-  faction          String
   marketId         String?  @map("market_id")
+  // A snapshot is one item's observation from one scan. `priced = false`
+  // marks a demand-only row: the item had bid-only listings and no buyout,
+  // so every price column is zero and only `bidOnlyCount`/`highestBid` are
+  // meaningful. Price consumers must filter on `priced`.
+  priced           Boolean  @default(true)
   minPrice         Int      @map("min_price")
   marketPrice      Int      @map("market_price") // P10; a statistic, not a decision anchor
   sellPrice        Int      @default(0) @map("sell_price")
@@ -58,18 +61,18 @@ model AuctionSnapshot {
   sellerCount      Int      @default(0) @map("seller_count")
   sellersInvisible Boolean  @default(false) @map("sellers_invisible")
   bidOnlyCount     Int      @default(0) @map("bid_only_count")
+  highestBid       Int      @default(0) @map("highest_bid")
   soldProxyLow     Int      @default(0) @map("sold_proxy_low") // left an owner: sales + cancels
   soldProxyHigh    Int      @default(0) @map("sold_proxy_high") // left a price key: also repricing
   supplyGrowth     Float    @default(0) @map("supply_growth")
   topTiers         Json?    @map("top_tiers")
   expiring         Json?    @map("expiring")
-  rawPayload       Json?    @map("raw_payload")
   item             Item     @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
   market           Market?  @relation(fields: [marketId], references: [id], onDelete: SetNull)
 
+  @@unique([marketId, timestamp, itemId])
   @@index([itemId, timestamp])
-  @@index([server, faction, timestamp])
-  @@index([marketId, timestamp])
+  @@index([marketId, priced, timestamp])
 }
 
 model DailySummary {

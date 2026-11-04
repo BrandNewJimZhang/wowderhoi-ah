@@ -79,8 +79,13 @@ describe("forever replicate scan v4", () => {
     ]);
     expect(lua.number("WoWderhoiAH_ScanData.items[700].bidOnly")).toBe(1);
     expect(lua.number("WoWderhoiAH_ScanData.items[700].minPrice")).toBe(0);
-    expect(lua.number("WoWderhoiAH_ScanData.bids[700].highest")).toBe(500);
+    expect(lua.number("WoWderhoiAH_ScanData.items[700].highestBid")).toBe(500);
     expect(lua.number("WoWderhoiAH_ScanData.items[701].minPrice")).toBe(500);
+    expect(lua.number("WoWderhoiAH_ScanData.items[701].highestBid")).toBe(0);
+    // A zero-priced demand row must not enter the price series: its zeros
+    // would drag the sell median and every chart toward zero.
+    expect(lua.eval("WoWderhoiAH_Series.markets['TestRealm|Alliance'].items[700] == nil")).toBe(true);
+    expect(lua.number("WoWderhoiAH_Series.markets['TestRealm|Alliance'].items[701].sell[1]")).toBe(500);
   });
 
   it("infers disappeared quantity as an interval when the same tier shrinks", () => {
