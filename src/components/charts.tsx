@@ -15,6 +15,7 @@ import {
 } from "recharts";
 import { formatWowMoney } from "@/lib/wow-money";
 import { fillCurve } from "@/lib/fill";
+import { median } from "@/lib/median";
 import type { FillBasis } from "@/lib/core/types";
 
 const formatGold = (copper: number) => formatWowMoney(copper, { compact: true });
@@ -25,7 +26,7 @@ const axisStyle = { fill: "#8d96a8", fontSize: 11 };
 
 // ============================ Time series ============================
 
-export type TimePoint = { ts: number; price: number; min?: number | null; volume?: number; event?: number };
+export type TimePoint = { ts: number; price: number; min?: number | null; volume?: number };
 
 const WINDOWS = [
   { key: "1h", hours: 1 },
@@ -37,11 +38,11 @@ const WINDOWS = [
 
 function withGapBreaks(points: TimePoint[]): Array<TimePoint & { gap?: boolean }> {
   if (points.length < 3) return points;
-  const gaps = points.slice(1).map((point, index) => point.ts - points[index].ts).sort((left, right) => left - right);
-  const median = gaps[Math.ceil(gaps.length / 2) - 1];
+  const gaps = points.slice(1).map((point, index) => point.ts - points[index].ts);
+  const interval = median(gaps);
   const out: Array<TimePoint & { gap?: boolean }> = [];
   points.forEach((point, index) => {
-    if (index > 0 && point.ts - points[index - 1].ts > median * 3) {
+    if (index > 0 && point.ts - points[index - 1].ts > interval * 3) {
       // A scanning outage is a hole, not a straight line through it.
       out.push({ ts: points[index - 1].ts + 1, price: null as unknown as number, min: null, gap: true });
     }
@@ -170,8 +171,8 @@ const FILL_BASIS_LABELS: Record<Exclude<FillBasis, "vendor">, string> = {
   prior: "基于阶段先验（尚无自己的成交）"
 };
 
-export function FillProbabilityChart({ tiers, hazardPerHour, basis }: { tiers: BookTier[]; hazardPerHour: number; basis: Exclude<FillBasis, "vendor"> }) {
-  const data = fillCurve(tiers, hazardPerHour);
+export function FillProbabilityChart({ tiers, hazardPerHour, basis, quantity }: { tiers: BookTier[]; hazardPerHour: number; basis: Exclude<FillBasis, "vendor">; quantity: number }) {
+  const data = fillCurve(tiers, hazardPerHour, 24, 0.35, quantity);
   if (data.length === 0) {
     return <div className="p-4 font-mono text-xs text-terminal-muted">没有盘口深度，无法估计成交概率</div>;
   }

@@ -1,7 +1,9 @@
-// Fill probability is an estimate, never an observation. Given a hazard
-// rate from own sales (or a phase prior when there are none), the chance
-// of selling within T hours before the queue ahead of a price clears is
-// modelled as an exponential. The band makes the uncertainty visible.
+// Fill probability is an estimate, never an observation. A listing priced at
+// p joins the queue behind every cheaper unit in the book; the chance it
+// sells within T is the chance that queue clears within T. The curve is
+// anchored at the sell front: with nothing ahead of it, the estimate equals
+// the core's fillProb, and a higher price clears strictly slower. The band
+// makes the uncertainty visible.
 export type FillTier = { p: number; q: number };
 export type FillPoint = { price: number; fill: number; band: [number, number] };
 
@@ -9,17 +11,19 @@ export function fillCurve(
   tiers: FillTier[],
   hazardPerHour: number,
   horizonHours = 24,
-  band = 0.35
+  band = 0.35,
+  quantity = 1
 ): FillPoint[] {
-  const total = tiers.reduce((sum, tier) => sum + tier.q, 0);
-  if (total <= 0) return [];
-  let cumulative = 0;
+  const qty = Math.max(1, quantity);
+  let ahead = 0;
   return [...tiers]
     .sort((left, right) => left.p - right.p)
     .map((tier) => {
-      cumulative += tier.q;
-      const share = cumulative / total;
-      const fill = 1 - Math.exp(-hazardPerHour * horizonHours * share);
+      // Units strictly cheaper than this price are in front of the listing.
+      // The tier's own quantity joins the queue after this point.
+      const hazard = hazardPerHour * qty / (ahead + qty);
+      ahead += tier.q;
+      const fill = 1 - Math.exp(-hazard * horizonHours);
       return {
         price: tier.p,
         fill,

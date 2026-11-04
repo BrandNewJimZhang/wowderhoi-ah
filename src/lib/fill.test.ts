@@ -6,14 +6,19 @@ describe("fillCurve", () => {
     expect(fillCurve([], 0.2)).toEqual([]);
   });
 
-  it("rises with the share of supply ahead of the price", () => {
+  it("anchors the front of the book and falls as supply sits ahead of the price", () => {
     const points = fillCurve([{ p: 100, q: 50 }, { p: 200, q: 50 }], 0.2);
     expect(points).toHaveLength(2);
     expect(points[0].price).toBe(100);
-    expect(points[1].fill).toBeGreaterThan(points[0].fill);
-    // At the top of the book the share is 100%: 1 - exp(-0.2*24).
-    expect(points[1].fill).toBeCloseTo(1 - Math.exp(-4.8), 5);
+    // The cheapest tier has nothing ahead of it: the curve is anchored to
+    // the core's own estimate, 1 - exp(-0.2*24).
+    expect(points[0].fill).toBeCloseTo(1 - Math.exp(-4.8), 5);
+    // A higher listing joins the queue behind 50 units, so it clears slower.
+    const hazardBehind = 0.2 * 1 / (50 + 1);
+    expect(points[1].fill).toBeCloseTo(1 - Math.exp(-hazardBehind * 24), 5);
+    expect(points[1].fill).toBeLessThan(points[0].fill);
   });
+
 
   it("brackets every point with a visible band", () => {
     const points = fillCurve([{ p: 100, q: 10 }], 0.2);

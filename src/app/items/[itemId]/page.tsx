@@ -8,6 +8,7 @@ import { Coins } from "@/components/coins";
 import { qualityColorClass } from "@/lib/quality";
 import { ItemIcon } from "@/components/item-icon";
 import { describeFreshness } from "@/lib/freshness";
+import { SCAN_INTERVAL_MINUTES } from "@/lib/market-rules";
 import { CandlestickChart, FillProbabilityChart, OrderBookChart, TimeSeriesChart, type BookTier } from "@/components/charts";
 import { AlertRulePanel } from "@/components/trader-panels";
 import { WatchStar } from "@/components/watch-star";
@@ -48,13 +49,12 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
     volume: summary.volume
   }));
   // Intraday view: raw scan snapshots. AH prices swing hour to hour;
-  // with auto-rescan every ~15 min this is the actual trading chart.
+  // with auto-rescan on the compiled cadence this is the trading chart.
   const intradayData = item.snapshots.slice(-48).map((snapshot) => ({
     ts: snapshot.timestamp.getTime(),
     price: snapshot.sellPrice ?? snapshot.marketPrice,
     min: snapshot.minPrice,
-    volume: snapshot.quantity,
-    event: undefined
+    volume: snapshot.quantity
   }));
   const tiers = (Array.isArray(latest?.topTiers) ? latest.topTiers : []) as BookTier[];
   const bookTiers = tiers.length > 0 ? tiers : latest ? [{ p: latest.minPrice, q: latest.quantity }] : [];
@@ -98,7 +98,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
             <PanelHeader title="24 小时成交概率" />
             <div className="p-3">
               {hazardPerHour !== null && fillRow
-                ? <FillProbabilityChart tiers={bookTiers} hazardPerHour={hazardPerHour} basis={fillBasis} />
+                ? <FillProbabilityChart tiers={bookTiers} hazardPerHour={hazardPerHour} basis={fillBasis} quantity={fillRow.execQty} />
                 : <div className="p-4 font-mono text-xs text-terminal-muted">
                     {latest ? "该物品未通过当前阶段门槛，暂无成交概率估计；先看盘口与建议卖价。" : "尚无扫描数据"}
                   </div>}
@@ -109,7 +109,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
             <div className="p-3">
               {intradayData.length >= 2
                 ? <TimeSeriesChart data={intradayData} />
-                : <div className="p-4 font-mono text-xs text-terminal-muted">盘中曲线需要多次扫描——开 /wahauto 挂机自动积累（每约 15 分钟一个点）</div>}
+                : <div className="p-4 font-mono text-xs text-terminal-muted">盘中曲线需要多次扫描——开 /wahauto 挂机自动积累（每约 {SCAN_INTERVAL_MINUTES} 分钟一个点）</div>}
             </div>
           </Panel>
           <Panel>
@@ -151,7 +151,10 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-xs">
                     <div><div className="text-terminal-muted">最低价</div><div><Coins copper={signal.minPrice} /></div></div>
-                    <div><div className="text-terminal-muted">建议卖价中位（n={signal.sellSamples}）</div><div><Coins copper={signal.sellRef} /></div></div>
+                    <div title="阶段窗口内的中位：最近 48 次扫描的建议卖价，加上更早日线的收盘建议卖价；n 是参与计算的观测数">
+                      <div className="text-terminal-muted">建议卖价中位（n={signal.sellSamples}）</div>
+                      <div><Coins copper={signal.sellRef} /></div>
+                    </div>
                     <div><div className="text-terminal-muted">价差（对建议卖价）</div><div className={signal.spreadPercent >= 15 ? "text-terminal-green" : ""}>{signal.spreadPercent.toFixed(0)}%</div></div>
                     <div><div className="text-terminal-muted">趋势（对卖价中位）</div><div className={signal.trendPercent >= 0 ? "text-terminal-red" : "text-terminal-green"}>{formatPercent(signal.trendPercent)}</div></div>
                     <div><div className="text-terminal-muted">P10（统计）</div><div><Coins copper={signal.price} /></div></div>
