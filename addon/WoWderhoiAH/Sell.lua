@@ -147,8 +147,7 @@ local function planFor(itemId, duration, quantity)
   local plan = WAH.Core.sellPlan({
     itemId = itemId,
     sellP = scanned.sellP,
-    vendorP = scanned.vendorP,
-    tiers = scanned.tiers
+    vendorP = scanned.vendorP
   }, position, WAH.RULES, { deposit = deposit })
   if not plan then return nil, "noPrice", entry end
   plan.depositAvailable = depositAvailable

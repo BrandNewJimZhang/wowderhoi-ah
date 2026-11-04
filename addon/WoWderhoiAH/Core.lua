@@ -378,11 +378,10 @@ function Core.evaluate(input)
       local sellers = item.sellers or item.numAuctions or 0
       if item.sellersInvisible then sellers = item.numAuctions or sellers end
       local listings = item.numAuctions or 0
-      local sellP = item.sellP or Core.sellFront(tiers, {
-        rules = rules.sellFront,
-        byCount = marketType == "item",
-        early = phase == "ignition"
-      })
+      -- The scan prices the front once, with the market type and phase it
+      -- recorded. The core consumes that number; re-deriving it here would
+      -- let the same book produce a different front from a thinner ladder.
+      local sellP = item.sellP
       local vendorP = item.vendorP or 0
       local listP = Core.listPrice(sellP or minPrice, vendorP, rules)
 
@@ -545,7 +544,7 @@ function Core.evaluate(input)
   for itemId, position in pairs(positions) do
     if position.qty and position.qty > 0 then
       local item = items[itemId]
-      local sellP = item and (item.sellP or Core.sellFront(item.tiers or {}, { rules = rules.sellFront }))
+      local sellP = item and item.sellP
       if sellP then
         -- Net against the price the listing will carry, not the raw front:
         -- the undercut is real money and the two must not disagree.
@@ -583,7 +582,7 @@ end
 function Core.sellPlan(item, position, rules, opts)
   local config = rules or (WAH.RULES) or {}
   local feeRate = config.feeRate or 0.05
-  local sellP = item.sellP or Core.sellFront(item.tiers or {}, { rules = config.sellFront })
+  local sellP = item.sellP
   if not sellP then return nil end
   local listP = Core.listPrice(sellP, item.vendorP, config)
   local quantity = position.qty or 1
