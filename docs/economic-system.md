@@ -89,7 +89,8 @@ Ledger 是 Journal 的纯投影：
 - `Market`：realm+faction，最近一次扫描的现金。
 - `AuctionSnapshot`：v4 全字段 + `topTiers` / `expiring`；`priced = false` 标记纯需求行，
   所有价格序列查询都必须过滤 `priced: true`。市场身份只存在 `Market` 行，快照不重复
-  存 realm/faction。
+  存 realm/faction。快照、日线与决策的 `marketId` 都是必填：它们不可能脱离某个市场
+  存在，空值只会让两个市场的数据混在一起。
 - `Position` / `Trade`：每次导入从 Journal 重建，整体替换，幂等。
 - `Decision`：每次扫描代际写入一次，记录阶段、候选、选中行动、理由与上下文。
 - `Recipe`：`data/recipes.forever.json` 的投影，导入时整体替换。
@@ -158,7 +159,9 @@ phase = ignition  if age < 6h  or breadth < 80
 ```
 
 `breadth` 是当前扫描中有正价的物品种类数。`/wahphase` 可手动覆盖；桌面用
-`AQT_PHASE` 覆盖。阶段决定历史窗口、样本门槛、价差窗口与净利门槛：
+`AQT_PHASE` 覆盖。桌面在信号层解析一次阶段（库里最早扫描时间 + breadth），再作为
+`phaseOverride` 传给共享核心；核心不会用单次快照窗口重新推算阶段，否则活跃市场会因为
+“最近一次扫描是几分钟前”而被永久判成点火期。阶段决定历史窗口、样本门槛、价差窗口与净利门槛：
 
 | 类型 | 点火期 | 洪流期 | 沉淀期 | 稳态 |
 |---|---|---|---|---|
