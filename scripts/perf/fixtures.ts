@@ -39,7 +39,7 @@ const ITEM_CLASSES: Array<{ itemClass: string; itemSubClass: string; weight: num
   { itemClass: "Gem", itemSubClass: "Simple", weight: 1 }
 ];
 
-export function mulberry32(seed: number): () => number {
+function mulberry32(seed: number): () => number {
   let state = seed >>> 0;
   return () => {
     state = (state + 0x6d2b79f5) >>> 0;

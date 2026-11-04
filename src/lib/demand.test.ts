@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { demandBandFor, demandFor } from "@/lib/demand";
+import { demandBands, demandFor } from "@/lib/demand";
 
 describe("demand priors", () => {
   it("favours opening-week necessities", () => {
@@ -22,8 +22,10 @@ describe("demand priors", () => {
     expect(demandFor("Miscellaneous", "Other")).toBe(1);
   });
 
-  it("returns the band with its rationale for the UI", () => {
-    const band = demandBandFor("Container", "Bag");
+  it("carries the band's rationale alongside its weight", () => {
+    // The dataset feeds the compiled Lua table; the note documents why the
+    // weight exists, so a review can check the prior, not just its value.
+    const band = demandBands.find((entry) => entry.classes.includes("Container") && entry.subClasses.includes("Bag"));
     expect(band?.levelBand).toBe("1-60");
     expect(band?.note).toContain("刚需");
   });

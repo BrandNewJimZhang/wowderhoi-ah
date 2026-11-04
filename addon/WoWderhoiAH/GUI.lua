@@ -308,8 +308,9 @@ local function medianInterval(points)
   if #points < 3 then return nil end
   local gaps = {}
   for index = 2, #points do gaps[#gaps + 1] = points[index].t - points[index - 1].t end
-  table.sort(gaps)
-  return gaps[math.ceil(#gaps / 2)]
+  -- Same lower-median rule as the terminal's gap detector (median.ts), so
+  -- a scan outage breaks the line at the same place in both charts.
+  return WAH.Core.median(gaps)
 end
 
 local function renderTime(entry, windowHours)

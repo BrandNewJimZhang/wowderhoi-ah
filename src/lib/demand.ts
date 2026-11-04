@@ -23,7 +23,7 @@ function matches(names: string[], value: string | undefined): boolean {
   return names.some((name) => name.trim().toLowerCase() === needle);
 }
 
-export function demandBandFor(category?: string, subCategory?: string): DemandBand | null {
+function demandBandFor(category?: string, subCategory?: string): DemandBand | null {
   for (const band of demandBands) {
     if (matches(band.classes, category) && matches(band.subClasses, subCategory)) return band;
   }
