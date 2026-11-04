@@ -11,11 +11,15 @@ export function buildProductionPlan(
   signals: MarketSignal[],
   recipes: LpRecipe[]
 ): { solution: ProductionSolution; budget: number } {
-  const prices = new Map(signals.map((signal) => [signal.itemId, signal.sellPrice]));
+  // A delisted item has no buyable materials and no sellable product: its
+  // last sell front is history, not an achievable price. Pricing a recipe
+  // from it would manufacture profit the market cannot pay.
+  const current = signals.filter((signal) => !signal.stale);
+  const prices = new Map(current.map((signal) => [signal.itemId, signal.sellPrice]));
   const vendorPrices = new Map(
-    signals.filter((signal) => signal.vendorPrice > 0).map((signal) => [signal.itemId, signal.vendorPrice])
+    current.filter((signal) => signal.vendorPrice > 0).map((signal) => [signal.itemId, signal.vendorPrice])
   );
-  const materialSupply = new Map(signals.map((signal) => [signal.itemId, signal.quantity]));
+  const materialSupply = new Map(current.map((signal) => [signal.itemId, signal.quantity]));
   const budget = resolveBudgetCopper();
   const solution = solveProduction(recipes, {
     prices,
