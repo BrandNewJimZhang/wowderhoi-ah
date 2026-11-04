@@ -29,6 +29,15 @@ describe("journal and ledger", () => {
     expect(lua.number("WowTest.ns.Ledger.capital().realized")).toBe(10000);
   });
 
+  it("consumes materials when a craft is recorded", () => {
+    const lua = loadAddon();
+    record(lua, { k: "buy", itemId: 1000, qty: 10, cost: 10000 });
+    record(lua, { k: "craft", itemId: 2000, qty: 2, cost: 10000, mats: [{ itemId: 1000, qty: 10 }] });
+    expect(lua.eval("WowTest.ns.Ledger.positions()[1000]")).toBeNull();
+    expect(lua.number("WowTest.ns.Ledger.positions()[2000].qty")).toBe(2);
+    expect(lua.number("WowTest.ns.Ledger.positions()[2000].cost")).toBe(10000);
+  });
+
   it("refunds a deposit on sale and charges the auction fee once", () => {
     const lua = loadAddon();
     record(lua, { k: "buy", itemId: 2589, qty: 10, cost: 8000 });

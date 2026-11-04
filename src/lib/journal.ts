@@ -20,6 +20,7 @@ export type JournalEvent = {
   refund?: number;
   lostDeposit?: number;
   outputs?: Array<{ itemId: number; qty: number }>;
+  mats?: Array<{ itemId: number; qty: number }>;
   inferred?: boolean;
 };
 
@@ -68,10 +69,6 @@ export type ReplayState = {
   errors: ReplayError[];
 };
 
-const EVENT_KINDS = new Set([
-  "buy", "post", "cancel", "sold", "expire", "craft", "vendor", "de", "prospect", "mill"
-]);
-
 // Lua's round is floor(x + 0.5), which differs from Math.round for
 // negative halves; match it so the two ledgers cannot disagree.
 function round(value: number): number {
@@ -119,6 +116,11 @@ export function parseJournal(raw: unknown): JournalBook[] {
         return { itemId: toNumber(row.itemId), qty: toNumber(row.qty) };
       });
       if (outputs.length > 0) parsed.outputs = outputs;
+      const mats = numericEntries(event.mats).map((material) => {
+        const row = (material ?? {}) as Record<string, unknown>;
+        return { itemId: toNumber(row.itemId), qty: toNumber(row.qty) };
+      });
+      if (mats.length > 0) parsed.mats = mats;
       return parsed;
     });
     return { key, events, dropped: toNumber(book.dropped) };
@@ -169,8 +171,18 @@ export function replayJournal(events: JournalEvent[], market = "local"): ReplayS
   events.forEach((event, index) => {
     const at = event.t ?? index;
     switch (event.k) {
-      case "buy":
+      case "buy": {
+        const quantity = event.qty ?? 0;
+        const cost = event.cost ?? 0;
+        addLot(event.itemId, quantity, quantity > 0 ? cost / quantity : 0, at);
+        break;
+      }
       case "craft": {
+        // A craft consumes its materials and adds the product at the material
+        // cost; otherwise the same units are counted twice.
+        for (const material of event.mats ?? []) {
+          consume(material.itemId, material.qty, at);
+        }
         const quantity = event.qty ?? 0;
         const cost = event.cost ?? 0;
         addLot(event.itemId, quantity, quantity > 0 ? cost / quantity : 0, at);
@@ -278,6 +290,3 @@ export function replayJournal(events: JournalEvent[], market = "local"): ReplayS
   };
 }
 
-export function isKnownEventKind(kind: string): boolean {
-  return EVENT_KINDS.has(kind);
-}

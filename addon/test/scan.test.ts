@@ -83,7 +83,7 @@ describe("forever replicate scan v4", () => {
     expect(lua.number("WoWderhoiAH_ScanData.items[701].minPrice")).toBe(500);
   });
 
-  it("infers disappeared quantity between two scans and keeps it a lower edge", () => {
+  it("infers disappeared quantity as an interval when the same tier shrinks", () => {
     const lua = auctionPage();
     lua.runScan([
       { itemId: 2589, name: "Linen", count: 100, buyout: 10000, timeLeft: 7200 }
@@ -94,8 +94,24 @@ describe("forever replicate scan v4", () => {
     lua.runScan([
       { itemId: 2589, name: "Linen", count: 60, buyout: 6000, timeLeft: 6300 }
     ]);
-    expect(lua.number("WoWderhoiAH_ScanData.items[2589].inferredSold")).toBe(40);
+    expect(lua.number("WoWderhoiAH_ScanData.items[2589].inferredSoldLow")).toBe(40);
+    expect(lua.number("WoWderhoiAH_ScanData.items[2589].inferredSoldHigh")).toBe(40);
     expect(lua.number("WoWderhoiAH_ScanData.items[2589].supplyGrowth")).toBe(0);
+  });
+
+  it("separates a reprice from a sale in the interval", () => {
+    const lua = auctionPage();
+    lua.runScan([
+      { itemId: 2589, name: "Linen", count: 100, buyout: 10000, timeLeft: 7200, owner: "Alice" }
+    ]);
+    lua.exec("WowTest.advance(900)");
+    // The same 100 units moved from 100 to 120: the price key vanished, but
+    // Alice's total did not, so the lower edge stays zero.
+    lua.runScan([
+      { itemId: 2589, name: "Linen", count: 100, buyout: 12000, timeLeft: 6300, owner: "Alice" }
+    ]);
+    expect(lua.number("WoWderhoiAH_ScanData.items[2589].inferredSoldLow")).toBe(0);
+    expect(lua.number("WoWderhoiAH_ScanData.items[2589].inferredSoldHigh")).toBe(100);
   });
 
   it("does not count a disappearance as a sale when the listing was about to expire", () => {
@@ -107,7 +123,8 @@ describe("forever replicate scan v4", () => {
     lua.runScan([
       { itemId: 2589, name: "Linen", count: 60, buyout: 6000, timeLeft: 60 }
     ]);
-    expect(lua.number("WoWderhoiAH_ScanData.items[2589].inferredSold")).toBe(0);
+    expect(lua.number("WoWderhoiAH_ScanData.items[2589].inferredSoldLow")).toBe(0);
+    expect(lua.number("WoWderhoiAH_ScanData.items[2589].inferredSoldHigh")).toBe(0);
   });
 
   it("does not skip a row when the per-frame budget boundary falls mid-book", () => {

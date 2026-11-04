@@ -8,12 +8,13 @@ describe("mergeScanIntoDailySummaries", () => {
     const { date, creates, updates } = mergeScanIntoDailySummaries(
       [{ itemId: 2770, sellPrice: 210, quantity: 240 }],
       scannedAt,
+      "market-1",
       []
     );
     expect(date).toEqual(new Date("2026-07-23T00:00:00Z"));
     expect(updates).toHaveLength(0);
     expect(creates).toEqual([
-      { itemId: 2770, date, openPrice: 210, closePrice: 210, highPrice: 210, lowPrice: 210, volume: 240 }
+      { itemId: 2770, marketId: "market-1", date, openPrice: 210, closePrice: 210, highPrice: 210, lowPrice: 210, volume: 240 }
     ]);
   });
 
@@ -24,6 +25,7 @@ describe("mergeScanIntoDailySummaries", () => {
         { itemId: 13468, sellPrice: 999999, quantity: 2 } // new item mid-day
       ],
       scannedAt,
+      "market-1",
       [{ itemId: 2770, highPrice: 220, lowPrice: 200 }]
     );
     expect(creates.map((row) => row.itemId)).toEqual([13468]);

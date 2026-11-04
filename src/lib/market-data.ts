@@ -1,4 +1,4 @@
-import type { AuctionSnapshot, DailySummary, Item } from "@prisma/client";
+import type { DailySummary, Item } from "@prisma/client";
 
 // The analytics layer reads a market snapshot, not a Prisma row. Making
 // the order-book fields optional keeps fixtures honest about what they
@@ -35,7 +35,3 @@ export type MarketHistory = Omit<Item, "id" | "createdAt" | "updatedAt"> & {
   dailySummaries: Array<Omit<DailySummary, "id" | "itemId" | "item" | "marketId"> & Partial<Pick<DailySummary, "id" | "itemId" | "marketId">>>;
 };
 
-export type ItemWithHistory = Item & {
-  snapshots: AuctionSnapshot[];
-  dailySummaries: DailySummary[];
-};

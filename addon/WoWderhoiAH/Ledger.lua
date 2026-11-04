@@ -105,6 +105,11 @@ function Ledger.replay(events, market)
       local cost = event.cost or 0
       addLot(state, event.itemId, quantity, quantity > 0 and cost / quantity or 0, event.t)
     elseif kind == "craft" then
+      -- A craft consumes its materials and adds the product at the material
+      -- cost. Without the consumption the same units would be counted twice.
+      for _, material in ipairs(event.mats or {}) do
+        consume(state, material.itemId, material.qty or 0, event.t)
+      end
       local quantity = event.qty or 0
       local cost = event.cost or 0
       addLot(state, event.itemId, quantity, quantity > 0 and cost / quantity or 0, event.t)
@@ -217,12 +222,34 @@ function Ledger.capital()
   return Ledger.current().capital
 end
 
--- Deployable capital: cash plus coins already earned but still in the
--- mailbox (not observable today, so zero) minus nothing. Escrow is not
--- spendable while a listing is live.
-function Ledger.deployable()
-  local capital = Ledger.capital()
-  return math.max(0, (capital.cash or 0) + (capital.mail or 0))
+-- Auction sales per item inside a window. These are the only clean fill
+-- labels the decision core ever receives: a collected sale is a fact, a
+-- public disappearance is an inference. Inferred trades are excluded.
+function Ledger.salesSince(windowSeconds, nowTs)
+  local state = Ledger.current()
+  local cutoff = (nowTs or time()) - (windowSeconds or 7 * 24 * 3600)
+  local byItem = {}
+  for _, trade in ipairs(state.trades or {}) do
+    local quantity = trade.qty or 0
+    if trade.itemId and trade.t >= cutoff and trade.channel == "auction"
+      and not trade.inferred and quantity > 0 then
+      local record = byItem[trade.itemId]
+      if not record then
+        record = { qty = 0, samples = 0, firstAt = trade.t, lastAt = trade.t }
+        byItem[trade.itemId] = record
+      end
+      record.qty = record.qty + quantity
+      record.samples = record.samples + 1
+      if trade.t < record.firstAt then record.firstAt = trade.t end
+      if trade.t > record.lastAt then record.lastAt = trade.t end
+    end
+  end
+  -- The scan interval (15 minutes) is the resolution floor: several sales
+  -- reconciled in one pass still describe a rate over at least that long.
+  for _, record in pairs(byItem) do
+    record.elapsedHours = math.max((record.lastAt - record.firstAt) / 3600, 0.25)
+  end
+  return byItem
 end
 
 WAH.Ledger = Ledger

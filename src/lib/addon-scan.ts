@@ -23,7 +23,8 @@ export type AddonScanItem = {
   sellerCount: number;
   sellersInvisible: boolean;
   bidOnlyCount: number;
-  inferredSold: number; // lower edge of the adjacent-scan disappearance estimate
+  inferredSoldLow: number; // units that left an owner across scans (sales + cancels)
+  inferredSoldHigh: number; // units that left a price key (also repricing)
   supplyGrowth: number; // fraction per hour
   vendorPrice: number; // NPC sell price in copper; 0 = unsellable to vendors
   tiers: AddonTier[]; // top of the price ladder, ascending
@@ -262,6 +263,14 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
     }
     const entry = value as Record<string, unknown>;
     const bidOnlyCount = optionalNonNegative(entry.bidOnly, "bidOnly", key);
+    if (entry.inferredSold !== undefined && entry.inferredSoldLow === undefined) {
+      throw new Error(`Addon scan item ${key}: replace inferredSold with inferredSoldLow/High`);
+    }
+    const inferredSoldLow = optionalNonNegative(entry.inferredSoldLow, "inferredSoldLow", key);
+    const inferredSoldHigh = optionalNonNegative(entry.inferredSoldHigh ?? entry.inferredSoldLow, "inferredSoldHigh", key);
+    if (inferredSoldHigh < inferredSoldLow) {
+      throw new Error(`Addon scan item ${key}: inferredSoldHigh (${inferredSoldHigh}) is below inferredSoldLow (${inferredSoldLow})`);
+    }
     const rawMin = typeof entry.minPrice === "number" ? entry.minPrice : 0;
     // Bid-only entries carry no buyout; their demand is imported through
     // `bids`, not through a zero-priced snapshot.
@@ -289,7 +298,8 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
       sellerCount: entry.sellers === undefined ? numAuctions : optionalNonNegative(entry.sellers, "sellers", key),
       sellersInvisible: entry.sellersInvisible === true,
       bidOnlyCount,
-      inferredSold: optionalNonNegative(entry.inferredSold, "inferredSold", key),
+      inferredSoldLow,
+      inferredSoldHigh,
       supplyGrowth: optionalFinite(entry.supplyGrowth, "supplyGrowth", key),
       vendorPrice: optionalNonNegative(entry.vendorP, "vendorP", key),
       tiers: normalizeTiers(entry.tiers, key, { p: minPrice, q: quantity }),

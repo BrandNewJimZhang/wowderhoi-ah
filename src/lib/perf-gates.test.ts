@@ -45,8 +45,9 @@ function coreInput(itemCount: number): CoreInput {
       numAuctions: 10,
       sellers: 4,
       tiers: [{ p: min, q: 50 }, { p: min + 100, q: 150 }],
-      history: { sellRef: min + 250, samples: 8 },
-      inferredSold: 10,
+      history: { samples: 8 },
+      inferredSoldLow: 10,
+      inferredSoldHigh: 10,
       elapsedHours: 0.25
     };
   }

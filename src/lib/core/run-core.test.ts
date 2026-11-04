@@ -12,7 +12,7 @@ describe("Core.evaluate through fengari", () => {
     expect(row.execQty).toBe(120); // 20 @ 700 + 100 @ 800, both under the cap
     expect(row.ladderPrice).toBeCloseTo(783.33, 1);
     expect(row.listP).toBe(999);
-    expect(row.spreadPercent).toBeCloseTo((1100 - 700) / 1100 * 100, 4);
+    expect(row.spreadPercent).toBeCloseTo((1000 - 700) / 1000 * 100, 4);
     expect(row.netProfit).toBe(19886); // 120 * 999 * 0.95 - 94000
     expect(row.confidence).toBe("medium");
     expect(row.vendor).toBe(false);
@@ -44,7 +44,7 @@ describe("Core.evaluate through fengari", () => {
           numAuctions: 10,
           sellers: 4,
           tiers: [{ p: 700, q: 20 }, { p: 800, q: 100 }],
-          history: { sellRef: 1100, samples: 8 }
+          history: { samples: 8 }
         }
       }
     }));
@@ -74,10 +74,20 @@ describe("Core.evaluate through fengari", () => {
 
   it("requires the phase's history depth outside ignition", () => {
     const input = commodityInput({ phase: "wave" });
-    input.market.items[2589].history = { sellRef: 1100, samples: 2 };
+    input.market.items[2589].history = { samples: 2 };
     const output = runCore(input);
     expect(output.rows).toHaveLength(0);
     expect(output.diagnostics.excluded.noHistory).toBe(1);
+  });
+
+  it("caps confidence at medium when the fill estimate is only a prior", () => {
+    const input = commodityInput({ phase: "wave" });
+    input.market.items[2589].history = { samples: 12 };
+    input.market.items[2589].inferredSoldLow = 0;
+    input.market.items[2589].inferredSoldHigh = 0;
+    const output = runCore(input);
+    expect(output.rows[0].fillBasis).toBe("prior");
+    expect(output.rows[0].confidence).toBe("medium");
   });
 
   it("caps the executable quantity by the budget, not by the whole book", () => {
@@ -112,7 +122,7 @@ describe("Core.evaluate through fengari", () => {
       numAuctions: 10,
       sellers: 4,
       tiers: [{ p: 700, q: 20 }, { p: 800, q: 100 }],
-      history: { sellRef: 1100, samples: 0 }
+      history: { samples: 0 }
     };
     const input = commodityInput({
       ageHours: 1,

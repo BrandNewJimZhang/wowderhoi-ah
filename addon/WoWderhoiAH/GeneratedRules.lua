@@ -6,16 +6,6 @@ local ADDON_NAME, WAH = ...
 
 WAH.PIPELINE_VERSION = 4
 
--- Legacy P10 radar thresholds; the executable-profit radar reads WAH.RULES.
-WAH.RADAR = {
-  minProfit = 500,
-  discount = 0.85,
-  minAuctions = 3,
-  minHistory = 3,
-  minMed7Distinct = 2,
-  maxDiscount = 0.6
-}
-
 WAH.RULES = {
   feeRate = 0.05,
   sellFront = {
@@ -52,8 +42,6 @@ WAH.RULES = {
     minSamples = 48
   }
 },
-  marketTypes = { "vendor", "commodity", "item" },
-  phases = { "ignition", "wave", "settle", "steady" },
   portfolio = {
   kellyFraction = 0.25,
   minKellySamples = 10,

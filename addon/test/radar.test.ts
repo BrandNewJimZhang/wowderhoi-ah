@@ -85,6 +85,21 @@ describe("executable-profit radar", () => {
     expect(radar([lonely], "ignition").names()).toEqual(["No History"]);
   });
 
+  it("ignores stale history in ignition and anchors on the live sell front", () => {
+    // A 100000 close would put the spread past the 85% ignition cap if the
+    // history median were still the reference; the live front is 10000.
+    const stale = { ...CLEAN, itemId: 5, name: "Stale History", closes: [100000, 100000, 100000] };
+    expect(radar([stale], "ignition").names()).toEqual(["Stale History"]);
+  });
+
+  it("rejects a trade whose live front is thin even when history looks wide", () => {
+    // 8000 -> 8300 is a 3.6% executable spread, below the wave floor of
+    // 12%; the 11000 historical median must not rescue it.
+    const thin = { ...CLEAN, itemId: 6, name: "Thin Front", minPrice: 8000, sellP: 8300,
+      closes: [11000, 11000, 11000, 11000, 11000, 11000] };
+    expect(radar([CLEAN, thin], "wave").names()).toEqual(["Clean Spread"]);
+  });
+
   it("ranks ignition opportunities by the demand prior, not only by net", () => {
     const shared = {
       itemId: 0, name: "", minPrice: 8000, sellP: 10000,

@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { runCore } from "@/lib/core/run-core";
 import { commodityInput } from "@/lib/core/fixtures";
+import { resolvePhase } from "@/lib/phase";
 import { loadAddon } from "./wow-lua";
 
 describe("decision core parity", () => {
@@ -25,11 +26,23 @@ describe("decision core parity", () => {
     expect(loadAddon().coreEval(rejected)).toEqual(runCore(rejected));
   });
 
+  it("agrees with the terminal phase resolver on every boundary", () => {
+    const lua = loadAddon();
+    const cases: Array<[number, number]> = [
+      [0, 1], [5.99, 79], [6, 80], [47.99, 399],
+      [48, 400], [167.99, 799], [168, 800], [1000, 5000]
+    ];
+    for (const [ageHours, breadth] of cases) {
+      expect(lua.text(`WowTest.ns.Core.phaseFor(${ageHours}, ${breadth})`), `${ageHours}h/${breadth}`)
+        .toBe(resolvePhase(ageHours, breadth));
+    }
+  });
+
   it("exposes the sell plan arithmetic through the same core", () => {
     const lua = loadAddon();
     const plan = lua.eval(
       "(function() local p = WowTest.ns.Core.sellPlan({ itemId = 2589, sellP = 1000, vendorP = 10 }, { qty = 10, cost = 8000 }, WowTest.ns.RULES, { deposit = 500 }) return p.netIfSold .. '|' .. p.sellBreakeven .. '|' .. p.expireBreakeven .. '|' .. p.lossIfExpired end)()"
     );
-    expect(plan).toBe("1491|842|895|8500");
+    expect(plan).toBe("1491|842|895|8400");
   });
 });

@@ -1,8 +1,8 @@
 import type { MarketSignal } from "@/lib/analytics";
 
-export type SignalSortKey = "sellPrice" | "minPrice" | "sellRef" | "spreadPercent" | "trendPercent" | "changePercent" | "quantity" | "numAuctions" | "p10Median";
+export type SignalSortKey = "sellPrice" | "minPrice" | "sellRef" | "spreadPercent" | "trendPercent" | "changePercent" | "quantity" | "numAuctions";
 
-const SORT_KEYS: readonly SignalSortKey[] = ["sellPrice", "minPrice", "sellRef", "spreadPercent", "trendPercent", "changePercent", "quantity", "numAuctions", "p10Median"];
+const SORT_KEYS: readonly SignalSortKey[] = ["sellPrice", "minPrice", "sellRef", "spreadPercent", "trendPercent", "changePercent", "quantity", "numAuctions"];
 
 export type MarketView = { query: string; category: string; sortKey: SignalSortKey; sortAsc: boolean; page: number };
 

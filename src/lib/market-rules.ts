@@ -10,24 +10,18 @@
 // meaning of the stored prices changed, not just their values.
 export const SCAN_PIPELINE_VERSION = 4;
 
-// The legacy P10-median radar rules. Kept until the executable-profit
-// radar lands; every new decision reads the phase rules below instead.
-export const dealRadarRules = {
-  minProfit: 500, // 5s absolute floor; sub-silver "deals" waste a trip
-  discount: 0.85, // min price at 85% of med7 or lower
-  minAuctions: 3, // liquidity guard: fewer sellers = no real market
-  minHistory: 3, // the P10 median needs depth before it means anything
-  // Credibility guards on med7 itself. minHistory counts samples but says
-  // nothing about whether they mean anything: on a thin realm the bottom of
-  // the book is often one camper, so every scan records that player's ask
-  // and med7 becomes a price no listing ever traded against.
-  minMed7Distinct: 2, // a flat 7d P10 series is one seller, not a market
-  maxDiscount: 0.6 // past 60% off, the reference is broken, not the listing cheap
-} as const;
-
 // Auction house cut on a successful sale. Deposits are refunded on sale
 // and lost only on expiry/cancel, so they never enter this rate.
 export const AH_FEE_RATE = 0.05;
+
+// The addon's auto-rescan cadence. Flow estimates and the terminal's
+// elapsed-time floor both resolve at this granularity; the Lua side keeps
+// its own timer, so a change here only needs a matching addon edit.
+export const SCAN_INTERVAL_MINUTES = 15;
+
+// Fallback daily capital when AQT_BUDGET_COPPER is unset. One value for the
+// cockpit, the signal bundle and the production network.
+export const DEFAULT_BUDGET_COPPER = 1_000_000;
 
 // Depth-aware sell front. The upper book is noise (thin, stale listings
 // nobody trades against), so sellP is the cheapest price with real

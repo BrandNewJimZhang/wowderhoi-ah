@@ -12,11 +12,11 @@ model Market {
   id        String   @id @default(cuid())
   realm     String
   faction   String
-  openedAt  DateTime? @map("opened_at")
   cash      Int       @default(0) // latest scan's player cash, copper
   createdAt DateTime @default(now()) @map("created_at")
 
   snapshots AuctionSnapshot[]
+  dailySummaries DailySummary[]
   positions Position[]
   trades    Trade[]
   decisions Decision[]
@@ -58,8 +58,8 @@ model AuctionSnapshot {
   sellerCount      Int      @default(0) @map("seller_count")
   sellersInvisible Boolean  @default(false) @map("sellers_invisible")
   bidOnlyCount     Int      @default(0) @map("bid_only_count")
-  soldProxyLow     Int      @default(0) @map("sold_proxy_low")
-  soldProxyHigh    Int      @default(0) @map("sold_proxy_high")
+  soldProxyLow     Int      @default(0) @map("sold_proxy_low") // left an owner: sales + cancels
+  soldProxyHigh    Int      @default(0) @map("sold_proxy_high") // left a price key: also repricing
   supplyGrowth     Float    @default(0) @map("supply_growth")
   topTiers         Json?    @map("top_tiers")
   expiring         Json?    @map("expiring")
@@ -83,9 +83,10 @@ model DailySummary {
   lowPrice   Int      @map("low_price")
   volume     Int
   item       Item     @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
+  market     Market?  @relation(fields: [marketId], references: [id], onDelete: Cascade)
 
-  @@unique([itemId, date])
-  @@index([date])
+  @@unique([marketId, itemId, date])
+  @@index([marketId, date])
 }
 
 // A position is the ledger projection of the imported journal, rebuilt on
@@ -158,26 +159,9 @@ model Recipe {
   skillUpRange    Json?    @map("skill_up_range")
   materials       Json // [{ itemId, name, qty }]
   products        Json // [{ itemId, name, qty, quality?, ilvl? }]
-  productItemId   Int?     @map("product_item_id")
-  productQuantity Int      @default(1) @map("product_quantity")
-  cooldownHours   Float?   @map("cooldown_hours")
   createdAt       DateTime @default(now()) @map("created_at")
 
   @@index([profession])
-  @@index([productItemId])
-}
-
-// Raid resets, darkmoon, phase openings and other demand pulses.
-model EventCalendar {
-  id            String    @id @default(cuid())
-  kind          String
-  name          String
-  startsAt      DateTime  @map("starts_at")
-  endsAt        DateTime? @map("ends_at")
-  affectedItems Json?     @map("affected_items")
-  leadHours     Int       @default(0) @map("lead_hours")
-
-  @@index([startsAt])
 }
 
 model Event {

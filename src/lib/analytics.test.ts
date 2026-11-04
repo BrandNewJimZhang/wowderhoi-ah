@@ -39,6 +39,7 @@ function history(
       sellerCount: snap.sellerCount ?? 3,
       bidOnlyCount: snap.bidOnly ?? 0,
       soldProxyLow: 0,
+      soldProxyHigh: 0,
       supplyGrowth: 0,
       topTiers: [{ p: Math.round(snap.sellPrice * 0.9), q: 100 }],
       expiring: { soon: 1, mid: 1, late: 1 }
@@ -77,23 +78,9 @@ describe("buildMarketSignal", () => {
       now
     );
     expect(signal.price).toBe(500);
-    expect(signal.p10Median).toBe(500);
     expect(signal.sellRef).toBe(110);
     // The spread is measured against the sell front, never P10.
     expect(signal.spreadPercent).toBeCloseTo((1 - 99 / 110) * 100, 5);
-  });
-
-  it("counts distinct sell fronts so a flat book is visible", () => {
-    const flat = buildMarketSignal(
-      history([
-        { daysAgo: 2, sellPrice: 49240 },
-        { daysAgo: 1, sellPrice: 49240 },
-        { daysAgo: 0, sellPrice: 49240 }
-      ]),
-      now
-    );
-    expect(flat.sellSamples).toBe(3);
-    expect(flat.sellDistinct).toBe(1);
   });
 
   it("ignores snapshots outside the phase window", () => {
@@ -130,7 +117,8 @@ describe("buildMarketSignal", () => {
       now
     );
     expect(signal.bidOnlyCount).toBe(4);
-    expect(signal.inferredSold).toBe(0);
+    expect(signal.inferredSoldLow).toBe(0);
+    expect(signal.inferredSoldHigh).toBe(0);
     expect(signal.sellersInvisible).toBe(false);
   });
 

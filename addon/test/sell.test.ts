@@ -56,7 +56,8 @@ describe("sell pricing", () => {
     expect(lua.number("(WowTest.ns.Sell.plan(2589, 24, 10)).netIfSold")).toBe(1491);
     expect(lua.number("(WowTest.ns.Sell.plan(2589, 24, 10)).sellBreakeven")).toBe(842);
     expect(lua.number("(WowTest.ns.Sell.plan(2589, 24, 10)).expireBreakeven")).toBe(918);
-    expect(lua.number("(WowTest.ns.Sell.plan(2589, 24, 10)).lossIfExpired")).toBe(8720);
+    // Deposit 720 + (cost 8000 − NPC residual 100); the goods come back.
+    expect(lua.number("(WowTest.ns.Sell.plan(2589, 24, 10)).lossIfExpired")).toBe(8620);
     expect(lua.number("(WowTest.ns.Sell.plan(2589, 24, 10)).feeIfSold")).toBe(500);
   });
 

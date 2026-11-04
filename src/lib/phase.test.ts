@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { phaseDescription, phaseLabels, phaseMinSamples, phaseWindowHours, resolvePhase } from "@/lib/phase";
+import { phaseDescription, phaseLabels, phaseWindowHours, resolvePhase } from "@/lib/phase";
 import { phaseBoundaries } from "@/lib/market-rules";
 
 describe("resolvePhase", () => {
@@ -20,9 +20,8 @@ describe("resolvePhase", () => {
     expect(resolvePhase(200, phaseBoundaries.settleBreadth - 1)).toBe("settle");
   });
 
-  it("exposes the phase's history window and sample floor", () => {
+  it("exposes the phase's history window", () => {
     expect(phaseWindowHours("wave")).toBe(6);
-    expect(phaseMinSamples("settle")).toBe(12);
     expect(phaseWindowHours("steady")).toBe(168);
   });
 

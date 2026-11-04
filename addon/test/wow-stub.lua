@@ -628,7 +628,8 @@ function bed.setScan(items)
       bidOnly = item.bidOnly or 0,
       tiers = item.tiers or { { p = item.minPrice, q = item.quantity or 1 } },
       expiring = item.expiring or { soon = 0, mid = 0, late = 0 },
-      inferredSold = item.inferredSold or 0,
+      inferredSoldLow = item.inferredSoldLow or 0,
+      inferredSoldHigh = item.inferredSoldHigh or 0,
       supplyGrowth = item.supplyGrowth or 0,
       elapsedHours = item.elapsedHours or 0.25
     }

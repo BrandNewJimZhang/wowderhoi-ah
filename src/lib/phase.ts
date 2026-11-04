@@ -15,10 +15,6 @@ export function phaseWindowHours(phase: MarketPhase): number {
   return phaseHistory[phase].windowHours;
 }
 
-export function phaseMinSamples(phase: MarketPhase): number {
-  return phaseHistory[phase].minSamples;
-}
-
 export const phaseLabels: Record<MarketPhase, string> = {
   ignition: "点火期",
   wave: "洪流期",

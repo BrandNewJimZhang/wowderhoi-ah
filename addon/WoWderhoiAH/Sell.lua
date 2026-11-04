@@ -192,11 +192,7 @@ end
 local function postItem(itemId, duration, quantity)
   local plan, why, entry = planFor(itemId, duration, quantity)
   if not plan then
-    if why == "noScan" then
-      chatMessage(string.format(L.SELL_NO_DATA, entry and entry.name or tostring(itemId)))
-    else
-      chatMessage(string.format(L.SELL_NO_DATA, entry and entry.name or tostring(itemId)))
-    end
+    chatMessage(string.format(L.SELL_NO_DATA, entry and entry.name or tostring(itemId)))
     return false, why
   end
   local location = locationFor(entry)
@@ -594,7 +590,6 @@ end
 local Sell = {}
 Sell.collectBag = collectBag
 Sell.collectOwned = collectOwned
-Sell.reconcile = reconcile
 Sell.render = render
 
 function Sell.plan(itemId, duration, quantity)
@@ -618,10 +613,6 @@ function Sell.postSelected()
   if not selected then return false, "noSelection" end
   local quantity = sell and tonumber(sell.qtyBox:GetText()) or selected.count
   return postItem(selected.itemId, selectedDuration, quantity or selected.count)
-end
-
-function Sell.post(itemId, duration, quantity)
-  return postItem(itemId, duration, quantity)
 end
 
 function Sell.cancel(auctionID)

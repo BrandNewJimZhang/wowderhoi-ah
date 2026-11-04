@@ -8,16 +8,17 @@
 type ScanPriceRow = { itemId: number; sellPrice: number; quantity: number };
 type ExistingDayRow = { itemId: number; highPrice: number; lowPrice: number };
 
-export function mergeScanIntoDailySummaries(items: ScanPriceRow[], scannedAt: Date, existing: ExistingDayRow[]) {
+export function mergeScanIntoDailySummaries(items: ScanPriceRow[], scannedAt: Date, marketId: string, existing: ExistingDayRow[]) {
   const date = new Date(Date.UTC(scannedAt.getUTCFullYear(), scannedAt.getUTCMonth(), scannedAt.getUTCDate()));
   const existingByItemId = new Map(existing.map((row) => [row.itemId, row]));
-  const creates: Array<{ itemId: number; date: Date; openPrice: number; closePrice: number; highPrice: number; lowPrice: number; volume: number }> = [];
+  const creates: Array<{ itemId: number; marketId: string; date: Date; openPrice: number; closePrice: number; highPrice: number; lowPrice: number; volume: number }> = [];
   const updates: Array<{ itemId: number; data: { closePrice: number; highPrice: number; lowPrice: number; volume: number } }> = [];
   for (const item of items) {
     const current = existingByItemId.get(item.itemId);
     if (!current) {
       creates.push({
         itemId: item.itemId,
+        marketId,
         date,
         openPrice: item.sellPrice,
         closePrice: item.sellPrice,

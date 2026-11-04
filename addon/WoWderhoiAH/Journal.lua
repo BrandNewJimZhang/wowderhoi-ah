@@ -66,15 +66,6 @@ function Journal.count()
   return #events
 end
 
-function Journal.since(epoch)
-  local events = Journal.current()
-  local out = {}
-  for _, event in ipairs(events) do
-    if event.t >= (epoch or 0) then out[#out + 1] = event end
-  end
-  return out
-end
-
 function Journal.last(kind)
   local events = Journal.current()
   for index = #events, 1, -1 do

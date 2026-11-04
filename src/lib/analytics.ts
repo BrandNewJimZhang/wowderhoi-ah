@@ -17,20 +17,18 @@ export type MarketSignal = {
   quality: string;
   sellPrice: number; // depth-aware sell front, copper (the decision anchor)
   minPrice: number; // cheapest listed unit, copper
-  p5Price: number;
-  price: number; // P10, copper; statistics only
+  price: number; // latest P10, copper; statistics only
   quantity: number; // listed quantity (supply, NOT sales)
   numAuctions: number;
   sellerCount: number;
   sellersInvisible: boolean;
   bidOnlyCount: number; // direct demand signal
-  inferredSold: number; // lower edge of the adjacent-scan disappearance estimate
+  inferredSoldLow: number; // lost from an owner group: sales + cancels
+  inferredSoldHigh: number; // lost from a price key: also repricing
   supplyGrowth: number; // fraction per hour
   vendorPrice: number; // NPC sell price, copper; 0 = unsellable
   sellRef: number; // median sell front over the phase window
   sellSamples: number;
-  sellDistinct: number;
-  p10Median: number; // statistical context only
   spreadPercent: number; // (sellRef - minPrice) / sellRef
   trendPercent: number; // (sellPrice - sellRef) / sellRef
   changePercent: number; // sellPrice vs the previous scan's sell front
@@ -62,12 +60,9 @@ export function buildMarketSignal(
   const windowStart = now.getTime() - windowHours * 60 * 60 * 1000;
   const windowSnapshots = snapshots.filter((snapshot) => snapshot.timestamp.getTime() >= windowStart);
   const prices = windowSnapshots.map(sellOf).filter((value) => value > 0);
-  const p10s = windowSnapshots.map((snapshot) => snapshot.marketPrice).filter((value) => value > 0);
   const sellPrice = sellOf(latest);
   const sellRef = prices.length > 0 ? median(prices) : sellPrice;
-  const p10Median = p10s.length > 0 ? median(p10s) : latest.marketPrice;
   const sellSamples = windowSnapshots.length;
-  const sellDistinct = new Set(prices).size;
   const previousSell = previous ? sellOf(previous) : 0;
   return {
     itemId: item.itemId,
@@ -76,20 +71,18 @@ export function buildMarketSignal(
     quality: item.quality,
     sellPrice,
     minPrice: latest.minPrice,
-    p5Price: latest.p5Price ?? 0,
     price: latest.marketPrice,
     quantity: latest.quantity,
     numAuctions: latest.numAuctions,
     sellerCount: latest.sellerCount ?? latest.numAuctions,
     sellersInvisible: latest.sellersInvisible ?? false,
     bidOnlyCount: latest.bidOnlyCount ?? 0,
-    inferredSold: latest.soldProxyLow ?? 0,
+    inferredSoldLow: latest.soldProxyLow ?? 0,
+    inferredSoldHigh: Math.max(latest.soldProxyHigh ?? 0, latest.soldProxyLow ?? 0),
     supplyGrowth: latest.supplyGrowth ?? 0,
     vendorPrice: item.vendorPrice,
     sellRef,
     sellSamples,
-    sellDistinct,
-    p10Median,
     spreadPercent: sellRef > 0 ? ((sellRef - latest.minPrice) / sellRef) * 100 : 0,
     trendPercent: sellRef > 0 ? ((sellPrice - sellRef) / sellRef) * 100 : 0,
     changePercent: previousSell > 0 ? ((sellPrice - previousSell) / previousSell) * 100 : 0,

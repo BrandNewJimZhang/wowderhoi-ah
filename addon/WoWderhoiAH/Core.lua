@@ -12,8 +12,6 @@
 local ADDON_NAME, WAH = ...
 local Core = {}
 
-Core.VERSION = 1
-
 local function round(value) return math.floor(value + 0.5) end
 
 local function copyList(list)
@@ -106,25 +104,6 @@ function Core.sellFront(tiers, opts)
   return filtered[#filtered].p
 end
 
--- Cost of walking the offer ladder for `quantity` units. Commodity
--- purchases always take the cheapest units first, so the total is never
--- quantity times any single row's price.
-function Core.ladderCost(tiers, quantity)
-  local sorted = Core.sortedTiers(tiers)
-  local remaining = quantity or 0
-  local cost = 0
-  local filled = 0
-  for _, tier in ipairs(sorted) do
-    if remaining <= 0 then break end
-    local take = math.min(remaining, tier.q)
-    cost = cost + take * tier.p
-    filled = filled + take
-    remaining = remaining - take
-  end
-  if filled == 0 then return 0, 0, nil end
-  return cost, filled, cost / filled
-end
-
 -- Largest quantity the player can actually buy under a price cap, a
 -- budget and a bag limit. Returns quantity, total cost, average price.
 function Core.executableQty(tiers, priceCap, budget, bagCapacity)
@@ -176,31 +155,48 @@ local PRIOR_HAZARD = {
   steady = { commodity = 0.08, item = 0.03 }
 }
 
--- P(fill within horizon). Own sales are the only clean label; public
--- disappearances are a bounded prior. With fewer than three own samples
--- the output is an interval, never a point dressed up as precision.
+-- P(fill within horizon). There are three evidence tiers, in order:
+--
+--   own     Units the player actually sold. The only clean label the client
+--           ever gives. Sell-through rate is units/hour; a listing of q
+--           units therefore clears at hazard = rate / q (the queue model).
+--   proxy   Public disappearances between scans. A bounded inference that
+--           cannot separate sales from cancellations, so it is weaker.
+--   prior   The phase x market-type table. Used when nothing is observable.
+--
+-- Fewer than three own sales is not evidence; the output is always an
+-- interval, never a point dressed up as precision.
 function Core.fillProbability(input)
   local horizon = input.horizonHours or 24
   local phase = input.phase or "steady"
   local marketType = input.marketType or "commodity"
-  local samples = input.samples or 0
+  local ownSold = input.ownSold or 0
+  local ownSamples = input.ownSamples or 0
   local sold = input.sold or 0
   local supply = input.supply or 0
   local elapsed = math.max(input.elapsedHours or 0.25, 0.25)
-  local hazard
-  local spread = 0.5
-  if samples >= 3 and sold > 0 and supply > 0 then
+  local hazard, basis, spread
+  if ownSamples >= 3 and ownSold > 0 then
+    local rate = ownSold / math.max(input.ownElapsedHours or 1, 0.25)
+    local quantity = math.max(input.qty or 1, 1)
+    hazard = rate / quantity
+    basis = "own"
+    spread = ownSamples >= 6 and 0.2 or 0.35
+  elseif sold > 0 and supply > 0 then
     hazard = sold / (supply * elapsed)
-    hazard = math.max(0.001, math.min(hazard, 2))
-    if samples >= 6 then spread = 0.2 end
+    basis = "proxy"
+    spread = 0.5
   else
     local phasePriors = PRIOR_HAZARD[phase] or PRIOR_HAZARD.steady
     hazard = phasePriors[marketType] or phasePriors.commodity
+    basis = "prior"
+    spread = 0.5
   end
+  hazard = math.max(0.001, math.min(hazard, 2))
   local point = 1 - math.exp(-hazard * horizon)
   local low = math.max(0, point * (1 - spread))
   local high = math.min(1, point * (1 + spread))
-  return low, high, point
+  return low, high, point, basis
 end
 
 function Core.phaseFor(ageHours, breadth, boundaries)
@@ -282,12 +278,32 @@ local function scoreFor(phase, row, supplyGrowth)
   return row.netProfit * fill * confidence
 end
 
+local FILL_BASIS_TEXT = {
+  own = "成交率来自自己的成交",
+  proxy = "成交率来自公共推断",
+  prior = "成交率来自阶段先验"
+}
+
 local function reasonFor(row)
   if row.vendor then
     return string.format("NPC 收购价高于挂单价，%d 件净赚 %d 铜", row.execQty, row.netProfit)
   end
-  return string.format("价差 %.0f%%，可买 %d 件，24 小时成交率约 %.0f%%",
-    row.spreadPercent, row.execQty, (row.fillProb or 0) * 100)
+  local low = (row.fillProbLow or row.fillProb or 0) * 100
+  local high = (row.fillProbHigh or row.fillProb or 0) * 100
+  local text = string.format("价差 %.0f%%，可买 %d 件，每件净利 %d 铜，24 小时成交率 %.0f%%（%.0f–%.0f%%，%s）",
+    row.spreadPercent, row.execQty, row.netPerUnit or 0, (row.fillProb or 0) * 100, low, high,
+    FILL_BASIS_TEXT[row.fillBasis or "prior"] or FILL_BASIS_TEXT.prior)
+  if row.bidOnly and row.bidOnly > 0 then
+    text = text .. string.format("，另有 %d 笔竞价", row.bidOnly)
+  end
+  if row.inferredSoldHigh and row.inferredSoldHigh > 0 then
+    local low = row.inferredSoldLow or 0
+    local high = row.inferredSoldHigh
+    text = text .. (low == high
+      and string.format("，推断消失 %d 件", low)
+      or string.format("，推断消失 %d–%d 件", low, high))
+  end
+  return text
 end
 
 -- Evaluate one market state.
@@ -296,7 +312,7 @@ end
 --   now              epoch seconds
 --   phaseOverride    optional phase name
 --   rules            WAH.RULES (compiled constants)
---   market           { firstScanAt, items = { [id] = item }, bids = {} }
+--   market           { firstScanAt, items = { [id] = item } }
 --   capital          { cash, mail, escrow, budget }
 --   capacity         { bagSlots, stackSize }
 --   positions        { [itemId] = { qty, cost } }
@@ -321,7 +337,7 @@ function Core.evaluate(input)
   local ageHours = math.max(0, (now - firstScanAt) / 3600)
   local phase = input.phaseOverride
     or Core.phaseFor(ageHours, breadth, rules.phaseBoundaries)
-  historyRule = (rules.phaseHistory or {})[phase] or { windowHours = 0, minSamples = 0 }
+  local historyRule = (rules.phaseHistory or {})[phase] or { windowHours = 0, minSamples = 0 }
   local typeRules = ((rules.marketTypeRules or {})[phase]) or {}
   local bagSlots = capacity.bagSlots or 20
   local stackSize = capacity.stackSize or 20
@@ -374,9 +390,12 @@ function Core.evaluate(input)
             fillProb = 1,
             fillProbLow = 1,
             fillProbHigh = 1,
+            fillBasis = "vendor",
             confidence = "high",
             supplyGrowth = 0,
             bidOnly = item.bidOnly or 0,
+            inferredSoldLow = 0,
+            inferredSoldHigh = 0,
             demandPrior = item.demandPrior or 1
           }
           row.reason = reasonFor(row)
@@ -388,8 +407,10 @@ function Core.evaluate(input)
       else
         local history = item.history or {}
         local samples = history.samples or 0
-        local reference = history.sellRef or sellP
-        local spread = reference and reference > 0 and (reference - minPrice) / reference or 0
+        -- The gate measures the trade you can execute now: buy at minPrice,
+        -- resell at the live sell front. A historical median is context for
+        -- the trend, never the reference a spread is measured against.
+        local spread = sellP and sellP > 0 and (sellP - minPrice) / sellP or 0
         local priceCap = listP * (1 - feeRate) - (marketRules and marketRules.minUnitProfit or 0)
         local qty, cost, average = Core.executableQty(tiers, priceCap, budget, bagCapacity)
         local net = qty > 0 and Core.netIfSold(listP, qty, cost / qty, feeRate) or 0
@@ -407,16 +428,22 @@ function Core.evaluate(input)
         elseif net < ((marketRules and marketRules.minNet) or 0) then
           excluded.net = excluded.net + 1
         else
-          local low, high, point = Core.fillProbability({
+          local low, high, point, fillBasis = Core.fillProbability({
             horizonHours = 24,
             phase = phase,
             marketType = marketType,
-            samples = samples,
-            sold = item.inferredSold or 0,
+            qty = qty,
+            ownSold = item.ownSold or 0,
+            ownSamples = item.ownSamples or 0,
+            ownElapsedHours = item.ownElapsedHours or 0,
+            sold = item.inferredSoldLow or 0,
             supply = item.quantity or 0,
             elapsedHours = item.elapsedHours or 0.25
           })
           local confidence = Core.confidenceFor(samples, sellers, qty, phase)
+          -- No fill evidence at all: history depth can still make the trade
+          -- actionable, but it cannot make the fill estimate high-confidence.
+          if fillBasis == "prior" and confidence == "high" then confidence = "medium" end
           local row = {
             itemId = itemId,
             name = item.name,
@@ -434,9 +461,12 @@ function Core.evaluate(input)
             fillProb = point,
             fillProbLow = low,
             fillProbHigh = high,
+            fillBasis = fillBasis,
             confidence = confidence,
             supplyGrowth = item.supplyGrowth or 0,
             bidOnly = item.bidOnly or 0,
+            inferredSoldLow = item.inferredSoldLow or 0,
+            inferredSoldHigh = item.inferredSoldHigh or 0,
             demandPrior = item.demandPrior or 1
           }
           row.reason = reasonFor(row)
@@ -536,6 +566,9 @@ function Core.sellPlan(item, position, rules, opts)
   local quantity = position.qty or 1
   local unitCost = position.cost and position.cost / quantity or 0
   local deposit = (opts and opts.deposit) or 0
+  -- An expired listing returns the goods, so the loss is the deposit plus
+  -- the gap between cost and the guaranteed NPC floor, not the whole cost.
+  local residual = (item.vendorP or 0) * quantity
   return {
     itemId = item.itemId,
     quantity = quantity,
@@ -546,7 +579,7 @@ function Core.sellPlan(item, position, rules, opts)
     netIfSold = round(Core.netIfSold(listP, quantity, unitCost, feeRate)),
     sellBreakeven = round(Core.sellBreakeven(unitCost, feeRate) or 0),
     expireBreakeven = round(Core.expireBreakeven(unitCost, deposit, quantity, feeRate) or 0),
-    lossIfExpired = round(deposit + unitCost * quantity),
+    lossIfExpired = round(deposit + math.max(0, unitCost * quantity - residual)),
     feeIfSold = round(listP * quantity * feeRate)
   }
 end

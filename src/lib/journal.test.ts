@@ -41,6 +41,16 @@ describe("replayJournal", () => {
     expect(state.trades[0].pnl).toBe(90);
   });
 
+  it("consumes materials when replaying a craft", () => {
+    const state = replayJournal([
+      { k: "buy", t: 1, itemId: 1000, qty: 10, cost: 10000 },
+      { k: "craft", t: 2, itemId: 2000, qty: 2, cost: 10000, mats: [{ itemId: 1000, qty: 10 }] }
+    ]);
+    expect(state.positions[1000]).toBeUndefined();
+    expect(state.positions[2000]).toEqual({ qty: 2, cost: 10000 });
+    expect(state.errors).toHaveLength(0);
+  });
+
   it("records a short position instead of inventing cost", () => {
     const state = replayJournal([{ k: "sold", t: 1, auctionID: 1, itemId: 9, qty: 4, price: 100, fee: 20 }]);
     expect(state.errors[0]).toMatchObject({ kind: "short_position", itemId: 9, missing: 4 });

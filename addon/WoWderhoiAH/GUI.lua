@@ -93,8 +93,9 @@ local function appendTraderSection(tooltip)
     if ladder then tooltip:AddDoubleLine("  " .. L.TT_LADDER, ladder) end
     tooltip:AddDoubleLine("  " .. L.TT_SUPPLY, string.format(L.TT_SUPPLY_FMT,
       scanned.quantity or 0, scanned.numAuctions or 0, scanned.sellers or 0))
-    if scanned.inferredSold and scanned.inferredSold > 0 then
-      tooltip:AddDoubleLine("  " .. L.TT_INFERRED, string.format(L.TT_INFERRED_FMT, scanned.inferredSold))
+    if scanned.inferredSoldHigh and scanned.inferredSoldHigh > 0 then
+      tooltip:AddDoubleLine("  " .. L.TT_INFERRED,
+        string.format(L.TT_INFERRED_FMT, scanned.inferredSoldLow or 0, scanned.inferredSoldHigh))
     end
     -- P10 is a statistic, never a decision anchor.
     tooltip:AddDoubleLine("  |cff888888" .. L.TT_P10_STAT .. "|r", coinString(scanned.marketPrice or 0))
@@ -603,8 +604,8 @@ SlashCmdList["WOWDERHOIAHSTATUS"] = function()
     "|cff33ff99WoWderhoi AHelper|r " .. L.STATUS_FMT,
     historyCount, scanInfo,
     WAH.currentPhase and WAH.currentPhase() or "?",
-    ledger and ledger.capital.realized or 0,
-    ledger and ledger.capital.escrow or 0))
+    ledger and coinString(ledger.capital.realized) or "0",
+    ledger and coinString(ledger.capital.escrow) or "0"))
 end
 
 -- ============================== Price guide ========================

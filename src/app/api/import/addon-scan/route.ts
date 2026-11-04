@@ -21,12 +21,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 400 });
   }
 
-  const market = await prisma.market.upsert({
-    where: { realm_faction: { realm: scan.server, faction: scan.faction } },
-    create: { realm: scan.server, faction: scan.faction, openedAt: scan.scannedAt },
-    update: { cash: scan.cash }
-  });
-
   const duplicate = await prisma.auctionSnapshot.findFirst({
     where: { timestamp: scan.scannedAt, server: scan.server, faction: scan.faction },
     select: { id: true }
@@ -35,17 +29,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `Scan at ${scan.scannedAt.toISOString()} already imported` }, { status: 409 });
   }
 
+  const market = await prisma.market.upsert({
+    where: { realm_faction: { realm: scan.server, faction: scan.faction } },
+    create: { realm: scan.server, faction: scan.faction },
+    update: { cash: scan.cash }
+  });
+
   // Full-table reads instead of `in` filters: the item table is small and
   // this keeps the statements clear of SQLite's bound-parameter limit even
   // at 100x-scale scans.
-  const existingItems = await prisma.item.findMany({ select: { itemId: true, name: true, quality: true, vendorPrice: true } });
+  const existingItems = await prisma.item.findMany({
+    select: { itemId: true, name: true, quality: true, category: true, subCategory: true, vendorPrice: true }
+  });
   const itemDiff = diffScanItems(scan.items, existingItems);
-  const dayProbe = mergeScanIntoDailySummaries(scan.items, scan.scannedAt, []);
+  const dayProbe = mergeScanIntoDailySummaries(scan.items, scan.scannedAt, market.id, []);
   const existingDayRows = await prisma.dailySummary.findMany({
-    where: { date: dayProbe.date },
+    where: { marketId: market.id, date: dayProbe.date },
     select: { itemId: true, highPrice: true, lowPrice: true }
   });
-  const { date, creates, updates } = mergeScanIntoDailySummaries(scan.items, scan.scannedAt, existingDayRows);
+  const { date, creates, updates } = mergeScanIntoDailySummaries(scan.items, scan.scannedAt, market.id, existingDayRows);
 
   const rawItems = ((rawScan as Record<string, unknown>).items ?? {}) as Record<string, unknown>;
   const books = parseJournal(payload.journal);
@@ -76,8 +78,8 @@ export async function POST(request: Request) {
         sellerCount: item.sellerCount,
         sellersInvisible: item.sellersInvisible,
         bidOnlyCount: item.bidOnlyCount,
-        soldProxyLow: item.inferredSold,
-        soldProxyHigh: item.inferredSold,
+        soldProxyLow: item.inferredSoldLow,
+        soldProxyHigh: item.inferredSoldHigh,
         supplyGrowth: item.supplyGrowth,
         topTiers: item.tiers,
         expiring: item.expiring,
@@ -85,7 +87,10 @@ export async function POST(request: Request) {
       }))
     }),
     ...(creates.length > 0 ? [prisma.dailySummary.createMany({ data: creates })] : []),
-    ...updates.map((update) => prisma.dailySummary.update({ where: { itemId_date: { itemId: update.itemId, date } }, data: update.data }))
+    ...updates.map((update) => prisma.dailySummary.update({
+      where: { marketId_itemId_date: { marketId: market.id, itemId: update.itemId, date } },
+      data: update.data
+    }))
   ];
 
   if (replay) {

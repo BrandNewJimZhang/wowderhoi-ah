@@ -152,7 +152,7 @@ local function statusLine()
     or (WAH.currentPhase and WAH.currentPhase() or "steady")
   local label = (L.PHASE_LABELS and L.PHASE_LABELS[phase]) or phase
   if not scan or age == nil then
-    return string.format(L.STATUS_NO_SCAN, label)
+    return string.format(L.STATUS_LINE_NO_SCAN, label)
   end
   local count = 0
   for _, entry in pairs(scan) do

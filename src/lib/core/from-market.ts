@@ -3,14 +3,15 @@
 // identical market, history, position and capital fields on both sides.
 import type { MarketSignal } from "@/lib/analytics";
 import { demandFor } from "@/lib/demand";
-import type { CoreInput, CoreMarketItem, Tier } from "@/lib/core/types";
+import type { CoreInput, CoreMarketItem, OwnSales, Tier } from "@/lib/core/types";
 import type { MarketHistory } from "@/lib/market-data";
-import type { MarketPhase } from "@/lib/market-rules";
+import { SCAN_INTERVAL_MINUTES, type MarketPhase } from "@/lib/market-rules";
 
 export type CoreBuildOptions = {
   now: Date;
   phase: MarketPhase;
   positions?: Record<number, { qty: number; cost: number }>;
+  ownSales?: OwnSales;
   budgetCopper?: number;
   bagSlots?: number;
   stackSize?: number;
@@ -40,37 +41,43 @@ export function buildCoreInput(
   let firstScanAt: number | null = null;
   let scannedAt: number | null = null;
   for (const { history, signal } of pairs) {
-    const latest = [...history.snapshots].sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime()).at(-1);
+    const ordered = [...history.snapshots].sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
+    const latest = ordered.at(-1);
     if (!latest) continue;
+    const previous = ordered.at(-2);
+    // Same definition as the in-game scan: the gap between the two newest
+    // snapshots, floored at the 15-minute scan interval.
+    const scanFloor = SCAN_INTERVAL_MINUTES / 60;
+    const elapsedHours = previous
+      ? Math.max((latest.timestamp.getTime() - previous.timestamp.getTime()) / (60 * 60 * 1000), scanFloor)
+      : scanFloor;
     const stamp = latest.timestamp.getTime();
     firstScanAt = firstScanAt === null ? stamp : Math.min(firstScanAt, stamp);
     scannedAt = scannedAt === null ? stamp : Math.max(scannedAt, stamp);
+    const own = options.ownSales?.[signal.itemId];
     items[signal.itemId] = {
       itemId: signal.itemId,
       name: signal.name,
       itemClass: signal.category,
-      itemSubClass: undefined,
+      itemSubClass: history.subCategory,
       vendorP: signal.vendorPrice,
       minPrice: signal.minPrice,
       sellP: signal.sellPrice,
-      p5: signal.p5Price,
-      p10: signal.price,
       quantity: signal.quantity,
       numAuctions: signal.numAuctions,
       sellers: signal.sellerCount,
       sellersInvisible: signal.sellersInvisible,
       bidOnly: signal.bidOnlyCount,
-      inferredSold: signal.inferredSold,
+      inferredSoldLow: signal.inferredSoldLow,
+      inferredSoldHigh: signal.inferredSoldHigh,
       supplyGrowth: signal.supplyGrowth,
-      elapsedHours: 0.25,
+      elapsedHours,
+      ownSold: own?.qty ?? 0,
+      ownSamples: own?.samples ?? 0,
+      ownElapsedHours: own?.elapsedHours ?? 0,
       demandPrior: demandFor(signal.category, history.subCategory),
       tiers: parseTiers(latest.topTiers, { p: signal.minPrice, q: Math.max(signal.quantity, 1) }),
-      history: {
-        sellRef: signal.sellRef,
-        samples: signal.sellSamples,
-        latest: signal.sellPrice,
-        distinct: signal.sellDistinct
-      }
+      history: { samples: signal.sellSamples }
     };
   }
   return {

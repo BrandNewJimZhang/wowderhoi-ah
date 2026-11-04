@@ -15,13 +15,8 @@ describe("gen-lua-rules", () => {
     expect(readFileSync(LUA_PATH, "utf8")).toBe(generateLuaRules());
   });
 
-  it("emits the pipeline version and every radar threshold the addon reads", () => {
-    const lua = generateLuaRules();
-    expect(lua).toContain("WAH.PIPELINE_VERSION = 4");
-    expect(lua).toContain("minProfit = 500");
-    expect(lua).toContain("discount = 0.85");
-    expect(lua).toContain("minAuctions = 3");
-    expect(lua).toContain("minHistory = 3");
+  it("emits the pipeline version", () => {
+    expect(generateLuaRules()).toContain("WAH.PIPELINE_VERSION = 4");
   });
 
   it("emits the phase and market-type matrix the decision core reads", () => {
