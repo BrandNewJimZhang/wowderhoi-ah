@@ -33,9 +33,11 @@
 一次全量扫描的最新快照：
 
 - 元数据：`dataVersion`、`scannedAt`、`server`、`faction`、`character`、`cash`、`total`。
-- `items[itemId]`：名称、品质、物品类别、NPC 价、最低价、建议卖价（深度感知）、P5、P10、
-  在售量、挂单数、卖家数、卖家是否可见、竞价单数、最高竞价、top-8 盘口阶梯、到期桶
-  （soon/mid/late）、推断消失量区间（`inferredSoldLow`/`inferredSoldHigh`）、供给增速。
+- `items[itemId]`：名称、品质、物品类别、市场类型（`marketType`：`commodity` | `item`，
+  扫描时按当时的物品记录判定一次，是两端唯一的分类来源）、NPC 价、最低价、建议卖价
+  （深度感知）、P5、P10、在售量、挂单数、卖家数、卖家是否可见、竞价单数、最高竞价、
+  top-8 盘口阶梯、到期桶（soon/mid/late）、推断消失量区间
+  （`inferredSoldLow`/`inferredSoldHigh`）、供给增速。
   下沿是“离开某卖家”的数量（成交+撤单，排除换价），上沿是“离开某价位”的数量
   （还包含换价重挂）；卖家不可见时下沿为 0。
   只有竞价、没有一口价的条目 `minPrice = 0`，作为纯需求行导入：价格列全部为 0，
@@ -87,12 +89,14 @@ Ledger 是 Journal 的纯投影：
 ### 2.5 SQLite / Prisma
 
 - `Market`：realm+faction，最近一次扫描的现金。
-- `AuctionSnapshot`：v4 全字段 + `topTiers` / `expiring`；`priced = false` 标记纯需求行，
-  所有价格序列查询都必须过滤 `priced: true`。市场身份只存在 `Market` 行，快照不重复
-  存 realm/faction。快照、日线与决策的 `marketId` 都是必填：它们不可能脱离某个市场
-  存在，空值只会让两个市场的数据混在一起。
+- `AuctionSnapshot`：v4 全字段 + `topTiers` / `expiring`；`marketType` 保存扫描时的
+  市场类型，空值只出现在该列引入前导入的旧行，核心会退回自己的分类逻辑。`priced = false`
+  标记纯需求行，所有价格序列查询都必须过滤 `priced: true`。市场身份只存在 `Market` 行，
+  快照不重复存 realm/faction。快照、日线与决策的 `marketId` 都是必填：它们不可能脱离
+  某个市场存在，空值只会让两个市场的数据混在一起。
 - `Position` / `Trade`：每次导入从 Journal 重建，整体替换，幂等。
-- `Decision`：每次扫描代际写入一次，记录阶段、候选、选中行动、理由与上下文。
+- `Decision`：每次扫描代际写入一次，记录阶段、行动类型、物品、理由与时间；复盘页按它
+  匹配成交，用于描述性校准。
 - `Recipe`：`data/recipes.forever.json` 的投影，导入时整体替换。
 - `Event`：团本重置、暗月、阶段开放等需求脉冲的日历（当前只做展示，尚未接入排序权重）。
 

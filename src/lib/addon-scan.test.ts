@@ -15,6 +15,7 @@ WoWderhoiAH_ScanData = {
 \t\t\t["quality"] = 1,
 \t\t\t["itemClass"] = "商品",
 \t\t\t["itemSubClass"] = "金属与矿石",
+\t\t\t["marketType"] = "commodity",
 \t\t\t["minPrice"] = 150,
 \t\t\t["sellP"] = 200,
 \t\t\t["p5"] = 160,
@@ -30,6 +31,7 @@ WoWderhoiAH_ScanData = {
 \t\t[13468] = {
 \t\t\t["name"] = "Black \\"Lotus\\"",
 \t\t\t["quality"] = 3,
+\t\t\t["marketType"] = "item",
 \t\t\t["minPrice"] = 950000,
 \t\t\t["sellP"] = 960000,
 \t\t\t["marketPrice"] = 987654,
@@ -96,6 +98,7 @@ describe("normalizeAddonScan", () => {
       category: "商品",
       priced: true,
       subCategory: "金属与矿石",
+      marketType: "commodity",
       minPrice: 150,
       marketPrice: 183,
       sellPrice: 200,
@@ -113,6 +116,30 @@ describe("normalizeAddonScan", () => {
     expect(blackLotus?.category).toBe("unknown");
     // Entries without vendorP (unsellable-to-NPC items) normalize to 0.
     expect(blackLotus?.vendorPrice).toBe(0);
+  });
+
+  it("keeps the scan's market classification instead of leaving it to the reader", () => {
+    // The scanner classifies the book once, with the item record it had at
+    // scan time. The terminal must consume that classification rather than
+    // re-derive one from a persisted category that may differ.
+    const scan = normalizeAddonScan(rawScan());
+    expect(scan.items.find((item) => item.itemId === 2770)?.marketType).toBe("commodity");
+    expect(scan.items.find((item) => item.itemId === 13468)?.marketType).toBe("item");
+    // Demand-only rows carry no priced market to classify.
+    expect(scan.items.find((item) => item.itemId === 700)?.marketType).toBeNull();
+  });
+
+  it("rejects a market type the decision core cannot route", () => {
+    const broken = {
+      dataVersion: 4, scannedAt: 1721700000, server: "A", faction: "Alliance",
+      items: {
+        1: {
+          name: "Odd", quality: 1, marketType: "vendor", minPrice: 100, marketPrice: 100,
+          sellP: 100, quantity: 5, numAuctions: 1, tiers: { 1: { p: 100, q: 5 } }
+        }
+      }
+    };
+    expect(() => normalizeAddonScan(broken)).toThrow(/marketType/i);
   });
 
   it("rejects payloads without items", () => {

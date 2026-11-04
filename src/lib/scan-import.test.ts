@@ -7,6 +7,7 @@ function scanItem(partial: Partial<AddonScanItem> & Pick<AddonScanItem, "itemId"
     quality: "common",
     category: "Trade Goods",
     subCategory: "Herb",
+    marketType: "commodity",
     priced: true,
     minPrice: 90,
     marketPrice: 100,

@@ -15,6 +15,9 @@ export type MarketSnapshot = {
   p5Price?: number;
   sellerCount?: number;
   sellersInvisible?: boolean;
+  // Scan-time book classification. Optional for fixtures and for rows
+  // imported before the column existed.
+  marketType?: string | null;
   bidOnlyCount?: number;
   highestBid?: number;
   soldProxyLow?: number;

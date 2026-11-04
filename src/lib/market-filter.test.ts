@@ -13,6 +13,7 @@ function makeSignal(partial: Partial<MarketSignal> & Pick<MarketSignal, "itemId"
     numAuctions: 0,
     sellerCount: 0,
     sellersInvisible: false,
+    marketType: null,
     bidOnlyCount: 0,
     inferredSoldLow: 0,
     inferredSoldHigh: 0,

@@ -60,6 +60,10 @@ model AuctionSnapshot {
   numAuctions      Int      @map("num_auctions")
   sellerCount      Int      @default(0) @map("seller_count")
   sellersInvisible Boolean  @default(false) @map("sellers_invisible")
+  // The scanner's classification of this item's book ("commodity" | "item"),
+  // decided once at scan time. Null on rows imported before the column
+  // existed; consumers fall back to the core's derivation for those.
+  marketType       String?  @map("market_type")
   bidOnlyCount     Int      @default(0) @map("bid_only_count")
   highestBid       Int      @default(0) @map("highest_bid")
   soldProxyLow     Int      @default(0) @map("sold_proxy_low") // left an owner: sales + cancels

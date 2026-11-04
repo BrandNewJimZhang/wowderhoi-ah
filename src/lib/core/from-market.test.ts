@@ -54,6 +54,7 @@ function signal(itemId: number): MarketSignal {
     numAuctions: 10,
     sellerCount: 4,
     sellersInvisible: false,
+    marketType: null,
     bidOnlyCount: 0,
     inferredSoldLow: 0,
     inferredSoldHigh: 0,
@@ -103,6 +104,16 @@ describe("buildCoreInput", () => {
     });
     expect(input.capital?.cash).toBe(123456);
     expect(input.capital?.budget).toBe(500000);
+  });
+
+  it("hands the scan's market classification to the core", () => {
+    // A Trade Goods item would derive as a commodity from its class, but the
+    // scanner saw a unique-lot book. The scan's classification is the
+    // authority, so the core must not re-derive one from the category.
+    const classified = pairs(1);
+    classified[0].signal.marketType = "item";
+    const input = buildCoreInput(classified, { now: LATEST, phase: "wave" });
+    expect(input.market.items[1].marketType).toBe("item");
   });
 
   it("prefers the store's first snapshot time when the caller knows it", () => {

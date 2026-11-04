@@ -71,6 +71,9 @@ export function buildCoreInput(
       name: signal.name,
       itemClass: signal.category,
       itemSubClass: history.subCategory,
+      // The scan classified the book; only rows without a captured
+      // classification fall back to the core's own derivation.
+      marketType: signal.marketType ?? undefined,
       vendorP: signal.vendorPrice,
       minPrice: signal.minPrice,
       sellP: signal.sellPrice,

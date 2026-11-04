@@ -8,12 +8,18 @@ export const QUALITY_NAMES = ["poor", "common", "uncommon", "rare", "epic", "leg
 
 export type AddonTier = { p: number; q: number };
 
+export type AddonMarketType = "commodity" | "item";
+
 export type AddonScanItem = {
   itemId: number;
   name: string;
   quality: string;
   category: string;
   subCategory: string;
+  // The scanner's own classification of the book, priced rows only. The
+  // terminal's core must consume this rather than re-deriving it: a
+  // purchase thins the ladder, and a persisted category can lag the scan.
+  marketType: AddonMarketType | null;
   // False for demand-only rows: the item had bid-only listings and no
   // buyout, so all price and supply columns are zero.
   priced: boolean;
@@ -202,6 +208,12 @@ function normalizeTiers(value: unknown, itemId: string, fallback: { p: number; q
   return tiers.sort((left, right) => left.p - right.p);
 }
 
+function normalizeMarketType(value: unknown, itemId: string): AddonMarketType | null {
+  if (value === undefined || value === null) return null;
+  if (value === "commodity" || value === "item") return value;
+  throw new Error(`Addon scan item ${itemId}: marketType must be "commodity" or "item", got ${JSON.stringify(value)}`);
+}
+
 function normalizeExpiring(value: unknown, itemId: string) {
   if (value === undefined || value === null) return { soon: 0, mid: 0, late: 0 };
   const entry = value as Record<string, unknown>;
@@ -271,6 +283,7 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
       quality: QUALITY_NAMES[qualityIndex] ?? "unknown",
       category: typeof entry.itemClass === "string" && entry.itemClass !== "" ? entry.itemClass : "unknown",
       subCategory: typeof entry.itemSubClass === "string" && entry.itemSubClass !== "" ? entry.itemSubClass : "unknown",
+      marketType: priced ? normalizeMarketType(entry.marketType, key) : null,
       priced,
       minPrice,
       marketPrice: priced ? requirePositiveInt(entry.marketPrice, "marketPrice", key) : 0,

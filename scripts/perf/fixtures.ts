@@ -120,6 +120,9 @@ export function buildScanPayload(market: SyntheticMarket, pointIndex: number, sc
       quality: item.qualityIndex,
       itemClass: item.itemClass,
       itemSubClass: item.itemSubClass,
+      // The real scanner classifies each book; the fixture mirrors that
+      // instead of leaving the importer to re-derive one.
+      marketType: item.itemClass === "Trade Goods" ? "commodity" : "item",
       minPrice: point.minPrice,
       sellP: point.marketPrice,
       p5: point.minPrice,

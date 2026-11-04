@@ -82,6 +82,7 @@ export async function POST(request: Request) {
         numAuctions: item.numAuctions,
         sellerCount: item.sellerCount,
         sellersInvisible: item.sellersInvisible,
+        marketType: item.marketType,
         bidOnlyCount: item.bidOnlyCount,
         highestBid: item.highestBid,
         soldProxyLow: item.inferredSoldLow,
