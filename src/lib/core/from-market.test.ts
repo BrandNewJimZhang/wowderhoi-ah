@@ -91,6 +91,20 @@ describe("buildCoreInput", () => {
     expect(output.ageHours).toBeCloseTo(24, 5);
   });
 
+  it("keeps scanned cash and the planning budget as separate inputs", () => {
+    // In game, cash is GetMoney() and budget is the spend cap; the terminal
+    // used to pass the budget as cash, so the two sides disagreed about
+    // what "cash" means even when they ran the same core.
+    const input = buildCoreInput(pairs(), {
+      now: LATEST,
+      phase: "wave",
+      budgetCopper: 500000,
+      cashCopper: 123456
+    });
+    expect(input.capital?.cash).toBe(123456);
+    expect(input.capital?.budget).toBe(500000);
+  });
+
   it("prefers the store's first snapshot time when the caller knows it", () => {
     const tenDaysAgo = new Date("2026-07-11T00:00:00Z");
     const input = buildCoreInput(pairs(), { now: LATEST, phase: "settle", firstScanAt: tenDaysAgo });

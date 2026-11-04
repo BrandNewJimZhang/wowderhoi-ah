@@ -4,6 +4,7 @@
 // in craft-lp.ts; this only assembles its inputs from terminal data.
 import type { MarketSignal } from "@/lib/analytics";
 import { solveProduction, type LpRecipe, type ProductionSolution } from "@/lib/craft-lp";
+import { resolveBudgetCopper } from "@/lib/config";
 import { productionCapacity, productionDefaults } from "@/lib/production-config";
 
 export function buildProductionPlan(
@@ -15,7 +16,7 @@ export function buildProductionPlan(
     signals.filter((signal) => signal.vendorPrice > 0).map((signal) => [signal.itemId, signal.vendorPrice])
   );
   const materialSupply = new Map(signals.map((signal) => [signal.itemId, signal.quantity]));
-  const budget = Number(process.env.AQT_BUDGET_COPPER) || productionDefaults.budgetCopper;
+  const budget = resolveBudgetCopper();
   const solution = solveProduction(recipes, {
     prices,
     vendorPrices,

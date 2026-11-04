@@ -13,7 +13,8 @@ import { describeFreshness } from "@/lib/freshness";
 import { phaseDescription, phaseLabels } from "@/lib/phase";
 import { QUALITY_NAMES } from "@/lib/addon-scan";
 import { allocateCapital } from "@/lib/portfolio";
-import { AH_FEE_RATE, DEFAULT_BUDGET_COPPER, portfolioRules } from "@/lib/market-rules";
+import { resolveBudgetCopper } from "@/lib/config";
+import { AH_FEE_RATE, portfolioRules } from "@/lib/market-rules";
 import { filterSortSignals, MARKET_PAGE_SIZE, paginate, parseMarketView } from "@/lib/market-filter";
 import { formatPercent } from "@/lib/utils";
 import { Coins } from "@/components/coins";
@@ -42,7 +43,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   // The opportunity list is Core.lua's evaluation, the same decision core
   // the addon runs in game. It is not a second radar implementation.
   const deals = evaluation.rows.slice(0, 12);
-  const capitalBudget = Number(process.env.AQT_BUDGET_COPPER) || DEFAULT_BUDGET_COPPER;
+  const capitalBudget = resolveBudgetCopper();
+  const vendorPriceById = new Map(signals.map((signal) => [signal.itemId, signal.vendorPrice]));
   const sizing = allocateCapital(
     evaluation.rows.filter((row) => !row.vendor).map((row) => ({
       itemId: row.itemId,
@@ -51,7 +53,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       sellPrice: row.listP,
       feeRate: AH_FEE_RATE,
       fillProb: row.fillProb,
-      residualValue: 0,
+      // A failed listing returns the goods, so the vendor price is the
+      // loss floor — the same residual Core.sellPlan uses for expiry.
+      residualValue: vendorPriceById.get(row.itemId) ?? 0,
       samples: row.confidence === "high" ? 20 : row.confidence === "medium" ? 8 : 2
     })),
     capitalBudget,

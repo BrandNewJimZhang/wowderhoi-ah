@@ -9,7 +9,8 @@ import { runCore } from "@/lib/core/run-core";
 import type { CoreOutput, OwnSales } from "@/lib/core/types";
 import { buildPriceIndex, type PriceIndex } from "@/lib/deflator";
 import type { MarketHistory } from "@/lib/market-data";
-import { DEFAULT_BUDGET_COPPER, marketPhases, type MarketPhase } from "@/lib/market-rules";
+import { resolveBudgetCopper, resolvePhaseOverride } from "@/lib/config";
+import type { MarketPhase } from "@/lib/market-rules";
 import { resolvePhase } from "@/lib/phase";
 import { getEarliestSnapshotTime, getLatestSnapshotTime, getMarketUniverse, getOwnSales, getPositions } from "@/lib/repositories";
 import { getMarketScope, type MarketScope } from "@/lib/market-scope";
@@ -32,16 +33,6 @@ type SignalFetchers = {
   getOwnSales: (scope: MarketScope | null) => Promise<OwnSales>;
   recordDecisions?: (bundle: MarketBundle) => Promise<void>;
 };
-
-function configuredPhase(): MarketPhase | null {
-  const value = process.env.AQT_PHASE;
-  return value && (marketPhases as readonly string[]).includes(value) ? (value as MarketPhase) : null;
-}
-
-function configuredBudget(): number {
-  const value = Number(process.env.AQT_BUDGET_COPPER);
-  return Number.isFinite(value) && value > 0 ? value : DEFAULT_BUDGET_COPPER;
-}
 
 function emptyBundle(phase: MarketPhase, scope: MarketScope | null = null): MarketBundle {
   return {
@@ -71,7 +62,7 @@ export function createMarketSignalSource(fetchers: SignalFetchers) {
       const scope = await fetchers.getMarketScope();
       const latestSnapshotAt = await fetchers.getLatestSnapshotTime(scope);
       if (latestSnapshotAt === null) {
-        cached = emptyBundle(configuredPhase() ?? "ignition", scope);
+        cached = emptyBundle(resolvePhaseOverride() ?? "ignition", scope);
         cachedAtMs = null;
         return cached;
       }
@@ -84,7 +75,7 @@ export function createMarketSignalSource(fetchers: SignalFetchers) {
       const ageHours = earliestSnapshotAt
         ? Math.max(0, (now.getTime() - earliestSnapshotAt.getTime()) / (60 * 60 * 1000))
         : 0;
-      const phase = configuredPhase() ?? resolvePhase(ageHours, priced.length);
+      const phase = resolvePhaseOverride() ?? resolvePhase(ageHours, priced.length);
       const priceIndex = buildPriceIndex(universe);
       const signals = priced.map((item) => buildMarketSignal(item, now, { phase, index: priceIndex }));
       const byItemId = new Map(universe.map((item) => [item.itemId, item]));
@@ -98,7 +89,12 @@ export function createMarketSignalSource(fetchers: SignalFetchers) {
         firstScanAt: earliestSnapshotAt ?? undefined,
         positions,
         ownSales,
-        budgetCopper: configuredBudget()
+        budgetCopper: resolveBudgetCopper(),
+        // Cash is what the character actually holds at the last scan; the
+        // planning budget is a separate cap. Passing the budget as cash made
+        // the terminal's capital block lie about the same field the addon
+        // fills from GetMoney().
+        cashCopper: scope?.cash ?? 0
       });
       cached = {
         scope,

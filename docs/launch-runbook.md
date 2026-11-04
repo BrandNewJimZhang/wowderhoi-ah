@@ -19,7 +19,7 @@ npm run dev
 DATABASE_URL="file:./dev.db"
 AQT_SAVEDVARS_PATH="<游戏数据目录>\\WTF\\Account\\<账号ID>\\SavedVariables\\WoWderhoiAH.lua"
 AQT_IMPORT_URL="http://localhost:3000/api/import/addon-scan"
-AQT_BUDGET_COPPER="500000"
+AQT_BUDGET_COPPER="500000"          # 终端计划预算；与扫描里的现金分开
 # AQT_PHASE="ignition"   # 可选：手动锁阶段
 # AQT_MARKET="服务器|阵营"   # 可选：默认跟随最新扫描的市场
 ```

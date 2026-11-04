@@ -16,6 +16,9 @@ export type CoreBuildOptions = {
   positions?: Record<number, { qty: number; cost: number }>;
   ownSales?: OwnSales;
   budgetCopper?: number;
+  // Scanned cash (GetMoney at the last scan). Distinct from the planning
+  // budget; the core falls back to cash only when no budget is supplied.
+  cashCopper?: number;
   bagSlots?: number;
   stackSize?: number;
 };
@@ -100,7 +103,7 @@ export function buildCoreInput(
       items
     },
     capital: {
-      cash: options.budgetCopper ?? 0,
+      cash: options.cashCopper ?? 0,
       budget: options.budgetCopper ?? 0,
       mail: 0,
       escrow: 0

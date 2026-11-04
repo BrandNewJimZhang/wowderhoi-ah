@@ -1,0 +1,22 @@
+// Runtime configuration read from the environment. Market rules
+// (market-rules.ts) are pure constants compiled into the addon; anything
+// that depends on how the terminal is deployed belongs here, with exactly
+// one reader per variable so the cockpit, the shared core and the
+// production network cannot resolve different values.
+import { DEFAULT_BUDGET_COPPER, marketPhases, type MarketPhase } from "@/lib/market-rules";
+
+// Planning budget for the shared decision core, position sizing and the
+// production LP. Separate from the cash reported by the last scan: the
+// addon derives its budget from GetMoney() at decision time, while the
+// terminal evaluates a hypothetical budget the user configures.
+export function resolveBudgetCopper(): number {
+  const value = Number(process.env.AQT_BUDGET_COPPER);
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_BUDGET_COPPER;
+}
+
+// Manual phase lock. An unknown value is ignored rather than silently
+// evaluating the market under a phase the user did not choose.
+export function resolvePhaseOverride(): MarketPhase | null {
+  const value = process.env.AQT_PHASE;
+  return value && (marketPhases as readonly string[]).includes(value) ? (value as MarketPhase) : null;
+}
