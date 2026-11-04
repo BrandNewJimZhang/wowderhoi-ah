@@ -173,6 +173,16 @@ function requirePositiveInt(value: unknown, field: string, itemId: string): numb
   return Math.round(value);
 }
 
+// A tier price is buyout / count, so it is legitimately fractional when a
+// stack does not divide evenly. Keep the client's value: rounding it here
+// made the terminal's ladder cost a different book than the in-game core's.
+function positivePrice(value: unknown, field: string, itemId: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    throw new Error(`Addon scan item ${itemId}: ${field} must be a positive number, got ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
 function optionalNonNegative(value: unknown, field: string, itemId: string): number {
   if (value === undefined || value === null) return 0;
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
@@ -200,7 +210,7 @@ function normalizeTiers(value: unknown, itemId: string, fallback: { p: number; q
     }
     const tier = entry as Record<string, unknown>;
     return {
-      p: requirePositiveInt(tier.p, `tiers[${key}].p`, itemId),
+      p: positivePrice(tier.p, `tiers[${key}].p`, itemId),
       q: requirePositiveInt(tier.q, `tiers[${key}].q`, itemId)
     };
   });

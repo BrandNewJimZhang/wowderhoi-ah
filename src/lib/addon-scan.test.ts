@@ -118,6 +118,19 @@ describe("normalizeAddonScan", () => {
     expect(blackLotus?.vendorPrice).toBe(0);
   });
 
+  it("preserves a fractional unit price in the ladder", () => {
+    // The scanner derives a tier price as buyout / count, which is not an
+    // integer when a stack's buyout does not divide evenly. Rounding it on
+    // import made the terminal price a different book than the one the
+    // in-game core evaluates: buying the same three units cost 100c in game
+    // (a 33.33 unit price) and 99c in the terminal (a 33 unit price).
+    const raw = rawScan() as Record<string, unknown>;
+    const items = raw.items as Record<string, Record<string, unknown>>;
+    items["2770"].tiers = { 1: { p: 100 / 3, q: 3 } };
+    const scan = normalizeAddonScan(raw);
+    expect(scan.items.find((item) => item.itemId === 2770)?.tiers).toEqual([{ p: 100 / 3, q: 3 }]);
+  });
+
   it("keeps the scan's market classification instead of leaving it to the reader", () => {
     // The scanner classifies the book once, with the item record it had at
     // scan time. The terminal must consume that classification rather than
