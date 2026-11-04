@@ -117,6 +117,34 @@ describe("createMarketSignalSource", () => {
     expect(second.signals[0].sellPrice).toBe(400);
   });
 
+  it("evaluates the market under the same phase the bundle reports", async () => {
+    // A mature market: observed for 30 hours, 100 priced items, newest scan
+    // minutes ago. Before the phase was handed to the core, the core derived
+    // age from the newest snapshot and silently evaluated every live market
+    // under the ignition rules while the banner said wave.
+    const latest = new Date(Date.now() - 5 * 60 * 1000);
+    const earliest = new Date(Date.now() - 30 * 60 * 60 * 1000);
+    const universe = Array.from({ length: 100 }, (_, index) => {
+      const item = historyItem(index + 1, 200);
+      item.snapshots = [
+        { ...item.snapshots[0], timestamp: earliest },
+        { ...item.snapshots[0], timestamp: latest }
+      ];
+      return item;
+    });
+    const bundle = await createMarketSignalSource({
+      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0 }),
+      getLatestSnapshotTime: async () => latest,
+      getEarliestSnapshotTime: async () => earliest,
+      getMarketUniverse: async () => universe,
+      getPositions: async () => ({}),
+      getOwnSales: async () => ({})
+    }).getMarketSignals();
+    expect(bundle.phase).toBe("wave");
+    expect(bundle.evaluation.phase).toBe(bundle.phase);
+    expect(bundle.evaluation.ageHours).toBeGreaterThan(29);
+  });
+
   it("returns empty signals without caching when the store has no snapshots", async () => {
     let universeFetches = 0;
     const source = createMarketSignalSource({

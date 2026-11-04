@@ -95,6 +95,7 @@ export function createMarketSignalSource(fetchers: SignalFetchers) {
       const input = buildCoreInput(pairs, {
         now,
         phase,
+        firstScanAt: earliestSnapshotAt ?? undefined,
         positions,
         ownSales,
         budgetCopper: configuredBudget()

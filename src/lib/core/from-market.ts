@@ -10,6 +10,9 @@ import { SCAN_INTERVAL_MINUTES, type MarketPhase } from "@/lib/market-rules";
 export type CoreBuildOptions = {
   now: Date;
   phase: MarketPhase;
+  // The first scan of the market. The signal source reads it from the store;
+  // without it the builder falls back to the oldest snapshot in the bundle.
+  firstScanAt?: Date;
   positions?: Record<number, { qty: number; cost: number }>;
   ownSales?: OwnSales;
   budgetCopper?: number;
@@ -38,7 +41,8 @@ export function buildCoreInput(
   options: CoreBuildOptions
 ): CoreInput {
   const items: Record<number, CoreMarketItem> = {};
-  let firstScanAt: number | null = null;
+  // seconds since epoch, not milliseconds: Core.lua compares it with `now`.
+  let firstScanAt = options.firstScanAt ? options.firstScanAt.getTime() / 1000 : null;
   let scannedAt: number | null = null;
   for (const { history, signal } of pairs) {
     const ordered = [...history.snapshots].sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
@@ -52,7 +56,11 @@ export function buildCoreInput(
       ? Math.max((latest.timestamp.getTime() - previous.timestamp.getTime()) / (60 * 60 * 1000), scanFloor)
       : scanFloor;
     const stamp = latest.timestamp.getTime();
-    firstScanAt = firstScanAt === null ? stamp : Math.min(firstScanAt, stamp);
+    // The first scan is the OLDEST snapshot, not the newest one: taking the
+    // latest would make a live market look freshly opened and pin the core
+    // to the ignition rules forever.
+    const earliest = ordered[0].timestamp.getTime() / 1000;
+    if (firstScanAt === null || earliest < firstScanAt) firstScanAt = earliest;
     scannedAt = scannedAt === null ? stamp : Math.max(scannedAt, stamp);
     const own = options.ownSales?.[signal.itemId];
     items[signal.itemId] = {
@@ -82,9 +90,13 @@ export function buildCoreInput(
   }
   return {
     now: options.now.getTime() / 1000,
+    // The caller resolves the phase once from the store's true scan history
+    // and breadth; the core must not re-derive it from whatever subset of
+    // snapshots this bundle happens to carry.
+    phaseOverride: options.phase,
     market: {
       scannedAt: scannedAt ? scannedAt / 1000 : undefined,
-      firstScanAt: firstScanAt ? firstScanAt / 1000 : undefined,
+      firstScanAt: firstScanAt ?? undefined,
       items
     },
     capital: {
