@@ -66,6 +66,21 @@ describe("buildMarketSignal", () => {
     expect(signal.changePercent).toBeCloseTo(((110 - 120) / 120) * 100, 5);
   });
 
+  it("measures spread at the current sell front, not the window reference", () => {
+    const signal = buildMarketSignal(
+      history([
+        { daysAgo: 2, sellPrice: 100 },
+        { daysAgo: 1, sellPrice: 100 },
+        { daysAgo: 0, sellPrice: 120, minPrice: 80 }
+      ]),
+      now
+    );
+    // Lower median of [100, 100, 120] is 100, so a reference-based spread
+    // would read 20%; the executable gap at today's front is 33%.
+    expect(signal.sellRef).toBe(100);
+    expect(signal.spreadPercent).toBeCloseTo((1 - 80 / 120) * 100, 5);
+  });
+
   it("keeps P10 as a separate statistic, not the reference", () => {
     const signal = buildMarketSignal(
       history([

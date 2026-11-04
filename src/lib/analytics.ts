@@ -29,7 +29,7 @@ export type MarketSignal = {
   vendorPrice: number; // NPC sell price, copper; 0 = unsellable
   sellRef: number; // median sell front over the phase window
   sellSamples: number;
-  spreadPercent: number; // (sellRef - minPrice) / sellRef
+  spreadPercent: number; // (sellPrice - minPrice) / sellPrice
   trendPercent: number; // (sellPrice - sellRef) / sellRef
   changePercent: number; // sellPrice vs the previous scan's sell front
   realSellPrice: number | null; // deflated by the market price index
@@ -83,7 +83,10 @@ export function buildMarketSignal(
     vendorPrice: item.vendorPrice,
     sellRef,
     sellSamples,
-    spreadPercent: sellRef > 0 ? ((sellRef - latest.minPrice) / sellRef) * 100 : 0,
+    // The spread is the executable gap at today's sell front. sellRef is
+    // the window reference for trend only; using it here would let a stale
+    // median approve a trade that loses money at the current book.
+    spreadPercent: sellPrice > 0 ? ((sellPrice - latest.minPrice) / sellPrice) * 100 : 0,
     trendPercent: sellRef > 0 ? ((sellPrice - sellRef) / sellRef) * 100 : 0,
     changePercent: previousSell > 0 ? ((sellPrice - previousSell) / previousSell) * 100 : 0,
     realSellPrice: options?.index ? realPrice(sellPrice, latest.timestamp, options.index) : null
