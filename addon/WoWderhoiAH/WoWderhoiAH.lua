@@ -690,9 +690,9 @@ function WAH.scanAgeMinutes()
   return math.max(0, (time() - scan.scannedAt) / 60)
 end
 
--- Single history authority. The decision core reads sellRef/samples; the
--- tooltip and the legacy display read the remaining statistics. med7 is
--- kept as a statistic (P10 median) and must not re-enter a decision.
+-- Single history authority. The decision core reads samples; the tooltip
+-- and charts read sellRef/latest/min/max. P10 stays on the scan snapshot
+-- as a statistic and must not re-enter a decision.
 function WAH.history(itemId, windowHours)
   local market = WAH.seriesMarket()
   local series = market and market.items[itemId]
