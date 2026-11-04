@@ -7,12 +7,14 @@
 ## Category: Auctions
 ## Category-zhCN: 拍卖
 ## AddonCompartmentFunc: WoWderhoiAH_OnAddonCompartmentClick
-## SavedVariables: WoWderhoiAH_ScanData, WoWderhoiAH_Settings, WoWderhoiAH_Series, WoWderhoiAH_Capture
+## SavedVariables: WoWderhoiAH_ScanData, WoWderhoiAH_Settings, WoWderhoiAH_Series, WoWderhoiAH_Capture, WoWderhoiAH_Journal, WoWderhoiAH_Ledger
 
 Locale.lua
 GeneratedRules.lua
 Core.lua
 Settings.lua
 WoWderhoiAH.lua
+Journal.lua
+Ledger.lua
 GUI.lua
 Trade.lua
