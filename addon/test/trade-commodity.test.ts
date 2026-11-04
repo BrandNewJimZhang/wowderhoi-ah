@@ -29,9 +29,9 @@ describe("commodity price book", () => {
     lua.search("Linen", [offer(200), offer(100)]);
     // Cheapest unit price first, same as item auctions.
     expect(lua.rowName(1)).toBe("Linen Cloth");
-    expect(lua.cell(1, 2)).toBe("20");
-    expect(lua.cell(1, 3)).toBe("1银 00铜");
-    expect(lua.cell(1, 4)).toBe("20银 00铜");
+    expect(lua.cell(1, 3)).toBe("20");
+    expect(lua.cell(1, 4)).toBe("1银 00铜");
+    expect(lua.cell(1, 5)).toBe("20银 00铜");
     expect(lua.eval("WowTest.ns.L.BUY_MARKET")).toBe("购买*");
   });
 

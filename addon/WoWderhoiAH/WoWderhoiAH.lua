@@ -741,4 +741,70 @@ SlashCmdList["WOWDERHOIAHPHASE"] = function(input)
   chatMessage(string.format(L.PHASE_SET, choice))
 end
 
+-- Assemble the decision core's input from the latest scan, the retained
+-- series, the journal-derived positions and the player's deployable
+-- capital. One builder, so the cockpit and the sell page cannot disagree
+-- about what the market state is.
+function WAH.coreInput()
+  local scan = WoWderhoiAH_ScanData
+  local market = WAH.seriesMarket()
+  local input = {
+    now = time(),
+    market = {
+      scannedAt = scan and scan.scannedAt or nil,
+      firstScanAt = market and market.firstScanAt or nil,
+      items = {},
+      bids = scan and scan.bids or {}
+    },
+    positions = {},
+    capital = { cash = 0, mail = 0, escrow = 0, budget = 0 },
+    capacity = { bagSlots = 20, stackSize = 20 }
+  }
+  if not scan or scan.dataVersion ~= WAH.PIPELINE_VERSION then return input end
+  local override = WAH.settings and WAH.settings.phaseOverride
+  if override and override ~= "auto" then input.phaseOverride = override end
+  for itemId, entry in pairs(scan.items or {}) do
+    if entry.minPrice and entry.minPrice > 0 then
+      local history = WAH.history(itemId)
+      input.market.items[itemId] = {
+        itemId = itemId,
+        name = entry.name,
+        quality = entry.quality,
+        itemClass = entry.itemClass,
+        itemSubClass = entry.itemSubClass,
+        vendorP = entry.vendorP,
+        minPrice = entry.minPrice,
+        sellP = entry.sellP,
+        p5 = entry.p5,
+        p10 = entry.marketPrice,
+        quantity = entry.quantity,
+        numAuctions = entry.numAuctions,
+        sellers = entry.sellers,
+        sellersInvisible = entry.sellersInvisible,
+        bidOnly = entry.bidOnly,
+        tiers = entry.tiers,
+        inferredSold = entry.inferredSold,
+        supplyGrowth = entry.supplyGrowth,
+        elapsedHours = entry.elapsedHours,
+        history = history and {
+          sellRef = history.sellRef,
+          samples = history.samples,
+          latest = history.latest,
+          distinct = history.distinct
+        } or nil
+      }
+    end
+  end
+  local ledger = WAH.Ledger and WAH.Ledger.current() or nil
+  local cash = GetMoney and GetMoney() or 0
+  input.positions = ledger and ledger.positions or {}
+  input.capital = {
+    cash = cash,
+    mail = 0,
+    escrow = ledger and ledger.capital and ledger.capital.escrow or 0,
+    budget = math.floor(cash * (WAH.RULES.portfolio.dailyBudget or 0.5))
+  }
+  return input
+end
+
 WAH.lastPhase = function() return lastPhase end
