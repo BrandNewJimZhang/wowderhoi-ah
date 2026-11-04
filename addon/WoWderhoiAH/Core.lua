@@ -98,11 +98,11 @@ function Core.sellFront(tiers, opts)
   end
   if #filtered == 0 then return sorted[1].p end
   if opts and opts.byCount then
-    local depth = math.min(opts.itemDepth or rules.itemDepth or 3, #filtered)
+    local depth = math.min(rules.itemDepth or 3, #filtered)
     return filtered[math.max(depth, 1)].p
   end
   local alpha = rules.alpha or 0.03
-  local minDepth = opts and opts.minDepth or rules.minDepth or 3
+  local minDepth = rules.minDepth or 3
   if opts and opts.early then minDepth = rules.minDepthEarly or 1 end
   local target = math.max(minDepth, math.ceil(filteredTotal * alpha))
   local cumulative = 0
@@ -339,7 +339,9 @@ end
 -- output:
 --   { phase, rows, actions, diagnostics }
 function Core.evaluate(input)
-  local rules = input.rules or (WAH.RULES) or {}
+  -- Rules are compiled constants shared by both runtimes; the input carries
+  -- the market state, never a second copy of the rules.
+  local rules = WAH.RULES or {}
   local now = input.now or 0
   local market = input.market or {}
   local items = market.items or {}
