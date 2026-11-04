@@ -7,6 +7,7 @@ import { getPositions } from "@/lib/repositories";
 import { alphaDecay, evaluatePolicy } from "@/lib/off-policy";
 import { designExperiment } from "@/lib/experiments";
 import { phaseLabels } from "@/lib/phase";
+import { summarizeTrades } from "@/lib/trade-summary";
 import { Coins } from "@/components/coins";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 
@@ -22,11 +23,16 @@ export default async function ReviewPage() {
     getPositions(scope)
   ]);
   const { signals, phase } = bundle;
-  const realizedTrades = trades.map((trade) => ({
+  // Calibration reads confirmed sales only. An inferred sale is a vanished
+  // listing booked at its ask; it may be a cancellation, so it is displayed
+  // but never treated as a clean label.
+  const confirmedTrades = trades.filter((trade) => !trade.inferred);
+  const summary = summarizeTrades(trades);
+  const realizedTrades = confirmedTrades.map((trade) => ({
     itemId: trade.itemId,
     pnl: trade.pnl,
     realizedAt: trade.realizedAt,
-    inferred: trade.inferred
+    inferred: false
   }));
   const decay = alphaDecay(realizedTrades);
   const loggedDecisions = decisions.map((decision) => ({
@@ -48,11 +54,8 @@ export default async function ReviewPage() {
       })
     : null;
   const nameById = new Map(signals.map((signal) => [signal.itemId, signal.name]));
-  const realized = trades.reduce((sum, trade) => sum + trade.pnl, 0);
-  const wins = trades.filter((trade) => trade.pnl > 0).length;
-  const inferred = trades.filter((trade) => trade.inferred).length;
   const byChannel = new Map<string, { count: number; pnl: number }>();
-  for (const trade of trades) {
+  for (const trade of confirmedTrades) {
     const bucket = byChannel.get(trade.channel) ?? { count: 0, pnl: 0 };
     bucket.count += 1;
     bucket.pnl += trade.pnl;
@@ -76,20 +79,24 @@ export default async function ReviewPage() {
 
       <div className="mb-3 grid gap-3 font-mono text-xs sm:grid-cols-2 xl:grid-cols-4">
         <div className="border border-terminal-border bg-terminal-panel p-3">
-          <div className="text-terminal-muted">窗口内已实现</div>
-          <div className={`mt-1 text-lg ${realized >= 0 ? "text-terminal-green" : "text-terminal-red"}`}><Coins copper={realized} /></div>
+          <div className="text-terminal-muted">窗口内已实现（确认成交）</div>
+          <div className={`mt-1 text-lg ${summary.confirmedRealized >= 0 ? "text-terminal-green" : "text-terminal-red"}`}><Coins copper={summary.confirmedRealized} /></div>
         </div>
         <div className="border border-terminal-border bg-terminal-panel p-3">
           <div className="text-terminal-muted">成交笔数</div>
-          <div className="mt-1 text-lg text-slate-100">{trades.length}</div>
+          <div className="mt-1 text-lg text-slate-100">{summary.confirmedCount} 确认 / {summary.inferredCount} 推断</div>
         </div>
         <div className="border border-terminal-border bg-terminal-panel p-3">
-          <div className="text-terminal-muted">胜率</div>
-          <div className="mt-1 text-lg text-slate-100">{trades.length > 0 ? `${((wins / trades.length) * 100).toFixed(0)}%` : "—"}</div>
+          <div className="text-terminal-muted">胜率（确认成交）</div>
+          <div className="mt-1 text-lg text-slate-100">
+            {summary.confirmedCount > 0 ? `${((summary.confirmedWins / summary.confirmedCount) * 100).toFixed(0)}%` : "—"}
+          </div>
         </div>
         <div className="border border-terminal-border bg-terminal-panel p-3">
           <div className="text-terminal-muted">推断成交占比</div>
-          <div className="mt-1 text-lg text-slate-100">{trades.length > 0 ? `${((inferred / trades.length) * 100).toFixed(0)}%` : "—"}</div>
+          <div className="mt-1 text-lg text-slate-100">
+            {trades.length > 0 ? `${((summary.inferredCount / trades.length) * 100).toFixed(0)}%` : "—"}
+          </div>
         </div>
       </div>
 
@@ -97,12 +104,13 @@ export default async function ReviewPage() {
         <span>决策匹配：{policyEstimate.matched} / {policyEstimate.decisions}（覆盖率 {(policyEstimate.coverage * 100).toFixed(0)}%）</span>
         <span>匹配后平均净利 <Coins copper={policyEstimate.estimate} /></span>
         <span>有效样本 {policyEstimate.effectiveSampleSize.toFixed(1)}</span>
+        <span>推断 {summary.inferredCount} 笔 · <Coins copper={summary.inferredRealized} /> 未计入</span>
         <span className="text-terminal-amber">描述性匹配，不是因果效应；要估计策略效果需要记录倾向并做探索。</span>
       </div>
 
       <div className="grid gap-3 xl:grid-cols-[1fr_1fr]">
         <Panel>
-          <PanelHeader title="按渠道" action={<span className="font-mono text-xs text-terminal-muted">推断成交单独标注</span>} />
+          <PanelHeader title="按渠道" action={<span className="font-mono text-xs text-terminal-muted">仅确认成交</span>} />
           <div className="space-y-2 p-3 font-mono text-xs">
             {Array.from(byChannel.entries()).map(([channel, bucket]) => (
               <div key={channel} className="flex items-center justify-between gap-2">
@@ -113,7 +121,12 @@ export default async function ReviewPage() {
                 </span>
               </div>
             ))}
-            {byChannel.size === 0 && <div className="text-terminal-muted">还没有可复盘的成交。</div>}
+            {byChannel.size === 0 && <div className="text-terminal-muted">还没有可复盘的确认成交。</div>}
+            {summary.inferredCount > 0 && (
+              <div className="border-t border-terminal-border pt-2 text-terminal-amber">
+                另有 {summary.inferredCount} 笔推断成交（<Coins copper={summary.inferredRealized} />），未计入渠道盈亏与校准。
+              </div>
+            )}
           </div>
         </Panel>
         <Panel>

@@ -102,8 +102,8 @@ an **inferred** sale at the posted price and labelled everywhere.
 - **Item page**: order-book ladder, 24-hour fill-probability curve,
   windowed intraday trend, daily candles and weekday seasonality.
 - **Portfolio** (`/portfolio`): cash from the last scan, position value
-  and cost, unrealized and realized P&L, fees, recent trades with the
-  inferred flag.
+  and cost, unrealized P&L, confirmed realized P&L and fees, plus inferred
+  sales shown separately and labelled.
 - **Manufacturing** (`/recipes`): 2,595 Forever recipes solved as a linear
   program with profession, material-supply and budget constraints; dual
   variables are shown as shadow prices; LP volumes are floored and profit

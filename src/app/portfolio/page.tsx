@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getMarketSignals } from "@/lib/market-signals";
 import { getPositions } from "@/lib/repositories";
 import { phaseLabels } from "@/lib/phase";
+import { summarizeTrades } from "@/lib/trade-summary";
 import { Coins } from "@/components/coins";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 
@@ -42,9 +43,7 @@ export default async function PortfolioPage() {
     .sort((left, right) => right.value - left.value);
   const positionValue = rows.reduce((sum, row) => sum + row.value, 0);
   const positionCost = rows.reduce((sum, row) => sum + row.cost, 0);
-  const realized = allTrades.reduce((sum, trade) => sum + trade.pnl, 0);
-  const fees = allTrades.reduce((sum, trade) => sum + trade.fee, 0);
-  const inferred = allTrades.filter((trade) => trade.inferred).length;
+  const trades = summarizeTrades(allTrades);
   const cash = scope?.cash ?? 0;
 
   return (
@@ -78,9 +77,12 @@ export default async function PortfolioPage() {
           </div>
         </div>
         <div className="border border-terminal-border bg-terminal-panel p-3">
-          <div className="text-terminal-muted">已实现 / 手续费</div>
-          <div className={`mt-1 text-lg ${realized >= 0 ? "text-terminal-green" : "text-terminal-red"}`}>
-            <Coins copper={realized} /> <span className="text-xs text-terminal-muted">/ <Coins copper={fees} /></span>
+          <div className="text-terminal-muted">已实现（确认成交） / 手续费</div>
+          <div className={`mt-1 text-lg ${trades.confirmedRealized >= 0 ? "text-terminal-green" : "text-terminal-red"}`}>
+            <Coins copper={trades.confirmedRealized} /> <span className="text-xs text-terminal-muted">/ <Coins copper={trades.confirmedFees} /></span>
+          </div>
+          <div className="mt-1 text-[10px] text-terminal-muted">
+            推断 {trades.inferredCount} 笔 · <Coins copper={trades.inferredRealized} /> 未计入
           </div>
         </div>
       </div>
@@ -119,7 +121,7 @@ export default async function PortfolioPage() {
           </div>
         </Panel>
         <Panel>
-          <PanelHeader title="最近成交" action={<span className="font-mono text-xs text-terminal-muted">{allTrades.length} 笔 · 推断 {inferred}</span>} />
+          <PanelHeader title="最近成交" action={<span className="font-mono text-xs text-terminal-muted">{allTrades.length} 笔 · 推断 {trades.inferredCount}</span>} />
           <div className="overflow-x-auto">
             <table className="w-full min-w-[620px] border-collapse font-mono text-xs">
               <thead className="bg-terminal-panel2 text-[10px] uppercase text-terminal-muted">
