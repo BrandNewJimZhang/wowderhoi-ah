@@ -3,6 +3,7 @@
 // than "more demand". This module builds a market-wide price index from
 // the scans and converts nominal prices into real ones.
 import type { MarketHistory } from "@/lib/market-data";
+import { median } from "@/lib/median";
 
 export type PriceIndex = {
   dates: string[]; // ascending UTC dates, YYYY-MM-DD
@@ -12,12 +13,6 @@ export type PriceIndex = {
 
 export function utcDateKey(date: Date): string {
   return date.toISOString().slice(0, 10);
-}
-
-function median(values: number[]): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((left, right) => left - right);
-  return sorted[Math.ceil(sorted.length / 2) - 1];
 }
 
 // Each item contributes one price per day (its close), so a single

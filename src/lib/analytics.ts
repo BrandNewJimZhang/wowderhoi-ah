@@ -9,6 +9,7 @@
 // The anchor is the sell front. P10 remains a statistic; it is not a
 // reference price and must not drive a recommendation.
 import type { MarketHistory, MarketSnapshot } from "@/lib/market-data";
+import { median } from "@/lib/median";
 import { phaseWindowHours } from "@/lib/phase";
 import type { MarketPhase } from "@/lib/market-rules";
 import { realPrice, utcDateKey, type PriceIndex } from "@/lib/deflator";
@@ -37,11 +38,6 @@ export type MarketSignal = {
   changePercent: number; // sellPrice vs the previous scan's sell front
   realSellPrice: number | null; // deflated by the market price index
 };
-
-function median(values: number[]): number {
-  const sorted = [...values].sort((left, right) => left - right);
-  return sorted[Math.ceil(sorted.length / 2) - 1];
-}
 
 function sellOf(snapshot: MarketSnapshot): number {
   return snapshot.sellPrice ?? snapshot.marketPrice;
