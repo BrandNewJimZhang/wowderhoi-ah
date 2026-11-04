@@ -26,21 +26,19 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
     prisma.alertRule.findMany({ where: { itemId: numericItemId } })
   ]);
   const now = new Date();
-  // A scan can carry two kinds of rows: priced observations (price history)
-  // and demand-only rows (bid-only listings, no buyout). Charts and the
-  // signal must only ever see priced rows; the demand row is shown as is.
-  const latestScan = item.snapshots.at(-1);
-  const priceSnapshots = item.snapshots.filter((snapshot) => snapshot.priced !== false);
-  const latest = priceSnapshots.at(-1);
+  // getItemDetail returns priced snapshots plus the latest demand-only row
+  // (bid-only listings, no buyout). Charts and the signal only ever see
+  // priced rows; the demand row is shown as is.
+  const latest = item.snapshots.at(-1);
   const signal = bundle.signals.find((entry) => entry.itemId === numericItemId)
-    ?? (latest ? buildMarketSignal({ ...item, snapshots: priceSnapshots }, now, { phase: bundle.phase, index: bundle.priceIndex }) : null);
+    ?? (latest ? buildMarketSignal(item, now, { phase: bundle.phase, index: bundle.priceIndex }) : null);
   const seasonality = buildWeekdaySeasonality(item.dailySummaries);
   const weekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-  const demand = [...item.snapshots].reverse().find((snapshot) => (snapshot.bidOnlyCount ?? 0) > 0) ?? null;
+  const demand = item.demandSnapshot;
   const expiring = latest?.expiring && typeof latest.expiring === "object"
     ? latest.expiring as { soon?: number; mid?: number; late?: number }
     : null;
-  const freshness = describeFreshness(latestScan?.timestamp ?? null, now);
+  const freshness = describeFreshness(latest?.timestamp ?? demand?.timestamp ?? null, now);
   const candleData = item.dailySummaries.map((summary) => ({
     label: summary.date.toISOString().slice(5, 10),
     open: summary.openPrice,
@@ -51,7 +49,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
   }));
   // Intraday view: raw scan snapshots. AH prices swing hour to hour;
   // with auto-rescan every ~15 min this is the actual trading chart.
-  const intradayData = priceSnapshots.slice(-48).map((snapshot) => ({
+  const intradayData = item.snapshots.slice(-48).map((snapshot) => ({
     ts: snapshot.timestamp.getTime(),
     price: snapshot.sellPrice ?? snapshot.marketPrice,
     min: snapshot.minPrice,

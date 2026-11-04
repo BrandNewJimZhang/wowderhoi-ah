@@ -20,15 +20,24 @@ export async function getMarketUniverse(scope: MarketScope | null): Promise<Mark
 
 export async function getItemDetail(itemId: number, scope: MarketScope | null) {
   const marketId = scope?.id;
-  return prisma.item.findUnique({
-    where: { itemId },
-    include: {
-      // The item page shows both the price history and the latest demand
-      // row, so it keeps every snapshot and filters in the view.
-      snapshots: { where: marketId ? { marketId } : {}, orderBy: { timestamp: "asc" }, take: -96 },
-      dailySummaries: { where: marketId ? { marketId } : {}, orderBy: { date: "asc" }, take: -60 }
-    }
-  });
+  const where = marketId ? { marketId } : {};
+  // Price history and demand history are separate windows. Fetching every
+  // row and filtering in the view let demand-only rows (no price) consume
+  // part of the 96-snapshot chart window.
+  const [item, demandSnapshot] = await Promise.all([
+    prisma.item.findUnique({
+      where: { itemId },
+      include: {
+        snapshots: { where: { ...where, priced: true }, orderBy: { timestamp: "asc" }, take: -96 },
+        dailySummaries: { where, orderBy: { date: "asc" }, take: -60 }
+      }
+    }),
+    prisma.auctionSnapshot.findFirst({
+      where: { ...where, itemId, bidOnlyCount: { gt: 0 } },
+      orderBy: { timestamp: "desc" }
+    })
+  ]);
+  return item ? { ...item, demandSnapshot } : null;
 }
 
 export async function getUpcomingEvents() {
