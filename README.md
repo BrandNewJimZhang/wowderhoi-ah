@@ -142,6 +142,15 @@ market of the newest snapshot, or `AQT_MARKET="realm|faction"` when you
 want to pin it. Snapshots, daily summaries, positions, trades and
 decisions from another realm can never leak into the same signal.
 
+The ledger follows the character that produced the scan: positions and
+trades are replayed only from that character's journal book, never from
+another character's book on the same market, and `Market.character`
+records which one. The cockpit and portfolio headers name that character.
+Because cash, positions and trades then come from one scan, a character
+with no events shows an empty ledger rather than an alt's holdings; a
+scan-only import that carries no journal leaves the recorded character
+and ledger untouched.
+
 Upgrading an existing `prisma/dev.db` from an earlier v0.4 build needs one
 schema push that drops write-only columns/tables and re-keys daily
 summaries. Either delete `prisma/dev.db` and re-import, or run
