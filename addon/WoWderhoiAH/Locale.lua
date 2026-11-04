@@ -9,7 +9,7 @@ local L = {
   SCAN_ALREADY_RUNNING = "A scan is already running.",
   SCAN_GETALL_START = "Starting full scan (replicating the whole auction house)...",
   SCAN_RECEIVED = "Received %d auctions, crunching...",
-  SCAN_COMPLETE = "Scan complete: %d auctions -> %d items. Data lands on disk at logout or /reload.",
+  SCAN_COMPLETE = "Scan complete: %d auctions -> %d items. Data saved to disk.",
   SCAN_AUTO_ARMED = " Auto-rescan armed (next scan in ~15 min).",
   SCAN_ABORTED = "Scan aborted: auction house closed.",
   SCAN_TIMEOUT = "Scan timed out: the auction house never returned a full copy. Try again.",
@@ -54,7 +54,7 @@ local L = {
   LOADED = "loaded. %d items in price history. /wahscan to scan, /wah for status.",
   STATUS_FMT = "history: %d items | %s | phase %s | realized %s | escrow %s",
   STATUS_NO_SCAN = "no scan stored",
-  STATUS_LAST_SCAN = "last scan %s, %d items (lands on disk at logout or /reload)",
+  STATUS_LAST_SCAN = "last scan %s, %d items (saved to disk)",
   -- price guide
   PRICE_HEADER = "Price guide — %s",
   PRICE_SELL = "Sell front: %s",
@@ -156,7 +156,7 @@ if GetLocale() == "zhCN" then
   L.SCAN_ALREADY_RUNNING = "已有扫描正在进行。"
   L.SCAN_GETALL_START = "开始全量扫描（复制整个拍卖行）..."
   L.SCAN_RECEIVED = "已接收 %d 条拍卖，处理中..."
-  L.SCAN_COMPLETE = "扫描完成：%d 条拍卖 -> %d 种商品。小退或 /reload 后写入磁盘。"
+  L.SCAN_COMPLETE = "扫描完成：%d 条拍卖 -> %d 种商品。已保存到磁盘。"
   L.SCAN_AUTO_ARMED = " 自动重扫已就绪（约 15 分钟后下一次）。"
   L.SCAN_ABORTED = "扫描中止：拍卖行已关闭。"
   L.SCAN_TIMEOUT = "扫描超时：拍卖行没有返回完整副本。请重试。"
@@ -200,7 +200,7 @@ if GetLocale() == "zhCN" then
   L.LOADED = "已加载。价格历史 %d 种商品。/wahscan 扫描，/wah 查看状态。"
   L.STATUS_FMT = "历史：%d 种商品 | %s | 阶段 %s | 已实现 %s | 押金占用 %s"
   L.STATUS_NO_SCAN = "尚无扫描记录"
-  L.STATUS_LAST_SCAN = "上次扫描 %s，%d 种商品（小退或 /reload 后写入磁盘）"
+  L.STATUS_LAST_SCAN = "上次扫描 %s，%d 种商品（已保存到磁盘）"
   L.PRICE_HEADER = "价格指引 — %s"
   L.PRICE_SELL = "建议卖价：%s"
   L.PRICE_MIN = "最低价：%s"
