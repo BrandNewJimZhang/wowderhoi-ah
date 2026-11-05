@@ -20,7 +20,7 @@
     "perf:seed": "tsx scripts/perf/seed.ts",
     "perf:run": "tsx scripts/perf/run.ts",
     "perf:sweep": "tsx scripts/perf/sweep.ts",
-    "test": "vitest run",
+    "test": "vitest run --exclude src/lib/perf-gates.test.ts && vitest run src/lib/perf-gates.test.ts",
     "recipes:fetch": "tsx scripts/fetch-recipes.ts",
     "recipes:import": "tsx scripts/import-recipes.ts"
   },

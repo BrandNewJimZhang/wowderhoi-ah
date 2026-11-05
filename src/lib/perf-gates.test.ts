@@ -6,7 +6,6 @@
 // the terminal runs Core.lua inside fengari, a JavaScript Lua VM, while
 // the addon runs the same file on the client's native Lua.
 import { describe, expect, it } from "vitest";
-import { performance } from "node:perf_hooks";
 import { buildMarketSignal } from "@/lib/analytics";
 import { buildCoreInput } from "@/lib/core/from-market";
 import { runCore } from "@/lib/core/run-core";
@@ -23,12 +22,21 @@ const NOW = 1_800_000_000;
 // files in parallel, so a stage that takes 125ms alone can take 3-4x that
 // while competing for a core. These gates catch order-of-magnitude
 // regressions; the standalone measurement is recorded in the docs.
+//
+// Stages are measured in process CPU time, not wall-clock: a contended
+// worker can spend seconds descheduled while doing the same work, and that
+// descheduling says nothing about the code under test.
 const budgets = {
   core866Ms: 1000,
   buildInputMs: 100,
   lp120Ms: 200,
   scan9000Ms: 1000
 };
+
+function cpuMsSince(start: NodeJS.CpuUsage): number {
+  const usage = process.cpuUsage(start);
+  return (usage.user + usage.system) / 1000;
+}
 
 function coreInput(itemCount: number): CoreInput {
   const items: CoreInput["market"]["items"] = {};
@@ -64,9 +72,9 @@ describe("system performance gates", () => {
   it("evaluates 866 items through the shared core inside the gate (warm)", () => {
     const input = coreInput(866);
     runCore(input); // warm the Lua state and template caches
-    const start = performance.now();
+    const start = process.cpuUsage();
     const output = runCore(input);
-    const elapsed = performance.now() - start;
+    const elapsed = cpuMsSince(start);
     expect(output.rows.length).toBeGreaterThan(0);
     expect(elapsed).toBeLessThan(budgets.core866Ms);
   });
@@ -88,10 +96,10 @@ describe("system performance gates", () => {
     })) as unknown as Parameters<typeof buildMarketSignal>[0][];
     const signals = histories.map((history) => buildMarketSignal(history, new Date(NOW * 1000), { phase: "wave" }));
     const pairs = histories.map((history, index) => ({ history, signal: signals[index] }));
-    const start = performance.now();
+    const start = process.cpuUsage();
     const input = buildCoreInput(pairs, { now: new Date(NOW * 1000), phase: "wave", budgetCopper: 1_000_000 });
     expect(Object.keys(input.market.items)).toHaveLength(866);
-    expect(performance.now() - start).toBeLessThan(budgets.buildInputMs);
+    expect(cpuMsSince(start)).toBeLessThan(budgets.buildInputMs);
   });
 
   it("replays a 5,000-event journal inside the gate", () => {
@@ -101,10 +109,10 @@ describe("system performance gates", () => {
         ? { k: "buy", t: index, itemId: 1 + (index % 100), qty: 1, cost: 100 }
         : { k: "vendor", t: index, itemId: 1 + (index % 100), qty: 1, paid: 120 });
     }
-    const start = performance.now();
+    const start = process.cpuUsage();
     const state = replayJournal(events);
     expect(Object.keys(state.positions).length).toBe(50);
-    expect(performance.now() - start).toBeLessThan(budgets.buildInputMs);
+    expect(cpuMsSince(start)).toBeLessThan(budgets.buildInputMs);
   });
 
   it("solves 120 production candidates inside the gate", () => {
@@ -112,7 +120,7 @@ describe("system performance gates", () => {
     const recipes: LpRecipe[] = dataset.recipes.map(recipeToLp);
     const prices = new Map<number, number>();
     for (let index = 0; index < 3000; index += 1) prices.set(index, 100 + index);
-    const start = performance.now();
+    const start = process.cpuUsage();
     const solution = solveProduction(recipes, {
       prices,
       capacity: productionCapacity,
@@ -121,7 +129,7 @@ describe("system performance gates", () => {
       maxCandidates: 120
     });
     expect(solution.candidates).toBeGreaterThan(0);
-    expect(performance.now() - start).toBeLessThan(budgets.lp120Ms);
+    expect(cpuMsSince(start)).toBeLessThan(budgets.lp120Ms);
   });
 
   it("validates a 9,000-item scan inside the gate", () => {
@@ -143,7 +151,7 @@ describe("system performance gates", () => {
         expiring: { soon: 1, mid: 1, late: 3 }
       };
     }
-    const start = performance.now();
+    const start = process.cpuUsage();
     const scan = normalizeAddonScan({
       dataVersion: 4,
       scannedAt: NOW,
@@ -154,7 +162,7 @@ describe("system performance gates", () => {
       items
     });
     expect(scan.items).toHaveLength(9000);
-    expect(performance.now() - start).toBeLessThan(budgets.scan9000Ms);
+    expect(cpuMsSince(start)).toBeLessThan(budgets.scan9000Ms);
   });
 
   it("keeps a 5,000-event journal and a 9,000-item scan under the 4MB budget", () => {
