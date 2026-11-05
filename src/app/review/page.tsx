@@ -6,6 +6,7 @@ import { getMarketSignals } from "@/lib/market-signals";
 import { getPositions } from "@/lib/repositories";
 import { alphaDecay, evaluatePolicy } from "@/lib/off-policy";
 import { designExperiment, experimentResults } from "@/lib/experiments";
+import { bucketPredictions } from "@/lib/decision-calibration";
 import { phaseLabels } from "@/lib/phase";
 import { summarizeTrades } from "@/lib/trade-summary";
 import { Coins } from "@/components/coins";
@@ -42,6 +43,18 @@ export default async function ReviewPage() {
     at: decision.at
   }));
   const policyEstimate = evaluatePolicy(loggedDecisions, realizedTrades, () => true);
+  // Predicted fill chance vs confirmed sells, bucketed. A decision counts
+  // as filled when a confirmed sale of the same item lands inside its
+  // window; the player chooses what to act on, so this is descriptive.
+  const calibration = bucketPredictions(
+    decisions.map((decision) => ({
+      itemId: decision.itemId,
+      kind: decision.kind,
+      at: decision.at,
+      fillProb: decision.fillProb
+    })),
+    trades.map((trade) => ({ itemId: trade.itemId, realizedAt: trade.realizedAt, inferred: trade.inferred }))
+  );
   // Largest committed position, not whatever order the database returned:
   // the experiment section must name the same item on every render.
   const focusPosition = Object.entries(positions).sort((left, right) => right[1].cost - left[1].cost)[0];
@@ -212,6 +225,27 @@ export default async function ReviewPage() {
               </span>
             </div>
           ))}
+        </div>
+      </Panel>
+
+      <Panel>
+        <PanelHeader title="预测校准" action={<span className="font-mono text-xs text-terminal-muted">预测成交率 vs 72 小时内确认成交</span>} />
+        <div className="space-y-2 p-3 font-mono text-xs">
+          {calibration.every((bucket) => bucket.decisions === 0) && (
+            <div className="text-terminal-muted">还没有带成交率预测的买入决策；先在新版本下导入一次扫描。</div>
+          )}
+          {calibration.filter((bucket) => bucket.decisions > 0).map((bucket) => (
+            <div key={bucket.label} className="flex items-center justify-between gap-2">
+              <span className="text-terminal-muted">预测 {bucket.label}</span>
+              <span className="flex items-center gap-3">
+                <span className="text-slate-100">{bucket.decisions} 条决策 · 成交 {bucket.filled}</span>
+                <span className={bucket.enoughSamples ? "text-terminal-amber" : "text-terminal-muted"}>
+                  {bucket.decisions >= 10 ? `实测成交率 ${(bucket.rate * 100).toFixed(0)}%` : "样本不足，不下结论"}
+                </span>
+              </span>
+            </div>
+          ))}
+          <div className="text-[11px] text-terminal-muted">描述性匹配，不是因果：你只执行了其中一部分推荐。</div>
         </div>
       </Panel>
 

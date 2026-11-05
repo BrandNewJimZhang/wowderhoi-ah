@@ -13,6 +13,9 @@ export type MarketSnapshot = {
   sellPrice?: number;
   sellerCount?: number;
   sellersInvisible?: boolean;
+  ownerVisible?: boolean | null;
+  sellerHHI?: number | null;
+  topSellerShare?: number | null;
   // Scan-time book classification. Optional for fixtures and for rows
   // imported before the column existed.
   marketType?: string | null;

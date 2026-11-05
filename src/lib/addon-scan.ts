@@ -31,6 +31,15 @@ export type AddonScanItem = {
   numAuctions: number;
   sellerCount: number;
   sellersInvisible: boolean;
+  // True when at least one listing named its owner. The fill model reads it:
+  // hidden owners mean a disappearance is unobservable, not zero.
+  ownerVisible: boolean;
+  // How the scanner identified the player's own listings: by owner name,
+  // by matching the owned-auction list, or not at all ("none" = the book may
+  // still contain them and the row is not calibration evidence).
+  selfExclusion: "owner" | "owned" | "none";
+  sellerHHI: number | null; // other sellers' supply concentration, 0..1
+  topSellerShare: number | null;
   bidOnlyCount: number;
   highestBid: number; // highest current bid among bid-only listings, copper
   inferredSoldLow: number; // units that left an owner across scans (sales + cancels)
@@ -54,6 +63,10 @@ export type AddonScan = {
   // but cannot read the player's bags; null means an older addon that did not
   // report the field, so the core keeps its planning fallback.
   bagSlots: number | null;
+  // Hygiene generation of the flow columns. 2 excludes the player's own
+  // listings and purchases; null on scans from older builds, which the
+  // calibration must not mix with clean rows.
+  observationVersion: number | null;
   items: AddonScanItem[];
 };
 
@@ -231,6 +244,20 @@ function normalizeMarketType(value: unknown, itemId: string): AddonMarketType | 
   throw new Error(`Addon scan item ${itemId}: marketType must be "commodity" or "item", got ${JSON.stringify(value)}`);
 }
 
+function normalizeSelfExclusion(value: unknown, itemId: string): "owner" | "owned" | "none" {
+  if (value === undefined || value === null) return "none";
+  if (value === "owner" || value === "owned" || value === "none") return value;
+  throw new Error(`Addon scan item ${itemId}: selfExclusion must be "owner", "owned" or "none", got ${JSON.stringify(value)}`);
+}
+
+function optionalShare(value: unknown, field: string, itemId: string): number | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) {
+    throw new Error(`Addon scan item ${itemId}: ${field} must be a share in [0, 1], got ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
 function normalizeExpiring(value: unknown, itemId: string) {
   if (value === undefined || value === null) return { soon: 0, mid: 0, late: 0 };
   const entry = value as Record<string, unknown>;
@@ -310,6 +337,10 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
       numAuctions,
       sellerCount: !priced ? 0 : entry.sellers === undefined ? numAuctions : optionalNonNegative(entry.sellers, "sellers", key),
       sellersInvisible: entry.sellersInvisible === true,
+      ownerVisible: entry.ownerVisible === true,
+      selfExclusion: normalizeSelfExclusion(entry.selfExclusion, key),
+      sellerHHI: optionalShare(entry.sellerHHI, "sellerHHI", key),
+      topSellerShare: optionalShare(entry.topSellerShare, "topSellerShare", key),
       bidOnlyCount,
       highestBid: optionalNonNegative(entry.highestBid, "highestBid", key),
       inferredSoldLow,
@@ -338,6 +369,9 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
       : null,
     bagSlots: typeof scan.bagSlots === "number"
       ? Math.round(optionalNonNegative(scan.bagSlots, "bagSlots", "scan"))
+      : null,
+    observationVersion: typeof scan.observationVersion === "number"
+      ? Math.round(optionalNonNegative(scan.observationVersion, "observationVersion", "scan"))
       : null,
     items
   };

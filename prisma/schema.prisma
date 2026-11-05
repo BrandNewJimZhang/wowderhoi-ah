@@ -69,6 +69,18 @@ model AuctionSnapshot {
   numAuctions      Int      @map("num_auctions")
   sellerCount      Int      @default(0) @map("seller_count")
   sellersInvisible Boolean  @default(false) @map("sellers_invisible")
+  // True when the scan could see owner names for this item. Hidden owners
+  // make the flow proxy unobservable rather than zero.
+  ownerVisible     Boolean  @default(false) @map("owner_visible")
+  // How the scanner excluded the player's own listings: owner name, the
+  // owned-auction list, or not at all. Null on rows from older builds.
+  selfExclusion    String?  @map("self_exclusion")
+  // Hygiene generation of soldProxyLow/High. 2 excludes own listings and
+  // purchases; the calibration only reads >= 2.
+  observationVersion Int?   @map("observation_version")
+  // Other sellers' supply concentration (0..1). Null when owners are hidden.
+  sellerHHI        Float?   @map("seller_hhi")
+  topSellerShare   Float?   @map("top_seller_share")
   // The scanner's classification of this item's book ("commodity" | "item"),
   // decided once at scan time. Null on rows imported before the column
   // existed; consumers fall back to the core's derivation for those.
@@ -154,6 +166,13 @@ model Decision {
   itemId     Int?     @map("item_id")
   kind       String
   reason     String?
+  // What the recommendation expected, so the review page can compare the
+  // prediction with confirmed sales instead of only describing it.
+  expectedNet    Int?    @map("expected_net")
+  fillProb       Float?  @map("fill_prob")
+  fillBasis      String? @map("fill_basis")
+  allocQty       Int?    @map("alloc_qty")
+  allocUnitPrice Float?  @map("alloc_unit_price")
   market     Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
 
   @@index([at])

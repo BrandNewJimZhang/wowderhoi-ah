@@ -122,7 +122,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                   ) : (
                     <span className="flex items-center gap-3 text-terminal-muted">
                       <span>{action.qty} 件 @ <Coins copper={action.price} /></span>
-                      <span>售出净利 <Coins copper={action.netIfSold} /></span>
+                      <span>售出净利 <Coins copper={action.expectedNet} /></span>
                     </span>
                   )}
                 </div>

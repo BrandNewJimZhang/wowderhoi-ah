@@ -157,7 +157,8 @@ export function OrderBookChart({ tiers, sellP, minPrice }: { tiers: BookTier[]; 
 const FILL_BASIS_LABELS: Record<Exclude<FillBasis, "vendor">, string> = {
   own: "基于自己的成交",
   proxy: "基于公共推断消失（区间）",
-  prior: "基于阶段先验（尚无自己的成交）"
+  "observed-zero": "盘口可观测且无消失（零观测收缩）",
+  prior: "基于阶段先验（观测不可用）"
 };
 
 export function FillProbabilityChart({ tiers, hazardPerHour, basis, quantity, band = 0.35 }: { tiers: BookTier[]; hazardPerHour: number; basis: Exclude<FillBasis, "vendor">; quantity: number; band?: number }) {

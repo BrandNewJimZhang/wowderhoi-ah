@@ -9,6 +9,7 @@ WoWderhoiAH_ScanData = {
 \t["faction"] = "Alliance",
 \t["character"] = "Tester",
 \t["bagSlots"] = 14,
+\t["observationVersion"] = 2,
 \t["total"] = 15,
 \t["items"] = {
 \t\t[2770] = {
@@ -24,6 +25,10 @@ WoWderhoiAH_ScanData = {
 \t\t\t["quantity"] = 240,
 \t\t\t["numAuctions"] = 12,
 \t\t\t["sellers"] = 7,
+\t\t\t["ownerVisible"] = true,
+\t\t\t["selfExclusion"] = "owner",
+\t\t\t["sellerHHI"] = 0.4,
+\t\t\t["topSellerShare"] = 0.6,
 \t\t\t["bidOnly"] = 0,
 \t\t\t["tiers"] = { { ["p"] = 150, ["q"] = 100 }, { ["p"] = 200, ["q"] = 140 } },
 \t\t\t["expiring"] = { ["soon"] = 2, ["mid"] = 3, ["late"] = 7 },
@@ -82,6 +87,7 @@ describe("normalizeAddonScan", () => {
     expect(scan.server).toBe("Anniversary");
     expect(scan.faction).toBe("Alliance");
     expect(scan.character).toBe("Tester");
+    expect(scan.observationVersion).toBe(2);
     // Bid-only entries are demand observations, not zero-priced markets.
     expect(scan.items).toHaveLength(3);
     expect(scan.items.find((item) => item.itemId === 700)).toMatchObject({
@@ -107,12 +113,20 @@ describe("normalizeAddonScan", () => {
       quantity: 240,
       numAuctions: 12,
       sellerCount: 7,
+      ownerVisible: true,
+      selfExclusion: "owner",
+      sellerHHI: 0.4,
+      topSellerShare: 0.6,
       bidOnlyCount: 0,
       vendorPrice: 25
     });
     expect(copperOre?.tiers).toEqual([{ p: 150, q: 100 }, { p: 200, q: 140 }]);
     expect(copperOre?.expiring).toEqual({ soon: 2, mid: 3, late: 7 });
     const blackLotus = scan.items.find((item) => item.itemId === 13468);
+    // A row without the hygiene fields is treated as unobservable and not
+    // attributable, never as "clean".
+    expect(blackLotus?.ownerVisible).toBe(false);
+    expect(blackLotus?.selfExclusion).toBe("none");
     expect(blackLotus?.quality).toBe("rare");
     expect(blackLotus?.category).toBe("unknown");
     // Entries without vendorP (unsellable-to-NPC items) normalize to 0.

@@ -54,6 +54,9 @@ function signal(itemId: number): MarketSignal {
     numAuctions: 10,
     sellerCount: 4,
     sellersInvisible: false,
+    ownerVisible: false,
+    sellerHHI: null,
+    topSellerShare: null,
     marketType: null,
     bidOnlyCount: 0,
     highestBid: 0,
@@ -135,12 +138,15 @@ describe("buildCoreInput", () => {
     expect(input.market.items[1].quality).toBe("common");
   });
 
-  it("does not ship fields the core never reads", () => {
-    // The sub-category is consumed to build the demand prior; keeping it in
-    // the item table made the two builders carry a field Core.lua ignores.
+  it("ships exactly the fields the core reads", () => {
+    // The sub-category is consumed twice: to build the demand prior and to
+    // match a scheduled event window inside Core.eventBoost. Both runtimes
+    // therefore carry it.
     const input = buildCoreInput(pairs(1), { now: LATEST, phase: "wave" });
-    expect("itemSubClass" in input.market.items[1]).toBe(false);
+    expect(input.market.items[1].itemSubClass).toBe("Herb");
     expect(input.market.items[1].demandPrior).toBe(1.2);
+    expect(input.market.items[1].ownerVisible).toBe(false);
+    expect(input.market.items[1].sellerHHI).toBeNull();
   });
 
   it("prefers the store's first snapshot time when the caller knows it", () => {

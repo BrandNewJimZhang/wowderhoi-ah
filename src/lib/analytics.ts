@@ -26,6 +26,9 @@ export type MarketSignal = {
   numAuctions: number;
   sellerCount: number;
   sellersInvisible: boolean;
+  ownerVisible: boolean; // at least one listing named its owner
+  sellerHHI: number | null; // other sellers' supply concentration
+  topSellerShare: number | null;
   // The scan's own classification of the book; null for rows imported
   // before it was captured, where the core falls back to its derivation.
   marketType: "commodity" | "item" | null;
@@ -94,6 +97,11 @@ export function buildMarketSignal(
     numAuctions: latest.numAuctions,
     sellerCount: latest.sellerCount ?? latest.numAuctions,
     sellersInvisible: latest.sellersInvisible ?? false,
+    // Rows imported before the column existed cannot claim observability:
+    // their flow was computed with own listings still in the book.
+    ownerVisible: latest.ownerVisible === true,
+    sellerHHI: latest.sellerHHI ?? null,
+    topSellerShare: latest.topSellerShare ?? null,
     marketType: latest.marketType === "commodity" || latest.marketType === "item" ? latest.marketType : null,
     bidOnlyCount: latest.bidOnlyCount ?? 0,
     highestBid: latest.highestBid ?? 0,
