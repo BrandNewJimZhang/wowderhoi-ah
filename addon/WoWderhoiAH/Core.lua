@@ -428,23 +428,29 @@ function Core.allocate(rows, deployable, rules)
     end
     local unit = row.ladderPrice or 0
     if unit > 0 and remaining > 0 then
-      local cap = math.min((row.execQty or 0) * unit, remaining)
+      local cap = remaining
       if itemCap then cap = math.min(cap, itemCap) end
-      local qty = math.min(row.execQty or 0, math.floor(cap / unit))
+      -- Quantity is what the copper cap actually reaches down the ladder,
+      -- not cap divided by the deep-ladder average: a front-loaded book
+      -- (ten units at 100, a hundred at 1,000) can fund ten units with the
+      -- same cap that the average would turn into one. execQty stays the
+      -- ceiling because the row's price limits were already applied to it.
+      local qty, cost
+      if row.tiers then
+        qty, cost = Core.executableQty(row.tiers, nil, cap, row.execQty or 0)
+      else
+        qty = math.min(row.execQty or 0, math.floor(cap / unit))
+        cost = qty * unit
+      end
       if qty > 0 then
-        -- Rows are priced against the whole executable ladder, but an
-        -- allocation that buys fewer units only reaches the cheapest tiers.
-        -- Charging the deep average would understate the plan's profit and
-        -- overstate the cash it occupies.
-        local cost = row.tiers and Core.ladderCost(row.tiers, qty) or nil
-        local unitPrice = cost and cost / qty or unit
+        local unitPrice = cost / qty
         row.allocQty = qty
-        row.allocCost = round(cost or qty * unit)
+        row.allocCost = round(cost)
         row.allocUnitPrice = unitPrice
         row.allocNet = round(row.vendor
           and (row.sellP - unitPrice) * qty
           or Core.netIfSold(row.listP, qty, unitPrice, feeRate))
-        remaining = remaining - (cost or qty * unit)
+        remaining = remaining - cost
       end
     end
   end

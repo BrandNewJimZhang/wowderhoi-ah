@@ -105,6 +105,29 @@ describe("shared capital allocation", () => {
   });
 
 
+  it("walks the ladder for the affordable quantity, not the deep average", () => {
+    // Ten units at 100 behind a hundred at 1,000: the deep average is ~909.
+    // Dividing a 1,500-copper exposure cap by that average funds one unit,
+    // but the same cap actually buys the ten cheap ones.
+    const lua = loadAddon();
+    const rows = [{
+      ladderPrice: 909.0909090909091,
+      minPrice: 100,
+      listP: 2000,
+      sellP: 2000,
+      vendorP: 0,
+      execQty: 110,
+      fillProb: 1,
+      samples: 20,
+      tiers: [{ p: 100, q: 10 }, { p: 1000, q: 100 }]
+    }];
+    lua.exec(`WowTest.allocRows = WowTest.ns.Core.allocate(${toLua(rows)}, 6000, WowTest.ns.RULES)`);
+    // maxItemExposure 25% of a 6,000 purse = 1,500.
+    expect(lua.number("WowTest.allocRows[1].allocQty")).toBe(10);
+    expect(lua.number("WowTest.allocRows[1].allocCost")).toBe(1000);
+    expect(lua.number("WowTest.allocRows[1].allocUnitPrice")).toBe(100);
+  });
+
   it("uses the highest bid as an ignition demand nudge, not a gate", () => {
     const noBid = item(2589, { history: { samples: 0 } });
     const withBid = item(2592, { history: { samples: 0 }, bidOnly: 1, highestBid: 900 });

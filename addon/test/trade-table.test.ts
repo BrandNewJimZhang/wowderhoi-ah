@@ -66,17 +66,17 @@ describe("executable-profit radar table", () => {
       .toEqual(["可买", "买价", "建议卖价", "净利", "成交率"]);
     // The in-game budget is the purse; the allocator applies the 50% daily
     // share once. The 1,000,000-copper purse therefore grants 500,000.
-    expect(lua.column(1)).toEqual(["5", "5", "28"]);
+    expect(lua.column(1)).toEqual(["5", "6", "29"]);
     // The buy price is the allocated quantity's average, not the full-depth
-    // average: Gold Ore's 5 units all cost 40,000 each, and Mageweave's 28
-    // are 20 at 8,000 plus 8 at 9,000.
-    expect(lua.column(2)).toEqual(["8银 00铜", "4金 00银", "82银 86铜"]);
+    // average: Gold Ore's 6 units all cost 40,000 each, and Mageweave's 29
+    // are 20 at 8,000 plus 9 at 9,000.
+    expect(lua.column(2)).toEqual(["8银 00铜", "4金 00银", "83银 10铜"]);
     expect(lua.column(3)).toEqual(["10银 00铜", "5金 20银", "1金 00银"]);
     // Net of the allocated quantity, priced from the cheap end of the book:
     // the quantity and the profit in a row must describe the same trade.
-    // Gold Ore's 5 units all come from the 40,000 tier; Mageweave's 28 are
-    // 20 at 8,000 plus 8 at 9,000, not 28 at the 70-unit average.
-    expect(lua.column(4)).toEqual(["10银 00铜", "4金 69银", "3金 39银"]);
+    // Gold Ore's 6 units all come from the 40,000 tier; Mageweave's 29 are
+    // 20 at 8,000 plus 9 at 9,000, not 29 at the 70-unit average.
+    expect(lua.column(4)).toEqual(["10银 00铜", "5金 63银", "3金 44银"]);
     expect(lua.column(5)).toEqual(["100%", "100%", "100%"]);
   });
 
