@@ -204,11 +204,46 @@ local function fillPriorRules()
   return compiled
 end
 
+-- Units listed at or below `price`, excluding the player's own listings
+-- (the scan already removed them). Used by both the fill model and the
+-- sell plan so a listing's queue is measured the same way in each.
+local function quantityAtOrBelow(tiers, price)
+  local total = 0
+  for _, tier in ipairs(tiers or {}) do
+    if tier.p and tier.p <= price then total = total + (tier.q or 0) end
+  end
+  return total
+end
+
+-- P(a listing clears within `hours`). `share` is a fraction of the book
+-- per hour -- the unit the calibration script measures and the rule source
+-- stores -- never a per-listing rate. Units leave at share x supply per
+-- hour; a listing of `quantity` units joins the queue behind `ahead` units
+-- already priced at or below it, so it clears when that whole queue has
+-- left. The radar, the terminal chart and the sell plan all call this one
+-- function; a second rearrangement of the same formula is how the sell
+-- page and the radar came to quote different probabilities for one item.
+--
+-- Without a book size there is no queue to be behind, so the share is
+-- applied to the listing itself -- the conservative reading of the same
+-- number, used by callers that have no supply yet.
+function Core.fillWithin(share, supply, ahead, quantity, hours)
+  local rateShare = math.max(share or 0, 0)
+  if rateShare <= 0 or (hours or 0) <= 0 then return 0 end
+  local book = math.max(supply or 0, 0)
+  if book <= 0 then
+    return 1 - math.exp(-rateShare * hours)
+  end
+  local queue = math.max(ahead or 0, 0) + math.max(quantity or 0, 1)
+  return 1 - math.exp(-rateShare * book * hours / queue)
+end
+
 -- P(fill within horizon). There are four evidence tiers, in order:
 --
 --   own            Units the player actually sold. The only clean label the
---                  client ever gives. Sell-through rate is units/hour; a
---                  listing of q units clears at hazard = rate / q.
+--                  client ever gives. The sale rate is units/hour; dividing
+--                  by the book turns it into the same share the other tiers
+--                  report, and Core.fillWithin turns it back into units/hour.
 --   proxy          Public disappearances between scans. A bounded inference
 --                  that cannot separate sales from cancellations.
 --   observed-zero  The book was observable and nothing left it. That is
@@ -216,6 +251,10 @@ end
 --                  shrunk by the exposure instead of replacing it.
 --   prior          Nothing observable (owners hidden). The phase x market
 --                  type table carries the estimate.
+--
+-- The returned hazard is always a share of the book per hour. `ahead` is
+-- the queue in front of the listing (zero when the caller does not model
+-- one); Core.fillWithin applies both to the listing.
 --
 -- Fewer than three own sales is not evidence; the output is always an
 -- interval, never a point dressed up as precision.
@@ -237,9 +276,12 @@ function Core.fillProbability(input)
   if ownSamples >= 3 and ownSold > 0 then
     -- Units per exposed hour: each sale contributes the time its listing
     -- spent on the book, not the span between the first and last sale.
+    -- The sale rate is units/hour, so it becomes a book share by dividing
+    -- by the book; the queue formula then turns it back into the same
+    -- units/hour. Without a book size it stays a per-listing rate.
     local rate = ownSold / math.max(input.ownExposedHours or 1, floor)
     local quantity = math.max(input.qty or 1, 1)
-    hazard = rate / quantity
+    hazard = supply > 0 and rate / supply or rate / quantity
     basis = "own"
     spread = ownSamples >= 6 and 0.2 or 0.35
   elseif input.observable == true and supply > 0 then
@@ -261,7 +303,7 @@ function Core.fillProbability(input)
     spread = 0.5
   end
   hazard = math.max(0.001, math.min(hazard, 2))
-  local point = 1 - math.exp(-hazard * horizon)
+  local point = Core.fillWithin(hazard, supply, input.ahead, input.qty, horizon)
   local low = math.max(0, point * (1 - spread))
   local high = math.min(1, point * (1 + spread))
   -- The hazard is returned so a chart can anchor its curve to this estimate
@@ -706,6 +748,13 @@ function Core.evaluate(input)
             sold = item.inferredSoldLow or 0,
             supply = item.quantity or 0,
             elapsedHours = item.elapsedHours or scanFloor,
+            -- The relist joins the queue behind everything at or below its
+            -- price that the purchase did not remove. Buying q units takes
+            -- them off the book before they are listed again, so the queue
+            -- is the depth at that price minus q, not the whole depth. (A
+            -- seller listing from the bag leaves the book untouched, so
+            -- the chart and the sell plan count the full depth instead.)
+            ahead = math.max(0, quantityAtOrBelow(tiers, listP) - qty),
             -- Observability decides between "nothing disappeared" and "we
             -- could not see": hidden owners make the proxy unobservable.
             observable = Core.isObservable(item)
@@ -852,28 +901,6 @@ function Core.evaluate(input)
   }
 end
 
--- Units listed at or below `price`, excluding the player's own listings
--- (the scan already removed them).
-local function quantityAtOrBelow(tiers, price)
-  local total = 0
-  for _, tier in ipairs(tiers or {}) do
-    if tier.p and tier.p <= price then total = total + (tier.q or 0) end
-  end
-  return total
-end
-
--- P(the listing clears) under a queue model. `hazard` is the market's
--- sell-through share per hour (the same estimate the radar uses), `supply`
--- is listed units and `ahead` is the queue in front of the listing. Units
--- leave at hazard x supply per hour, so this listing waits for its own
--- quantity plus everything cheaper than it to clear.
-local function fillWithin(hazard, supply, ahead, quantity, hours)
-  local rate = math.max(hazard or 0, 0) * math.max(supply or 0, 0)
-  if rate <= 0 then return 0 end
-  local queue = math.max(ahead or 0, 0) + math.max(quantity or 0, 1)
-  return 1 - math.exp(-rate * (hours or 0) / queue)
-end
-
 -- Sell-side plan for one item and one batch. The client computes the
 -- deposit (it owns the API); this function owns the fee and breakeven
 -- arithmetic so the panel and the terminal cannot disagree.
@@ -916,7 +943,7 @@ function Core.sellPlan(item, position, rules, opts)
       local ahead = quantityAtOrBelow(opts.tiers, candidate)
       for _, hours in ipairs({ 12, 24, 48 }) do
         local cost = deposits[hours] or 0
-        local probability = fillWithin(opts.hazard, opts.supply, ahead, quantity, hours)
+        local probability = Core.fillWithin(opts.hazard, opts.supply, ahead, quantity, hours)
         local net = Core.netIfSold(candidate, quantity, unitCost, feeRate)
         -- The deposit comes back on a sale and is lost on expiry, so the
         -- risk term is deposit x P(expire), never deposit on every trade.

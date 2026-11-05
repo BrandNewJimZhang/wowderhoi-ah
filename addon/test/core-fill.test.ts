@@ -29,9 +29,12 @@ describe("fill evidence hierarchy", () => {
       qty: 10,
       ownSold: 20,
       ownSamples: 4,
-      ownExposedHours: 2
+      ownExposedHours: 2,
+      supply: 100
     });
-    // 20 units over 2 hours = 10/hour; a 10-unit listing clears at 1/hour.
+    // 20 units over 2 hours = 10/hour. As a share of the 100-unit book that
+    // is 0.1/hour; the queue formula turns it back into 10 units/hour, so a
+    // 10-unit listing clears at 1/hour either way.
     expect(result.basis).toBe("own");
     expect(result.point).toBeCloseTo(1 - Math.exp(-1), 3);
     expect(result.low).toBeLessThan(result.point);
@@ -58,7 +61,19 @@ describe("fill evidence hierarchy", () => {
       elapsedHours: 1
     });
     expect(result.basis).toBe("proxy");
-    expect(result.point).toBeCloseTo(1 - Math.exp(-0.1), 3);
+    // 10 units left a 100-unit book in an hour, so 10 units/hour leave it.
+    // A 10-unit listing with nothing cheaper ahead waits for its own
+    // quantity to clear: 1 - exp(-10 * 1 / 10).
+    expect(result.point).toBeCloseTo(1 - Math.exp(-1), 3);
+  });
+
+  it("puts the listing behind the units already priced ahead of it", () => {
+    // Share 0.001/h over 100 units is 0.1 units/hour. Ten units at the
+    // front clear in 100 hours; behind thirty cheaper units the queue is 40.
+    const front = fill({ horizonHours: 24, sold: 1, supply: 100, elapsedHours: 10, qty: 10 });
+    const behind = fill({ horizonHours: 24, sold: 1, supply: 100, elapsedHours: 10, qty: 10, ahead: 30 });
+    expect(front.point).toBeCloseTo(1 - Math.exp(-0.24), 4);
+    expect(behind.point).toBeCloseTo(1 - Math.exp(-0.06), 4);
   });
 
   it("uses the phase prior when nothing is observable", () => {
@@ -128,13 +143,32 @@ describe("fill evidence hierarchy", () => {
     lua.exec("WowTest.ns.RULES.scanIntervalMinutes = 30");
     const text = lua.text(
       `(function()
-        local _, _, point, basis = WowTest.ns.Core.fillProbability({ horizonHours = 1, sold = 10, supply = 100 })
+        local _, _, point, basis = WowTest.ns.Core.fillProbability({ horizonHours = 1, sold = 10, supply = 100, qty = 100 })
         return string.format("%.4f|%s", point, basis)
       end)()`
     );
     const [point, basis] = text.split("|");
     expect(basis).toBe("proxy");
+    // The listing is the whole book, so the queue factor is 1 and the
+    // point equals the share: 10 / (100 * 0.5) = 0.2/hour.
     expect(Number(point)).toBeCloseTo(1 - Math.exp(-0.2), 4);
+  });
+
+  it("reads the listing queue from the book, not from the listing size alone", () => {
+    // The same share over a deeper book is more units per hour, so the
+    // same listing clears faster. Treating the share as a listing hazard
+    // made these two books indistinguishable.
+    const lua = loadAddon();
+    const text = lua.text(
+      `(function()
+        local _, _, thin = WowTest.ns.Core.fillProbability({ horizonHours = 24, sold = 1, supply = 100, elapsedHours = 10, qty = 10 })
+        local _, _, deep = WowTest.ns.Core.fillProbability({ horizonHours = 24, sold = 1, supply = 1000, elapsedHours = 10, qty = 10 })
+        return string.format("%.4f|%.4f", thin, deep)
+      end)()`
+    );
+    const [thin, deep] = text.split("|").map(Number);
+    expect(thin).toBeCloseTo(1 - Math.exp(-0.24), 4);
+    expect(deep).toBeGreaterThan(thin);
   });
 });
 

@@ -56,6 +56,44 @@ describe("sell price and duration search", () => {
     expect(result.price).toBeGreaterThanOrEqual(981);
   });
 
+  it("agrees with the radar's fill estimate at the same price", () => {
+    // Both sides are given the same share, the same book and the same
+    // ten-unit listing at the front. The 24-hour deposit is free and the
+    // other durations are priced out, so the search must land on 24 hours
+    // and its probability must equal the radar's point estimate.
+    const lua = loadAddon();
+    const planFill = lua.text(
+      `(function()
+        local plan = WowTest.ns.Core.sellPlan(
+          { itemId = 2589, sellP = 1000, vendorP = 0 },
+          { qty = 10, cost = 0 },
+          WowTest.ns.RULES,
+          {
+            deposits = { [12] = 10000, [24] = 0, [48] = 10000 },
+            hazard = 0.001,
+            supply = 100,
+            tiers = { { p = 1000, q = 100 } }
+          })
+        return string.format("%d|%d|%.4f", plan.listP, plan.duration, plan.fillProb)
+      end)()`
+    );
+    const [price, duration, fillProb] = planFill.split("|");
+    expect(Number(price)).toBe(999);
+    expect(Number(duration)).toBe(24);
+    const radar = lua.text(
+      `(function()
+        local _, _, point = WowTest.ns.Core.fillProbability({
+          horizonHours = 24, phase = "steady", marketType = "commodity",
+          qty = 10, sold = 1, supply = 100, elapsedHours = 10, ahead = 0
+        })
+        return string.format("%.4f", point)
+      end)()`
+    );
+    // 0.001/hour over 100 units = 0.1 units/hour; ten units clear in 100h.
+    expect(Number(radar)).toBeCloseTo(1 - Math.exp(-0.24), 4);
+    expect(Number(fillProb)).toBeCloseTo(Number(radar), 4);
+  });
+
   it("keeps the plain plan when the caller offers no market inputs", () => {
     const lua = loadAddon();
     lua.exec(`WowTest.plainPlan = WowTest.ns.Core.sellPlan(

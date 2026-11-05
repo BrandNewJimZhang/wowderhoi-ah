@@ -99,8 +99,9 @@ export type CoreRow = {
   fillProb: number;
   fillProbLow: number;
   fillProbHigh: number;
-  // The hourly hazard behind fillProb. Absent on vendor rows, which have no
-  // market fill estimate. Charts anchor their curve to this value.
+  // The book share per hour behind fillProb -- the unit the calibration
+  // script measures, not a per-listing rate. Absent on vendor rows, which
+  // have no market fill estimate. Charts anchor their curve to this value.
   fillHazard?: number;
   fillBasis: FillBasis;
   confidence: Confidence;
