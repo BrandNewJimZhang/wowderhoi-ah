@@ -191,23 +191,30 @@ function Core.expireBreakeven(unitCost, deposit, quantity, feeRate)
   return (unitCost * quantity + (deposit or 0)) / (quantity * (1 - fee))
 end
 
--- Hazard rate priors per phase and market type, expressed as expected
--- sales per hour as a share of listed supply.
-local PRIOR_HAZARD = {
-  ignition = { commodity = 0.35, item = 0.08 },
-  wave = { commodity = 0.2, item = 0.06 },
-  settle = { commodity = 0.12, item = 0.04 },
-  steady = { commodity = 0.08, item = 0.03 }
-}
+-- Hazard rate priors per phase and market type live in the rule source
+-- (src/lib/market-rules.ts -> GeneratedRules.lua). The core reads the
+-- compiled copy and refuses to run without it: a second hard-coded table
+-- here would drift from the one the calibration script edits.
+local function fillPriorRules()
+  local compiled = WAH.RULES and WAH.RULES.fillPrior
+  if type(compiled) ~= "table" or type(compiled.hazard) ~= "table" then
+    error("WAH.RULES.fillPrior missing: run `npm run gen:lua-rules`")
+  end
+  return compiled
+end
 
--- P(fill within horizon). There are three evidence tiers, in order:
+-- P(fill within horizon). There are four evidence tiers, in order:
 --
---   own     Units the player actually sold. The only clean label the client
---           ever gives. Sell-through rate is units/hour; a listing of q
---           units therefore clears at hazard = rate / q (the queue model).
---   proxy   Public disappearances between scans. A bounded inference that
---           cannot separate sales from cancellations, so it is weaker.
---   prior   The phase x market-type table. Used when nothing is observable.
+--   own            Units the player actually sold. The only clean label the
+--                  client ever gives. Sell-through rate is units/hour; a
+--                  listing of q units clears at hazard = rate / q.
+--   proxy          Public disappearances between scans. A bounded inference
+--                  that cannot separate sales from cancellations.
+--   observed-zero  The book was observable and nothing left it. That is
+--                  evidence of a slow mover, not missing data: the prior is
+--                  shrunk by the exposure instead of replacing it.
+--   prior          Nothing observable (owners hidden). The phase x market
+--                  type table carries the estimate.
 --
 -- Fewer than three own sales is not evidence; the output is always an
 -- interval, never a point dressed up as precision.
@@ -221,6 +228,10 @@ function Core.fillProbability(input)
   local supply = input.supply or 0
   local floor = scanFloorHours()
   local elapsed = math.max(input.elapsedHours or floor, floor)
+  local prior = fillPriorRules()
+  local phasePriors = prior.hazard[phase] or prior.hazard.steady
+  local priorHazard = phasePriors[marketType] or phasePriors.commodity
+  local priorStrength = prior.priorStrengthHours or 500
   local hazard, basis, spread
   if ownSamples >= 3 and ownSold > 0 then
     -- Units per exposed hour: each sale contributes the time its listing
@@ -230,13 +241,21 @@ function Core.fillProbability(input)
     hazard = rate / quantity
     basis = "own"
     spread = ownSamples >= 6 and 0.2 or 0.35
+  elseif input.observable == true and supply > 0 then
+    -- Gamma-Poisson shrink: the prior contributes its weight in unit-hours,
+    -- the observation contributes units. A zero observation over a large
+    -- exposed book pulls the posterior far below the prior; a busy book
+    -- overrides it. Units: hazard [1/h], priorHazard * priorStrength
+    -- [units], priorStrength + supply * elapsed [units].
+    hazard = (priorHazard * priorStrength + sold) / (priorStrength + supply * elapsed)
+    basis = sold > 0 and "proxy" or "observed-zero"
+    spread = 0.5
   elseif sold > 0 and supply > 0 then
     hazard = sold / (supply * elapsed)
     basis = "proxy"
     spread = 0.5
   else
-    local phasePriors = PRIOR_HAZARD[phase] or PRIOR_HAZARD.steady
-    hazard = phasePriors[marketType] or phasePriors.commodity
+    hazard = priorHazard
     basis = "prior"
     spread = 0.5
   end
@@ -281,6 +300,36 @@ function Core.marketTypeFor(item)
   return "item"
 end
 
+-- Demand multiplier for a scheduled event window. Generated from
+-- src/data/events.json into WAH.EVENTS; an entry with startsAt 0 is a
+-- template and never matches. Only the ranking prior is scaled: an event
+-- must not relax a gate or invent a price.
+function Core.eventBoost(now, category, subCategory)
+  local boost = 1
+  for _, event in ipairs(WAH.EVENTS or {}) do
+    local startAt = (event.startsAt or 0) - (event.leadHours or 0) * 3600
+    local endAt = event.endsAt or event.startsAt or 0
+    if (event.startsAt or 0) > 0 and now >= startAt and now <= endAt then
+      local classMatch = false
+      for _, name in ipairs(event.classes or {}) do
+        if name == "*" or (category and name:lower() == category:lower()) then
+          classMatch = true
+          break
+        end
+      end
+      local subMatch = #(event.subClasses or {}) == 0
+      for _, name in ipairs(event.subClasses or {}) do
+        if name == "*" or (subCategory and name:lower() == subCategory:lower()) then
+          subMatch = true
+          break
+        end
+      end
+      if classMatch and subMatch then boost = boost * (event.weight or 1) end
+    end
+  end
+  return boost
+end
+
 -- Demand prior for the opening weeks. The table is generated from
 -- src/data/demand-bands.json; a missing match is neutral (1.0).
 function Core.demandFor(category, subCategory)
@@ -317,20 +366,35 @@ local function scoreFor(phase, row, supplyGrowth)
   if row.vendor then return math.huge end
   local fill = row.fillProb or 0
   local confidence = CONFIDENCE_WEIGHT[row.confidence] or 0.45
+  -- A book one seller controls can be repriced under the position; the
+  -- measure only exists when owners are visible.
+  local concentration = 1
+  if row.sellerHHI then
+    local weight = (WAH.RULES and WAH.RULES.concentration and WAH.RULES.concentration.weight) or 0.15
+    concentration = 1 - weight * row.sellerHHI
+  end
+  -- Net per minute of play. Ranking divides by the effort a trade costs;
+  -- an opportunity that takes several trips must clear a higher bar.
+  local timeCost = (WAH.RULES and WAH.RULES.timeCost) or {}
+  local minutes = (timeCost.overheadMinutes or 10) + (timeCost.buyMinutes or 2)
+  local base
   if phase == "ignition" then
     -- No history: rank by absolute net times the prior fill chance and
     -- the structural demand prior.
-    return row.netProfit * fill * (row.demandPrior or 1)
+    base = row.netProfit * fill * (row.demandPrior or 1)
   elseif phase == "wave" then
     -- Supply is still arriving; a fast-decaying edge is not an edge.
-    return row.netProfit * fill / math.max(supplyGrowth or 0.1, 0.1)
+    base = row.netProfit * fill / math.max(supplyGrowth or 0.1, 0.1)
+  else
+    base = row.netProfit * fill * confidence
   end
-  return row.netProfit * fill * confidence
+  return base * concentration * 10 / math.max(minutes, 1)
 end
 
 local FILL_BASIS_TEXT = {
   own = "成交率来自自己的成交",
   proxy = "成交率来自公共推断",
+  ["observed-zero"] = "两次扫描均无消失，成交率按零观测收缩",
   prior = "成交率来自阶段先验"
 }
 
@@ -350,6 +414,9 @@ local function reasonFor(row)
     if (row.highestBid or 0) > 0 then
       text = text .. string.format("（最高 %d 铜）", row.highestBid)
     end
+  end
+  if (row.sellerHHI or 0) >= 0.5 and row.topSellerShare then
+    text = text .. string.format("，卖家集中：最大占 %.0f%%", row.topSellerShare * 100)
   end
   if row.inferredSoldHigh and row.inferredSoldHigh > 0 then
     local low = row.inferredSoldLow or 0
@@ -450,6 +517,11 @@ function Core.allocate(rows, deployable, rules)
         row.allocNet = round(row.vendor
           and (row.sellP - unitPrice) * qty
           or Core.netIfSold(row.listP, qty, unitPrice, feeRate))
+        -- Effort-adjusted return: the same coins earned in one trip are
+        -- worth more than in four. Displayed by both cockpits.
+        local timeCost = (WAH.RULES and WAH.RULES.timeCost) or {}
+        local minutes = (timeCost.overheadMinutes or 10) + (timeCost.buyMinutes or 2)
+        row.netPerMinute = round(row.allocNet / math.max(minutes, 1))
         remaining = remaining - cost
       end
     end
@@ -531,7 +603,8 @@ function Core.evaluate(input)
       local listP = Core.listPrice(sellP or minPrice, vendorP, rules)
       -- Bids are the only direct demand signal the client exposes. During
       -- ignition they nudge the ranking; they never relax a gate.
-      local demandPrior = item.demandPrior or 1
+      local demandPrior = (item.demandPrior or 1)
+        * Core.eventBoost(now, item.itemClass, item.itemSubClass)
       if phase == "ignition" and (item.highestBid or 0) > 0 then
         demandPrior = demandPrior * 1.2
       end
@@ -614,7 +687,10 @@ function Core.evaluate(input)
             ownExposedHours = item.ownExposedHours or 0,
             sold = item.inferredSoldLow or 0,
             supply = item.quantity or 0,
-            elapsedHours = item.elapsedHours or scanFloor
+            elapsedHours = item.elapsedHours or scanFloor,
+            -- Observability decides between "nothing disappeared" and "we
+            -- could not see": hidden owners make the proxy unobservable.
+            observable = item.ownerVisible == true and not item.sellersInvisible
           })
           local confidence = Core.confidenceFor(samples, sellers, qty, phase)
           -- No fill evidence at all: history depth can still make the trade
@@ -642,6 +718,8 @@ function Core.evaluate(input)
             fillBasis = fillBasis,
             confidence = confidence,
             supplyGrowth = item.supplyGrowth or 0,
+            sellerHHI = item.sellerHHI,
+            topSellerShare = item.topSellerShare,
             bidOnly = item.bidOnly or 0,
             highestBid = item.highestBid or 0,
             inferredSoldLow = item.inferredSoldLow or 0,
@@ -686,8 +764,12 @@ function Core.evaluate(input)
           name = row.name,
           qty = row.allocQty,
           maxUnitPrice = row.sellP,
+          unitPrice = row.allocUnitPrice,
           expectedNet = row.allocNet,
           fillProb = 1,
+          fillBasis = "vendor",
+          allocQty = row.allocQty,
+          allocUnitPrice = row.allocUnitPrice,
           confidence = row.confidence,
           exit = "vendor",
           reason = row.reason
@@ -699,8 +781,12 @@ function Core.evaluate(input)
           name = row.name,
           qty = row.allocQty,
           maxUnitPrice = round(row.listP * (1 - feeRate)),
+          unitPrice = row.allocUnitPrice,
           expectedNet = row.allocNet,
           fillProb = row.fillProb,
+          fillBasis = row.fillBasis,
+          allocQty = row.allocQty,
+          allocUnitPrice = row.allocUnitPrice,
           confidence = row.confidence,
           exit = "auction",
           stop = {
@@ -723,9 +809,10 @@ function Core.evaluate(input)
         actions[#actions + 1] = {
           kind = "sell",
           itemId = itemId,
+          name = item and item.name,
           qty = position.qty,
           price = price,
-          netIfSold = round(Core.netIfSold(price, position.qty, position.cost / position.qty, feeRate)),
+          expectedNet = round(Core.netIfSold(price, position.qty, position.cost / position.qty, feeRate)),
           reason = "持仓卖出计划"
         }
       end
@@ -742,18 +829,90 @@ function Core.evaluate(input)
   }
 end
 
+-- Units listed at or below `price`, excluding the player's own listings
+-- (the scan already removed them).
+local function quantityAtOrBelow(tiers, price)
+  local total = 0
+  for _, tier in ipairs(tiers or {}) do
+    if tier.p and tier.p <= price then total = total + (tier.q or 0) end
+  end
+  return total
+end
+
+-- P(the listing clears) under a queue model. `hazard` is the market's
+-- sell-through share per hour (the same estimate the radar uses), `supply`
+-- is listed units and `ahead` is the queue in front of the listing. Units
+-- leave at hazard x supply per hour, so this listing waits for its own
+-- quantity plus everything cheaper than it to clear.
+local function fillWithin(hazard, supply, ahead, quantity, hours)
+  local rate = math.max(hazard or 0, 0) * math.max(supply or 0, 0)
+  if rate <= 0 then return 0 end
+  local queue = math.max(ahead or 0, 0) + math.max(quantity or 0, 1)
+  return 1 - math.exp(-rate * (hours or 0) / queue)
+end
+
 -- Sell-side plan for one item and one batch. The client computes the
 -- deposit (it owns the API); this function owns the fee and breakeven
 -- arithmetic so the panel and the terminal cannot disagree.
+--
+-- opts.deposits = { [12] = copper, [24] = copper, [48] = copper } together
+-- with opts.hazard/supply/tiers turns the plan into a price x duration
+-- search: the listing that maximises expected copper after fees and the
+-- risk of losing the deposit. Without those inputs the plan is the plain
+-- one-copper undercut at the caller's duration, and every existing caller
+-- keeps that behavior.
 function Core.sellPlan(item, position, rules, opts)
   local config = rules or (WAH.RULES) or {}
   local feeRate = config.feeRate or 0.05
   local sellP = item.sellP
   if not sellP then return nil end
-  local listP = Core.listPrice(sellP, item.vendorP, config)
   local quantity = position.qty or 1
   local unitCost = position.cost and position.cost / quantity or 0
-  local deposit = (opts and opts.deposit) or 0
+  local deposits = opts and opts.deposits
+  local basePrice = Core.listPrice(sellP, item.vendorP, config)
+  local deposit = (opts and opts.deposit) or (deposits and deposits[24]) or 0
+  local listP = basePrice
+  local duration = (opts and opts.duration) or 24
+  local fillProb, expectedNet, optimized
+  if deposits and opts.hazard and opts.hazard > 0 and opts.supply and opts.supply > 0 then
+    local candidates = {}
+    local seen = {}
+    local vendorFloor = (item.vendorP or 0) + 1
+    for _, price in ipairs({
+      basePrice,
+      math.floor(basePrice * 0.98),
+      math.floor(basePrice * 0.95)
+    }) do
+      if price >= vendorFloor and not seen[price] then
+        seen[price] = true
+        candidates[#candidates + 1] = price
+      end
+    end
+    local best
+    for _, candidate in ipairs(candidates) do
+      local ahead = quantityAtOrBelow(opts.tiers, candidate)
+      for _, hours in ipairs({ 12, 24, 48 }) do
+        local cost = deposits[hours] or 0
+        local probability = fillWithin(opts.hazard, opts.supply, ahead, quantity, hours)
+        local net = Core.netIfSold(candidate, quantity, unitCost, feeRate)
+        -- The deposit comes back on a sale and is lost on expiry, so the
+        -- risk term is deposit x P(expire), never deposit on every trade.
+        local value = net * probability - cost * (1 - probability)
+        if not best or value > best.value then
+          best = { value = value, expectedNet = value, price = candidate,
+            hours = hours, fillProb = probability, deposit = cost }
+        end
+      end
+    end
+    if best then
+      listP = best.price
+      duration = best.hours
+      deposit = best.deposit
+      fillProb = best.fillProb
+      expectedNet = round(best.expectedNet)
+      optimized = true
+    end
+  end
   -- An expired listing returns the goods, so the loss is the deposit plus
   -- the gap between cost and the guaranteed NPC floor, not the whole cost.
   local residual = (item.vendorP or 0) * quantity
@@ -762,6 +921,10 @@ function Core.sellPlan(item, position, rules, opts)
     quantity = quantity,
     sellP = sellP,
     listP = listP,
+    duration = duration,
+    optimized = optimized,
+    fillProb = fillProb,
+    expectedNet = expectedNet,
     unitCost = unitCost,
     deposit = deposit,
     netIfSold = round(Core.netIfSold(listP, quantity, unitCost, feeRate)),

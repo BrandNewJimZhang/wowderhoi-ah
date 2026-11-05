@@ -48,6 +48,35 @@ WAH.RULES = {
   fill = {
   ownSalesWindowDays = 7
 },
+  fillPrior = {
+  priorStrengthHours = 50,
+  hazard = {
+    ignition = {
+      commodity = 0.35,
+      item = 0.08
+    },
+    wave = {
+      commodity = 0.2,
+      item = 0.06
+    },
+    settle = {
+      commodity = 0.12,
+      item = 0.04
+    },
+    steady = {
+      commodity = 0.08,
+      item = 0.03
+    }
+  }
+},
+  concentration = {
+  weight = 0.15
+},
+  timeCost = {
+  overheadMinutes = 10,
+  buyMinutes = 2,
+  postMinutes = 2
+},
   portfolio = {
   kellyFraction = 0.25,
   minKellySamples = 10,
@@ -190,4 +219,14 @@ WAH.DEMAND = { {
   classes = { "*" },
   subClasses = { "*" },
   weight = 1
+} }
+
+WAH.EVENTS = { {
+  name = "示例：团本重置（周末）",
+  startsAt = 0,
+  endsAt = 0,
+  leadHours = 0,
+  weight = 1,
+  classes = {  },
+  subClasses = {  }
 } }

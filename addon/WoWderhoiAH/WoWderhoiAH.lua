@@ -166,6 +166,82 @@ WAH.freeBagSlots = freeBagSlots
 
 -- ============================== Capture ==============================
 
+-- ============================ Own listings ===========================
+--
+-- The market is a fact about everyone else. A scan that counts the
+-- player's own listings as supply makes the sell front self-referential:
+-- the sell page then advises undercutting yourself, the seller gate is
+-- satisfied by your own name, and your purchase disappears from the book
+-- and is booked as demand. Owners are compared without the realm suffix;
+-- when the client hides owners, the owned-auction list is the fallback.
+
+local ownOwner -- false caches "no name available"
+local function normalizeOwner(value)
+  if type(value) ~= "string" then return nil end
+  local name = value:match("^([^%-]+)") or value
+  if name == "" then return nil end
+  return name:lower()
+end
+
+local function ownOwnerKey()
+  if ownOwner == nil then
+    ownOwner = normalizeOwner(UnitName and UnitName("player")) or false
+  end
+  return ownOwner
+end
+
+-- itemId -> array of { buyout, count }. Refreshed when the auction house
+-- opens and when the client answers QueryOwnedAuctions.
+local ownedSnapshot = nil
+
+-- Reads whatever the client currently holds. The event handler calls this
+-- directly: QueryOwnedAuctions fires the event (synchronously on some
+-- builds), so a refresh that queried again would recurse.
+local function captureOwnedSnapshot()
+  if not (C_AuctionHouse.GetNumOwnedAuctions and C_AuctionHouse.GetOwnedAuctionInfo) then
+    ownedSnapshot = nil
+    return
+  end
+  local byItem = {}
+  local count = C_AuctionHouse.GetNumOwnedAuctions() or 0
+  for index = 1, count do
+    local info = C_AuctionHouse.GetOwnedAuctionInfo(index)
+    local itemId = info and info.itemKey and info.itemKey.itemID
+    if itemId then
+      local list = byItem[itemId]
+      if not list then
+        list = {}
+        byItem[itemId] = list
+      end
+      list[#list + 1] = {
+        buyout = info.buyoutAmount or info.bidAmount or 0,
+        count = info.quantity or 1
+      }
+    end
+  end
+  ownedSnapshot = byItem
+end
+
+local function refreshOwnedSnapshot()
+  if C_AuctionHouse.QueryOwnedAuctions then pcall(C_AuctionHouse.QueryOwnedAuctions) end
+  captureOwnedSnapshot()
+end
+
+-- One matched listing is consumed: three identical postings are three
+-- separate rows, not one row seen three times.
+local function consumeOwnedMatch(itemId, buyoutPrice, count)
+  local list = ownedSnapshot and ownedSnapshot[itemId]
+  if not list then return false end
+  for index = 1, #list do
+    local row = list[index]
+    if row.buyout == buyoutPrice and row.count == count then
+      table.remove(list, index)
+      return true
+    end
+  end
+  return false
+end
+
 local function newEntry(name, quality, cached)
   return {
     name = name,
@@ -184,6 +260,12 @@ local function newEntry(name, quality, cached)
     hasBuyout = false,
     sellers = {},
     sellerUnknown = false,
+    -- True when at least one row named its owner. Partial visibility keeps
+    -- sellerUnknown set, so the fill model treats the book as unobservable.
+    ownerVisible = false,
+    selfExclusion = nil, -- "owner" | "owned"; nil resolved to "none"/"owner"
+    selfQty = 0,
+    selfListings = 0,
     quantity = 0,
     numAuctions = 0,
     expiring = { soon = 0, mid = 0, late = 0 }
@@ -223,10 +305,33 @@ local function recordAuction(index)
     scanState.itemsById[itemId] = entry
   end
 
+  -- Own listings are not market supply. Identify by owner name first; when
+  -- the client hides owners, match the owned-auction list by item, buyout
+  -- and quantity. A listing that cannot be attributed stays in the book.
+  local selfListing = false
   if seller then
-    entry.sellers[seller] = true
+    entry.ownerVisible = true
+    if normalizeOwner(seller) == ownOwnerKey() then
+      selfListing = true
+      entry.selfExclusion = "owner"
+    end
   else
     entry.sellerUnknown = true
+    if buyoutPrice and buyoutPrice > 0 and count and count > 0
+      and consumeOwnedMatch(itemId, buyoutPrice, count) then
+      selfListing = true
+      entry.selfExclusion = entry.selfExclusion or "owned"
+    end
+  end
+
+  if selfListing then
+    entry.selfQty = entry.selfQty + (count or 0)
+    entry.selfListings = entry.selfListings + 1
+    return
+  end
+
+  if seller then
+    entry.sellers[seller] = true
   end
   if bidAmount and bidAmount > (entry.bidAmount or 0) then entry.bidAmount = bidAmount end
 
@@ -433,7 +538,7 @@ end
 -- Without visible owners the lower edge is zero: every disappearance could
 -- be a reprice. The core therefore falls back to its phase prior instead of
 -- pretending the upper edge is demand.
-local function inferFlow(entry, previous, elapsedSeconds)
+local function inferFlow(entry, previous, elapsedSeconds, ownBought)
   if not previous or elapsedSeconds <= 0 then return 0, 0, 0 end
   local high = 0
   local liveOwners = {}
@@ -461,6 +566,14 @@ local function inferFlow(entry, previous, elapsedSeconds)
     if quantity > remaining then low = low + (quantity - remaining) end
   end
   low = math.min(low, high)
+  -- The player's own purchases look exactly like demand in the book: units
+  -- leave a seller's row. They are not evidence that anyone else will buy,
+  -- so remove them from both edges before they reach the fill model.
+  local own = math.max(ownBought or 0, 0)
+  if own > 0 then
+    low = math.max(0, low - own)
+    high = math.max(0, high - own)
+  end
   local elapsedHours = math.max(elapsedSeconds / HOUR, SCAN_FLOOR_HOURS)
   local supplyGrowth = 0
   if previous.total and previous.total > 0 then
@@ -469,6 +582,29 @@ local function inferFlow(entry, previous, elapsedSeconds)
     supplyGrowth = ((entry.quantity - previous.total) + low) / (previous.total * elapsedHours)
   end
   return low, high, supplyGrowth
+end
+
+-- Seller concentration over the other players' supply. HHI is the standard
+-- measure: 1 means one seller holds the book, 1/n means an even split.
+local function sellerConcentration(entry)
+  local total = 0
+  local shares = {}
+  for seller, quantity in pairs(entry.ownerTotals) do
+    -- An empty seller key never reaches ownerTotals (hidden-owner rows are
+    -- not attributed), but guard anyway.
+    if seller ~= "" and quantity > 0 then
+      shares[#shares + 1] = quantity
+      total = total + quantity
+    end
+  end
+  if total <= 0 or #shares == 0 then return nil end
+  local hhi, top = 0, 0
+  for _, quantity in ipairs(shares) do
+    local share = quantity / total
+    hhi = hhi + share * share
+    if share > top then top = share end
+  end
+  return hhi, top
 end
 
 local function finishScan(totalAuctions)
@@ -483,6 +619,12 @@ local function finishScan(totalAuctions)
   local previous = scanState.capture
   local elapsedSeconds = previous and (nowTs - (previous.at or nowTs)) or 0
   local captureItems = {}
+  -- The journal is the only place a purchase is a fact. The flow inference
+  -- subtracts these units; see inferFlow.
+  local ownBuys = {}
+  if previous and previous.at and WAH.Ledger and WAH.Ledger.purchasesBetween then
+    ownBuys = WAH.Ledger.purchasesBetween(previous.at, nowTs)
+  end
 
   for itemId, entry in pairs(scanState.itemsById) do
     itemCount = itemCount + 1
@@ -502,7 +644,9 @@ local function finishScan(totalAuctions)
       local sellers = countSellers(entry)
       local sellersInvisible = entry.sellerUnknown
       if sellersInvisible then sellers = entry.numAuctions end
-      local soldLow, soldHigh, supplyGrowth = inferFlow(entry, previous and previous.items[itemId], elapsedSeconds)
+      local soldLow, soldHigh, supplyGrowth = inferFlow(
+        entry, previous and previous.items[itemId], elapsedSeconds, ownBuys[itemId])
+      local sellerHHI, topSellerShare = sellerConcentration(entry)
       items[itemId] = {
         name = entry.name,
         quality = entry.quality,
@@ -518,6 +662,15 @@ local function finishScan(totalAuctions)
         numAuctions = entry.numAuctions,
         sellers = sellers,
         sellersInvisible = sellersInvisible,
+        -- Owner visibility and the exclusion channel. "none" means owners
+        -- were hidden and the owned list did not identify the listings, so
+        -- the book may still contain them; the calibration ignores it.
+        ownerVisible = entry.ownerVisible,
+        selfExclusion = entry.selfExclusion or (entry.sellerUnknown and "none" or "owner"),
+        selfQty = entry.selfQty,
+        selfListings = entry.selfListings,
+        sellerHHI = sellerHHI,
+        topSellerShare = topSellerShare,
         bidOnly = entry.bidOnly,
         highestBid = math.floor((entry.bidAmount or 0) + 0.5),
         tiers = storedTiers,
@@ -544,6 +697,10 @@ local function finishScan(totalAuctions)
         numAuctions = 0,
         sellers = 0,
         sellersInvisible = entry.sellerUnknown,
+        ownerVisible = entry.ownerVisible,
+        selfExclusion = entry.selfExclusion or (entry.sellerUnknown and "none" or "owner"),
+        selfQty = entry.selfQty,
+        selfListings = entry.selfListings,
         bidOnly = entry.bidOnly,
         highestBid = math.floor((entry.bidAmount or 0) + 0.5),
         tiers = {},
@@ -565,6 +722,10 @@ local function finishScan(totalAuctions)
 
   WoWderhoiAH_ScanData = {
     dataVersion = WAH.PIPELINE_VERSION,
+    -- 2: the inferred flow excludes the player's own listings and purchases.
+    -- The terminal labels every snapshot with it so a calibration never
+    -- mixes pre-hygiene rows with clean ones.
+    observationVersion = 2,
     scannedAt = nowTs,
     server = GetRealmName(),
     faction = UnitFactionGroup("player"),
@@ -664,6 +825,10 @@ local function startScan()
     chatMessage(L.SCAN_ALREADY_RUNNING)
     return
   end
+  -- The owned list is the fallback for hidden owners, and it must reflect
+  -- the book as it is at scan start; a listing bought since the last query
+  -- would otherwise be matched against a stale list.
+  refreshOwnedSnapshot()
   scanState = {
     itemsById = {},
     processing = false,
@@ -698,6 +863,9 @@ frame:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
 frame:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_ADDED")
 frame:RegisterEvent("AUCTION_HOUSE_NEW_RESULTS_RECEIVED")
 frame:RegisterEvent("AUCTION_HOUSE_CLOSED")
+-- The owned-auction response is asynchronous; keep the fallback snapshot
+-- fresh whenever the client publishes one.
+frame:RegisterEvent("OWNED_AUCTIONS_UPDATED")
 
 local function markPlayerSearch()
   searchQuietUntil = time() + SEARCH_QUIET_SECONDS
@@ -706,6 +874,13 @@ end
 frame:SetScript("OnEvent", function(_, event, payload)
   if event == "AUCTION_HOUSE_SHOW" then
     WAH.ahOpen = true
+    refreshOwnedSnapshot()
+    return
+  end
+  if event == "OWNED_AUCTIONS_UPDATED" then
+    -- A scan in flight must keep the snapshot it started with; rebuilding
+    -- mid-scan would attribute rows against a list that moved underneath.
+    if not scanState then captureOwnedSnapshot() end
     return
   end
   if event == "AUCTION_HOUSE_CLOSED" then
@@ -953,6 +1128,71 @@ end
 SLASH_WOWDERHOIAHCAPTURE1 = "/wahcapture"
 SlashCmdList["WOWDERHOIAHCAPTURE"] = setCapture
 
+-- Sell-page price x duration search. On by default; off posts the plain
+-- one-copper undercut at the selected duration.
+-- Cross-character moves. The client's mail has no reliable "this is a
+-- transfer" signal (an attachment is an attachment), so the move is
+-- manual: record it on the sender with `out`, note the printed cost, and
+-- record it on the receiver with `in <unit cost>`. Recording it on one side
+-- only is worse than not recording it: the books would disagree.
+-- Vendor sales have no per-item client event (the sales UI reports a
+-- localized summary line, not a fact this addon can attribute). The plan
+-- is to record nothing automatically rather than guess; this command is
+-- the manual path the ledger actually uses.
+SLASH_WOWDERHOIAHCOST1 = "/wahcost"
+SlashCmdList["WOWDERHOIAHCOST"] = function(input)
+  local itemId, quantity, paid = (input or ""):match("^%s*(%d+)%s+(%d+)%s+(%d+)%s*$")
+  itemId, quantity, paid = tonumber(itemId), tonumber(quantity), tonumber(paid)
+  if not itemId or not quantity or quantity <= 0 or not paid then
+    chatMessage(L.COST_USAGE)
+    return
+  end
+  WAH.recordEvent({ k = "vendor", itemId = itemId, qty = quantity, paid = paid })
+  chatMessage(string.format(L.COST_RECORDED, quantity, itemId, WAH.coinString(paid)))
+end
+
+SLASH_WOWDERHOIAHTRANSFER1 = "/wahtransfer"
+SlashCmdList["WOWDERHOIAHTRANSFER"] = function(input)
+  local itemId, quantity, direction, unitCost = (input or "")
+    :match("^%s*(%d+)%s+(%d+)%s*(%a+)%s*(%d*)%s*$")
+  itemId, quantity = tonumber(itemId), tonumber(quantity)
+  if not itemId or not quantity or quantity <= 0
+    or (direction ~= "out" and direction ~= "in") then
+    chatMessage(L.TRANSFER_USAGE)
+    return
+  end
+  local ledger = WAH.Ledger and WAH.Ledger.current()
+  if direction == "out" then
+    local position = ledger and ledger.positions and ledger.positions[itemId]
+    local average = position and position.qty and position.qty > 0
+      and position.cost / position.qty or 0
+    if not position then
+      chatMessage(L.TRANSFER_NO_POSITION)
+      return
+    end
+    WAH.recordEvent({ k = "transfer_out", itemId = itemId, qty = quantity,
+      cost = math.floor(average * quantity + 0.5) })
+    chatMessage(string.format(L.TRANSFER_OUT, quantity, itemId, WAH.coinString(math.floor(average + 0.5))))
+  else
+    local unit = tonumber(unitCost) or 0
+    WAH.recordEvent({ k = "transfer_in", itemId = itemId, qty = quantity,
+      cost = unit * quantity })
+    chatMessage(string.format(L.TRANSFER_IN, quantity, itemId, WAH.coinString(unit)))
+  end
+end
+
+SLASH_WOWDERHOIAHPRICING1 = "/wahpricing"
+SlashCmdList["WOWDERHOIAHPRICING"] = function(input)
+  local state = (input or ""):lower():match("^%s*(%S*)%s*$")
+  if state ~= "" and state ~= "on" and state ~= "off" then
+    chatMessage(L.PRICING_USAGE)
+    return
+  end
+  local enabled = state ~= "off"
+  WAH.settings.pricing = enabled
+  chatMessage(string.format(L.PRICING_SET, enabled and "on" or "off"))
+end
+
 -- Assemble the decision core's input from the latest scan, the retained
 -- series, the journal-derived positions and the player's deployable
 -- capital. One builder, so the cockpit and the sell page cannot disagree
@@ -989,6 +1229,7 @@ function WAH.coreInput()
         name = entry.name,
         quality = entry.quality,
         itemClass = entry.itemClass,
+        itemSubClass = entry.itemSubClass,
         -- The scan's classification, not a re-derivation from a book that
         -- purchases have already thinned.
         marketType = entry.marketType,
@@ -999,6 +1240,9 @@ function WAH.coreInput()
         numAuctions = entry.numAuctions,
         sellers = entry.sellers,
         sellersInvisible = entry.sellersInvisible,
+        ownerVisible = entry.ownerVisible,
+        sellerHHI = entry.sellerHHI,
+        topSellerShare = entry.topSellerShare,
         bidOnly = entry.bidOnly,
         highestBid = entry.highestBid,
         tiers = entry.tiers,

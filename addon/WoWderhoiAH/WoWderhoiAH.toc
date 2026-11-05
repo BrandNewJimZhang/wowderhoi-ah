@@ -2,7 +2,7 @@
 ## Title: WoWderhoi AHelper
 ## Notes: Auction house scanner and price intelligence for WoW Forever.
 ## Author: Jim Zhang
-## Version: 0.5.0
+## Version: 0.6.0
 ## IconTexture: Interface\AddOns\WoWderhoiAH\logo.tga
 ## Category: Auctions
 ## Category-zhCN: 拍卖
