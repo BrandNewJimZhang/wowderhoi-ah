@@ -480,17 +480,27 @@ local function renderChart(itemId)
   local window = chartWindow or phaseWindow()
   local history = historyFor(itemId, ALL_HOURS)
   if not entry and not history then hideChart() return end
-  chart:ClearAllPoints()
   local auctionHouse = WAH.ahFrame and WAH.ahFrame()
   local tradePage = WAH.tradeFrame and WAH.tradeFrame()
+  -- Keep the frame where the player found it. A window/mode click happens
+  -- after the tooltip has already closed, so re-anchoring to the screen
+  -- centre then would make the chart jump out from under the pointer.
   if tradePage and tradePage:IsShown() then
+    chart:ClearAllPoints()
     chart:SetPoint("TOPLEFT", tradePage, "TOPRIGHT", 4, -12)
+    chart.wahAnchor = "trade"
   elseif auctionHouse and auctionHouse:IsShown() then
+    chart:ClearAllPoints()
     chart:SetPoint("TOPLEFT", auctionHouse, "TOPRIGHT", 4, -12)
+    chart.wahAnchor = "auction"
   elseif GameTooltip:IsShown() then
+    chart:ClearAllPoints()
     chart:SetPoint("TOPRIGHT", GameTooltip, "TOPLEFT", -4, 0)
-  else
+    chart.wahAnchor = "tooltip"
+  elseif chart.wahAnchor ~= "tooltip" then
+    chart:ClearAllPoints()
     chart:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    chart.wahAnchor = "center"
   end
   local name = getItemInfo(itemId) or ("item:" .. itemId)
   chart.title:SetText(name)

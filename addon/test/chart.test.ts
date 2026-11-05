@@ -186,6 +186,24 @@ describe("chart lifetime", () => {
     expect(lua.text("WoWderhoiAHChart:IsShown()")).toBe("false");
   });
 
+  it("keeps its spot when a button re-renders it after the tooltip closed", () => {
+    const lua = chartPage([9000, 10000, 11000]);
+    lua.exec("WowTest.fireEvent('AUCTION_HOUSE_CLOSED')");
+    lua.exec("GameTooltip:Show()");
+    lua.exec("WoWderhoiAH_UpdateChart(4338)");
+    expect(lua.eval("WoWderhoiAHChart._points.TOPRIGHT.to == GameTooltip")).toBe(true);
+    lua.exec("GameTooltip:Hide()");
+    lua.exec("WoWderhoiAHChart._scripts.OnEnter(WoWderhoiAHChart)");
+    lua.exec("WowTest.runTimers()");
+    lua.exec("WowTest.ns.setChartWindow(6)");
+    // The chart was opened beside the tooltip; re-rendering must not relink
+    // it to the middle of the screen now that the tooltip is gone, or the
+    // frame jumps away from the pointer that just clicked it.
+    expect(lua.eval("WoWderhoiAHChart._points.CENTER == nil")).toBe(true);
+    expect(lua.eval("WoWderhoiAHChart._points.TOPRIGHT.to == GameTooltip")).toBe(true);
+    expect(lua.text("WoWderhoiAHChart:IsShown()")).toBe("true");
+  });
+
   it("stays while the pointer is on it and a click re-renders it", () => {
     const lua = detached();
     lua.exec("GameTooltip:Hide()");
