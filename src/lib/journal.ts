@@ -95,7 +95,8 @@ function toNumber(value: unknown, fallback = 0): number {
 
 // Parses the WoWderhoiAH_Journal global into one book per character.
 // Unknown event kinds are kept for the replay to report, not dropped
-// silently: a corrupt journal must be visible on the review page.
+// silently: a corrupt journal must surface as a counted replay error in
+// the import response, which the watcher prints.
 export function parseJournal(raw: unknown): JournalBook[] {
   if (typeof raw !== "object" || raw === null) return [];
   const global = raw as Record<string, unknown>;

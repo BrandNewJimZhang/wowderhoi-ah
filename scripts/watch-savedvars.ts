@@ -62,6 +62,13 @@ async function importLatestScan() {
         ? `Journal for scan ${body.scannedAt} updated without a new scan: ${body.positions} positions, ${body.trades} trades.`
         : `Imported ${body.imported} items, ${body.positions} positions and ${body.trades} trades from scan ${body.scannedAt}.`
   );
+  // Replay errors mean the projected ledger is not the book the player sees:
+  // a truncated lot, a sale whose posting is missing, or an event kind the
+  // terminal does not understand. Counted by the route, printed here so the
+  // divergence is visible instead of silently written to the database.
+  if (typeof body.journalErrors === "number" && body.journalErrors > 0) {
+    console.warn(`Journal replay reported ${body.journalErrors} error(s); positions and P&L may not match the in-game ledger.`);
+  }
 }
 
 async function main() {
