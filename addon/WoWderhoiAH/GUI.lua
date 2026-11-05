@@ -105,7 +105,7 @@ local function appendTraderSection(tooltip)
   end
   if entry then
     if scanned then tooltip:AddLine(" ") end
-    local window = entry.windowHours or 168
+    local window = entry.windowHours
     tooltip:AddDoubleLine(string.format(L.TT_HISTORY_HEADER, window), "")
     tooltip:AddDoubleLine("  " .. L.TT_SELL_REF, coinString(entry.sellRef or 0))
     if scanned and scanned.sellP and entry.sellRef then
@@ -647,7 +647,7 @@ local function printPrice(itemId)
     lines[#lines + 1] = string.format(L.PRICE_P10, coinString(scanned.marketPrice or 0))
   end
   if entry then
-    local window = entry.windowHours or 168
+    local window = entry.windowHours
     lines[#lines + 1] = string.format(L.PRICE_SELL_REF, window, coinString(entry.sellRef or 0))
     if scanned and scanned.sellP and entry.sellRef and entry.sellRef > 0 then
       lines[#lines + 1] = string.format(L.PRICE_TREND,
