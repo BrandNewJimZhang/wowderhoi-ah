@@ -24,7 +24,9 @@
 
 - The unused `Core.weightedPercentile` helper.
 - Write-only journal fields (`source`, the mailbox fingerprint, the sold
-  event's `deposit`); the replay never read them.
+  event's `deposit`, the craft event's `recipeId`); the replay never read
+  them, and `recipeId` held the recipe spell id rather than the dataset id
+  it was named after.
 
 ## v0.5.0 — 2026-11-05
 

@@ -20,7 +20,6 @@ describe("craft capture", () => {
     record(lua, { k: "buy", itemId: 2320, qty: 10, cost: 500 });
     craft(lua, 1353, { itemID: 2302, quantity: 1 });
     expect(lua.number("WowTest.ns.Journal.count()")).toBe(3);
-    expect(lua.number("WowTest.ns.Journal.last('craft').recipeId")).toBe(1353);
     expect(lua.number("WowTest.ns.Ledger.positions()[2302].qty")).toBe(1);
     // 2 x 100 + 1 x 50 = 250, the consumed lots' book value.
     expect(lua.number("WowTest.ns.Ledger.positions()[2302].cost")).toBe(250);
@@ -36,13 +35,14 @@ describe("craft capture", () => {
     expect(lua.number("WowTest.ns.Ledger.positions()[2302].cost")).toBe(250);
   });
 
-  it("maps a recipe spell id to the dataset recipe id", () => {
+  it("resolves a recipe spell id through the client's recipe id", () => {
     const lua = loadAddon();
     record(lua, { k: "buy", itemId: 2318, qty: 10, cost: 1000 });
     record(lua, { k: "buy", itemId: 2320, qty: 10, cost: 500 });
     lua.exec("WowTest.recipeInfo[9001] = { recipeID = 1353 }");
     craft(lua, 9001, { itemID: 2302, quantity: 1 });
-    expect(lua.number("WowTest.ns.Journal.last('craft').recipeId")).toBe(9001);
+    // The spell id is not in the dataset; GetRecipeInfo names recipe 1353,
+    // whose materials price the product.
     expect(lua.number("WowTest.ns.Ledger.positions()[2302].cost")).toBe(250);
   });
 

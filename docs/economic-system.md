@@ -270,7 +270,7 @@ max_x (pᵀA − cᵀ) x   s.t. Bx ≤ b, x ≥ 0
 
 游戏内另有一份只含材料的编译表 `GeneratedRecipes.lua`（`npm run recipes:lua` 生成，
 约 154 KB）：`Craft.lua` 监听 `TRADE_SKILL_CRAFT_BEGIN` 与
-`TRADE_SKILL_ITEM_CRAFTED_RESULT`，把制造写成带 `recipeId` 与 `mats` 的 `craft` 事件。
+`TRADE_SKILL_ITEM_CRAFTED_RESULT`，把制造写成带产物、数量与 `mats` 的 `craft` 事件。
 配方 id 先按 spell id 查，再按 `C_TradeSkillUI.GetRecipeInfo().recipeID` 查，最后按
 “唯一产物”回退；都不中记 `craft_unmapped`，不写账本——宁可少记，不可把成本记到错配方上。
 

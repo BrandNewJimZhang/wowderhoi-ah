@@ -51,7 +51,6 @@ local function recordCraft(data)
   end
   WAH.recordEvent({
     k = "craft",
-    recipeId = Craft.lastRecipe,
     itemId = data.itemID,
     qty = quantity,
     mats = mats
