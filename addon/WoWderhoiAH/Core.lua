@@ -311,12 +311,14 @@ function Core.fillProbability(input)
   return low, high, point, basis, hazard
 end
 
--- A book is observable only when every row named its owner. A partially
--- hidden book reports an empty lower edge by construction, which is missing
--- data, not evidence that nothing sold; the radar and the sell planner must
--- make the same call.
+-- A book is observable only when every row named its owner AND the scan had
+-- a previous capture of this item to diff against. A partially hidden book
+-- reports an empty lower edge by construction, and so does an item that was
+-- just listed; both are missing data, not evidence that nothing sold. The
+-- radar and the sell planner must make the same call.
 function Core.isObservable(item)
   return item ~= nil and item.ownerVisible == true and not item.sellersInvisible
+    and item.flowObserved ~= false
 end
 
 function Core.phaseFor(ageHours, breadth, boundaries)

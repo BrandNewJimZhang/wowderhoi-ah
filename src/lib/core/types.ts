@@ -34,6 +34,9 @@ export type CoreMarketItem = {
   tiers?: Tier[];
   inferredSoldLow?: number;
   inferredSoldHigh?: number;
+  // False when the scan had no previous capture of the item; Core.isObservable
+  // then treats the zero interval as missing data.
+  flowObserved?: boolean;
   supplyGrowth?: number;
   elapsedHours?: number;
   ownSold?: number;

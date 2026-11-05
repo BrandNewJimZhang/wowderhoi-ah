@@ -36,6 +36,9 @@ export type MarketSignal = {
   highestBid: number; // highest current bid among bid-only listings, copper
   inferredSoldLow: number; // lost from an owner group: sales + cancels
   inferredSoldHigh: number; // lost from a price key: also repricing
+  // False when the scan had no previous capture of the item: the zero
+  // interval is missing data, so it must not make the book "observed".
+  flowObserved: boolean;
   supplyGrowth: number; // fraction per hour
   vendorPrice: number; // NPC sell price, copper; 0 = unsellable
   // True when the item had no priced listing in the newest scan generation:
@@ -107,6 +110,9 @@ export function buildMarketSignal(
     highestBid: latest.highestBid ?? 0,
     inferredSoldLow: latest.soldProxyLow ?? 0,
     inferredSoldHigh: Math.max(latest.soldProxyHigh ?? 0, latest.soldProxyLow ?? 0),
+    // Rows imported before the flag existed were produced under the
+    // observed-by-default behaviour, so only an explicit false disqualifies.
+    flowObserved: latest.flowObserved !== false,
     supplyGrowth: latest.supplyGrowth ?? 0,
     vendorPrice: item.vendorPrice,
     stale: latest.timestamp.getTime() < (options?.currentAt ?? latest.timestamp).getTime(),

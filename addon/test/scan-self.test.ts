@@ -62,6 +62,28 @@ describe("own listings are excluded from the book", () => {
   });
 });
 
+describe("a disappearance needs a baseline to mean anything", () => {
+  it("marks the first scan as flow-unobserved instead of zero demand", () => {
+    // With no previous capture there was nothing to disappear from. The
+    // empty interval is missing data, and the core must not shrink the
+    // fill estimate to an observed zero because of it.
+    const lua = loadAddon();
+    lua.runScan([linen()]);
+    expect(lua.eval("WoWderhoiAH_ScanData.items[2589].flowObserved")).toBe(false);
+  });
+
+  it("distinguishes a continuous item from one that just appeared", () => {
+    const lua = loadAddon();
+    lua.runScan([linen()]);
+    lua.advance(900);
+    lua.runScan([linen(), linen({ itemId: 2592 })]);
+    expect(lua.eval("WoWderhoiAH_ScanData.items[2589].flowObserved")).toBe(true);
+    // The second item was listed between the scans: its zero disappearance
+    // says nothing about how fast it sells.
+    expect(lua.eval("WoWderhoiAH_ScanData.items[2592].flowObserved")).toBe(false);
+  });
+});
+
 describe("own purchases are not public demand", () => {
   it("subtracts the units the journal booked as buys", () => {
     const lua = loadAddon();

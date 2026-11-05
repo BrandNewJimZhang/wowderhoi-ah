@@ -40,6 +40,11 @@ export type AddonScanItem = {
   highestBid: number; // highest current bid among bid-only listings, copper
   inferredSoldLow: number; // units that left an owner across scans (sales + cancels)
   inferredSoldHigh: number; // units that left a price key (also repricing)
+  // False when the scan had no previous capture of this item: the zero
+  // disappearance is missing data, not an observed zero. Payloads written
+  // before the flag existed default to true, the behaviour they were
+  // imported under.
+  flowObserved: boolean;
   supplyGrowth: number; // fraction per hour
   vendorPrice: number; // NPC sell price in copper; 0 = unsellable to vendors
   tiers: AddonTier[]; // top of the price ladder, ascending
@@ -334,6 +339,7 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
       highestBid: optionalNonNegative(entry.highestBid, "highestBid", key),
       inferredSoldLow,
       inferredSoldHigh,
+      flowObserved: priced ? entry.flowObserved !== false : false,
       supplyGrowth: optionalFinite(entry.supplyGrowth, "supplyGrowth", key),
       vendorPrice: optionalNonNegative(entry.vendorP, "vendorP", key),
       tiers: priced ? normalizeTiers(entry.tiers, key, { p: minPrice, q: quantity }) : [],

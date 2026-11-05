@@ -91,6 +91,20 @@ describe("fill evidence hierarchy", () => {
     expect(1 - Math.exp(-result.hazard * 24)).toBeCloseTo(result.point, 4);
   });
 
+  it("does not call a book observable without a previous capture to diff", () => {
+    // Owner visibility alone is not enough: if the scan had no baseline,
+    // nothing could have disappeared, so zero movement is missing data.
+    const lua = loadAddon();
+    const text = lua.text(
+      `(function()
+        local fresh = WowTest.ns.Core.isObservable({ ownerVisible = true, sellersInvisible = false, flowObserved = false })
+        local based = WowTest.ns.Core.isObservable({ ownerVisible = true, sellersInvisible = false })
+        return tostring(fresh) .. "|" .. tostring(based)
+      end)()`
+    );
+    expect(text).toBe("false|true");
+  });
+
   it("treats an observed zero as evidence, not as missing data", () => {
     // A big observable book with no disappearances: the prior must be
     // shrunk toward zero, not replaced by itself.

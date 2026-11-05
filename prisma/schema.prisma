@@ -87,6 +87,11 @@ model AuctionSnapshot {
   highestBid       Int      @default(0) @map("highest_bid")
   soldProxyLow     Int      @default(0) @map("sold_proxy_low") // left an owner: sales + cancels
   soldProxyHigh    Int      @default(0) @map("sold_proxy_high") // left a price key: also repricing
+  // False when the scan had no previous capture of this item (first scan
+  // after an upgrade, or the item was just listed): the zero interval is
+  // missing data, not an observed zero. True for rows imported before the
+  // column existed -- that is the behaviour they were imported under.
+  flowObserved     Boolean  @default(true) @map("flow_observed")
   supplyGrowth     Float    @default(0) @map("supply_growth")
   topTiers         Json?    @map("top_tiers")
   expiring         Json?    @map("expiring")

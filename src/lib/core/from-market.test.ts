@@ -62,6 +62,7 @@ function signal(itemId: number): MarketSignal {
     highestBid: 0,
     inferredSoldLow: 0,
     inferredSoldHigh: 0,
+    flowObserved: true,
     supplyGrowth: 0,
     vendorPrice: 0,
     stale: false,

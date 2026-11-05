@@ -21,6 +21,7 @@ function signal(partial: Partial<MarketSignal> & Pick<MarketSignal, "itemId" | "
     highestBid: 0,
     inferredSoldLow: 0,
     inferredSoldHigh: 0,
+    flowObserved: true,
     supplyGrowth: 0,
     vendorPrice: 0,
     stale: false,

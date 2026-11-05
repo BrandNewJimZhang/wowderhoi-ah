@@ -254,7 +254,13 @@ P(fill ≤ T) = 1 − exp(−h · supply · T / (ahead + qty))
 | `own` | 自己的成交 ≥ 3 笔 | `(ownSold / ownExposedHours) / supply` | 唯一干净标签；暴露时间按每笔挂单累计 |
 | `proxy` | 可观测且有公共推断消失 | `(h₀·P + sold) / (P + supply · elapsed)` | 用区间下沿；上沿含换价重挂，不能当成交 |
 | `observed-zero` | 可观测、供给非零、消失为零 | 同上，`sold = 0` | **零观测是证据**：慢物品的后验应被压低，不是回退到先验 |
-| `prior` | 观测不可用（owner 隐藏） | 阶段 × 市场类型基线 | 开服冷启动的结构先验 |
+| `prior` | 观测不可用 | 阶段 × 市场类型基线 | 开服冷启动的结构先验 |
+
+“可观测”有两个条件，缺一不可：owner 可见（`ownerVisible = true` 且
+`sellersInvisible = false`），并且**这次扫描有这个物品的上一轮 capture**
+（`flowObserved = true`）。首次扫描、升级后第一轮、以及两次扫描之间才被上架的物品都没有
+基线，消失区间为 0 是缺失数据而不是零观测——否则每一次首扫都会把整市场的成交率收缩到
+接近零，校准也会把这些假零当成样本。
 
 没有 `supply` 时不存在队列，份额退化为直接作用于挂单本身
 （`1 − exp(−h · T)`），这是同一数字的保守读法，只用于拿不到盘口规模的调用方。
@@ -262,9 +268,10 @@ P(fill ≤ T) = 1 − exp(−h · supply · T / (ahead + qty))
 `h₀` 与先验强度 `P`（默认 50 单位·小时）来自 `src/lib/market-rules.ts` 的
 `fillPrior`，编译进 `WAH.RULES.fillPrior`；核心不再自带一份数字。`proxy` 与
 `observed-zero` 用 Gamma–Poisson 收缩：盘口越大、观测越久，先验权重越小。
-`npm run calibrate` 只读当前 `OBSERVATION_VERSION` 及以上、且卖家完全可见
-（`sellersInvisible = false`）的快照：owner 隐藏时下沿恒为 0，那是缺失数据，不是零成交，
-学进去会把先验压向零。阶段与宽度按**那次扫描的整个市场**判定（每个时间戳的在售种类数、
+`npm run calibrate` 只读当前 `OBSERVATION_VERSION` 及以上、卖家完全可见
+（`sellersInvisible = false`）且 `flowObserved = true` 的快照：owner 隐藏或没有上一轮基线时
+下沿恒为 0，那是缺失数据，不是零成交，学进去会把先验压向零。该标记出现之前导入的行按
+导入时的行为视为已观测（`flowObserved = true`）。阶段与宽度按**那次扫描的整个市场**判定（每个时间戳的在售种类数、
 市场最早扫描或开服锚点），不是按单个物品的首次出现。输出按阶段 × 市场类型的中位数与
 四分位；样本不足 500 条时只打印“样本不足”，脚本从不改规则文件——人审后改 `fillPrior`
 再重新生成。

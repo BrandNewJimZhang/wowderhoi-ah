@@ -24,6 +24,7 @@ function scanItem(partial: Partial<AddonScanItem> & Pick<AddonScanItem, "itemId"
     highestBid: 0,
     inferredSoldLow: 0,
     inferredSoldHigh: 0,
+    flowObserved: true,
     supplyGrowth: 0,
     tiers: [{ p: 90, q: 5 }],
     expiring: { soon: 0, mid: 0, late: 0 },

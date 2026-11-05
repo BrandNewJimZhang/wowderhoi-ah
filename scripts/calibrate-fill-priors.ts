@@ -35,7 +35,8 @@ async function main() {
           soldProxyLow: true,
           observationVersion: true,
           priced: true,
-          sellersInvisible: true
+          sellersInvisible: true,
+          flowObserved: true
         },
         orderBy: { timestamp: "asc" }
       }),

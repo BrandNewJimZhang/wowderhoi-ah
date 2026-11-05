@@ -26,6 +26,7 @@ WoWderhoiAH_ScanData = {
 \t\t\t["numAuctions"] = 12,
 \t\t\t["sellers"] = 7,
 \t\t\t["ownerVisible"] = true,
+\t\t\t["flowObserved"] = false,
 \t\t\t["sellerHHI"] = 0.4,
 \t\t\t["topSellerShare"] = 0.6,
 \t\t\t["bidOnly"] = 0,
@@ -156,6 +157,15 @@ describe("normalizeAddonScan", () => {
     expect(normalizeAddonScan(raw).bagSlots).toBe(0);
     raw.bagSlots = -1;
     expect(() => normalizeAddonScan(raw)).toThrow(/bagSlots/);
+  });
+
+  it("keeps the flow-baseline flag, defaulting old payloads to observed", () => {
+    // A scan without a previous capture reports a zero interval that is
+    // missing data, not an observed zero. Payloads written before the flag
+    // existed keep the behaviour they were imported under.
+    const scan = normalizeAddonScan(rawScan());
+    expect(scan.items.find((item) => item.itemId === 2770)?.flowObserved).toBe(false);
+    expect(scan.items.find((item) => item.itemId === 13468)?.flowObserved).toBe(true);
   });
 
   it("preserves a fractional unit price in the ladder", () => {

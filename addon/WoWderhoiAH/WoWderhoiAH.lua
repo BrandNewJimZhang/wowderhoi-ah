@@ -644,8 +644,15 @@ local function finishScan(totalAuctions)
       local sellers = countSellers(entry)
       local sellersInvisible = entry.sellerUnknown
       if sellersInvisible then sellers = entry.numAuctions end
+      -- A disappearance needs a baseline. Without a previous capture of this
+      -- item there was nothing to disappear from, so a zero interval is
+      -- missing data, not an observed zero: the core would otherwise shrink
+      -- the fill estimate toward zero for every first scan and every item
+      -- listed between scans, and the calibration would learn those zeros.
+      local previousItem = previous and previous.items[itemId]
+      local flowObserved = previousItem ~= nil and elapsedSeconds > 0
       local soldLow, soldHigh, supplyGrowth = inferFlow(
-        entry, previous and previous.items[itemId], elapsedSeconds, ownBuys[itemId])
+        entry, previousItem, elapsedSeconds, ownBuys[itemId])
       local sellerHHI, topSellerShare = sellerConcentration(entry)
       items[itemId] = {
         name = entry.name,
@@ -677,6 +684,7 @@ local function finishScan(totalAuctions)
         expiring = entry.expiring,
         inferredSoldLow = soldLow,
         inferredSoldHigh = soldHigh,
+        flowObserved = flowObserved,
         supplyGrowth = supplyGrowth,
         elapsedHours = math.max(elapsedSeconds / HOUR, SCAN_FLOOR_HOURS)
       }
@@ -1247,6 +1255,9 @@ function WAH.coreInput()
         tiers = entry.tiers,
         inferredSoldLow = entry.inferredSoldLow,
         inferredSoldHigh = entry.inferredSoldHigh,
+        -- False when this scan had no baseline for the item; the core treats
+        -- the zero interval as missing data instead of an observed zero.
+        flowObserved = entry.flowObserved,
         supplyGrowth = entry.supplyGrowth,
         elapsedHours = entry.elapsedHours,
         ownSold = own and own.qty or 0,

@@ -22,6 +22,9 @@ export type CalibrationRow = {
   observationVersion: number | null;
   priced: boolean;
   sellersInvisible: boolean;
+  // Absent on rows imported before the flag existed; only an explicit false
+  // (no previous capture of this item) disqualifies the row.
+  flowObserved?: boolean;
 };
 
 type CalibrationScope = {
@@ -64,6 +67,7 @@ export function calibrationObservations(
   for (const row of rows) {
     if (!row.priced || (row.observationVersion ?? 0) < OBSERVATION_VERSION || row.supply <= 0) continue;
     if (row.sellersInvisible) continue;
+    if (row.flowObserved === false) continue;
     if (row.marketType !== "commodity" && row.marketType !== "item") continue;
     const list = byItem.get(row.itemId) ?? [];
     list.push(row);

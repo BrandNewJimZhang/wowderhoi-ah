@@ -87,6 +87,7 @@ export function buildCoreInput(
       bidOnly: signal.bidOnlyCount,
       inferredSoldLow: signal.inferredSoldLow,
       inferredSoldHigh: signal.inferredSoldHigh,
+      flowObserved: signal.flowObserved,
       supplyGrowth: signal.supplyGrowth,
       elapsedHours,
       ownSold: own?.qty ?? 0,

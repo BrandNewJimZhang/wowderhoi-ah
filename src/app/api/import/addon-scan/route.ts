@@ -176,6 +176,7 @@ export async function POST(request: Request) {
         highestBid: item.highestBid,
         soldProxyLow: item.inferredSoldLow,
         soldProxyHigh: item.inferredSoldHigh,
+        flowObserved: item.flowObserved,
         supplyGrowth: item.supplyGrowth,
         topTiers: item.tiers,
         expiring: item.expiring

@@ -23,6 +23,9 @@ export type MarketSnapshot = {
   highestBid?: number;
   soldProxyLow?: number;
   soldProxyHigh?: number;
+  // False when the scan had no previous capture of this item, so the zero
+  // interval is missing data rather than an observed zero.
+  flowObserved?: boolean;
   supplyGrowth?: number;
   topTiers?: unknown;
 };

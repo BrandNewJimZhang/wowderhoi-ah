@@ -23,6 +23,7 @@ function signal(overrides: Partial<MarketSignal> & { itemId: number }): MarketSi
     highestBid: 0,
     inferredSoldLow: 0,
     inferredSoldHigh: 0,
+    flowObserved: true,
     supplyGrowth: 0,
     vendorPrice: 0,
     stale: false,

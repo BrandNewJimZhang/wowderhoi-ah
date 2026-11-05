@@ -53,6 +53,25 @@ describe("fill-prior calibration", () => {
     expect(observations).toHaveLength(0);
   });
 
+  it("never learns from a scan that had no previous capture to diff", () => {
+    // The first scan after an upgrade, or an item that was just listed,
+    // reports zeros because there was no baseline -- not because nothing
+    // sold. A whole market of such zeros would teach the prior to be zero.
+    // Rows imported before the flag existed carry undefined and stay usable.
+    const observations = calibrationObservations(
+      [
+        row({ itemId: 1, timestamp: at(0) }),
+        row({ itemId: 1, timestamp: at(15), soldLow: 10 }),
+        row({ itemId: 2, timestamp: at(0), flowObserved: false }),
+        row({ itemId: 2, timestamp: at(15), flowObserved: false }),
+        row({ itemId: 3, timestamp: at(0) }),
+        row({ itemId: 3, timestamp: at(15), soldLow: 4 })
+      ],
+      scope({ marketOpenedAt: null })
+    );
+    expect(observations.map((observation) => observation.itemId).sort()).toEqual([1, 3]);
+  });
+
   it("never learns from a book whose owners were hidden", () => {
     // A hidden-owner book reports a zero lower edge by construction. Feeding
     // that into the prior would teach the model that nothing ever sells.
