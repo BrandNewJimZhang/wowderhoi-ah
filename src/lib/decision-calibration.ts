@@ -28,14 +28,19 @@ export type CalibrationBucket = {
   enoughSamples: boolean;
 };
 
-export const CALIBRATION_BUCKET_MIN_SAMPLES = 10;
+const CALIBRATION_BUCKET_MIN_SAMPLES = 10;
+
+// How long after a decision a sale still counts as its outcome. The review
+// page queries decisions over the same window, so the table never mixes a
+// 72-hour comparison with a three-scan decision set.
+export const CALIBRATION_WINDOW_HOURS = 72;
 
 const BOUNDS = [0, 0.2, 0.4, 0.6, 0.8, 1.0001];
 
 export function bucketPredictions(
   decisions: CalibrationDecision[],
   trades: CalibrationTrade[],
-  windowHours = 72
+  windowHours = CALIBRATION_WINDOW_HOURS
 ): CalibrationBucket[] {
   const confirmed = trades.filter((trade) => !trade.inferred);
   const windowMs = windowHours * 60 * 60 * 1000;

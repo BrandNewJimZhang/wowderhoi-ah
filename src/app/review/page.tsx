@@ -6,7 +6,7 @@ import { getMarketSignals } from "@/lib/market-signals";
 import { getPositions } from "@/lib/repositories";
 import { alphaDecay, evaluatePolicy } from "@/lib/off-policy";
 import { designExperiment, experimentResults } from "@/lib/experiments";
-import { bucketPredictions } from "@/lib/decision-calibration";
+import { bucketPredictions, CALIBRATION_WINDOW_HOURS } from "@/lib/decision-calibration";
 import { phaseLabels } from "@/lib/phase";
 import { summarizeTrades } from "@/lib/trade-summary";
 import { Coins } from "@/components/coins";
@@ -14,13 +14,36 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 
 export const dynamic = "force-dynamic";
 
+const fillBasisLabels: Record<string, string> = {
+  own: "自有成交",
+  proxy: "公共推断",
+  "observed-zero": "观测为零",
+  prior: "阶段先验",
+  vendor: "NPC 收购"
+};
+
 export default async function ReviewPage() {
   const bundle = await getMarketSignals();
   const scope = bundle.scope;
   const marketWhere = scope ? { marketId: scope.id } : {};
-  const [trades, decisions, positions] = await Promise.all([
+  // The prediction table compares every decision made in the calibration
+  // window; ordering by time and taking a handful of rows turned the sample
+  // into the newest two or three scans.
+  const calibrationSince = new Date(new Date().getTime() - CALIBRATION_WINDOW_HOURS * 60 * 60 * 1000);
+  const [trades, decisions, calibrationTrades, positions] = await Promise.all([
     prisma.trade.findMany({ where: marketWhere, orderBy: { realizedAt: "desc" }, take: 100 }),
-    prisma.decision.findMany({ where: marketWhere, orderBy: { at: "desc" }, take: 30 }),
+    prisma.decision.findMany({
+      where: { ...marketWhere, at: { gte: calibrationSince } },
+      orderBy: { at: "desc" },
+      take: 2000
+    }),
+    // The outcome set is every confirmed sale inside the calibration window,
+    // not the newest 100 rows the summary card shows: a busy commodity day
+    // would otherwise drop the fills of older decisions.
+    prisma.trade.findMany({
+      where: { ...marketWhere, realizedAt: { gte: calibrationSince } },
+      select: { itemId: true, realizedAt: true, inferred: true }
+    }),
     getPositions(scope)
   ]);
   const { signals, phase } = bundle;
@@ -53,7 +76,7 @@ export default async function ReviewPage() {
       at: decision.at,
       fillProb: decision.fillProb
     })),
-    trades.map((trade) => ({ itemId: trade.itemId, realizedAt: trade.realizedAt, inferred: trade.inferred }))
+    calibrationTrades
   );
   // Largest committed position, not whatever order the database returned:
   // the experiment section must name the same item on every render.
@@ -161,6 +184,15 @@ export default async function ReviewPage() {
                     {" "}{nameById.get(decision.itemId ?? 0) ?? `#${decision.itemId}`}
                   </span>
                   <span className="text-terminal-muted">{decision.at.toISOString().slice(5, 16).replace("T", " ")} · {phaseLabels[decision.phase as keyof typeof phaseLabels] ?? decision.phase}</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-3 text-[11px] text-terminal-muted">
+                  {decision.expectedNet !== null && <span>预期 <Coins copper={decision.expectedNet} /></span>}
+                  {decision.fillProb !== null && (
+                    <span>成交率 {(decision.fillProb * 100).toFixed(0)}%（{fillBasisLabels[decision.fillBasis ?? "prior"] ?? decision.fillBasis}）</span>
+                  )}
+                  {decision.allocQty !== null && decision.allocUnitPrice !== null && (
+                    <span>{decision.allocQty} 件 @ <Coins copper={decision.allocUnitPrice} /></span>
+                  )}
                 </div>
                 <div className="text-[11px] text-terminal-muted">{decision.reason}</div>
               </div>
