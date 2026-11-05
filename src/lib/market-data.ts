@@ -29,3 +29,15 @@ export type MarketHistory = Omit<Item, "id" | "createdAt" | "updatedAt"> & {
   dailySummaries: Array<Omit<DailySummary, "id" | "itemId" | "item" | "marketId">>;
 };
 
+// Bids are a per-scan demand signal. A demand-only row from an older scan
+// describes a book that is gone; showing it next to today's prices would
+// claim demand the market no longer has, so only the newest generation
+// qualifies.
+export function currentScanDemand<T extends { timestamp: Date }>(
+  row: T | null | undefined,
+  latestAt: Date | null
+): T | null {
+  if (!row || !latestAt) return null;
+  return row.timestamp.getTime() === latestAt.getTime() ? row : null;
+}
+

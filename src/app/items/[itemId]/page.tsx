@@ -11,6 +11,7 @@ import { describeFreshness } from "@/lib/freshness";
 import { SCAN_INTERVAL_MINUTES } from "@/lib/market-rules";
 import { bandFromInterval } from "@/lib/fill";
 import { buildTimeSeries } from "@/lib/chart-series";
+import { currentScanDemand } from "@/lib/market-data";
 import { CandlestickChart, FillProbabilityChart, OrderBookChart, TimeSeriesChart, type BookTier } from "@/components/charts";
 import { AlertRulePanel } from "@/components/trader-panels";
 import { WatchStar } from "@/components/watch-star";
@@ -37,7 +38,9 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
     ?? (latest ? buildMarketSignal(item, now, { phase: bundle.phase, index: bundle.priceIndex, currentAt: bundle.latestSnapshotAt ?? latest.timestamp }) : null);
   const seasonality = buildWeekdaySeasonality(item.dailySummaries);
   const weekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-  const demand = item.demandSnapshot;
+  // Bids only describe the book they were captured with: a demand row from
+  // an older scan must not be shown beside the current prices.
+  const demand = currentScanDemand(item.demandSnapshot, bundle.latestSnapshotAt);
   const expiring = latest?.expiring && typeof latest.expiring === "object"
     ? latest.expiring as { soon?: number; mid?: number; late?: number }
     : null;
@@ -187,7 +190,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
               )}
               {demand && (
                 <div className="border-t border-terminal-border pt-3">
-                  <div className="text-xs uppercase text-terminal-muted">竞价需求</div>
+                  <div className="text-xs uppercase text-terminal-muted">竞价需求（本次扫描）</div>
                   <div className="mt-1 grid grid-cols-2 gap-3 text-xs">
                     <div><div className="text-terminal-muted">竞价笔数</div><div>{demand.bidOnlyCount ?? 0}</div></div>
                     <div><div className="text-terminal-muted">最高竞价</div><div><Coins copper={demand.highestBid ?? 0} /></div></div>
