@@ -49,6 +49,21 @@ describe("demand calendar", () => {
     }], "Trade Goods", "Cloth")).toBe(1);
   });
 
+  it("treats an empty class list as no restriction, like subClasses", () => {
+    // An event scheduled with only subClasses must not silently match
+    // nothing: an empty restriction list means "all", the same rule the
+    // subcategory list already follows.
+    expect(boostWith((now) => [{
+      name: "Subcategory only",
+      startsAt: now,
+      endsAt: now + 3600,
+      leadHours: 0,
+      weight: 1.4,
+      classes: [],
+      subClasses: ["Cloth"]
+    }], "Trade Goods", "Cloth")).toBeCloseTo(1.4, 3);
+  });
+
   it("requires the subcategory to match when the event names one", () => {
     const event = (now: number) => [{
       name: "Enchanting",

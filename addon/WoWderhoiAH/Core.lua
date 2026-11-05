@@ -356,26 +356,24 @@ end
 -- template and never matches. Only the ranking prior is scaled: an event
 -- must not relax a gate or invent a price.
 function Core.eventBoost(now, category, subCategory)
+  local function matchesAny(names, value)
+    local list = names or {}
+    -- An empty restriction list means "all", not "none": an event that only
+    -- narrows the subcategory must still apply. The two lists used to
+    -- disagree here, so such an entry silently matched nothing.
+    if #list == 0 then return true end
+    for _, name in ipairs(list) do
+      if name == "*" or (value and name:lower() == value:lower()) then return true end
+    end
+    return false
+  end
   local boost = 1
   for _, event in ipairs(WAH.EVENTS or {}) do
     local startAt = (event.startsAt or 0) - (event.leadHours or 0) * 3600
     local endAt = event.endsAt or event.startsAt or 0
-    if (event.startsAt or 0) > 0 and now >= startAt and now <= endAt then
-      local classMatch = false
-      for _, name in ipairs(event.classes or {}) do
-        if name == "*" or (category and name:lower() == category:lower()) then
-          classMatch = true
-          break
-        end
-      end
-      local subMatch = #(event.subClasses or {}) == 0
-      for _, name in ipairs(event.subClasses or {}) do
-        if name == "*" or (subCategory and name:lower() == subCategory:lower()) then
-          subMatch = true
-          break
-        end
-      end
-      if classMatch and subMatch then boost = boost * (event.weight or 1) end
+    if (event.startsAt or 0) > 0 and now >= startAt and now <= endAt
+      and matchesAny(event.classes, category) and matchesAny(event.subClasses, subCategory) then
+      boost = boost * (event.weight or 1)
     end
   end
   return boost
