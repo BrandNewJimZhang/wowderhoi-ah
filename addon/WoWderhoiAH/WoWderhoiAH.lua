@@ -932,9 +932,11 @@ SLASH_WOWDERHOIAHCAPTURE1 = "/wahcapture"
 SlashCmdList["WOWDERHOIAHCAPTURE"] = setCapture
 
 -- Free bag slots across the backpack and the four equipped bags. The
--- aggregate is the executable-quantity ceiling; stackSize x slots is an
--- upper bound when a purchase mixes stack sizes, which is the intended
--- conservative direction (never overstate what fits).
+-- aggregate is the executable-quantity ceiling; stackSize x slots assumes
+-- every item stacks to the client maximum, so it can overstate how many
+-- units fit when the item stacks smaller. Reading each item's own stack
+-- size per candidate would be exact but costs a GetItemInfo per row, and
+-- the budget and the book depth usually bind first.
 local function freeBagSlots()
   if not (C_Container and C_Container.GetContainerNumFreeSlots) then return 20 end
   local total = 0
