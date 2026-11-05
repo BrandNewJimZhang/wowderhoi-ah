@@ -70,6 +70,9 @@ export type CoreRow = {
   // one purse. Actions and both UIs use this, never execQty.
   allocQty: number;
   allocNet: number;
+  // Copper actually spent on the allocated quantity, priced from the cheap
+  // end of the ladder the row's quantity was taken from.
+  allocCost: number;
   // The allocator's own thin-evidence label (samples below the Kelly
   // floor). The cockpit renders it instead of comparing counts itself.
   exploratory: boolean;

@@ -77,6 +77,28 @@ describe("shared capital allocation", () => {
     expect(lua.number("WowTest.allocRows[1].allocNet")).toBe(0);
   });
 
+  it("prices the allocated quantity from the cheap end of the ladder", () => {
+    const lua = loadAddon();
+    // One unit at 100 plus a hundred at 1000: the full-depth average is
+    // ~991, but an allocation of 25 units only touches the two cheapest
+    // tiers (100 + 24 * 1000 = 24,100). Charging the deep average would
+    // understate both the profit and the cash the plan occupies.
+    const rows = [{
+      ladderPrice: 991,
+      listP: 2000,
+      sellP: 2000,
+      vendorP: 0,
+      execQty: 101,
+      fillProb: 1,
+      samples: 20,
+      tiers: [{ p: 100, q: 1 }, { p: 1000, q: 100 }]
+    }];
+    lua.exec(`WowTest.allocRows = WowTest.ns.Core.allocate(${toLua(rows)}, 100000, WowTest.ns.RULES)`);
+    expect(lua.number("WowTest.allocRows[1].allocQty")).toBe(25);
+    expect(lua.number("WowTest.allocRows[1].allocCost")).toBe(24100);
+    expect(lua.number("WowTest.allocRows[1].allocNet")).toBe(23400);
+  });
+
   it("uses the highest bid as an ignition demand nudge, not a gate", () => {
     const noBid = item(2589, { history: { samples: 0 } });
     const withBid = item(2592, { history: { samples: 0 }, bidOnly: 1, highestBid: 900 });

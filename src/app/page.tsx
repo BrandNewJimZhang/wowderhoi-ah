@@ -59,7 +59,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       itemId: row.itemId,
       name: row.name,
       qty: row.allocQty,
-      budget: Math.round(row.allocQty * row.ladderPrice),
+      budget: row.allocCost,
       expectedNet: row.allocNet,
       fillProb: row.fillProb,
       fillBasis: row.fillBasis,

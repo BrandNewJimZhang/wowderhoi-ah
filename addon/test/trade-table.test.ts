@@ -69,9 +69,11 @@ describe("executable-profit radar table", () => {
     expect(lua.column(1)).toEqual(["5", "5", "28"]);
     expect(lua.column(2)).toEqual(["8银 00铜", "4金 22银", "87银 14铜"]);
     expect(lua.column(3)).toEqual(["10银 00铜", "5金 20银", "1金 00银"]);
-    // Net of the allocated quantity, not of the whole book: the quantity
-    // and the profit in a row must describe the same trade.
-    expect(lua.column(4)).toEqual(["10银 00铜", "3金 56银", "2金 19银"]);
+    // Net of the allocated quantity, priced from the cheap end of the book:
+    // the quantity and the profit in a row must describe the same trade.
+    // Gold Ore's 5 units all come from the 40,000 tier; Mageweave's 28 are
+    // 20 at 8,000 plus 8 at 9,000, not 28 at the 70-unit average.
+    expect(lua.column(4)).toEqual(["10银 00铜", "4金 69银", "3金 39银"]);
     expect(lua.column(5)).toEqual(["100%", "100%", "100%"]);
   });
 
