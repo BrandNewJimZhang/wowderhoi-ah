@@ -20,8 +20,11 @@ local SEEN_CAP = 500
 -- been booked. A commodity listing that fills in equal pieces produces
 -- several mails with the same subject, item and amounts; a set would treat
 -- the second one as a duplicate and silently undercount confirmed sales.
--- Counts never decrease, so deleting a mail cannot make a later identical
--- one book twice.
+-- A count is kept while its mail may still be in the inbox (eviction only
+-- drops fingerprints absent from the current visit), so re-reading the same
+-- mail never books it twice. The cost of that choice is the opposite
+-- direction: an identical mail arriving after the earlier one was deleted
+-- is treated as already booked.
 local function seenStore()
   local store = WoWderhoiAH_MailSeen
   if type(store) == "table" and store.v == 2 and type(store.counts) == "table" then
@@ -57,9 +60,20 @@ local function commitTally(store, tally)
       store.counts[fingerprint] = count
     end
   end
-  while #store.order > SEEN_CAP do
-    local oldest = table.remove(store.order, 1)
-    store.counts[oldest] = nil
+  -- Evict only fingerprints whose mails are no longer in the inbox. A
+  -- fingerprint still present this scan is the guard that stops the next
+  -- visit from booking the same mail again; dropping it at the cap booked
+  -- the sale twice. The inbox holds at most ~50 mails, so with a cap of 500
+  -- there is always a departed entry to evict.
+  local index = 1
+  while #store.order > SEEN_CAP and index <= #store.order do
+    local fingerprint = store.order[index]
+    if tally[fingerprint] then
+      index = index + 1
+    else
+      table.remove(store.order, index)
+      store.counts[fingerprint] = nil
+    end
   end
 end
 

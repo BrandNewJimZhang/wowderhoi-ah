@@ -95,6 +95,36 @@ describe("mailbox capture", () => {
     expect(lua.number("WowTest.ns.Journal.count()")).toBe(4);
   });
 
+  it("keeps guarding a mail that is still in the inbox when the seen store is full", () => {
+    const lua = loadAddon();
+    lua.exec('WowTest.itemInfo[2589] = { name = "亚麻布" }');
+    record(lua, { k: "buy", itemId: 2589, qty: 4, cost: 4000 });
+    record(lua, { k: "post", auctionID: 7, itemId: 2589, qty: 4, price: 1200, deposit: 100 });
+    lua.exec(`WowTest.setMail({ ${toLua(saleMail("Auction successful", "亚麻布", 4800, 240, 4560))} })`);
+    expect(scan(lua).sold).toBe(1);
+    // Fill the store to its cap with fingerprints that are no longer in the
+    // inbox, leaving the sale's fingerprint as the oldest entry. A blind cap
+    // would evict it while its mail is still there, and the next scan would
+    // book the same sale again.
+    lua.exec(`
+      local old = WoWderhoiAH_MailSeen
+      local sale
+      for fingerprint in pairs(old.counts) do sale = fingerprint end
+      local store = { v = 2, counts = { [sale] = 1 }, order = { sale } }
+      for index = 1, 500 do
+        local key = "gone|" .. index
+        store.counts[key] = 1
+        store.order[#store.order + 1] = key
+      end
+      WoWderhoiAH_MailSeen = store
+    `);
+    expect(scan(lua).sold).toBe(0);
+    // The third visit is where an evicted guard resurfaced: the store now
+    // holds 500 entries and the sale's mail is still unread.
+    expect(scan(lua).sold).toBe(0);
+    expect(lua.number("WowTest.ns.Journal.count()")).toBe(3);
+  });
+
   it("books an unattributable mail once a later scan can name the item", () => {
     const lua = loadAddon();
     lua.exec('WowTest.itemInfo[2589] = { name = "亚麻布" }');
