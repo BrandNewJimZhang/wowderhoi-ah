@@ -160,6 +160,9 @@ local function freeBagSlots()
   end
   return total
 end
+-- /wahdiag compares the live count with the one the last scan reported to
+-- the terminal; a mismatch means the import is sizing against stale bags.
+WAH.freeBagSlots = freeBagSlots
 
 -- ============================== Capture ==============================
 

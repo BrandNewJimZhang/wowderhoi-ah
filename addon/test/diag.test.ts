@@ -25,6 +25,8 @@ describe("/wahdiag", () => {
     expect(lua.anyChat("GetReplicateItemTimeLeft(1): 3600 (number)")).toBe(true);
     expect(lua.anyChat("owner visibility: 1 visible / 0 hidden / 1 priced items")).toBe(true);
     expect(lua.anyChat("scan age:")).toBe(true);
+    // The terminal can only size against bags the scan reported.
+    expect(lua.anyChat("bags: 20 free now | scan recorded 20")).toBe(true);
     expect(lua.anyChat("series:")).toBe(true);
     expect(lua.anyChat("capture tiers:")).toBe(true);
     // Where a "slow scan" went: the server wait is not the addon's time.

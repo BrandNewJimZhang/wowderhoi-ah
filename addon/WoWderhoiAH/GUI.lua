@@ -711,6 +711,8 @@ SlashCmdList["WOWDERHOIAHDIAG"] = function(input)
   diagLine(string.format("scan age: %s min, %s total auctions",
     tostring(WAH.scanAgeMinutes and math.floor(WAH.scanAgeMinutes() or -1) or -1),
     tostring(WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.total or 0)))
+  diagLine(string.format("bags: %d free now | scan recorded %s",
+    WAH.freeBagSlots(), tostring(WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.bagSlots or "none")))
   diagLine(string.format("series: %d points across %d items",
     points, market and (function() local n = 0 for _ in pairs(market.items) do n = n + 1 end return n end)() or 0))
   local stats = WAH.lastScanStats

@@ -38,6 +38,7 @@ AQT_BUDGET_COPPER="500000"          # 终端计划预算；与扫描里的现金
    - `CalculateCommodityDeposit` 的返回值；
    - `GetNumOwnedAuctions` 的结构；
    - `throttle ready`；
+   - `bags` 行：实时空位与扫描记录的空位是否一致（终端按扫描记录的数字规划可买数量）；
    - 当前阶段。
 3. `/wahdiag mail`，确认 `GetInboxInvoiceInfo` 的字段顺序、物品链接与
    `CanCheckInbox`；邮箱为空时先挂一件低价物品卖出，再开箱复查。
