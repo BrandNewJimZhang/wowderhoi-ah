@@ -587,6 +587,10 @@ end
 -- Seller concentration over the other players' supply. HHI is the standard
 -- measure: 1 means one seller holds the book, 1/n means an even split.
 local function sellerConcentration(entry)
+  -- Owner totals only see the rows that named a seller. On a partially
+  -- hidden book the visible subset would look like a monopoly, so the
+  -- measure is unknown, not high.
+  if entry.sellerUnknown then return nil end
   local total = 0
   local shares = {}
   for seller, quantity in pairs(entry.ownerTotals) do
