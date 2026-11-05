@@ -15,8 +15,7 @@ import {
 } from "recharts";
 import { formatWowMoney } from "@/lib/wow-money";
 import { fillCurve } from "@/lib/fill";
-import { median } from "@/lib/median";
-import type { TimePoint } from "@/lib/chart-series";
+import { withGapBreaks, type TimePoint } from "@/lib/chart-series";
 import type { FillBasis } from "@/lib/core/types";
 
 const formatGold = (copper: number) => formatWowMoney(copper, { compact: true });
@@ -34,21 +33,6 @@ const WINDOWS = [
   { key: "7d", hours: 168 },
   { key: "全部", hours: 0 }
 ] as const;
-
-function withGapBreaks(points: TimePoint[]): Array<TimePoint & { gap?: boolean }> {
-  if (points.length < 3) return points;
-  const gaps = points.slice(1).map((point, index) => point.ts - points[index].ts);
-  const interval = median(gaps);
-  const out: Array<TimePoint & { gap?: boolean }> = [];
-  points.forEach((point, index) => {
-    if (index > 0 && point.ts - points[index - 1].ts > interval * 3) {
-      // A scanning outage is a hole, not a straight line through it.
-      out.push({ ts: points[index - 1].ts + 1, price: null as unknown as number, min: null, gap: true });
-    }
-    out.push(point);
-  });
-  return out;
-}
 
 // Time-proportional X axis: gaps in scanning render as real gaps, so
 // the trend shape is honest about when data actually exists.

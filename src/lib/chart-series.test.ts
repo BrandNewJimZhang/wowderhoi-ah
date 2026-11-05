@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTimeSeries } from "@/lib/chart-series";
+import { buildTimeSeries, withGapBreaks, type TimePoint } from "@/lib/chart-series";
 
 function snapshot(minute: string, price: number, min = price - 100, quantity = 50) {
   return {
@@ -27,7 +27,8 @@ describe("buildTimeSeries", () => {
       ts: new Date("2026-07-18T00:00:00Z").getTime(),
       price: 700,
       min: 650,
-      volume: 40
+      volume: 40,
+      kind: "daily"
     });
   });
 
@@ -40,6 +41,38 @@ describe("buildTimeSeries", () => {
       ]
     );
     expect(points.map((point) => point.price)).toEqual([800, 1000]);
+  });
+
+  it("measures gaps from the scan cadence, not the mixed series", () => {
+    const day = 24 * 60 * 60 * 1000;
+    const minute = 60 * 1000;
+    const start = new Date("2026-07-20T10:00:00Z").getTime();
+    const points: TimePoint[] = [
+      { ts: start, price: 700, kind: "daily" },
+      { ts: start + day, price: 800, kind: "daily" },
+      // The live segment: two scans 15 minutes apart, then a two-hour
+      // outage.
+      { ts: start + day + minute * 15, price: 900, kind: "scan" },
+      { ts: start + day + minute * 30, price: 950, kind: "scan" },
+      { ts: start + day + minute * 150, price: 1000, kind: "scan" }
+    ];
+    const plotted = withGapBreaks(points);
+    // Consecutive daily closes are not a scanning outage, and they must not
+    // be used to derive the cadence.
+    expect(plotted.filter((point) => point.gap)).toHaveLength(1);
+    expect(plotted.find((point) => point.gap)?.ts).toBe(start + day + minute * 30 + 1);
+  });
+
+  it("breaks a series where a day is missing between daily closes", () => {
+    const day = 24 * 60 * 60 * 1000;
+    const start = new Date("2026-07-16T00:00:00Z").getTime();
+    const plotted = withGapBreaks([
+      { ts: start, price: 700, kind: "daily" },
+      { ts: start + day, price: 720, kind: "daily" },
+      // July 19 is missing: the market was not scanned that day.
+      { ts: start + day * 3, price: 800, kind: "daily" }
+    ]);
+    expect(plotted.filter((point) => point.gap)).toHaveLength(1);
   });
 
   it("falls back to the P10 price for legacy rows without a sell front", () => {
