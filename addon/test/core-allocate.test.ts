@@ -35,7 +35,7 @@ function evaluate(items: Record<number, unknown>, budget: number, phase = "wave"
     capacity: { bagSlots: 20, stackSize: 20 }
   };
   return lua.coreEval(input) as {
-    rows: Array<{ itemId: number; execQty: number; allocQty: number; allocNet: number; ladderPrice: number; vendor: boolean; exploratory: boolean; samples: number }>;
+    rows: Array<{ itemId: number; execQty: number; allocQty: number; allocNet: number; allocCost: number; allocUnitPrice: number; ladderPrice: number; vendor: boolean; exploratory: boolean; samples: number }>;
     actions: Array<{ kind: string; itemId: number; qty: number; expectedNet: number }>;
   };
 }
@@ -43,7 +43,9 @@ function evaluate(items: Record<number, unknown>, budget: number, phase = "wave"
 describe("shared capital allocation", () => {
   it("never spends more than the daily share across all rows", () => {
     const output = evaluate({ 2589: item(2589), 2592: item(2592) }, 100000);
-    const spend = output.rows.reduce((sum, row) => sum + row.allocQty * row.ladderPrice, 0);
+    // allocCost is what the allocated quantity actually costs at the cheap
+    // end; multiplying by the deep-ladder average would overstate the spend.
+    const spend = output.rows.reduce((sum, row) => sum + row.allocCost, 0);
     // dailyBudget 0.5 of a 100k purse: 50k total, regardless of row count.
     expect(spend).toBeLessThanOrEqual(50000);
     expect(output.rows.every((row) => row.allocQty <= row.execQty)).toBe(true);
@@ -56,7 +58,7 @@ describe("shared capital allocation", () => {
     // maxItemExposure 0.25 of 100k = 25k; at ~700-800 a unit that is at
     // most 35 units, well below the 120-unit book depth.
     expect(row.allocQty).toBeGreaterThan(0);
-    expect(row.allocQty * row.ladderPrice).toBeLessThanOrEqual(25000);
+    expect(row.allocCost).toBeLessThanOrEqual(25000);
     expect(row.allocQty).toBeLessThan(row.execQty);
   });
 
@@ -97,7 +99,11 @@ describe("shared capital allocation", () => {
     expect(lua.number("WowTest.allocRows[1].allocQty")).toBe(25);
     expect(lua.number("WowTest.allocRows[1].allocCost")).toBe(24100);
     expect(lua.number("WowTest.allocRows[1].allocNet")).toBe(23400);
+    // The row's displayed buy price must describe the same trade as its
+    // quantity and net, not the full-depth average it no longer buys.
+    expect(lua.number("WowTest.allocRows[1].allocUnitPrice")).toBeCloseTo(964, 6);
   });
+
 
   it("uses the highest bid as an ignition demand nudge, not a gate", () => {
     const noBid = item(2589, { history: { samples: 0 } });

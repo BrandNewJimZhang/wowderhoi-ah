@@ -73,6 +73,10 @@ export type CoreRow = {
   // Copper actually spent on the allocated quantity, priced from the cheap
   // end of the ladder the row's quantity was taken from.
   allocCost: number;
+  // Average unit price of the allocated quantity (`allocCost / allocQty`).
+  // The radar's buy column and the action list describe one trade, so they
+  // use this price, not the full-depth average the row was ranked from.
+  allocUnitPrice: number;
   // The allocator's own thin-evidence label (samples below the Kelly
   // floor). The cockpit renders it instead of comparing counts itself.
   exploratory: boolean;

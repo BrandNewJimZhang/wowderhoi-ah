@@ -79,7 +79,9 @@ local RADAR_COLUMNS = {
   -- The buyable quantity is the allocated one: all rows share one purse.
   -- Market depth stays in the tooltip.
   { key = "allocQty", label = "COL_QTY", cell = countCell },
-  { key = "ladderPrice", label = "COL_BUY", cell = moneyCell, asc = true },
+  -- The allocated quantity's average price: the whole row describes one
+  -- trade, and the deep-ladder average stays in the tooltip via execQty.
+  { key = "allocUnitPrice", label = "COL_BUY", cell = moneyCell, asc = true },
   { key = "sellP", label = "COL_SELL", cell = moneyCell },
   -- Net of the allocated quantity, so the row's numbers describe the same
   -- trade the quantity column describes.

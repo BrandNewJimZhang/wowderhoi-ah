@@ -336,11 +336,13 @@ local FILL_BASIS_TEXT = {
 
 local function reasonFor(row)
   if row.vendor then
-    return string.format("NPC 收购价高于挂单价，%d 件净赚 %d 铜", row.execQty, row.netProfit)
+    return string.format("NPC 收购价高于挂单价，盘口 %d 件净赚 %d 铜", row.execQty, row.netProfit)
   end
   local low = (row.fillProbLow or row.fillProb or 0) * 100
   local high = (row.fillProbHigh or row.fillProb or 0) * 100
-  local text = string.format("价差 %.0f%%，可买 %d 件，每件净利 %d 铜，24 小时成交率 %.0f%%（%.0f–%.0f%%，%s）",
+  -- "可买" is the allocated column; the reason quotes the book depth, so it
+  -- says 盘口 rather than using the same word for two different quantities.
+  local text = string.format("价差 %.0f%%，盘口 %d 件，每件净利 %d 铜，24 小时成交率 %.0f%%（%.0f–%.0f%%，%s）",
     row.spreadPercent, row.execQty, row.netPerUnit or 0, (row.fillProb or 0) * 100, low, high,
     FILL_BASIS_TEXT[row.fillBasis or "prior"] or FILL_BASIS_TEXT.prior)
   if row.bidOnly and row.bidOnly > 0 then
@@ -384,7 +386,6 @@ function Core.sizePosition(row, deployable, rules)
   local budget = math.min(capital * fraction, itemCap)
   return {
     budget = budget,
-    qty = unitCost > 0 and math.floor(budget / unitCost) or 0,
     exploratory = (row.samples or 0) < (portfolio.minKellySamples or 10)
   }
 end
@@ -401,6 +402,10 @@ function Core.allocate(rows, deployable, rules)
     row.allocQty = 0
     row.allocNet = 0
     row.allocCost = 0
+    -- The row's buy price: the average actually paid for the allocated
+    -- quantity. Before an allocation exists, the deep-ladder average still
+    -- describes the book the row was ranked from.
+    row.allocUnitPrice = row.ladderPrice or 0
     -- The sample floor is a portfolio rule; the terminal must not re-derive
     -- the "exploratory" label from its own copy of the number.
     row.exploratory = false
@@ -424,6 +429,7 @@ function Core.allocate(rows, deployable, rules)
         local unitPrice = cost and cost / qty or unit
         row.allocQty = qty
         row.allocCost = round(cost or qty * unit)
+        row.allocUnitPrice = unitPrice
         row.allocNet = round(row.vendor
           and (row.sellP - unitPrice) * qty
           or Core.netIfSold(row.listP, qty, unitPrice, feeRate))
