@@ -5,10 +5,14 @@ import { execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { PrismaClient } from "@prisma/client";
+import { DEFAULT_BUDGET_COPPER, SCAN_INTERVAL_MINUTES } from "@/lib/market-rules";
 import { generateMarket, qualityName, syntheticMarketType, syntheticSellers, syntheticTiers, type SyntheticMarket } from "./fixtures";
 
-const SCAN_INTERVAL_MS = 15 * 60 * 1000; // matches /wahauto cadence
-const SCANS_PER_DAY = (24 * 60) / 15;
+// The synthetic history must walk at the compiled scan cadence, or the
+// elapsed-time and per-day folding the perf pages measure would describe a
+// different ticker than /wahauto runs.
+const SCAN_INTERVAL_MS = SCAN_INTERVAL_MINUTES * 60 * 1000;
+const SCANS_PER_DAY = (24 * 60) / SCAN_INTERVAL_MINUTES;
 const INSERT_CHUNK = 2000;
 
 const { values } = parseArgs({
@@ -73,8 +77,12 @@ async function main() {
   const market = generateMarket({ itemCount, depth, seed: Number(values.seed) });
   const prisma = new PrismaClient({ datasourceUrl: databaseUrl });
   const newestScanMs = Date.now();
+  // The core bounds every purchase by the scanned purse. A zero-cash market
+  // makes executableQty zero for every row, so the cockpit renders an empty
+  // radar and the perf run measures a dead page; fund the fixture at the
+  // planning budget so the decision path actually runs.
   const marketRow = await prisma.market.create({
-    data: { realm: "PerfRealm", faction: "Alliance", cash: 0 }
+    data: { realm: "PerfRealm", faction: "Alliance", cash: DEFAULT_BUDGET_COPPER }
   });
 
   await insertChunked(
