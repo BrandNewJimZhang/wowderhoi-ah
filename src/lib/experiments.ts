@@ -26,35 +26,37 @@ export type ExperimentTrade = {
 };
 
 export type ExperimentResult = {
-  price: number;
-  qty: number;
-  filled: number; // sales booked at this exact level
+  price: number; // the price a confirmed sale was booked at, copper per unit
+  filled: number; // confirmed sales booked at this price
   units: number;
   medianHours: number | null; // listing time until the sale was observed
 };
 
 // Recovery is descriptive, not a fill rate: unsold listings are not
-// persisted, so a level with no sale is reported as such, never as 0%.
-export function experimentResults(
-  trades: ExperimentTrade[],
-  itemId: number,
-  levels: ExperimentLevel[]
-): ExperimentResult[] {
-  const rows = trades.filter((trade) =>
-    !trade.inferred && trade.itemId === itemId && trade.listedAt !== null
-  );
-  return levels.map((level) => {
-    const matched = rows.filter((trade) => Math.abs(trade.price - level.price) <= 0.5);
-    const hours = matched
-      .map((trade) => (trade.realizedAt.getTime() - (trade.listedAt as Date).getTime()) / (60 * 60 * 1000));
-    return {
-      price: level.price,
-      qty: level.qty,
-      filled: matched.length,
-      units: matched.reduce((sum, trade) => sum + trade.qty, 0),
-      medianHours: hours.length > 0 ? median(hours) : null
-    };
-  });
+// persisted, so a price level with no sale is simply absent, never a 0%.
+//
+// Levels come from the sales themselves, not from a plan recomputed against
+// today's sell front: the plan drifts as the market moves, and matching
+// yesterday's sale against today's prices would report a filled level as
+// unsold. The booked price is the only stable label of what was tested.
+export function experimentResults(trades: ExperimentTrade[], itemId: number): ExperimentResult[] {
+  const byPrice = new Map<number, { filled: number; units: number; hours: number[] }>();
+  for (const trade of trades) {
+    if (trade.inferred || trade.itemId !== itemId || trade.listedAt === null) continue;
+    const bucket = byPrice.get(trade.price) ?? { filled: 0, units: 0, hours: [] };
+    bucket.filled += 1;
+    bucket.units += trade.qty;
+    bucket.hours.push((trade.realizedAt.getTime() - trade.listedAt.getTime()) / (60 * 60 * 1000));
+    byPrice.set(trade.price, bucket);
+  }
+  return Array.from(byPrice.entries())
+    .sort(([left], [right]) => left - right)
+    .map(([price, bucket]) => ({
+      price,
+      filled: bucket.filled,
+      units: bucket.units,
+      medianHours: median(bucket.hours)
+    }));
 }
 
 export function designExperiment(input: {

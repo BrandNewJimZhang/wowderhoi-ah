@@ -42,23 +42,23 @@ export default async function ReviewPage() {
     at: decision.at
   }));
   const policyEstimate = evaluatePolicy(loggedDecisions, realizedTrades, () => true);
-  const firstPosition = Object.entries(positions)[0];
+  // Largest committed position, not whatever order the database returned:
+  // the experiment section must name the same item on every render.
+  const focusPosition = Object.entries(positions).sort((left, right) => right[1].cost - left[1].cost)[0];
   // Experiments are priced around the current sell front; a held item that
-  // left the newest scan has no usable reference, so it is skipped.
+  // left the newest scan has no usable reference, so it cannot get a new
+  // plan. Recovery still runs: it reads booked sales, not today's prices.
   const currentSignals = signals.filter((signal) => !signal.stale);
-  const experimentSignal = firstPosition
-    ? currentSignals.find((signal) => signal.itemId === Number(firstPosition[0]))
-    : currentSignals[0];
+  const focusItemId = focusPosition ? Number(focusPosition[0]) : currentSignals[0]?.itemId ?? null;
+  const experimentSignal = focusItemId !== null ? currentSignals.find((signal) => signal.itemId === focusItemId) : undefined;
   const experiment = experimentSignal
     ? designExperiment({
         itemId: experimentSignal.itemId,
         sellP: experimentSignal.sellPrice,
-        inventory: Math.max(3, firstPosition ? firstPosition[1].qty : 3)
+        inventory: Math.max(3, focusPosition ? focusPosition[1].qty : 3)
       })
     : null;
-  const experimentRecovery = experiment
-    ? experimentResults(trades, experiment.itemId, experiment.levels)
-    : [];
+  const experimentRecovery = focusItemId !== null ? experimentResults(trades, focusItemId) : [];
   const nameById = new Map(signals.map((signal) => [signal.itemId, signal.name]));
   const byChannel = new Map<string, { count: number; pnl: number }>();
   for (const trade of confirmedTrades) {
@@ -85,7 +85,7 @@ export default async function ReviewPage() {
 
       <div className="mb-3 grid gap-3 font-mono text-xs sm:grid-cols-2 xl:grid-cols-4">
         <div className="border border-terminal-border bg-terminal-panel p-3">
-          <div className="text-terminal-muted">窗口内已实现（确认成交）</div>
+          <div className="text-terminal-muted">最近 100 笔已实现（确认成交）</div>
           <div className={`mt-1 text-lg ${summary.confirmedRealized >= 0 ? "text-terminal-green" : "text-terminal-red"}`}><Coins copper={summary.confirmedRealized} /></div>
         </div>
         <div className="border border-terminal-border bg-terminal-panel p-3">
@@ -198,23 +198,17 @@ export default async function ReviewPage() {
       </div>
 
       <Panel>
-        <PanelHeader title="实验回收" action={<span className="font-mono text-xs text-terminal-muted">只看确认成交 · 未成交挂单未持久化，不计算成交率</span>} />
+        <PanelHeader title="实验回收" action={<span className="font-mono text-xs text-terminal-muted">只看确认成交 · 按实际成交价分组 · 未成交挂单未持久化</span>} />
         <div className="space-y-2 p-3 font-mono text-xs">
           {experimentRecovery.length === 0 && (
-            <div className="text-terminal-muted">没有可回收的实验；先按「实验设计」挂出小批量多价位。</div>
+            <div className="text-terminal-muted">该物品还没有确认成交；挂出小批量多价位后，开箱回收才会出现结果。</div>
           )}
           {experimentRecovery.map((level) => (
             <div key={level.price} className="flex items-center justify-between gap-2">
-              <span className="text-terminal-muted">挂 <Coins copper={level.price} /> × {level.qty}</span>
+              <span className="text-terminal-muted">成交价 <Coins copper={level.price} /></span>
               <span className="flex items-center gap-3">
-                {level.filled > 0 ? (
-                  <>
-                    <span className="text-terminal-green">成交 {level.filled} 笔 · {level.units} 件</span>
-                    <span className="text-terminal-muted">中位成交 {level.medianHours !== null ? `${level.medianHours.toFixed(1)} 小时` : "—"}</span>
-                  </>
-                ) : (
-                  <span className="text-terminal-muted">未成交（或成交尚未开箱回收）</span>
-                )}
+                <span className="text-terminal-green">{level.filled} 笔 · {level.units} 件</span>
+                <span className="text-terminal-muted">中位成交 {level.medianHours !== null ? `${level.medianHours.toFixed(1)} 小时` : "—"}</span>
               </span>
             </div>
           ))}

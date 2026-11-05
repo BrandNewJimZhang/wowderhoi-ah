@@ -21,7 +21,6 @@ describe("designExperiment", () => {
 });
 
 describe("experimentResults", () => {
-  const level = (price: number, qty: number) => ({ price, qty });
   const sale = (price: number, qty: number, listedHoursAgo: number, realizedHoursAgo: number) => ({
     itemId: 2589,
     price,
@@ -31,27 +30,34 @@ describe("experimentResults", () => {
     inferred: false
   });
 
-  it("pairs confirmed sales with their level and measures the wait", () => {
+  it("buckets confirmed sales by the price they were booked at", () => {
     const results = experimentResults([
       sale(1000, 2, 5, 3), // 2 hours on the book
       sale(1000, 1, 6, 4), // 2 hours
       sale(950, 3, 8, 6) // 2 hours
-    ], 2589, [level(950, 3), level(1000, 3), level(1050, 3)]);
+    ], 2589);
     expect(results[0]).toMatchObject({ price: 950, filled: 1, units: 3, medianHours: 2 });
     expect(results[1]).toMatchObject({ price: 1000, filled: 2, units: 3, medianHours: 2 });
-    expect(results[2]).toMatchObject({ price: 1050, filled: 0, units: 0, medianHours: null });
+  });
+
+  it("does not shift a past sale onto today's suggested levels", () => {
+    // The panel used to recompute the plan from the current sell front and
+    // match sales against it; once the front moved, a filled level read as
+    // unsold. Recovery must key on the booked price alone.
+    const results = experimentResults([sale(1000, 2, 5, 3)], 2589);
+    expect(results).toHaveLength(1);
+    expect(results[0].price).toBe(1000);
   });
 
   it("ignores inferred sales and other items", () => {
     const results = experimentResults([
       { ...sale(1000, 1, 5, 3), inferred: true },
       { ...sale(1000, 1, 5, 3), itemId: 2770 }
-    ], 2589, [level(1000, 1)]);
-    expect(results[0].filled).toBe(0);
+    ], 2589);
+    expect(results).toEqual([]);
   });
 
-  it("reports an unfilled level as no sale, never as a 0% fill rate", () => {
-    const results = experimentResults([], 2589, [level(1000, 3)]);
-    expect(results[0]).toMatchObject({ filled: 0, units: 0, medianHours: null });
+  it("reports no levels at all when nothing sold, never a 0% fill rate", () => {
+    expect(experimentResults([], 2589)).toEqual([]);
   });
 });
