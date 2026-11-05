@@ -58,7 +58,6 @@ function frameMeta:Hide()
 end
 function frameMeta:IsShown() return self._shown end
 function frameMeta:SetScript(script, handler) self._scripts[script] = handler end
-function frameMeta:GetScript(script) return self._scripts[script] end
 function frameMeta:HasScript() return true end
 function frameMeta:HookScript(script, handler)
   local existing = self._scripts[script]
@@ -74,7 +73,6 @@ function frameMeta:SetAllPoints(target) self._allPoints = target end
 function frameMeta:SetSize(width, height) self._width, self._height = width, height end
 function frameMeta:SetWidth(width) self._width = width end
 function frameMeta:SetHeight(height) self._height = height end
-function frameMeta:GetWidth() return self._width end
 function frameMeta:GetHeight() return self._height end
 function frameMeta:SetWordWrap(wrap) self._wordWrap = wrap end
 function frameMeta:EnableMouse(enabled) self._mouse = enabled end
@@ -98,10 +96,6 @@ end
 function frameMeta:CreateFontString() return newFrame(nil, self) end
 function frameMeta:CreateTexture() return newFrame(nil, self) end
 function frameMeta:CreateLine() return newFrame(nil, self) end
-function frameMeta:SetID(id) self._id = id end
-function frameMeta:GetID() return self._id end
-function frameMeta:SetFrameLevel(level) self._level = level end
-function frameMeta:GetFrameLevel() return self._level or 0 end
 function frameMeta:SetChecked(checked) self._checked = checked end
 function frameMeta:GetChecked() return self._checked end
 function frameMeta:SetTextColor(red, green, blue) self._color = { red, green, blue } end
@@ -591,23 +585,6 @@ function bed.clickHeader(text)
   error("no header labelled '" .. text .. "'")
 end
 
-function bed.hoverHeader(text, enter)
-  local trade = tradeFrame()
-  local labels = { trade.headItem }
-  for _, label in ipairs(trade.headers) do labels[#labels + 1] = label end
-  for _, label in ipairs(labels) do
-    if bed.plain(label._text):find(text, 1, true) == 1 then
-      for _, frame in ipairs(bed.frames) do
-        if frame._allPoints == label then
-          frame._scripts[enter and "OnEnter" or "OnLeave"](frame)
-          return true
-        end
-      end
-    end
-  end
-  error("no header labelled '" .. text .. "'")
-end
-
 -- The client opens the auction house, the addon builds its standalone page
 -- inside AUCTION_HOUSE_SHOW (or leaves it for /wahtrade when the setting is
 -- off). openTab() replays the default path.
@@ -738,8 +715,6 @@ function bed.setPoints(entries)
   WoWderhoiAH_Series = series
 end
 
-function bed.setListings(listings) bed.listings = listings end
-
 -- Move a listing's price without re-running the search, so a test can make
 -- the book change under a row the way another buyer would.
 function bed.repriceListing(index, buyout)
@@ -865,22 +840,9 @@ end
 
 function bed.rowName(index) return bed.plain(tradeFrame().rows[index].name._text) end
 function bed.cellText(index, slot) return bed.plain(tradeFrame().rows[index].cells[slot]._text) end
-function bed.cellRaw(index, slot) return tradeFrame().rows[index].cells[slot]._text end
-function bed.buyText(index) return tradeFrame().rows[index].buy._text end
 function bed.headerText(slot)
   local trade = tradeFrame()
   return bed.plain(slot == 0 and trade.headItem._text or trade.headers[slot]._text)
-end
-function bed.headerColor(text)
-  local trade = tradeFrame()
-  local labels = { trade.headItem }
-  for _, label in ipairs(trade.headers) do labels[#labels + 1] = label end
-  for _, label in ipairs(labels) do
-    if bed.plain(label._text):find(text, 1, true) == 1 then
-      return table.concat(label._color or {}, ",")
-    end
-  end
-  error("no header labelled '" .. text .. "'")
 end
 
 -- ============================== Geometry ==============================
@@ -935,7 +897,6 @@ function bed.wrappingCells()
   return wrapping
 end
 
-function bed.chatCount() return #bed.chat end
 function bed.lastChat() return bed.plain(bed.chat[#bed.chat] or "") end
 function bed.anyChat(text)
   for _, line in ipairs(bed.chat) do
