@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getMarketSignals } from "@/lib/market-signals";
 import { getPositions } from "@/lib/repositories";
 import { alphaDecay, evaluatePolicy } from "@/lib/off-policy";
-import { designExperiment } from "@/lib/experiments";
+import { designExperiment, experimentResults } from "@/lib/experiments";
 import { phaseLabels } from "@/lib/phase";
 import { summarizeTrades } from "@/lib/trade-summary";
 import { Coins } from "@/components/coins";
@@ -56,6 +56,9 @@ export default async function ReviewPage() {
         inventory: Math.max(3, firstPosition ? firstPosition[1].qty : 3)
       })
     : null;
+  const experimentRecovery = experiment
+    ? experimentResults(trades, experiment.itemId, experiment.levels)
+    : [];
   const nameById = new Map(signals.map((signal) => [signal.itemId, signal.name]));
   const byChannel = new Map<string, { count: number; pnl: number }>();
   for (const trade of confirmedTrades) {
@@ -193,6 +196,30 @@ export default async function ReviewPage() {
           )}
         </Panel>
       </div>
+
+      <Panel>
+        <PanelHeader title="实验回收" action={<span className="font-mono text-xs text-terminal-muted">只看确认成交 · 未成交挂单未持久化，不计算成交率</span>} />
+        <div className="space-y-2 p-3 font-mono text-xs">
+          {experimentRecovery.length === 0 && (
+            <div className="text-terminal-muted">没有可回收的实验；先按「实验设计」挂出小批量多价位。</div>
+          )}
+          {experimentRecovery.map((level) => (
+            <div key={level.price} className="flex items-center justify-between gap-2">
+              <span className="text-terminal-muted">挂 <Coins copper={level.price} /> × {level.qty}</span>
+              <span className="flex items-center gap-3">
+                {level.filled > 0 ? (
+                  <>
+                    <span className="text-terminal-green">成交 {level.filled} 笔 · {level.units} 件</span>
+                    <span className="text-terminal-muted">中位成交 {level.medianHours !== null ? `${level.medianHours.toFixed(1)} 小时` : "—"}</span>
+                  </>
+                ) : (
+                  <span className="text-terminal-muted">未成交（或成交尚未开箱回收）</span>
+                )}
+              </span>
+            </div>
+          ))}
+        </div>
+      </Panel>
 
       <Panel>
         <PanelHeader title="校准纪律" />

@@ -15,6 +15,48 @@ export type ExperimentPlan = {
 // Prices are spaced around the sell front: one undercut level, the front
 // itself, and one optimistic level. Inventory is split as evenly as the
 // integer lots allow.
+export type ExperimentTrade = {
+  itemId: number;
+  price: number;
+  qty: number;
+  listedAt: Date | null;
+  realizedAt: Date;
+  inferred: boolean;
+};
+
+export type ExperimentResult = {
+  price: number;
+  qty: number;
+  filled: number; // sales booked at this exact level
+  units: number;
+  medianHours: number | null; // listing time until the sale was observed
+};
+
+// Recovery is descriptive, not a fill rate: unsold listings are not
+// persisted, so a level with no sale is reported as such, never as 0%.
+export function experimentResults(
+  trades: ExperimentTrade[],
+  itemId: number,
+  levels: ExperimentLevel[]
+): ExperimentResult[] {
+  const rows = trades.filter((trade) =>
+    !trade.inferred && trade.itemId === itemId && trade.listedAt !== null
+  );
+  return levels.map((level) => {
+    const matched = rows.filter((trade) => Math.abs(trade.price - level.price) <= 0.5);
+    const hours = matched
+      .map((trade) => (trade.realizedAt.getTime() - (trade.listedAt as Date).getTime()) / (60 * 60 * 1000))
+      .sort((left, right) => left - right);
+    return {
+      price: level.price,
+      qty: level.qty,
+      filled: matched.length,
+      units: matched.reduce((sum, trade) => sum + trade.qty, 0),
+      medianHours: hours.length > 0 ? hours[Math.ceil(hours.length / 2) - 1] : null
+    };
+  });
+}
+
 export function designExperiment(input: {
   itemId: number;
   sellP: number;
