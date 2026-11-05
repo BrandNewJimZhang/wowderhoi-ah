@@ -70,6 +70,9 @@ export type CoreRow = {
   // one purse. Actions and both UIs use this, never execQty.
   allocQty: number;
   allocNet: number;
+  // The allocator's own thin-evidence label (samples below the Kelly
+  // floor). The cockpit renders it instead of comparing counts itself.
+  exploratory: boolean;
   sellP: number;
   listP: number;
   vendorP: number;

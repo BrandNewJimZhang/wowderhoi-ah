@@ -35,7 +35,7 @@ function evaluate(items: Record<number, unknown>, budget: number, phase = "wave"
     capacity: { bagSlots: 20, stackSize: 20 }
   };
   return lua.coreEval(input) as {
-    rows: Array<{ itemId: number; execQty: number; allocQty: number; allocNet: number; ladderPrice: number; vendor: boolean }>;
+    rows: Array<{ itemId: number; execQty: number; allocQty: number; allocNet: number; ladderPrice: number; vendor: boolean; exploratory: boolean; samples: number }>;
     actions: Array<{ kind: string; itemId: number; qty: number; expectedNet: number }>;
   };
 }
@@ -96,6 +96,17 @@ describe("shared capital allocation", () => {
     const evaluated = lua.coreEval(input) as { rows: Array<{ reason: string; demandPrior: number }> };
     expect(evaluated.rows[0].demandPrior).toBeCloseTo(1.2, 6);
     expect(evaluated.rows[0].reason).toContain("最高 900");
+  });
+
+  it("marks thin-evidence rows as exploratory for the cockpit", () => {
+    // minKellySamples is 10; the row carries 8 history samples. The engine
+    // decides the label so the terminal does not re-derive it from a
+    // hardcoded number.
+    const thin = evaluate({ 2589: item(2589) }, 100000);
+    expect(thin.rows[0].samples).toBe(8);
+    expect(thin.rows[0].exploratory).toBe(true);
+    const thick = evaluate({ 2589: item(2589, { history: { samples: 12 } }) }, 100000);
+    expect(thick.rows[0].exploratory).toBe(false);
   });
 
   it("shares the purse between guaranteed vendor trades", () => {

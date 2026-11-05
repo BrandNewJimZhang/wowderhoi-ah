@@ -76,10 +76,6 @@ function Core.percentileOfSorted(sorted, fraction)
   return sorted[#sorted].p
 end
 
-function Core.weightedPercentile(tiers, fraction)
-  return Core.percentileOfSorted(Core.sortedTiers(tiers), fraction)
-end
-
 -- Depth-aware sell front.
 --
 -- The upper book is noise: thin, stale listings nobody transacts against.
@@ -401,12 +397,19 @@ function Core.allocate(rows, deployable, rules)
   for _, row in ipairs(rows) do
     row.allocQty = 0
     row.allocNet = 0
+    -- The sample floor is a portfolio rule; the terminal must not re-derive
+    -- the "exploratory" label from its own copy of the number.
+    row.exploratory = false
+    local itemCap
+    if not row.vendor then
+      local sized = Core.sizePosition(row, deployable, rules)
+      row.exploratory = sized.exploratory
+      itemCap = sized.budget
+    end
     local unit = row.ladderPrice or 0
     if unit > 0 and remaining > 0 then
       local cap = math.min((row.execQty or 0) * unit, remaining)
-      if not row.vendor then
-        cap = math.min(cap, Core.sizePosition(row, deployable, rules).budget)
-      end
+      if itemCap then cap = math.min(cap, itemCap) end
       local qty = math.min(row.execQty or 0, math.floor(cap / unit))
       if qty > 0 then
         row.allocQty = qty

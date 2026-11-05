@@ -61,7 +61,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       expectedNet: row.allocNet,
       fillProb: row.fillProb,
       fillBasis: row.fillBasis,
-      exploration: row.samples < 10
+      exploration: row.exploratory
     }));
   // Same production plan as /recipes: one builder, so the dashboard and the
   // full page can never price a recipe against different inputs.
