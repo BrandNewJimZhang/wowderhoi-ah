@@ -90,7 +90,7 @@ export default async function RecipesPage() {
                   {solution.rows.length === 0 && (
                     <tr>
                       <td colSpan={8} className="px-3 py-4 text-terminal-muted">
-                        当前价格下没有正利润的配方；等扫描覆盖材料与成品后再看。
+                        当前价格、产能与预算下没有正利润的配方；等扫描覆盖材料与成品后再看。
                       </td>
                     </tr>
                   )}

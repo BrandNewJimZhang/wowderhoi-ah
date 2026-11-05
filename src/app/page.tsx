@@ -238,7 +238,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                 </div>
               )}
               {recipeRows.length > 0 && production.solution.rows.length === 0 && (
-                <div className="text-terminal-muted">当前价格与产能下没有正利润的配方</div>
+                <div className="text-terminal-muted">当前价格、产能与预算下没有正利润的配方</div>
               )}
               {production.solution.rows.slice(0, 8).map((row) => (
                 <div key={row.recipe.id} className="flex items-center justify-between gap-2">
