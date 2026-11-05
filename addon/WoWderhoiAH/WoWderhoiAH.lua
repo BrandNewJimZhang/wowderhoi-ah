@@ -776,12 +776,14 @@ function WAH.scanAgeMinutes()
 end
 
 -- One definition of "the sample window". The chart asks for explicit
--- windows; the decision core asks for the phase's.
+-- windows; the decision core asks for the phase's. Ignition has no window
+-- of its own, so trend and chart statistics borrow the steady window from
+-- the same compiled table instead of restating the number.
 local function historyWindowHours()
   local phase = WAH.currentPhase()
-  local phaseRule = WAH.RULES.phaseHistory[phase] or { windowHours = 168 }
-  local window = phaseRule.windowHours or 168
-  if window <= 0 then window = 168 end
+  local phaseRule = WAH.RULES.phaseHistory[phase]
+  local window = phaseRule and phaseRule.windowHours or 0
+  if window <= 0 then window = WAH.RULES.phaseHistory.steady.windowHours end
   return window
 end
 
@@ -809,7 +811,7 @@ function WAH.history(itemId, windowHours)
   local series = market and market.items[itemId]
   if not series or #series.t == 0 then return nil end
   local window = windowHours or historyWindowHours()
-  if window <= 0 then window = 168 end
+  if window <= 0 then window = WAH.RULES.phaseHistory.steady.windowHours end
   local cutoff = time() - window * HOUR
   local sells, pts = {}, {}
   for index = 1, #series.t do
