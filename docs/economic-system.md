@@ -32,15 +32,26 @@
 
 一次全量扫描的最新快照：
 
-- 元数据：`dataVersion`、`scannedAt`、`server`、`faction`、`character`、`cash`、
+- 元数据：`dataVersion`、`observationVersion`（观测洁净度：2 表示推断消失量已剔除
+  自有挂单与自有买入）、`scannedAt`、`server`、`faction`、`character`、`cash`、
   `bagSlots`（扫描时的背包空位；终端读不到背包，缺这个字段就只能用规划默认值）、`total`。
 - `items[itemId]`：名称、品质、物品类别、市场类型（`marketType`：`commodity` | `item`，
   扫描时按当时的物品记录判定一次，是两端唯一的分类来源）、NPC 价、最低价、建议卖价
-  （深度感知）、P5、P10、在售量、挂单数、卖家数、卖家是否可见、竞价单数、最高竞价、
-  top-8 盘口阶梯、到期桶（soon/mid/late）、推断消失量区间
+  （深度感知）、P5、P10、在售量、挂单数、卖家数、卖家是否可见、`ownerVisible`、
+  `selfExclusion`（`owner` / `owned` / `none`，即自有挂单的识别通道）、被排除的自有
+  挂单数与件数（`selfListings`/`selfQty`）、卖家集中度（`sellerHHI`、`topSellerShare`）、
+  竞价单数、最高竞价、top-8 盘口阶梯、到期桶（soon/mid/late）、推断消失量区间
   （`inferredSoldLow`/`inferredSoldHigh`）、供给增速。
-  下沿是“离开某卖家”的数量（成交+撤单，排除换价），上沿是“离开某价位”的数量
-  （还包含换价重挂）；卖家不可见时下沿为 0。
+
+  自有挂单不进入盘口、卖家数、供给与消失量：卖价前沿必须是别人的报价，否则卖出页会
+  建议你压自己 1 铜，`minSellers` 也会被你自己满足。`owner` 带 `-Realm` 后缀时按 `-`
+  之前比较；owner 不可见时用 `GetOwnedAuctions` 按物品、买断价、数量匹配，匹配不到标
+  `none`，这一行不参与先验校准。
+
+  推断消失量的下沿是“离开某卖家”的数量（成交+撤单，排除换价），上沿是“离开某价位”
+  的数量（还包含换价重挂）；卖家不可见时下沿为 0。两个边界都会减去同一窗口内
+  Journal 记录的自有买入件数：自己买走的东西是自家需求，不是市场证据。
+
   只有竞价、没有一口价的条目 `minPrice = 0`，作为纯需求行导入：价格列全部为 0，
   仅 `bidOnly` / `highestBid` 有意义。
 
@@ -78,10 +89,18 @@ t, min, sell, q, e
 ### 2.4 `WoWderhoiAH_Journal` 与 `WoWderhoiAH_Ledger`
 
 Journal 是追加式事实，按 `realm|faction|character` 分册，事件种类：
-`buy / post / cancel / sold / confirm / expire / craft / vendor / de / prospect / mill`。
+`buy / post / cancel / sold / confirm / expire / craft / vendor / de / prospect / mill /
+transfer_out / transfer_in`。
 当前插件自动写入买、挂、撤、成交（邮箱确认或挂单消失推断）、流拍与制造；
-`vendor / de / prospect / mill` 已有解析与重放路径，但采集器尚未接入，导入端和界面
-不假设它们一定存在。
+`vendor` 通过 `/wahcost` 手动补记（客户端没有逐笔卖店事件，只有一条本地化汇总行）；
+`de / prospect / mill` 有解析与重放路径但没有干净的客户端结果事件，采集器不接，
+导入端和界面也不假设它们一定存在。
+
+跨角色转移用 `/wahtransfer <itemId> <数量> out` 在发送角色记录 FIFO 成本，
+再在接收角色用 `/wahtransfer <itemId> <数量> in <单位成本>` 记入同一成本；
+只记一边比不记更糟，账本会互相矛盾，所以这条路径刻意做成手动。邮箱扫描同时统计
+邮箱里未领取的金币（`Mail.pendingCash`），显示在状态行的“在途”，但**不进入预算**：
+`GetMoney()` 仍是唯一可花费现金。
 
 插件在角色登录时就会建立（可能为空的）分册，因此带 Journal 的扫描总能归属到
 扫描角色。终端只重放该角色的分册：角色没有事件时重放为空账本，绝不回退到同市场
@@ -140,17 +159,22 @@ Ledger 是 Journal 的纯投影：
   此时共享核心才使用规划默认值）。持仓、成交和现金都来自同一个角色的
   一次扫描，界面显示该角色名。
 - `AuctionSnapshot`：v4 全字段 + `topTiers` / `expiring`；`marketType` 保存扫描时的
-  市场类型，空值只出现在该列引入前导入的旧行，核心会退回自己的分类逻辑。`priced = false`
+  市场类型，空值只出现在该列引入前导入的旧行，核心会退回自己的分类逻辑。观测洁净度
+  单独存：`ownerVisible`、`selfExclusion`、`observationVersion`（校准只读 ≥ 2），
+  以及卖家集中度 `sellerHHI` / `topSellerShare`（owner 不可见时为空）。`priced = false`
   标记纯需求行，所有价格序列查询都必须过滤 `priced: true`。市场身份只存在 `Market` 行，
   快照不重复存 realm/faction。快照、日线与决策的 `marketId` 都是必填：它们不可能脱离
   某个市场存在，空值只会让两个市场的数据混在一起。
 - `Position` / `Trade`：每次导入从 Journal 重建，整体替换，幂等。邮箱在两次扫描之间
   落盘时，同一快照时间戳的导入只重放账户账本、不重写快照，因此确认成交不必等下一次
   扫描。`Trade.listedAt` 保存挂单时间（可空），成交时间是观测时间，二者之差就是成交等待。
-- `Decision`：每次扫描代际写入一次，记录阶段、行动类型、物品、理由与时间；复盘页按它
-  匹配成交，用于描述性校准。
+- `Decision`：每次扫描代际写入一次，记录阶段、行动类型、物品、理由与时间，以及
+  预期净利、成交概率、成交依据、分配数量与成交价；复盘页按它做分桶预测校准
+  （72 小时内同物品确认成交），少于 10 条决策的桶只显示“样本不足”。
 - `Recipe`：`data/recipes.forever.json` 的投影，导入时整体替换。
-- `Event`：团本重置、暗月、阶段开放等需求脉冲的日历（当前只做展示，尚未接入排序权重）。
+- `Event`：团本重置、暗月、阶段开放等需求脉冲的日历（当前只做展示）。参与排序的
+  版本是 `src/data/events.json`，由 `gen:lua-rules` 编译成 `WAH.EVENTS`；`startsAt = 0`
+  的条目是模板，永远不会命中。
 
 ## 3. 算法
 
@@ -196,6 +220,13 @@ Qexec = min(供给(p ≤ pCap), floor(预算 / 均价), 背包容量)
 押金成交退还，只有流拍/撤单才损失。手续费默认 5%，可通过规则源修改；中立拍卖行
 15% 尚未单独建模。
 
+**价格 × 时长搜索**：卖出页在 `sellP`、`sellP−1`、98%、95% 与 12/24/48 小时中，最大化
+`净利 × P(成交) − 押金 × P(流拍)`；`P(成交)` 用队列模型
+`1 − exp(−h · supply · T / (前方供给 + qty))`，押金取客户端三档返回值，候选价永不
+低于 NPC 价 + 1。只有 `fillBasis` 不是 `prior`（有该物品自己的成交或可观测消失）时
+才启用；`/wahpricing off` 退回“卖价前沿减 1 铜 + 所选时长”。终端不展示押金优化——
+它调不到客户端押金接口，给出游戏里做不到的方案没有意义。
+
 ### 3.4 成交概率
 
 ```text
@@ -207,8 +238,16 @@ P(fill ≤ T) = 1 − exp(−h · T)
 | 等级 | 条件 | `h` | 含义 |
 |---|---|---|---|
 | `own` | 自己的成交 ≥ 3 笔 | `ownSold / ownExposedHours / qty` | 唯一干净标签；暴露时间按每笔挂单累计 |
-| `proxy` | 有公共推断消失 | `inferredSoldLow / (supply · elapsed)` | 用区间下沿；上沿含换价重挂，不能当成交 |
-| `prior` | 都没有 | 阶段 × 市场类型基线 | 开服冷启动的结构先验 |
+| `proxy` | 可观测且有公共推断消失 | `(h₀·P + sold) / (P + supply · elapsed)` | 用区间下沿；上沿含换价重挂，不能当成交 |
+| `observed-zero` | 可观测、供给非零、消失为零 | 同上，`sold = 0` | **零观测是证据**：慢物品的后验应被压低，不是回退到先验 |
+| `prior` | 观测不可用（owner 隐藏） | 阶段 × 市场类型基线 | 开服冷启动的结构先验 |
+
+`h₀` 与先验强度 `P`（默认 50 单位·小时）来自 `src/lib/market-rules.ts` 的
+`fillPrior`，编译进 `WAH.RULES.fillPrior`；核心不再自带一份数字。`proxy` 与
+`observed-zero` 用 Gamma–Poisson 收缩：盘口越大、观测越久，先验权重越小。
+`npm run calibrate` 只读 `observationVersion >= 2` 的快照，按阶段 × 市场类型输出
+中位数与四分位；样本不足 500 条时只打印“样本不足”，脚本从不改规则文件——人审后改
+`fillPrior` 再重新生成。
 
 样本少于 3 时自己的成交不算证据；三种等级都输出 `[low, high]` 区间，界面标注来源。
 `own` 来自 Journal 的 `sold` 事件（近 7 天，`inferred = false`，只算拍卖行渠道）。曝光
@@ -250,9 +289,14 @@ phase = ignition  if age < 6h  or breadth < 80
 
 ### 3.6 排序
 
-- 点火期：NPC 套利 > 净利 × 成交率 × **需求先验**（存在竞价时先验 ×1.2）；
+- 点火期：NPC 套利 > 净利 × 成交率 × **需求先验**（存在竞价时先验 ×1.2，事件窗口再乘事件权重）；
 - 洪流期：净利 × 成交率 / max(供给增速, 0.1)；
 - 沉淀/稳态：净利 × 成交率 × 置信度。
+
+三项修正叠加在排序分上，不改变门槛：**卖家集中度**（`1 − 0.15 × HHI`，只在 owner
+可见时生效）、**时间成本**（除以“拍卖行往返 + 买入”的预计分钟数）、以及需求事件
+（`src/data/events.json` 编译进 `WAH.EVENTS`，只缩放排序先验）。每行同时给出
+`netPerMinute`，游戏内与终端显示同一个努力调整后的收益。
 
 竞价是客户端唯一直接暴露的需求信号：`highestBid > 0` 只在点火期抬高排序权重，
 不放松任何门槛，也不进入置信度。之后按排序做一次共享预算分配（见 3.8）。

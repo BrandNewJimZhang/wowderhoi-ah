@@ -33,6 +33,8 @@ AQT_BUDGET_COPPER="500000"          # 终端计划预算；与扫描里的现金
 2. 逐项记录结论，尤其是：
    - `GetReplicateItemTimeLeft(1)` 返回秒还是档位；
    - `owner` 可见率（>50% 才能用真实卖家数）；
+   - `own listings excluded` 行：自己挂出一件后重新扫描，确认笔数增加、
+     `observation v2` 出现，且雷达的卖价前沿不取自己的报价；
    - `SaveAddOns` 是否可用；
    - `PostItem/PostCommodity` 是否存在；
    - `CalculateCommodityDeposit` 的返回值；
@@ -51,7 +53,10 @@ AQT_BUDGET_COPPER="500000"          # 终端计划预算；与扫描里的现金
 8. 启动 `npm run addon:watch`，看到 `Imported N items, M positions and K trades`
    即接通。
 9. 打开 `http://localhost:3000`，确认驾驶舱有阶段、数据龄、行动清单，且行动数量与
-   游戏内雷达的“可买”一致。
+   游戏内雷达的“可买”一致；交易页的“下一步”应同时出现买入动作与持仓的卖出计划。
+10. 卖出页 `/wahsell`：有该物品自己的成交或可观测消失时，应显示“推荐：价格 / 时长 /
+    成交率”；`/wahpricing off` 可退回单一时长。跨角色搬货先 `/wahtransfer … out`，
+    记下打印的单位成本，再到接收角色 `/wahtransfer … in <单位成本>`。
 
 ### 如果 `/wahdiag` 报异常
 
@@ -121,6 +126,9 @@ AQT_BUDGET_COPPER="500000"          # 终端计划预算；与扫描里的现金
 ## 7. 校准纪律
 
 - 只用真实成交校准阈值；公共挂单分布不是利润分布。
+- 成交率先验用 `npm run calibrate`：它只读 `observationVersion >= 2`（已剔除自有挂单与
+  自有买入）的快照，按阶段 × 市场类型打印中位数与四分位。样本不足 500 条时只打印
+  “样本不足”；脚本不改规则文件，人审后改 `fillPrior` 再 `npm run gen:lua-rules`。
 - 每阶段只改三档：`minSpread`、`minNet`、`minListings`；改完重新生成 Lua 规则并跑漂移测试。
 - 推断成交单独统计；不要把它和真实成交混在一起算胜率。
 - 产能配置（`src/lib/production-config.ts`）按角色实际时间调整，不要为了排名好看调高。
@@ -140,3 +148,6 @@ AQT_BUDGET_COPPER="500000"          # 终端计划预算；与扫描里的现金
 | 制造页没有正利润 | 扫描未覆盖材料/成品，或价格低于成本；先扩大扫描覆盖 |
 | 组合页现金为 0 | 扫描数据里没有 `cash`；确认插件是当前版本 |
 | 卖出页提示被拦截 | 客户端 taint 限制；按聊天框给出的价格手动上架 |
+| 卖出页不显示推荐时长 | 该物品还没有自己的成交或可观测消失（`fillBasis = prior`），价格搜索不启用；先看单一时长方案 |
+| 雷达里找不到自己刚挂的物品 | 正常：自有挂单已从盘口剔除，状态行会显示“自有挂单已排除 N 笔” |
+| 观察到的成交率明显偏低 | 两次扫描都没有消失时成交率会被压到先验以下，这是“零观测”的证据；确认不是扫描中断 |

@@ -1,6 +1,32 @@
 # Changelog
 
-## Unreleased
+## v0.6.0 — 2026-11-05
+
+### Added
+
+- Observation hygiene: the scan excludes the player's own listings (by
+  owner name, falling back to the owned-auction list when owners are
+  hidden) from the book, seller count and flow, and subtracts the player's
+  own purchases from the inferred disappearance. Scans carry
+  `observationVersion = 2`; the calibration only reads those.
+- Fill estimation distinguishes "nothing disappeared" from "could not
+  see": an observable zero shrinks the phase prior with Gamma–Poisson
+  weight instead of falling back to it (`fillBasis = observed-zero`).
+  The priors now live in the rule source and compile to
+  `WAH.RULES.fillPrior`.
+- `npm run calibrate` prints suggested priors per phase and market type
+  from clean scans; it never edits the rule file.
+- The game cockpit renders the core's conditional plans behind a "下一步"
+  button, including the sell plan of each held position.
+- Every decision stores its expected net, fill chance and allocation, and
+  the review page buckets predictions against confirmed sales.
+- Seller concentration (HHI) discounts the score, price × duration search
+  on the sell page (`/wahpricing`), and net-per-minute ranking.
+- `/wahtransfer` moves goods and FIFO cost between characters;
+  `/wahcost` books a vendor sale the client does not report; mailbox money
+  in transit is displayed but never budgeted.
+- A demand calendar (`src/data/events.json` → `WAH.EVENTS`) scales the
+  ranking prior inside scheduled windows.
 
 ### Fixed
 
