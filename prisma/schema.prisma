@@ -76,7 +76,8 @@ model AuctionSnapshot {
   // src/lib/market-rules.ts). Calibration only reads the current generation
   // and rows whose owners were fully visible.
   observationVersion Int?   @map("observation_version")
-  // Other sellers' supply concentration (0..1). Null when owners are hidden.
+  // Other sellers' supply concentration (0..1). Null when any owner is
+  // hidden: the visible subset would look more concentrated than it is.
   sellerHHI        Float?   @map("seller_hhi")
   topSellerShare   Float?   @map("top_seller_share")
   // The scanner's classification of this item's book ("commodity" | "item"),

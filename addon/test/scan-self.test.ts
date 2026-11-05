@@ -55,6 +55,19 @@ describe("own listings are excluded from the book", () => {
     expect(lua.eval("WoWderhoiAH_ScanData.items[2589].ownerVisible")).toBe(false);
   });
 
+  it("refuses to measure concentration on a partially hidden book", () => {
+    // Owner totals only see the rows that named a seller. Measuring HHI on
+    // that subset would call a mostly hidden book a monopoly: the visible
+    // rows would claim 100% of a supply they do not own.
+    const lua = loadAddon();
+    lua.runScan([
+      linen({ owner: "Alice", count: 10, buyout: 1000 }),
+      linen({ owner: null, sellerUnknown: true, count: 90, buyout: 9000 })
+    ]);
+    expect(lua.eval("WoWderhoiAH_ScanData.items[2589].sellerHHI == nil")).toBe(true);
+    expect(lua.eval("WoWderhoiAH_ScanData.items[2589].topSellerShare == nil")).toBe(true);
+  });
+
   it("marks an unidentifiable hidden book as not calibration evidence", () => {
     const lua = loadAddon();
     lua.runScan([linen({ owner: null, sellerUnknown: true })]);
