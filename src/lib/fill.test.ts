@@ -6,16 +6,21 @@ describe("fillCurve", () => {
     expect(fillCurve([], 0.2, 100)).toEqual([]);
   });
 
+  it("counts same-price units as ahead of the listing", () => {
+    // 50 units already sit at 100. A ten-unit listing at 100 joins behind
+    // them -- same price, listed earlier -- so 60 units must clear, not ten.
+    // Core.fillWithin and Core.sellPlan count the queue the same way.
+    const points = fillCurve([{ p: 100, q: 50 }], 0.001, 100, 24, 0.35, 10);
+    expect(points[0].fill).toBeCloseTo(1 - Math.exp((-0.001 * 100 * 24) / 60), 5);
+  });
+
   it("anchors the front of the book and falls as supply sits ahead of the price", () => {
-    // Share 0.001/h over a 100-unit book is 0.1 units/hour. A ten-unit
-    // listing with nothing ahead clears when its own ten units have left.
     const points = fillCurve([{ p: 100, q: 50 }, { p: 200, q: 50 }], 0.001, 100, 24, 0.35, 10);
     expect(points).toHaveLength(2);
     expect(points[0].price).toBe(100);
-    expect(points[0].fill).toBeCloseTo(1 - Math.exp(-0.24), 5);
-    // A higher listing joins the queue behind 50 units: the same flow now
-    // has to clear 60 units before this listing is at the front.
-    expect(points[1].fill).toBeCloseTo(1 - Math.exp(-0.04), 5);
+    expect(points[0].fill).toBeCloseTo(1 - Math.exp((-0.001 * 100 * 24) / 60), 5);
+    // The 200-coin listing queues behind all 100 units plus its own ten.
+    expect(points[1].fill).toBeCloseTo(1 - Math.exp((-0.001 * 100 * 24) / 110), 5);
     expect(points[1].fill).toBeLessThan(points[0].fill);
   });
 

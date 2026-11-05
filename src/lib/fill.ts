@@ -70,15 +70,18 @@ export function fillCurve(
   return [...tiers]
     .sort((left, right) => left.p - right.p)
     .map((tier) => {
-      // Units strictly cheaper than this price are in front of the listing.
-      // The tier's own quantity joins the queue after this point.
+      // Everything at or below this price is in front of the listing: units
+      // already sitting at the same price were listed earlier. Core.fillWithin
+      // and Core.sellPlan count the queue the same way; treating the equal
+      // tier as empty made this curve quote several times the sell page's
+      // probability for one book.
+      ahead += tier.q;
       const queue = ahead + qty;
       // A book with no size has no queue: the share can only be applied to
       // the listing itself, matching Core.fillWithin's degraded branch.
       const fill = book > 0
         ? 1 - Math.exp(-share * book * horizonHours / queue)
         : 1 - Math.exp(-share * horizonHours);
-      ahead += tier.q;
       return {
         price: tier.p,
         fill,
