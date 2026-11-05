@@ -10,6 +10,7 @@ import { buildProductionPlan } from "@/lib/production-plan";
 import { recipeToLp } from "@/lib/recipes";
 import { getMarketSignals } from "@/lib/market-signals";
 import { describeFreshness } from "@/lib/freshness";
+import { fillBasisLabels } from "@/lib/fill";
 import { phaseDescription, phaseLabels } from "@/lib/phase";
 import { QUALITY_NAMES } from "@/lib/addon-scan";
 import { resolveBudgetCopper } from "@/lib/config";
@@ -187,7 +188,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                     <span>占用 <Coins copper={row.budget} /></span>
                     <span className={row.expectedNet >= 0 ? "text-terminal-green" : "text-terminal-red"}>净利 <Coins copper={row.expectedNet} /></span>
                     <span>成交率 {(row.fillProb * 100).toFixed(0)}%</span>
-                    <span>{row.exploration ? "探索" : row.fillBasis === "own" ? "自有成交" : "凯利"}</span>
+                    <span>{row.exploration ? "探索" : fillBasisLabels[row.fillBasis]}</span>
                   </span>
                 </div>
               ))}

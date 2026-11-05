@@ -8,19 +8,13 @@ import { alphaDecay, evaluatePolicy } from "@/lib/off-policy";
 import { designExperiment, experimentResults } from "@/lib/experiments";
 import { bucketPredictions, CALIBRATION_WINDOW_HOURS } from "@/lib/decision-calibration";
 import { phaseLabels } from "@/lib/phase";
+import { fillBasisLabel } from "@/lib/fill";
 import { summarizeTrades } from "@/lib/trade-summary";
 import { Coins } from "@/components/coins";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 
 export const dynamic = "force-dynamic";
 
-const fillBasisLabels: Record<string, string> = {
-  own: "自有成交",
-  proxy: "公共推断",
-  "observed-zero": "观测为零",
-  prior: "阶段先验",
-  vendor: "NPC 收购"
-};
 
 export default async function ReviewPage() {
   const bundle = await getMarketSignals();
@@ -188,7 +182,7 @@ export default async function ReviewPage() {
                 <div className="flex flex-wrap items-center gap-3 text-[11px] text-terminal-muted">
                   {decision.expectedNet !== null && <span>预期 <Coins copper={decision.expectedNet} /></span>}
                   {decision.fillProb !== null && (
-                    <span>成交率 {(decision.fillProb * 100).toFixed(0)}%（{fillBasisLabels[decision.fillBasis ?? "prior"] ?? decision.fillBasis}）</span>
+                    <span>成交率 {(decision.fillProb * 100).toFixed(0)}%（{fillBasisLabel(decision.fillBasis)}）</span>
                   )}
                   {decision.allocQty !== null && decision.allocUnitPrice !== null && (
                     <span>{decision.allocQty} 件 @ <Coins copper={decision.allocUnitPrice} /></span>

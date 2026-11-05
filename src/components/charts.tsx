@@ -14,7 +14,7 @@ import {
   YAxis
 } from "recharts";
 import { formatWowMoney } from "@/lib/wow-money";
-import { fillCurve } from "@/lib/fill";
+import { fillBasisDescriptions, fillCurve } from "@/lib/fill";
 import { withGapBreaks, type TimePoint } from "@/lib/chart-series";
 import type { FillBasis } from "@/lib/core/types";
 
@@ -154,12 +154,7 @@ export function OrderBookChart({ tiers, sellP, minPrice }: { tiers: BookTier[]; 
 
 // ======================= Fill probability ============================
 
-const FILL_BASIS_LABELS: Record<Exclude<FillBasis, "vendor">, string> = {
-  own: "基于自己的成交",
-  proxy: "基于公共推断消失（区间）",
-  "observed-zero": "盘口可观测且无消失（零观测收缩）",
-  prior: "基于阶段先验（观测不可用）"
-};
+const FILL_BASIS_LABELS = fillBasisDescriptions;
 
 export function FillProbabilityChart({ tiers, hazardPerHour, supply, basis, quantity, band = 0.35 }: { tiers: BookTier[]; hazardPerHour: number; supply: number; basis: Exclude<FillBasis, "vendor">; quantity: number; band?: number }) {
   const data = fillCurve(tiers, hazardPerHour, supply, 24, band, quantity);

@@ -14,8 +14,37 @@
 // radar's point estimate describes the other case -- units bought out of the
 // book and relisted -- where the purchase itself leaves the queue, so only
 // the units it did not buy remain ahead.
+import type { FillBasis } from "@/lib/core/types";
+
 export type FillTier = { p: number; q: number };
 export type FillPoint = { price: number; fill: number; band: [number, number] };
+
+// One label per evidence tier. The cockpit, the review table and the item
+// chart used to keep three copies; the cockpit called every non-own basis
+// "凯利", which named the sizing rule instead of the evidence.
+export const fillBasisLabels: Record<FillBasis, string> = {
+  own: "自有成交",
+  proxy: "公共推断",
+  "observed-zero": "观测为零",
+  prior: "阶段先验",
+  vendor: "NPC 收购"
+};
+
+// Decision rows store the basis as a plain string; unknown or missing values
+// fall back to the label of the tier the core uses when nothing is observed.
+export function fillBasisLabel(basis: string | null | undefined): string {
+  if (basis && basis in fillBasisLabels) return fillBasisLabels[basis as FillBasis];
+  return basis || fillBasisLabels.prior;
+}
+
+// Longer copy for the chart header, where the reader needs to know what the
+// tier means rather than just its name.
+export const fillBasisDescriptions: Record<Exclude<FillBasis, "vendor">, string> = {
+  own: "基于自己的成交",
+  proxy: "基于公共推断消失（区间）",
+  "observed-zero": "盘口可观测且无消失（零观测收缩）",
+  prior: "基于阶段先验（观测不可用）"
+};
 
 // The core reports the interval around its point estimate. The chart must
 // draw the same uncertainty: a hardcoded band (35%) would show a prior
