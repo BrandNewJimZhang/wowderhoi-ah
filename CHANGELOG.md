@@ -1,5 +1,42 @@
 # Changelog
 
+## v0.5.0 — 2026-11-05
+
+The learning loop gets its first clean labels.
+
+### Added
+
+- **Mailbox capture** (`Mail.lua`): collected sale mails become confirmed
+  `sold` events (`inferred = false`) with fee, posting time and a dedup
+  fingerprint; returned-item mails become expiries. Attribution runs
+  attachment link → item name → unique open posting, and never guesses.
+- **Craft capture** (`Craft.lua` + `GeneratedRecipes.lua`, 154 KB): the
+  client's craft events book the product at the materials' FIFO cost.
+  Recipe resolution tries spell id, then `GetRecipeInfo().recipeID`, then
+  a unique-product index; unresolved crafts are counted, not booked.
+- **Shared capital allocation** (`Core.allocate` / `Core.sizePosition`):
+  fractional Kelly plus per-item exposure, spent from one purse across
+  ranked rows. The radar's quantity and net columns, the actions and the
+  terminal now describe the allocated trade.
+- **Real inputs**: free bag slots come from `C_Container`; `/wahopen`
+  sets the server opening anchor, carried through the scan into
+  `Market.openedAt` so phase age survives reinstalls.
+- **Bid demand in the decision**: `highestBid` reaches the core and nudges
+  the ignition demand prior (×1.2); it never relaxes a gate.
+- **Experiment recovery**: confirmed trades are paired with their price
+  levels and posting times; the review page reports fills and median
+  wait, and says "no sale" rather than inventing a 0% fill rate.
+
+### Changed
+
+- Fill probability uses per-listing exposure hours (`ownExposedHours`)
+  instead of the span between the first and last sale.
+- A commodity sale may fill part of a posting: the remainder stays open
+  and the deposit is refunded only when the posting is exhausted.
+- `Ledger.VERSION` 2; `Trade.listedAt` and `Market.openedAt` added.
+- `/wahdiag` prints mailbox and craft diagnostics; `/wahdiag mail` prints
+  only the mailbox block.
+
 ## v0.4.0 — 2026-11-05
 
 The market snapshot machine becomes a closed-loop goblin system.

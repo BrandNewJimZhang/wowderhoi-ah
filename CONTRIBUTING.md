@@ -35,7 +35,8 @@ keep that branch's client-specific files:
 - `addon/WoWderhoiAH/WoWderhoiAH.toc`
 - the scan acquisition path in `addon/WoWderhoiAH/WoWderhoiAH.lua`
 - the buy/sell API paths in `addon/WoWderhoiAH/Trade.lua` and
-  `addon/WoWderhoiAH/Sell.lua`
+  `addon/WoWderhoiAH/Sell.lua`, `Mail.lua`, `Craft.lua` and the compiled
+  `GeneratedRecipes.lua` (the recipe dataset is Forever-specific)
 - branch-specific docs and README badges
 
 Shared by design: `Core.lua` (pure pricing and plans), `Journal.lua`,
@@ -74,6 +75,7 @@ that applies to both should not be written twice.
 - `addon/WoWderhoiAH/WoWderhoiAH.toc`
 - `addon/WoWderhoiAH/WoWderhoiAH.lua` 里的扫描采集路径
 - `addon/WoWderhoiAH/Trade.lua` 与 `Sell.lua` 里的买卖 API 路径
+- `Mail.lua`、`Craft.lua` 与编译产物 `GeneratedRecipes.lua`（配方数据集是无限服专属）
 - 分支专属文档与 README 徽章
 
 按设计共享：`Core.lua`（纯定价与计划）、`Journal.lua`、`Ledger.lua`、

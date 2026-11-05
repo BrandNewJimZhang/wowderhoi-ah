@@ -25,21 +25,24 @@ events -> state -> decision -> action -> learning
 
 - **Events**: full auction-house scans (order book, sellers, expiry,
   bid-only demand) plus the player's own buys, postings, cancellations,
-  sales and expiries. The journal and ledger also accept craft, vendor,
-  disenchant, prospect and mill rows; those producers are not wired yet,
-  so no UI assumes they will appear.
+  mailbox-confirmed sales, expiries and finished crafts. The journal also
+  accepts vendor, disenchant, prospect and mill rows; those producers are
+  not wired yet, so no UI assumes they will appear.
 - **State**: positions from a replayable journal, deployable capital,
-  capacity, and beliefs about fill probability and competition.
+  real bag space, the server opening anchor, and beliefs about fill
+  probability and competition.
 - **Decision**: one Lua decision core, `Core.lua`, runs in game and in the
   terminal through fengari. It prices the sell front, the ladder cost,
   executable quantity, net profit and fill probability under the current
-  phase's gates.
+  phase's gates, then allocates one purse across every recommendation.
 - **Action**: an in-game cockpit with conditional buy/sell plans and a
-  sell page; a terminal cockpit with the same action list.
-- **Learning**: own fills are the only clean label. Public disappearances
-  are a bounded prior; inferred sales are labeled as inferred. The review
-  page shows decision matching, alpha decay and the next controlled
-  experiment.
+  sell page; a terminal cockpit with the same action list and the same
+  allocated quantities.
+- **Learning**: mailbox-collected sales are the only clean label; public
+  disappearances are a bounded prior and inferred sales are labeled as
+  inferred. Fill probability uses per-listing exposure hours. The review
+  page shows decision matching, alpha decay, experiment recovery and the
+  next controlled experiment.
 
 Read [docs/economic-system.md](docs/economic-system.md) for the design and
 [docs/launch-runbook.md](docs/launch-runbook.md) for the first-day and
@@ -69,6 +72,14 @@ buy/sell API paths) stay per branch. See [CONTRIBUTING.md](CONTRIBUTING.md).
   backing off after a timeout.
 - `/wahphase ignition|wave|settle|steady|auto` — override the phase when
   the automatic breadth/age rule lags the real market.
+- `/wahopen now|-<hours>|<epoch>|auto` — set the server opening anchor so
+  phase age survives a reinstall or cleared SavedVariables.
+- Mailbox capture — `MAIL_SHOW` / `MAIL_INBOX_UPDATE` turn collected sale
+  mails into confirmed `sold` events (`inferred = false`) with the posting
+  time; duplicates are fingerprinted and never booked twice.
+- Craft capture — `TRADE_SKILL_CRAFT_BEGIN` / `TRADE_SKILL_ITEM_CRAFTED_RESULT`
+  book the product at the materials' FIFO cost from the compiled recipe
+  table; an unknown recipe is counted, never guessed.
 - `/wahtrade` — cockpit: executable-profit radar with buy quantity, ladder
   price, suggested sell price, net profit and fill probability; vendor
   arbitrage first; live price book and verified buying.
@@ -120,6 +131,7 @@ Copy-Item .env.example .env
 npm install
 npm run db:push
 npm run recipes:import   # project data/recipes.forever.json into SQLite
+npm run recipes:lua      # compile the materials into addon/GeneratedRecipes.lua
 npm run dev
 ```
 
@@ -265,10 +277,12 @@ an issue; see [CONTRIBUTING.md](CONTRIBUTING.md). Security notes in
 
 ### 游戏内
 
-- `/wahscan` 全量扫描（v4：盘口阶梯、卖家、到期桶、竞价需求、消失量区间）；`/wahauto` 自动重扫；`/wahphase` 手动阶段。
-- `/wahtrade` 驾驶舱：可执行净利榜（可买数量 / 买价 / 建议卖价 / 净利 / 成交率），NPC 必赚优先；实时价格簿与核验购买。
+- `/wahscan` 全量扫描（v4：盘口阶梯、卖家、到期桶、竞价需求、消失量区间）；`/wahauto` 自动重扫；`/wahphase` 手动阶段；`/wahopen` 设开服锚点。
+- 邮箱成交采集：开箱即读取发票，把成交写成 `inferred = false` 的确认成交（带去重指纹），并记录挂单时间用于暴露时间口径。
+- 制造采集：按 `TRADE_SKILL_ITEM_CRAFTED_RESULT` 记账，产物成本 = 材料 FIFO 成本；未知配方只计数，不猜成本。
+- `/wahtrade` 驾驶舱：可执行净利榜（预算内可买 / 买价 / 建议卖价 / 分配后净利 / 成交率），NPC 必赚优先；实时价格簿与核验购买。
 - `/wahsell` 卖出与在售：押金 12/24/48 小时、售出/流拍保本价、压价上架、被压价提示、撤单重挂；客户端拦截时降级为价格助手，不假装成功。
-- `/wahprice` 卖价指引；`/wahdiag` 十项开服排雷。
+- `/wahprice` 卖价指引；`/wahdiag`（含 `/wahdiag mail`）开服排雷。
 - 提示框以建议卖价领衔；图表默认盘口阶梯，走势图支持 1h/6h/24h/7d/全部、对数轴与扫描空洞断线。
 
 ### 桌面
@@ -282,6 +296,7 @@ Copy-Item .env.example .env
 npm install
 npm run db:push
 npm run recipes:import
+npm run recipes:lua
 npm run dev
 ```
 
@@ -289,7 +304,7 @@ npm run dev
 
 ### 边界
 
-客户端没有成交历史接口；`PostItem`/`PostCommodity`/`CancelAuction` 带调用限制；插件不做全自动扫货或上架；公共捡漏信号不是 alpha；阶段阈值与产能是待校准的先验。
+客户端没有公共成交历史接口，自己的成交只能从邮箱归因（粒度是物品 + 价格）；`PostItem`/`PostCommodity`/`CancelAuction` 带调用限制；插件不做全自动扫货或上架；公共捡漏信号不是 alpha；阶段阈值与产能是待校准的先验。
 
 ### 许可与贡献
 

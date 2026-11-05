@@ -39,11 +39,18 @@ AQT_BUDGET_COPPER="500000"          # 终端计划预算；与扫描里的现金
    - `GetNumOwnedAuctions` 的结构；
    - `throttle ready`；
    - 当前阶段。
-3. `/wahscan`，等聊天框显示扫描完成。
-4. 小退或 `/reload` 一次（即使 `SaveAddOns` 可用，也先确认文件真的落盘）。
-5. 启动 `npm run addon:watch`，看到 `Imported N items, M positions and K trades`
+3. `/wahdiag mail`，确认 `GetInboxInvoiceInfo` 的字段顺序、物品链接与
+   `CanCheckInbox`；邮箱为空时先挂一件低价物品卖出，再开箱复查。
+4. `/wahscan`，等聊天框显示扫描完成。
+5. 如果服务器已经开了一段时间，`/wahopen -<小时数>`（或 `/wahopen now`）设定开服
+   锚点；否则阶段会按本机首次扫描从点火期重新开始。
+6. 制造一件物品，确认 `/wahdiag` 的 `craft: N recorded` 增加；材料未入账时会记短头寸，
+   这是账本在说“成本未知”，不是失败。
+7. 小退或 `/reload` 一次（即使 `SaveAddOns` 可用，也先确认文件真的落盘）。
+8. 启动 `npm run addon:watch`，看到 `Imported N items, M positions and K trades`
    即接通。
-6. 打开 `http://localhost:3000`，确认驾驶舱有阶段、数据龄、行动清单。
+9. 打开 `http://localhost:3000`，确认驾驶舱有阶段、数据龄、行动清单，且行动数量与
+   游戏内雷达的“可买”一致。
 
 ### 如果 `/wahdiag` 报异常
 
@@ -55,6 +62,10 @@ AQT_BUDGET_COPPER="500000"          # 终端计划预算；与扫描里的现金
 | `PostItem` 缺失 | 卖出页降级为价格助手 |
 | `throttle ready` 为 false | 自动扫描退避；手动降低扫描频率 |
 | 扫描超时 | 确认 AH 开着；失败会指数退避，连续失败 3 次降为 10 分钟 |
+| mail 发票字段为空 | 该客户端不暴露发票；`mailCapture` 关闭，系统退回推断成交 |
+| 邮箱成交显示 unattributed | 物品不在扫描名表且无唯一开仓挂单；下次扫描后自动重试，不写错账 |
+| craft 一直 unmapped | 配方 id 与数据集不一致且产物非唯一；对照 `/wahdiag` 的 recipe 计数，补映射 |
+| 阶段一直停在点火期 | `/wahopen` 未设或设成了未来时间；`/wahopen -<小时数>` 校正 |
 
 ## 2. 点火期（0–6 小时）
 
@@ -102,8 +113,9 @@ AQT_BUDGET_COPPER="500000"          # 终端计划预算；与扫描里的现金
 2. 看驾驶舱状态行：扫描龄、条数、阶段、卖家可见率。
 3. 看“下一步行动”：只执行通过门槛的条目；购买前核对实时价格。
 4. 卖出页：给背包里积压的物品定价、上架、处理在售。
-5. 确认 `SaveAddOns` 已在扫描后落盘、watcher 已导入；客户端不支持即时落盘时小退/`/reload`。
-6. 复盘页：看昨天的成交、推断占比、alpha 窗口。
+5. 开一次邮箱：确认成交会把 `inferred = false` 的事件写进 Journal；重复开箱不应增加笔数。
+6. 确认 `SaveAddOns` 已在扫描后落盘、watcher 已导入；客户端不支持即时落盘时小退/`/reload`。
+7. 复盘页：看昨天的成交、确认/推断占比、alpha 窗口与实验回收。
 
 ## 7. 校准纪律
 
