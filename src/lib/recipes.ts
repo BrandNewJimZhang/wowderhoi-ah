@@ -65,3 +65,24 @@ export function recipeToLp(recipe: RecipeSourceRow): LpRecipe {
     products: rowsOf(recipe.products)
   };
 }
+
+export type RecipeProjection = {
+  id: number;
+  name: string;
+  profession: string;
+  materials: Array<{ itemId: number; qty: number }>;
+  products: Array<{ itemId: number; qty: number }>;
+};
+
+// The imported table is a projection of the dataset, not a copy: only the
+// fields the LP reads are written, so a schema-independent JSON column does
+// not carry names and categories that no consumer ever opens.
+export function projectRecipe(recipe: DatasetRecipe): RecipeProjection {
+  return {
+    id: recipe.id,
+    name: recipe.name,
+    profession: recipe.profession,
+    materials: recipe.materials.map(({ itemId, qty }) => ({ itemId, qty })),
+    products: recipe.products.map(({ itemId, qty }) => ({ itemId, qty }))
+  };
+}

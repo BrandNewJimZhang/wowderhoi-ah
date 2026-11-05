@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadRecipeDataset, recipeToLp } from "@/lib/recipes";
+import { loadRecipeDataset, projectRecipe, recipeToLp } from "@/lib/recipes";
 
 describe("recipe dataset", () => {
   const dataset = loadRecipeDataset();
@@ -32,6 +32,17 @@ describe("recipe dataset", () => {
     const lp = recipeToLp(recipe);
     expect(lp.materials).toEqual([{ itemId: 2318, qty: 2 }, { itemId: 2320, qty: 1 }]);
     expect(lp.products).toEqual([{ itemId: 2302, qty: 1 }]);
+  });
+
+  it("projects the dataset to only the fields the LP reads", () => {
+    const recipe = dataset.recipes.find((entry) => entry.id === 1353)!;
+    const row = projectRecipe(recipe);
+    // Names and catalogue metadata stay in the dataset; the table columns
+    // are read exclusively through recipeToLp.
+    expect(row.materials).toEqual([{ itemId: 2318, qty: 2 }, { itemId: 2320, qty: 1 }]);
+    expect(row.products).toEqual([{ itemId: 2302, qty: 1 }]);
+    expect(Object.keys(row.materials[0])).toEqual(["itemId", "qty"]);
+    expect(recipeToLp(row)).toEqual(recipeToLp(recipe));
   });
 
   it("maps a Prisma row's JSON columns into the same shape", () => {
