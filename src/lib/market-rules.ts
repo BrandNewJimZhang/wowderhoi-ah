@@ -33,6 +33,43 @@ export const DEFAULT_BUDGET_COPPER = 1_000_000;
 // the same window or their fill estimates describe different populations.
 export const fillRules = { ownSalesWindowDays: 7 } as const;
 
+// Fill-rate priors per phase and market type, as expected sales per hour
+// expressed as a share of listed supply. The core shrinks an observed zero
+// toward this prior instead of treating "nothing disappeared" as missing
+// data: priorStrengthHours is the prior's weight in unit-hours, so a book
+// with real depth quickly overrides the table while a thin or unobservable
+// one falls back to it. scripts/calibrate-fill-priors.ts prints suggested
+// values from scans stamped observationVersion >= 2; a human edits this
+// table and reruns `npm run gen:lua-rules`.
+export const fillPrior = {
+  // 50 unit-hours: a typical item's book (hundreds of units) observed over
+  // one scan interval already outweighs the prior, while a thin book or a
+  // single unit still leans on it.
+  priorStrengthHours: 50,
+  hazard: {
+    ignition: { commodity: 0.35, item: 0.08 },
+    wave: { commodity: 0.2, item: 0.06 },
+    settle: { commodity: 0.12, item: 0.04 },
+    steady: { commodity: 0.08, item: 0.03 }
+  }
+} as const;
+
+// Seller concentration. A book held by one player can be repriced under you
+// in minutes, so the score discounts rows whose supply is concentrated.
+// Only applied when owner names are visible; hidden owners mean the measure
+// is unavailable, not that competition is absent.
+export const concentrationRules = { weight: 0.15 } as const;
+
+// Rough player time per action, in minutes. Ranking divides by the effort
+// an opportunity costs, so a 10k flip that takes one trip beats a 12k flip
+// that takes four. The numbers are deliberately round: they order trades,
+// they do not pretend to a stopwatch.
+export const timeCostRules = {
+  overheadMinutes: 10, // a round trip to the auction house
+  buyMinutes: 2,
+  postMinutes: 2
+} as const;
+
 // Depth-aware sell front. The upper book is noise (thin, stale listings
 // nobody trades against), so sellP is the cheapest price with real
 // quantity behind it, then undercut by one copper.

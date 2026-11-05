@@ -134,7 +134,7 @@ describe("Core.evaluate through fengari", () => {
     expect(sell && sell.kind === "sell" && sell.price).toBe(999);
     // The sell plan nets the price the listing will actually carry (the
     // front minus the undercut), not the raw front.
-    expect(sell && sell.kind === "sell" && sell.netIfSold).toBe(Math.round(999 * 40 * 0.95 - 32000));
+    expect(sell && sell.kind === "sell" && sell.expectedNet).toBe(Math.round(999 * 40 * 0.95 - 32000));
   });
 
   it("ranks ignition opportunities by the structural demand prior", () => {

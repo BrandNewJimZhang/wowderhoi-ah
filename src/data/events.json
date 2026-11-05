@@ -1,0 +1,12 @@
+[
+  {
+    "name": "示例：团本重置（周末）",
+    "startsAt": 0,
+    "endsAt": 0,
+    "leadHours": 0,
+    "weight": 1,
+    "classes": [],
+    "subClasses": [],
+    "note": "模板条目，startsAt=0 表示未排期，永远不会命中。按需改成真实 epoch 与影响范围；weight 只影响排序，不放松门槛。"
+  }
+]

@@ -35,7 +35,7 @@ function evaluate(items: Record<number, unknown>, budget: number, phase = "wave"
     capacity: { bagSlots: 20, stackSize: 20 }
   };
   return lua.coreEval(input) as {
-    rows: Array<{ itemId: number; execQty: number; allocQty: number; allocNet: number; allocCost: number; allocUnitPrice: number; ladderPrice: number; vendor: boolean; exploratory: boolean; samples: number }>;
+    rows: Array<{ itemId: number; execQty: number; allocQty: number; allocNet: number; allocCost: number; allocUnitPrice: number; ladderPrice: number; vendor: boolean; exploratory: boolean; samples: number; score: number; netPerMinute: number }>;
     actions: Array<{ kind: string; itemId: number; qty: number; expectedNet: number }>;
   };
 }
@@ -219,5 +219,22 @@ describe("position sizing against a real book", () => {
     // Same front, same fill prior: the funded amount may not collapse just
     // because more supply is listed behind it.
     expect(deep.rows[0].allocCost).toBeGreaterThan(thin.rows[0].allocCost * 0.5);
+  });
+});
+
+describe("score corrections", () => {
+  it("prefers a competitive book over one seller holding the supply", () => {
+    const contested = item(1, { sellerHHI: 0.2, topSellerShare: 0.45 });
+    const monopoly = item(2, { sellerHHI: 1, topSellerShare: 1 });
+    const output = evaluate({ 1: contested, 2: monopoly }, 100000);
+    const byId = new Map(output.rows.map((row) => [row.itemId, row]));
+    expect(byId.get(1)!.score).toBeGreaterThan(byId.get(2)!.score);
+    expect(output.rows[0].itemId).toBe(1);
+  });
+
+  it("reports net per minute so effort is visible next to the coins", () => {
+    const output = evaluate({ 2589: item(2589) }, 100000);
+    expect(output.rows[0].netPerMinute).toBeGreaterThan(0);
+    expect(output.rows[0].netPerMinute).toBeLessThan(output.rows[0].allocNet);
   });
 });

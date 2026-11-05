@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { loadAddon } from "./wow-lua";
 
-function fill(input: Record<string, number | string>) {
+function fill(input: Record<string, number | string | boolean>) {
   const lua = loadAddon();
   const fields = Object.entries(input)
     .map(([key, value]) => `${key} = ${typeof value === "string" ? JSON.stringify(value) : value}`)
@@ -74,6 +74,50 @@ describe("fill evidence hierarchy", () => {
     const result = fill({ horizonHours: 24, phase: "ignition", marketType: "commodity", qty: 1 });
     expect(result.hazard).toBeCloseTo(0.35, 4);
     expect(1 - Math.exp(-result.hazard * 24)).toBeCloseTo(result.point, 4);
+  });
+
+  it("treats an observed zero as evidence, not as missing data", () => {
+    // A big observable book with no disappearances: the prior must be
+    // shrunk toward zero, not replaced by itself.
+    const observed = fill({
+      horizonHours: 24,
+      phase: "steady",
+      marketType: "commodity",
+      sold: 0,
+      supply: 5000,
+      elapsedHours: 0.25,
+      observable: true
+    });
+    expect(observed.basis).toBe("observed-zero");
+    const priorOnly = fill({ horizonHours: 24, phase: "steady", marketType: "commodity" });
+    expect(priorOnly.basis).toBe("prior");
+    expect(observed.hazard).toBeLessThan(priorOnly.hazard / 2);
+  });
+
+  it("lets a busy observable book override the prior", () => {
+    const busy = fill({
+      horizonHours: 1,
+      phase: "steady",
+      marketType: "commodity",
+      sold: 100,
+      supply: 100,
+      elapsedHours: 1,
+      observable: true
+    });
+    expect(busy.basis).toBe("proxy");
+    expect(busy.hazard).toBeGreaterThan(0.5);
+  });
+
+  it("reads the prior from the compiled rules rather than a local table", () => {
+    const lua = loadAddon();
+    lua.exec("WowTest.ns.RULES.fillPrior.hazard.ignition.commodity = 0.9");
+    const text = lua.text(
+      `(function()
+        local _, _, _, basis, hazard = WowTest.ns.Core.fillProbability({ horizonHours = 1, phase = "ignition", marketType = "commodity" })
+        return string.format("%s|%.3f", basis, hazard)
+      end)()`
+    );
+    expect(text).toBe("prior|0.900");
   });
 
   it("floors the proxy window at the compiled scan interval", () => {

@@ -5,7 +5,7 @@
 import type { MarketPhase, MarketType } from "@/lib/market-rules";
 
 export type Confidence = "high" | "medium" | "low";
-export type FillBasis = "own" | "proxy" | "prior" | "vendor";
+export type FillBasis = "own" | "proxy" | "observed-zero" | "prior" | "vendor";
 
 // Clean fill labels per item: collected auction sales only, within a window.
 // `exposedHours` sums each listing's time on the book before its sale was
@@ -19,6 +19,7 @@ export type CoreMarketItem = {
   name: string;
   quality?: number | string;
   itemClass?: string;
+  itemSubClass?: string;
   vendorP?: number;
   minPrice: number;
   sellP?: number;
@@ -26,6 +27,9 @@ export type CoreMarketItem = {
   numAuctions?: number;
   sellers?: number;
   sellersInvisible?: boolean;
+  ownerVisible?: boolean;
+  sellerHHI?: number | null;
+  topSellerShare?: number | null;
   bidOnly?: number;
   tiers?: Tier[];
   inferredSoldLow?: number;
@@ -88,6 +92,10 @@ export type CoreRow = {
   spreadPercent: number;
   netProfit: number;
   netPerUnit: number;
+  // Allocated net divided by the round-trip minutes the action costs.
+  netPerMinute: number;
+  sellerHHI?: number | null;
+  topSellerShare?: number | null;
   fillProb: number;
   fillProbLow: number;
   fillProbHigh: number;
@@ -112,8 +120,14 @@ export type CoreAction =
       name: string;
       qty: number;
       maxUnitPrice: number;
+      // Average price of the allocated quantity: the price the action pays,
+      // not the deep-ladder average the row was ranked from.
+      unitPrice: number;
       expectedNet: number;
       fillProb: number;
+      fillBasis: FillBasis;
+      allocQty: number;
+      allocUnitPrice: number;
       confidence: Confidence;
       exit: "vendor" | "auction";
       stop?: { kind: "abort"; ifPriceAbove: number };
@@ -122,9 +136,10 @@ export type CoreAction =
   | {
       kind: "sell";
       itemId: number;
+      name?: string;
       qty: number;
       price: number;
-      netIfSold: number;
+      expectedNet: number;
       reason: string;
     };
 

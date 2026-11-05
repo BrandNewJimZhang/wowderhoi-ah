@@ -6,17 +6,21 @@
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { demandBands } from "@/lib/demand";
+import { loadDemandEvents } from "@/lib/events-calendar";
 import {
   AH_FEE_RATE,
   SCAN_INTERVAL_MINUTES,
   SCAN_PIPELINE_VERSION,
   SCAN_STALE_MINUTES,
+  concentrationRules,
+  fillPrior,
   fillRules,
   marketTypeRules,
   phaseBoundaries,
   phaseHistory,
   portfolioRules,
-  sellFrontRules
+  sellFrontRules,
+  timeCostRules
 } from "@/lib/market-rules";
 
 // Core.demandFor reads only the matcher and the weight. levelBand, peakDay
@@ -67,11 +71,16 @@ WAH.RULES = {
   phaseBoundaries = ${luaTable(phaseBoundaries, "")},
   phaseHistory = ${luaTable(phaseHistory, "")},
   fill = ${luaTable(fillRules, "")},
+  fillPrior = ${luaTable(fillPrior, "")},
+  concentration = ${luaTable(concentrationRules, "")},
+  timeCost = ${luaTable(timeCostRules, "")},
   portfolio = ${luaTable(compiledPortfolio, "")},
   marketTypeRules = ${luaTable(marketTypeRules, "")}
 }
 
 WAH.DEMAND = ${luaTable(compiledDemand, "")}
+
+WAH.EVENTS = ${luaTable(loadDemandEvents(), "")}
 `;
 }
 
