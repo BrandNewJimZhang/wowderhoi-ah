@@ -3,6 +3,7 @@
 // a few price levels — so a wrong belief costs little and the fill times
 // are attributable to the price rather than to a market-wide shock.
 import { median } from "@/lib/median";
+import { fillRules } from "@/lib/market-rules";
 
 export type ExperimentLevel = { price: number; qty: number };
 
@@ -82,7 +83,7 @@ export function designExperiment(input: {
   return {
     itemId: input.itemId,
     levels,
-    horizonHours: input.horizonHours ?? 24,
+    horizonHours: input.horizonHours ?? fillRules.horizonHours,
     note: "小批量、多价位；记录每档成交时间。开服期不要用一次大单测试需求。"
   };
 }

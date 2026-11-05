@@ -1,11 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { designExperiment, experimentResults } from "@/lib/experiments";
+import { fillRules } from "@/lib/market-rules";
 
 describe("designExperiment", () => {
   it("splits inventory across undercut, front and optimistic levels", () => {
     const plan = designExperiment({ itemId: 2589, sellP: 1000, inventory: 30 });
     expect(plan.levels.map((level) => level.price)).toEqual([950, 1000, 1050]);
     expect(plan.levels.map((level) => level.qty)).toEqual([10, 10, 10]);
+  });
+
+  it("observes the same horizon every other fill estimate is quoted for", () => {
+    // The review page renders this number next to a recommendation measured
+    // over fillRules.horizonHours; a local literal would drift the moment the
+    // rule source moves.
+    const plan = designExperiment({ itemId: 2589, sellP: 1000, inventory: 30 });
+    expect(plan.horizonHours).toBe(fillRules.horizonHours);
   });
 
   it("distributes the remainder without over-listing the inventory", () => {
