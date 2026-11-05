@@ -124,17 +124,19 @@ function Core.sellFront(tiers, opts)
 end
 
 -- Largest quantity the player can actually buy under a price cap, a
--- budget and a bag limit. Returns quantity, total cost, average price.
-function Core.executableQty(tiers, priceCap, budget, bagCapacity)
+-- budget and a quantity ceiling (bag space, or the row's executable depth
+-- when the allocator is splitting one purse). Returns quantity, total cost
+-- and average price.
+function Core.executableQty(tiers, priceCap, budget, quantityCap)
   local sorted = Core.sortedTiers(tiers)
   local quantity, cost = 0, 0
   local remainingBudget = math.floor(budget or 0)
   for _, tier in ipairs(sorted) do
     if priceCap and priceCap > 0 and tier.p > priceCap then break end
     if remainingBudget <= 0 then break end
-    if bagCapacity and quantity >= bagCapacity then break end
+    if quantityCap and quantity >= quantityCap then break end
     local take = tier.q
-    if bagCapacity then take = math.min(take, bagCapacity - quantity) end
+    if quantityCap then take = math.min(take, quantityCap - quantity) end
     local affordable = math.floor(remainingBudget / tier.p)
     take = math.min(take, affordable)
     if take <= 0 then break end
