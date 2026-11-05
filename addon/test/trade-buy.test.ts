@@ -162,7 +162,11 @@ describe("a confirmed purchase becomes a ledger fact", () => {
       { itemId: LINEN, name: "Linen Cloth", count: 20, buyout: 2000, commodity: true }
     ]);
     lua.buyRow(1);
+    // The auction event settles after a short wait: COMMODITY_PURCHASED is
+    // the event that reports the actual fill, and this path is the fallback
+    // for clients that only fire the auction one.
     lua.exec("WowTest.fireEvent('AUCTION_HOUSE_PURCHASE_COMPLETED')");
+    lua.exec("WowTest.runTimers()");
     expect(lua.number("WowTest.ns.Journal.count()")).toBe(1);
     expect(lua.number("WowTest.ns.Ledger.positions()[2589].qty")).toBe(20);
     expect(lua.number("WowTest.ns.Ledger.positions()[2589].cost")).toBe(2000);

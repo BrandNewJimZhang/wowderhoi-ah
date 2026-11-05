@@ -264,13 +264,26 @@ local function collectSearchResults()
 end
 
 -- A commodity purchase walks the offer ladder from the cheapest unit up, so
--- the cost of buying N units is not N times any single row's price. Returns
--- nil when the visible book cannot fill the quantity.
-local function commodityCost(quantity)
-  -- The purchase walks the whole offer ladder, never just the clicked row,
-  -- and must price it exactly the way the decision core does.
+-- the cost of buying N units is not N times any single row's price. The
+-- ladder is snapshotted at click time: the completion event reports how
+-- many units actually filled, and pricing that quantity needs the book the
+-- player confirmed against, not the search results the purchase just ate.
+local function offerTiers(itemId)
+  local byPrice = {}
+  for _, row in ipairs(results) do
+    if row.itemId == itemId and row.count and row.count > 0 then
+      byPrice[row.unitPrice] = (byPrice[row.unitPrice] or 0) + row.count
+    end
+  end
   local tiers = {}
-  for _, row in ipairs(results) do tiers[#tiers + 1] = { p = row.unitPrice, q = row.count } end
+  for price, count in pairs(byPrice) do tiers[#tiers + 1] = { p = price, q = count } end
+  table.sort(tiers, function(left, right) return left.p < right.p end)
+  return tiers
+end
+
+-- Costs the requested quantity against the same ladder the decision core
+-- prices. Returns nil when the visible book cannot fill the quantity.
+local function commodityCost(tiers, quantity)
   return WAH.Core.ladderCost(tiers, quantity)
 end
 
@@ -344,28 +357,45 @@ local function repriceAfterPurchase(bought)
   }) or cheapest
 end
 
+-- A purchase awaiting the client's confirmation. `confirmed` marks that a
+-- completion signal arrived; the three-second timeout must not warn about a
+-- purchase that is merely still being settled.
 local function awaitPurchase(purchase)
   pendingPurchase = purchase
   C_Timer.After(3, function()
-    if pendingPurchase ~= purchase then return end
+    if pendingPurchase ~= purchase or purchase.confirmed then return end
     pendingPurchase = nil
     chatMessage(L.PURCHASE_UNCONFIRMED)
   end)
 end
 
-local function recordPurchase(purchase, payload)
-  -- AUCTION_HOUSE_PURCHASE_COMPLETED carries the auctionID, not a table.
-  local detail = type(payload) == "table" and payload or nil
-  local quantity = detail and detail.quantity or purchase.qty
-  local unitPrice = detail and detail.unitPrice
-  local cost = unitPrice and unitPrice * quantity or purchase.cost
+-- The event payload never carries the fill details (AUCTION_HOUSE_PURCHASE_
+-- COMPLETED is just an auctionID), so the booked quantity is the one the
+-- purchase recorded — the request for item auctions, and the client-reported
+-- fill for commodities.
+local function recordPurchase(purchase)
   WAH.recordEvent({
     k = "buy",
     itemId = purchase.itemId,
-    qty = quantity,
-    cost = cost
+    qty = purchase.qty,
+    cost = purchase.cost
   })
-  chatMessage(string.format(L.BOUGHT, purchase.name, quantity, coinString(cost)))
+  chatMessage(string.format(L.BOUGHT, purchase.name, purchase.qty, coinString(purchase.cost)))
+end
+
+-- Settle a confirmed purchase: reprice the book the player is looking at and
+-- re-run the search so the bought units drop off.
+local function completePurchase(purchase, filled)
+  if filled and filled > 0 then
+    purchase.qty = filled
+    local cost = purchase.tiers and WAH.Core.ladderCost(purchase.tiers, filled)
+    if cost then purchase.cost = cost end
+  end
+  recordPurchase(purchase)
+  repriceAfterPurchase(purchase.row)
+  C_Timer.After(0.6, function()
+    if trade and trade:IsShown() and mode == "results" then runSearch() end
+  end)
 end
 
 local function verifyAndBuy(row)
@@ -379,13 +409,14 @@ local function verifyAndBuy(row)
       chatMessage("|cffff5555" .. L.LISTING_CHANGED .. "|r")
       return
     end
-    local estimate = commodityCost(row.count)
+    local tiers = offerTiers(row.itemId)
+    local estimate = commodityCost(tiers, row.count)
     if not estimate then
       chatMessage(L.COMMODITY_NO_DEPTH)
       return
     end
     awaitPurchase({ itemId = row.itemId, name = row.name, qty = row.count,
-      cost = estimate, via = "commodity", row = row })
+      cost = estimate, tiers = tiers, via = "commodity", row = row })
     C_AuctionHouse.StartCommoditiesPurchase(row.itemId, row.count)
     chatMessage(string.format(L.COMMODITY_STARTED, row.name, row.count,
       coinString(estimate)))
@@ -399,10 +430,6 @@ local function verifyAndBuy(row)
   C_AuctionHouse.PlaceBid(row.auctionID, row.buyout)
   awaitPurchase({ itemId = row.itemId, name = row.name, qty = row.count,
     cost = row.buyout, via = "item", auctionID = row.auctionID, row = row })
-  -- Re-run the search after the bid settles so the bought listing drops off.
-  C_Timer.After(0.6, function()
-    if trade and trade:IsShown() and mode == "results" then runSearch() end
-  end)
 end
 
 renderRows = function()
@@ -774,8 +801,11 @@ tradeEvents:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
 tradeEvents:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_ADDED")
 tradeEvents:RegisterEvent("AUCTION_HOUSE_BROWSE_FAILURE")
 tradeEvents:RegisterEvent("AUCTION_HOUSE_PURCHASE_COMPLETED")
+-- Commodity fills report their own quantity; the auction completion event
+-- only names an auctionID.
+tradeEvents:RegisterEvent("COMMODITY_PURCHASED")
 
-tradeEvents:SetScript("OnEvent", function(_, event, payload)
+tradeEvents:SetScript("OnEvent", function(_, event, payload, extra)
   if event == "AUCTION_HOUSE_SHOW" then
     ensureTradeFrame()
     if not (WAH.settings and WAH.settings.tradeOnOpen) then return end
@@ -796,15 +826,33 @@ tradeEvents:SetScript("OnEvent", function(_, event, payload)
     end
     return
   end
+  if event == "COMMODITY_PURCHASED" then
+    -- The authoritative fill: itemID plus the quantity the client actually
+    -- bought. A request of 20 units can settle as 7 on a thinning book, and
+    -- only this event states how many units reached the bag.
+    local purchase = pendingPurchase
+    if purchase and purchase.via == "commodity" and (payload == nil or payload == purchase.itemId) then
+      pendingPurchase = nil
+      completePurchase(purchase, extra)
+    end
+    return
+  end
   if event == "AUCTION_HOUSE_PURCHASE_COMPLETED" then
     local purchase = pendingPurchase
     if purchase then
-      pendingPurchase = nil
-      recordPurchase(purchase, payload)
-      repriceAfterPurchase(purchase.row)
-      C_Timer.After(0.6, function()
-        if trade and trade:IsShown() and mode == "results" then runSearch() end
-      end)
+      purchase.confirmed = true
+      if purchase.via == "commodity" then
+        -- Give COMMODITY_PURCHASED a moment to report the true fill before
+        -- booking the requested quantity.
+        C_Timer.After(0.5, function()
+          if pendingPurchase ~= purchase then return end
+          pendingPurchase = nil
+          completePurchase(purchase)
+        end)
+      else
+        pendingPurchase = nil
+        completePurchase(purchase)
+      end
     end
     return
   end
