@@ -72,8 +72,6 @@ local function headerAt(index)
     sender = header[3],
     subject = header[4] or "",
     money = header[5] or 0,
-    cod = header[6] or 0,
-    daysLeft = header[7] or 0,
     hasItem = header[8] == true,
     attachments = header[13] or 0
   }
@@ -206,7 +204,7 @@ end
 
 Mail.scan = function()
   local stats = { available = Mail.available(), messages = 0, sold = 0, expired = 0,
-    unattributed = 0, duplicates = 0, reconfirmed = 0, ignored = 0, cash = 0 }
+    unattributed = 0, duplicates = 0, reconfirmed = 0, cash = 0 }
   Mail.last = stats
   if not stats.available then return stats end
   if WAH.settings and WAH.settings.mailCapture == false then return stats end
@@ -287,11 +285,7 @@ Mail.scan = function()
           else
             stats.duplicates = stats.duplicates + 1
           end
-        else
-          stats.ignored = stats.ignored + 1
         end
-      else
-        stats.ignored = stats.ignored + 1
       end
     end
   end
