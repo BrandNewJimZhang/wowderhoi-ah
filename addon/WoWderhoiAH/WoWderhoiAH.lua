@@ -545,11 +545,11 @@ local function finishScan(totalAuctions)
     faction = UnitFactionGroup("player"),
     character = UnitName and UnitName("player") or nil,
     cash = GetMoney and GetMoney() or 0,
-    -- Optional: an epoch for the server's opening time. Without it the
-    -- terminal falls back to the earliest scan, which a fresh install
+    -- Epoch of the server's opening time; 0 means "not set". Always sent so
+    -- /wahopen auto can clear the anchor the terminal kept; without it the
+    -- terminal would fall back to the earliest scan, which a fresh install
     -- resets to "just opened".
-    openedAt = (WAH.settings and WAH.settings.serverOpenedAt and WAH.settings.serverOpenedAt > 0)
-      and WAH.settings.serverOpenedAt or nil,
+    openedAt = (WAH.settings and WAH.settings.serverOpenedAt) or 0,
     total = totalAuctions or 0,
     items = items
   }
@@ -971,7 +971,10 @@ function WAH.coreInput()
   input.positions = ledger and ledger.positions or {}
   input.capital = {
     cash = cash,
-    budget = math.floor(cash * (WAH.RULES.portfolio.dailyBudget or 0.5))
+    -- The planning cap is the purse. Core.allocate applies
+    -- portfolio.dailyBudget once; discounting it here applied it twice and
+    -- gave the game half the spend the terminal grants on the same cash.
+    budget = cash
   }
   return input
 end
