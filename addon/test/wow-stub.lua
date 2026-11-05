@@ -49,7 +49,13 @@ local function newFrame(frameName, parent)
 end
 
 function frameMeta:Show() self._shown = true end
-function frameMeta:Hide() self._shown = false end
+-- The client fires OnHide when a shown frame goes away; GUI.lua's chart
+-- lifecycle depends on that transition.
+function frameMeta:Hide()
+  local wasShown = self._shown
+  self._shown = false
+  if wasShown and self._scripts.OnHide then self._scripts.OnHide(self) end
+end
 function frameMeta:IsShown() return self._shown end
 function frameMeta:SetScript(script, handler) self._scripts[script] = handler end
 function frameMeta:GetScript(script) return self._scripts[script] end

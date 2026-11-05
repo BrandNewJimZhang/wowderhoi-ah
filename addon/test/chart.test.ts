@@ -162,3 +162,41 @@ describe("time-series chart", () => {
     expect(lua.number("WowTest.ns.chartState().segments")).toBeLessThan(6);
   });
 });
+
+describe("chart lifetime", () => {
+  // The chart sits beside an item tooltip, so hiding the tooltip used to
+  // hide the chart -- and its mode/window buttons -- before the pointer
+  // could reach them. These drive the pointer path the player takes.
+  function detached(): WowLua {
+    const lua = chartPage([9000, 10000, 11000]);
+    // Outside the auction house the chart is anchored to the tooltip, so
+    // closing the house arms the hide path under test.
+    lua.exec("WowTest.fireEvent('AUCTION_HOUSE_CLOSED')");
+    lua.exec("WoWderhoiAH_UpdateChart(4338)");
+    lua.exec("GameTooltip:Show()");
+    return lua;
+  }
+
+  it("outlives the tooltip long enough to click a window button", () => {
+    const lua = detached();
+    lua.exec("GameTooltip:Hide()");
+    // Not hidden synchronously: the pointer may still be crossing the gap.
+    expect(lua.text("WoWderhoiAHChart:IsShown()")).toBe("true");
+    lua.exec("WowTest.runTimers()");
+    expect(lua.text("WoWderhoiAHChart:IsShown()")).toBe("false");
+  });
+
+  it("stays while the pointer is on it and a click re-renders it", () => {
+    const lua = detached();
+    lua.exec("GameTooltip:Hide()");
+    lua.exec("WoWderhoiAHChart._scripts.OnEnter(WoWderhoiAHChart)");
+    lua.exec("WowTest.runTimers()");
+    expect(lua.text("WoWderhoiAHChart:IsShown()")).toBe("true");
+    // The window button the pointer just reached keeps working.
+    lua.exec("WowTest.ns.setChartWindow(6)");
+    expect(lua.number("WowTest.ns.chartState().window")).toBe(6);
+    lua.exec("WoWderhoiAHChart._scripts.OnLeave(WoWderhoiAHChart)");
+    lua.exec("WowTest.runTimers()");
+    expect(lua.text("WoWderhoiAHChart:IsShown()")).toBe("false");
+  });
+});
