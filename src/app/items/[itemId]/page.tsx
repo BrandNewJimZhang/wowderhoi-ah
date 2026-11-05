@@ -11,7 +11,7 @@ import { describeFreshness } from "@/lib/freshness";
 import { SCAN_INTERVAL_MINUTES } from "@/lib/market-rules";
 import { bandFromInterval } from "@/lib/fill";
 import { buildTimeSeries } from "@/lib/chart-series";
-import { currentScanDemand } from "@/lib/market-data";
+import { currentScanDemand, sellPriceOf } from "@/lib/market-data";
 import { CandlestickChart, FillProbabilityChart, OrderBookChart, TimeSeriesChart, type BookTier } from "@/components/charts";
 import { AlertRulePanel } from "@/components/trader-panels";
 import { WatchStar } from "@/components/watch-star";
@@ -93,7 +93,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
             <PanelHeader title="盘口阶梯 (价格 vs 累计在售)" />
             <div className="p-3">
               {latest
-                ? <OrderBookChart tiers={bookTiers} sellP={latest.sellPrice} minPrice={latest.minPrice} />
+                ? <OrderBookChart tiers={bookTiers} sellP={signal?.sellPrice ?? sellPriceOf(latest)} minPrice={latest.minPrice} />
                 : <div className="p-4 font-mono text-xs text-terminal-muted">尚无扫描数据</div>}
               {expiring && ((expiring.soon ?? 0) + (expiring.mid ?? 0) + (expiring.late ?? 0) > 0) && (
                 <div className="mt-2 border-t border-terminal-border pt-2 font-mono text-[11px] text-terminal-muted">
