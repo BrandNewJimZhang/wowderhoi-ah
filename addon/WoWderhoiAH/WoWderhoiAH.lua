@@ -1262,8 +1262,9 @@ function WAH.coreInput()
     if entry.minPrice and entry.minPrice > 0 then
       local samples = WAH.historySamples(itemId)
       local own = ownSales[itemId]
+      -- The key is the item's identity: Core.evaluate iterates pairs(items)
+      -- and never reads an id field from the record.
       input.market.items[itemId] = {
-        itemId = itemId,
         name = entry.name,
         quality = entry.quality,
         itemClass = entry.itemClass,
