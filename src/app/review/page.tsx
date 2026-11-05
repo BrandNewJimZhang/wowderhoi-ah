@@ -10,7 +10,7 @@ import { bucketPredictions, DECISION_LOG_WINDOW_HOURS } from "@/lib/decision-cal
 import { fillRules } from "@/lib/market-rules";
 import { phaseLabels } from "@/lib/phase";
 import { fillBasisLabel } from "@/lib/fill";
-import { summarizeTrades } from "@/lib/trade-summary";
+import { summarizeTrades, tradeChannelLabel } from "@/lib/trade-summary";
 import { Coins } from "@/components/coins";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 
@@ -154,7 +154,7 @@ export default async function ReviewPage() {
           <div className="space-y-2 p-3 font-mono text-xs">
             {Array.from(byChannel.entries()).map(([channel, bucket]) => (
               <div key={channel} className="flex items-center justify-between gap-2">
-                <span className="text-slate-200">{channel === "auction" ? "拍卖行" : channel === "vendor" ? "卖店" : channel}</span>
+                <span className="text-slate-200">{tradeChannelLabel(channel)}</span>
                 <span className="flex items-center gap-3">
                   <span className="text-terminal-muted">{bucket.count} 笔</span>
                   <span className={bucket.pnl >= 0 ? "text-terminal-green" : "text-terminal-red"}><Coins copper={bucket.pnl} /></span>

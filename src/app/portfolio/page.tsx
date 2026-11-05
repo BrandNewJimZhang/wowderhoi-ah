@@ -6,7 +6,7 @@ import { getMarketSignals } from "@/lib/market-signals";
 import { getPositions } from "@/lib/repositories";
 import { phaseLabels } from "@/lib/phase";
 import { valuePositions } from "@/lib/position-valuation";
-import { summarizeTrades } from "@/lib/trade-summary";
+import { summarizeTrades, tradeChannelLabel } from "@/lib/trade-summary";
 import { Coins } from "@/components/coins";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 
@@ -140,7 +140,7 @@ export default async function PortfolioPage() {
                     <td className="px-3 py-2 text-right text-slate-300">{trade.qty}</td>
                     <td className="px-3 py-2 text-right"><Coins copper={trade.price} /></td>
                     <td className={`px-3 py-2 text-right ${trade.pnl >= 0 ? "text-terminal-green" : "text-terminal-red"}`}><Coins copper={trade.pnl} /></td>
-                    <td className="px-3 py-2 text-right text-terminal-muted">{trade.channel}{trade.inferred ? " · 推断" : ""}</td>
+                    <td className="px-3 py-2 text-right text-terminal-muted">{tradeChannelLabel(trade.channel)}{trade.inferred ? " · 推断" : ""}</td>
                   </tr>
                 ))}
                 {allTrades.length === 0 && (

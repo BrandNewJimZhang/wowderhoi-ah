@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { summarizeTrades } from "@/lib/trade-summary";
+import { summarizeTrades, tradeChannelLabel } from "@/lib/trade-summary";
 
 describe("summarizeTrades", () => {
   it("keeps inferred sales out of realized P&L and win rate", () => {
@@ -25,5 +25,11 @@ describe("summarizeTrades", () => {
       inferredCount: 0,
       confirmedWins: 0
     });
+  });
+
+  it("translates known sale channels and passes unknown ones through", () => {
+    expect(tradeChannelLabel("auction")).toBe("拍卖行");
+    expect(tradeChannelLabel("vendor")).toBe("卖店");
+    expect(tradeChannelLabel("craft")).toBe("craft");
   });
 });

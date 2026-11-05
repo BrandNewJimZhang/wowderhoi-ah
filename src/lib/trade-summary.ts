@@ -6,6 +6,18 @@
 // quality of the evidence.
 export type TradeLike = { pnl: number; fee: number; inferred: boolean };
 
+// One label per sale channel. The portfolio table printed the raw journal
+// identifier ("auction"/"vendor") while the review page translated it, so
+// the same trade read as two different things on two pages.
+const TRADE_CHANNEL_LABELS: Record<string, string> = {
+  auction: "拍卖行",
+  vendor: "卖店"
+};
+
+export function tradeChannelLabel(channel: string): string {
+  return TRADE_CHANNEL_LABELS[channel] ?? channel;
+}
+
 export type TradeSummary = {
   confirmedRealized: number;
   inferredRealized: number;
