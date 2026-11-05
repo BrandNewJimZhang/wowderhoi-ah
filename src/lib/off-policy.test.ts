@@ -57,7 +57,7 @@ describe("alphaDecay", () => {
     ]);
     expect(report.buckets).toHaveLength(3);
     expect(report.decaying).toBe(true);
-    expect(report.reason).toContain("win rate");
+    expect(report.reason).toContain("胜率");
   });
 
   it("does not flag a stable edge", () => {
@@ -68,7 +68,7 @@ describe("alphaDecay", () => {
   it("asks for more windows instead of guessing from two", () => {
     const report = alphaDecay([trade(0, 100), trade(1, -100)]);
     expect(report.decaying).toBe(false);
-    expect(report.reason).toContain("not enough");
+    expect(report.reason).toContain("窗口不足");
   });
 
   it("returns an empty report for no trades", () => {

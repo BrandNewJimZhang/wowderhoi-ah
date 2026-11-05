@@ -113,15 +113,17 @@ export function alphaDecay(trades: RealizedTrade[], options?: { windowDays?: num
       winRate: rows.filter((trade) => trade.pnl > 0).length / rows.length
     });
   }
-  if (buckets.length < 3) return { buckets, decaying: false, reason: "not enough windows" };
+  // The reason is shown verbatim on the review page, so it is written in the
+  // product language like every other UI string; it is not a log line.
+  if (buckets.length < 3) return { buckets, decaying: false, reason: "窗口不足，无法判断衰减" };
   const latest = buckets[buckets.length - 1];
   const prior = buckets.slice(-3, -1);
   const priorWinRate = prior.reduce((sum, bucket) => sum + bucket.winRate, 0) / prior.length;
   if (latest.winRate < priorWinRate - 0.15) {
-    return { buckets, decaying: true, reason: "win rate fell by more than 15 points" };
+    return { buckets, decaying: true, reason: "胜率比前两个窗口下降超过 15 个百分点" };
   }
   if (latest.pnl < 0 && prior.every((bucket) => bucket.pnl > 0)) {
-    return { buckets, decaying: true, reason: "realized P&L turned negative after two positive windows" };
+    return { buckets, decaying: true, reason: "已实现盈亏在前两个窗口为正后转为负" };
   }
   return { buckets, decaying: false, reason: null };
 }
