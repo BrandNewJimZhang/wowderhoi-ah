@@ -11,6 +11,10 @@ export type MarketScope = {
   cash: number;
   // Character whose scan produced the ledger; "" when the import carried none.
   character: string;
+  // Server opening time captured by the addon. Phase age is measured from
+  // it when set, so a fresh terminal install does not look like a new server.
+  // Optional only for test fixtures; the market row always carries it.
+  openedAt?: Date | null;
 };
 
 export async function getMarketScope(): Promise<MarketScope | null> {

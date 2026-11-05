@@ -12,9 +12,7 @@ import { getMarketSignals } from "@/lib/market-signals";
 import { describeFreshness } from "@/lib/freshness";
 import { phaseDescription, phaseLabels } from "@/lib/phase";
 import { QUALITY_NAMES } from "@/lib/addon-scan";
-import { allocateCapital } from "@/lib/portfolio";
 import { resolveBudgetCopper } from "@/lib/config";
-import { AH_FEE_RATE, portfolioRules } from "@/lib/market-rules";
 import { filterSortSignals, MARKET_PAGE_SIZE, paginate, parseMarketView } from "@/lib/market-filter";
 import { formatPercent } from "@/lib/utils";
 import { Coins } from "@/components/coins";
@@ -50,28 +48,21 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   // cash the latest scan reported. Core.lua applies the same bound to its
   // spend, so the opportunity list and the position sizing share one base.
   const deployableCapital = scope && scope.cash > 0 ? Math.min(capitalBudget, scope.cash) : capitalBudget;
-  const vendorPriceById = new Map(signals.map((signal) => [signal.itemId, signal.vendorPrice]));
-  const sizing = allocateCapital(
-    evaluation.rows.filter((row) => !row.vendor).map((row) => ({
+  // The shared core already allocated one purse across the ranked rows;
+  // the terminal renders that result instead of running a second sizing
+  // implementation.
+  const sizing = evaluation.rows
+    .filter((row) => !row.vendor && row.allocQty > 0)
+    .map((row) => ({
       itemId: row.itemId,
       name: row.name,
-      unitCost: row.ladderPrice,
-      sellPrice: row.listP,
-      feeRate: AH_FEE_RATE,
+      qty: row.allocQty,
+      budget: Math.round(row.allocQty * row.ladderPrice),
+      expectedNet: row.allocNet,
       fillProb: row.fillProb,
-      // A failed listing returns the goods, so the vendor price is the
-      // loss floor — the same residual Core.sellPlan uses for expiry.
-      residualValue: vendorPriceById.get(row.itemId) ?? 0,
-      samples: row.confidence === "high" ? 20 : row.confidence === "medium" ? 8 : 2
-    })),
-    deployableCapital,
-    {
-      kappa: portfolioRules.kellyFraction,
-      maxItemExposure: portfolioRules.maxItemExposure,
-      dailyBudget: portfolioRules.dailyBudget,
-      minSamplesForKelly: portfolioRules.minKellySamples
-    }
-  );
+      fillBasis: row.fillBasis,
+      exploration: row.samples < 10
+    }));
   // Same production plan as /recipes: one builder, so the dashboard and the
   // full page can never price a recipe against different inputs.
   const production = buildProductionPlan(signals, recipeRows.map(recipeToLp), scope?.cash ?? 0);
@@ -181,9 +172,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
         </div>
         <div className="space-y-3">
           <Panel>
-            <PanelHeader title="仓位建议" action={<span className="font-mono text-xs text-terminal-muted">分数凯利 · 可动用 {deployableCapital / 10000}g</span>} />
+            <PanelHeader title="预算内分配" action={<span className="font-mono text-xs text-terminal-muted">共享核心 · 分数凯利 · 可动用 {deployableCapital / 10000}g</span>} />
             <div className="space-y-2 p-3 font-mono text-xs">
-              {sizing.length === 0 && <div className="text-terminal-muted">当前没有通过风险预算的行动。</div>}
+              {sizing.length === 0 && <div className="text-terminal-muted">当前没有通过风险预算的机会。</div>}
               {sizing.map((row) => (
                 <div key={row.itemId} className="flex items-center justify-between gap-2">
                   <Link href={`/items/${row.itemId}`} className="text-slate-100 hover:text-terminal-amber">{row.name}</Link>
@@ -191,7 +182,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                     <span>{row.qty} 件</span>
                     <span>占用 <Coins copper={row.budget} /></span>
                     <span className={row.expectedNet >= 0 ? "text-terminal-green" : "text-terminal-red"}>净利 <Coins copper={row.expectedNet} /></span>
-                    <span>{row.exploratory ? "探索" : row.cappedBy === "item-exposure" ? "敞口上限" : row.cappedBy === "daily-budget" ? "日预算" : "凯利"}</span>
+                    <span>成交率 {(row.fillProb * 100).toFixed(0)}%</span>
+                    <span>{row.exploration ? "探索" : row.fillBasis === "own" ? "自有成交" : "凯利"}</span>
                   </span>
                 </div>
               ))}

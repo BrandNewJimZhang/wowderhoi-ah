@@ -76,10 +76,14 @@ end
 
 local COL_COUNT = 5
 local RADAR_COLUMNS = {
-  { key = "execQty", label = "COL_QTY", cell = countCell },
+  -- The buyable quantity is the allocated one: all rows share one purse.
+  -- Market depth stays in the tooltip.
+  { key = "allocQty", label = "COL_QTY", cell = countCell },
   { key = "ladderPrice", label = "COL_BUY", cell = moneyCell, asc = true },
   { key = "sellP", label = "COL_SELL", cell = moneyCell },
-  { key = "netProfit", label = "COL_NET", cell = moneyCell },
+  -- Net of the allocated quantity, so the row's numbers describe the same
+  -- trade the quantity column describes.
+  { key = "allocNet", label = "COL_NET", cell = moneyCell },
   { key = "fillProb", label = "COL_FILL", cell = fillCell }
 }
 local RESULT_COLUMNS = {
@@ -422,6 +426,9 @@ renderRows = function()
         rowFrame.showTooltip = function()
           GameTooltip:SetHyperlink("item:" .. row.itemId)
           if row.reason then GameTooltip:AddLine(row.reason, 1, 0.82, 0) end
+          if not row.vendor then
+            GameTooltip:AddLine(string.format(L.RADAR_ALLOC, row.execQty or 0, row.allocQty or 0), 1, 1, 1)
+          end
         end
         rowFrame.name:SetText(row.vendor
           and string.format("%s |cffffd100[%s]|r", row.name, L.VENDOR_TAG)

@@ -64,10 +64,12 @@ describe("executable-profit radar table", () => {
     expect(lua.header(0)).toBe("物品");
     expect([1, 2, 3, 4, 5].map((slot) => lua.header(slot)))
       .toEqual(["可买", "买价", "建议卖价", "净利", "成交率"]);
-    expect(lua.column(1)).toEqual(["5", "12", "57"]);
+    expect(lua.column(1)).toEqual(["5", "3", "14"]);
     expect(lua.column(2)).toEqual(["8银 00铜", "4金 06银", "86银 49铜"]);
     expect(lua.column(3)).toEqual(["10银 00铜", "5金 20银", "1金 00银"]);
-    expect(lua.column(4)).toEqual(["10银 00铜", "10金 47银", "4金 84银"]);
+    // Net of the allocated quantity, not of the whole book: the quantity
+    // and the profit in a row must describe the same trade.
+    expect(lua.column(4)).toEqual(["10银 00铜", "2金 61银", "1金 18银"]);
     expect(lua.column(5)).toEqual(["100%", "100%", "100%"]);
   });
 
@@ -85,7 +87,7 @@ describe("column sorting", () => {
 
   it("sorts by buyable quantity", () => {
     lua.clickHeader("可买");
-    expect(lua.names()).toEqual(["Mageweave Cloth", "Gold Ore", "Linen Cloth [NPC必赚]"]);
+    expect(lua.names()).toEqual(["Mageweave Cloth", "Linen Cloth [NPC必赚]", "Gold Ore"]);
   });
 
   it("sorts by net profit, biggest first", () => {

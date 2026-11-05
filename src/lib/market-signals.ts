@@ -43,7 +43,7 @@ type SignalFetchers = {
 type CacheEntry = {
   scopeId: string | null;
   latestAtMs: number;
-  earliestAtMs: number | null;
+  anchorAtMs: number | null;
   breadth: number;
   phase: MarketPhase;
   bundle: MarketBundle;
@@ -89,19 +89,22 @@ export function createMarketSignalSource(fetchers: SignalFetchers) {
       const now = nowOf();
       const latestAtMs = latestSnapshotAt.getTime();
       if (cached !== null && cached.scopeId === (scope?.id ?? null) && cached.latestAtMs === latestAtMs) {
-        const currentPhase = resolvePhaseOverride() ?? resolvePhase(ageHours(now, cached.earliestAtMs), cached.breadth);
+        const currentPhase = resolvePhaseOverride() ?? resolvePhase(ageHours(now, cached.anchorAtMs), cached.breadth);
         if (currentPhase === cached.phase) return cached.bundle;
       }
 
       const universe = await fetchers.getMarketUniverse(scope);
       const earliestSnapshotAt = await fetchers.getEarliestSnapshotTime(scope);
+      // The addon's configured opening time beats the oldest scan: a fresh
+      // terminal install (or a pruned database) must not reset the phase.
+      const anchorAt = scope?.openedAt ?? earliestSnapshotAt ?? null;
       // Breadth counts the items the newest scan actually listed, matching
       // WAH.currentPhase's scan.items loop. An item that dropped out of the
       // book keeps its history but no longer counts toward market breadth.
       const breadth = universe.filter(
         (item) => item.snapshots.length > 0 && newest(item.snapshots).timestamp.getTime() === latestAtMs
       ).length;
-      const phase = resolvePhaseOverride() ?? resolvePhase(ageHours(now, earliestSnapshotAt?.getTime() ?? null), breadth);
+      const phase = resolvePhaseOverride() ?? resolvePhase(ageHours(now, anchorAt?.getTime() ?? null), breadth);
       const priceIndex = buildPriceIndex(universe);
       const signals = universe
         .filter((item) => item.snapshots.length > 0)
@@ -139,7 +142,7 @@ export function createMarketSignalSource(fetchers: SignalFetchers) {
       cached = {
         scopeId: scope?.id ?? null,
         latestAtMs,
-        earliestAtMs: earliestSnapshotAt?.getTime() ?? null,
+        anchorAtMs: anchorAt?.getTime() ?? null,
         breadth,
         phase,
         bundle

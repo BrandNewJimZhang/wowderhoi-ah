@@ -545,6 +545,11 @@ local function finishScan(totalAuctions)
     faction = UnitFactionGroup("player"),
     character = UnitName and UnitName("player") or nil,
     cash = GetMoney and GetMoney() or 0,
+    -- Optional: an epoch for the server's opening time. Without it the
+    -- terminal falls back to the earliest scan, which a fresh install
+    -- resets to "just opened".
+    openedAt = (WAH.settings and WAH.settings.serverOpenedAt and WAH.settings.serverOpenedAt > 0)
+      and WAH.settings.serverOpenedAt or nil,
     total = totalAuctions or 0,
     items = items
   }
@@ -727,7 +732,7 @@ end)
 -- refresh quadratic in the number of items. The answer only moves at the
 -- phase boundaries (hours) or when the scan or the override changes, so a
 -- few seconds of memoization is free.
-local phaseCache = { scan = nil, override = nil, at = nil, value = nil }
+local phaseCache = { scan = nil, override = nil, openedAt = nil, at = nil, value = nil }
 local PHASE_CACHE_SECONDS = 5
 
 function WAH.currentPhase()
@@ -736,7 +741,9 @@ function WAH.currentPhase()
   local scan = WAH.currentScan()
   if not scan then return "ignition" end
   local now = time()
+  local openedAt = WAH.settings and WAH.settings.serverOpenedAt or 0
   if phaseCache.scan == scan and phaseCache.override == override
+    and phaseCache.openedAt == openedAt
     and phaseCache.at and now - phaseCache.at < PHASE_CACHE_SECONDS then
     return phaseCache.value
   end
@@ -745,10 +752,13 @@ function WAH.currentPhase()
     if item.minPrice and item.minPrice > 0 then breadth = breadth + 1 end
   end
   local market = WAH.seriesMarket()
-  local firstScanAt = market and market.firstScanAt or scan.scannedAt or now
-  local ageHours = math.max(0, (now - firstScanAt) / HOUR)
+  -- A configured opening time beats local history: reinstalling the addon
+  -- or clearing SavedVariables must not turn a mature market back into
+  -- ignition, whose gates are the loosest.
+  local anchor = openedAt > 0 and openedAt or (market and market.firstScanAt) or scan.scannedAt or now
+  local ageHours = math.max(0, (now - anchor) / HOUR)
   local value = Core.phaseFor(ageHours, breadth, WAH.RULES.phaseBoundaries)
-  phaseCache = { scan = scan, override = override, at = now, value = value }
+  phaseCache = { scan = scan, override = override, openedAt = openedAt, at = now, value = value }
   return value
 end
 
@@ -859,6 +869,47 @@ SlashCmdList["WOWDERHOIAHPHASE"] = function(input)
   chatMessage(string.format(L.PHASE_SET, choice))
 end
 
+-- Server opening anchor. The client has no string-to-epoch parser, so the
+-- accepted forms are explicit: "now", an epoch, or "-N" for N hours ago.
+local function setOpenedAt(input)
+  local value = (input or ""):match("^%s*(.-)%s*$")
+  local openedAt
+  if value == "" or value == "auto" then
+    openedAt = 0
+  elseif value == "now" then
+    openedAt = time()
+  elseif value:match("^%-%d+$") then
+    openedAt = time() - tonumber(value:sub(2)) * HOUR
+  elseif value:match("^%d+$") then
+    openedAt = tonumber(value)
+  else
+    chatMessage(L.OPEN_USAGE)
+    return
+  end
+  WAH.settings.serverOpenedAt = openedAt
+  if openedAt > 0 then
+    chatMessage(string.format(L.OPEN_SET, date("%Y-%m-%d %H:%M", openedAt)))
+  else
+    chatMessage(L.OPEN_CLEARED)
+  end
+end
+
+SLASH_WOWDERHOIAHOPEN1 = "/wahopen"
+SlashCmdList["WOWDERHOIAHOPEN"] = setOpenedAt
+
+-- Free bag slots across the backpack and the four equipped bags. The
+-- aggregate is the executable-quantity ceiling; stackSize x slots is an
+-- upper bound when a purchase mixes stack sizes, which is the intended
+-- conservative direction (never overstate what fits).
+local function freeBagSlots()
+  if not (C_Container and C_Container.GetContainerNumFreeSlots) then return 20 end
+  local total = 0
+  for bag = 0, 4 do
+    total = total + (C_Container.GetContainerNumFreeSlots(bag) or 0)
+  end
+  return total
+end
+
 -- Assemble the decision core's input from the latest scan, the retained
 -- series, the journal-derived positions and the player's deployable
 -- capital. One builder, so the cockpit and the sell page cannot disagree
@@ -874,7 +925,7 @@ function WAH.coreInput()
     },
     positions = {},
     capital = { cash = 0, budget = 0 },
-    capacity = { bagSlots = 20, stackSize = 20 }
+    capacity = { bagSlots = freeBagSlots(), stackSize = 20 }
   }
   if not scan then return input end
   local override = WAH.settings and WAH.settings.phaseOverride
@@ -902,6 +953,7 @@ function WAH.coreInput()
         sellers = entry.sellers,
         sellersInvisible = entry.sellersInvisible,
         bidOnly = entry.bidOnly,
+        highestBid = entry.highestBid,
         tiers = entry.tiers,
         inferredSoldLow = entry.inferredSoldLow,
         inferredSoldHigh = entry.inferredSoldHigh,
@@ -909,7 +961,7 @@ function WAH.coreInput()
         elapsedHours = entry.elapsedHours,
         ownSold = own and own.qty or 0,
         ownSamples = own and own.samples or 0,
-        ownElapsedHours = own and own.elapsedHours or 0,
+        ownExposedHours = own and own.exposedHours or 0,
         demandPrior = Core.demandFor(entry.itemClass, entry.itemSubClass),
         history = samples > 0 and { samples = samples } or nil
       }
