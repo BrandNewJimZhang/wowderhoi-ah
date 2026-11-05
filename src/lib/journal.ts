@@ -19,6 +19,11 @@ export type JournalEvent = {
   outputs?: Array<{ itemId: number; qty: number }>;
   mats?: Array<{ itemId: number; qty: number }>;
   inferred?: boolean;
+  // Mail-collected sales: the posting time and the fact that the sale was
+  // observed later than it happened (the mailbox is the observation).
+  listedAt?: number;
+  censored?: boolean;
+  source?: string;
 };
 
 export type JournalBook = {
@@ -39,6 +44,12 @@ export type JournalTrade = {
   pnl: number;
   channel: string;
   inferred: boolean;
+  // When the goods were listed, so the fill model can sum exposure hours
+  // rather than the span between the first and last sale.
+  listedAt?: number;
+  observedAt: number;
+  censored: boolean;
+  source?: string;
 };
 
 export type ReplayError = {
@@ -102,6 +113,9 @@ export function parseJournal(raw: unknown): JournalBook[] {
       }
       if (typeof event.auctionID === "number" || typeof event.auctionID === "string") parsed.auctionID = event.auctionID;
       if (event.inferred === true) parsed.inferred = true;
+      if (typeof event.listedAt === "number") parsed.listedAt = event.listedAt;
+      if (event.censored === true) parsed.censored = true;
+      if (typeof event.source === "string") parsed.source = event.source;
       const outputs = numericEntries(event.outputs).map((output) => {
         const row = (output ?? {}) as Record<string, unknown>;
         return { itemId: toNumber(row.itemId), qty: toNumber(row.qty) };
@@ -178,14 +192,15 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
         break;
       }
       case "craft": {
-        // A craft consumes its materials and adds the product at the material
-        // cost; otherwise the same units are counted twice.
+        // A craft consumes its materials and adds the product at their FIFO
+        // cost. The capture never prices the craft; the ledger is the only
+        // authority for what the consumed units were booked at.
+        let basis = 0;
         for (const material of event.mats ?? []) {
-          consume(material.itemId, material.qty, at);
+          basis += consume(material.itemId, material.qty, at);
         }
         const quantity = event.qty ?? 0;
-        const cost = event.cost ?? 0;
-        addLot(event.itemId, quantity, quantity > 0 ? cost / quantity : 0, at);
+        addLot(event.itemId, quantity, quantity > 0 ? basis / quantity : 0, at);
         break;
       }
       case "vendor": {
@@ -195,7 +210,8 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
         trades.push({
           t: at, itemId: event.itemId ?? null, qty: event.qty ?? 0,
           price: (event.qty ?? 0) > 0 ? paid / (event.qty ?? 1) : 0,
-          fee: 0, basis, pnl: paid - basis, channel: "vendor", inferred: false
+          fee: 0, basis, pnl: paid - basis, channel: "vendor", inferred: false,
+          observedAt: at, censored: false
         });
         break;
       }
@@ -221,13 +237,24 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
         capital.realized += price * quantity - fee - basis;
         capital.fees += fee;
         if (post) {
-          capital.escrow -= post.deposit;
-          delete openPosts[key];
+          // A commodity listing can fill in pieces: keep the remaining units
+          // open and refund the deposit only when the posting is exhausted.
+          const remaining = post.qty - quantity;
+          if (remaining > 0) post.qty = remaining;
+          else {
+            capital.escrow -= post.deposit;
+            delete openPosts[key];
+          }
         }
+        const listedAt = event.listedAt ?? post?.at;
         trades.push({
           t: at, itemId: itemId ?? null, qty: quantity, price, fee, basis,
           pnl: price * quantity - fee - basis, channel: "auction",
-          inferred: event.inferred === true
+          inferred: event.inferred === true,
+          ...(listedAt !== undefined ? { listedAt } : {}),
+          observedAt: at,
+          censored: event.censored === true,
+          ...(event.source !== undefined ? { source: event.source } : {})
         });
         break;
       }

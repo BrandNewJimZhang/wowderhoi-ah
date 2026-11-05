@@ -27,9 +27,14 @@ const compiledDemand = demandBands.map((band) => ({
   weight: band.weight
 }));
 
-// The addon derives its spend cap from dailyBudget only; Kelly sizing and
-// the per-item exposure cap are terminal-side rules.
-const compiledPortfolio = { dailyBudget: portfolioRules.dailyBudget };
+// Sizing runs in the shared core: both runtimes allocate one purse across
+// the ranked rows, so every knob the allocator reads ships together.
+const compiledPortfolio = {
+  kellyFraction: portfolioRules.kellyFraction,
+  minKellySamples: portfolioRules.minKellySamples,
+  maxItemExposure: portfolioRules.maxItemExposure,
+  dailyBudget: portfolioRules.dailyBudget
+};
 
 const LUA_PATH = fileURLToPath(new URL("../addon/WoWderhoiAH/GeneratedRules.lua", import.meta.url));
 

@@ -7,7 +7,7 @@ const EVENTS: JournalEvent[] = [
   { k: "buy", t: 100, itemId: 2589, qty: 10, cost: 10000 },
   { k: "buy", t: 110, itemId: 2589, qty: 10, cost: 20000 },
   { k: "post", t: 120, auctionID: 7, itemId: 2589, qty: 15, price: 1500, deposit: 500 },
-  { k: "sold", t: 130, auctionID: 7, itemId: 2589, qty: 15, price: 1500, fee: 1125 },
+  { k: "sold", t: 130, auctionID: 7, itemId: 2589, qty: 15, price: 1500, fee: 1125, censored: true },
   { k: "vendor", t: 140, itemId: 2589, qty: 3, paid: 4000 },
   { k: "post", t: 150, auctionID: 8, itemId: 2589, qty: 2, price: 1600, deposit: 300 },
   { k: "expire", t: 160, auctionID: 8 },
@@ -29,6 +29,28 @@ describe("replayJournal", () => {
     expect(state.positions[2001]).toEqual({ qty: 1, cost: 1667 });
     expect(state.trades).toHaveLength(2);
     expect(state.trades[0].inferred).toBe(false);
+    expect(state.trades[0].listedAt).toBe(120);
+    expect(state.trades[0].observedAt).toBe(130);
+    expect(state.trades[0].censored).toBe(true);
+  });
+
+  it("prices a craft from its materials, never the reported cost", () => {
+    const state = replayJournal([
+      { k: "buy", t: 1, itemId: 1000, qty: 10, cost: 1000 },
+      { k: "craft", t: 2, itemId: 2000, qty: 2, cost: 99999, mats: [{ itemId: 1000, qty: 10 }] }
+    ]);
+    expect(state.positions[2000]).toEqual({ qty: 2, cost: 1000 });
+  });
+
+  it("keeps a posting open when a sale only fills part of it", () => {
+    const state = replayJournal([
+      { k: "buy", t: 1, itemId: 1, qty: 20, cost: 2000 },
+      { k: "post", t: 2, auctionID: 5, itemId: 1, qty: 20, price: 100, deposit: 300 },
+      { k: "sold", t: 3, auctionID: 5, itemId: 1, qty: 5, price: 100, fee: 25 }
+    ]);
+    expect(state.openPosts["5"].qty).toBe(15);
+    expect(state.capital.escrow).toBe(300);
+    expect(state.positions[1].qty).toBe(15);
   });
 
   it("labels an inferred sale and books it at the posted price", () => {

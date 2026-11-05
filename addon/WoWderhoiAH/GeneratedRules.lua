@@ -48,6 +48,9 @@ WAH.RULES = {
   ownSalesWindowDays = 7
 },
   portfolio = {
+  kellyFraction = 0.25,
+  minKellySamples = 10,
+  maxItemExposure = 0.25,
   dailyBudget = 0.5
 },
   marketTypeRules = {

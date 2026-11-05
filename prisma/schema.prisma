@@ -16,6 +16,9 @@ model Market {
   // Character whose scan (and journal) produced cash, positions and trades.
   // Empty for scan-only imports that carry no character.
   character String   @default("")
+  // Server opening time (epoch seconds from the addon). Phase age is measured
+  // from here when set; otherwise from the earliest scan.
+  openedAt  DateTime? @map("opened_at")
   createdAt DateTime @default(now()) @map("created_at")
 
   snapshots AuctionSnapshot[]
@@ -126,6 +129,9 @@ model Trade {
   pnl        Int
   channel    String // auction | vendor | disenchant | ...
   inferred   Boolean  @default(false) // labelled: the client exposes no sale event
+  // When the goods were listed. `realizedAt` is when the sale was observed;
+  // a mailbox sale is necessarily observed later than it happened.
+  listedAt   DateTime? @map("listed_at")
   realizedAt DateTime @map("realized_at")
   market     Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
 

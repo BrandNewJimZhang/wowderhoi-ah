@@ -87,7 +87,8 @@ export function buildCoreInput(
       elapsedHours,
       ownSold: own?.qty ?? 0,
       ownSamples: own?.samples ?? 0,
-      ownElapsedHours: own?.elapsedHours ?? 0,
+      ownExposedHours: own?.exposedHours ?? 0,
+      highestBid: signal.highestBid,
       demandPrior: demandFor(signal.category, history.subCategory),
       tiers: parseTiers(latest.topTiers, { p: signal.minPrice, q: Math.max(signal.quantity, 1) }),
       history: { samples: signal.sellSamples }

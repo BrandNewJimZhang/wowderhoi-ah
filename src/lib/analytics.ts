@@ -30,6 +30,7 @@ export type MarketSignal = {
   // before it was captured, where the core falls back to its derivation.
   marketType: "commodity" | "item" | null;
   bidOnlyCount: number; // direct demand signal
+  highestBid: number; // highest current bid among bid-only listings, copper
   inferredSoldLow: number; // lost from an owner group: sales + cancels
   inferredSoldHigh: number; // lost from a price key: also repricing
   supplyGrowth: number; // fraction per hour
@@ -101,6 +102,7 @@ export function buildMarketSignal(
     sellersInvisible: latest.sellersInvisible ?? false,
     marketType: latest.marketType === "commodity" || latest.marketType === "item" ? latest.marketType : null,
     bidOnlyCount: latest.bidOnlyCount ?? 0,
+    highestBid: latest.highestBid ?? 0,
     inferredSoldLow: latest.soldProxyLow ?? 0,
     inferredSoldHigh: Math.max(latest.soldProxyHigh ?? 0, latest.soldProxyLow ?? 0),
     supplyGrowth: latest.supplyGrowth ?? 0,

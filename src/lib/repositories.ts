@@ -100,16 +100,22 @@ export async function getOwnSales(scope: MarketScope | null): Promise<OwnSales> 
       inferred: false,
       realizedAt: { gte: since }
     },
-    select: { itemId: true, qty: true, realizedAt: true }
+    select: { itemId: true, qty: true, realizedAt: true, listedAt: true }
   });
-  const byItem = new Map<number, { qty: number; samples: number; first: number; last: number }>();
+  const floorMs = (SCAN_INTERVAL_MINUTES / 60) * 60 * 60 * 1000;
+  const byItem = new Map<number, { qty: number; samples: number; exposureMs: number }>();
   for (const row of rows) {
-    const at = row.realizedAt.getTime();
-    const record = byItem.get(row.itemId) ?? { qty: 0, samples: 0, first: at, last: at };
+    const observedAt = row.realizedAt.getTime();
+    const listedAt = row.listedAt?.getTime() ?? observedAt - floorMs;
+    // Exposure is per sale: how long that listing waited on the book. The
+    // span between the first and last sale understates it when several
+    // listings sold close together. The window bounds which sales count,
+    // not how long a sale waited.
+    const exposure = Math.max(observedAt - listedAt, floorMs);
+    const record = byItem.get(row.itemId) ?? { qty: 0, samples: 0, exposureMs: 0 };
     record.qty += row.qty;
     record.samples += 1;
-    record.first = Math.min(record.first, at);
-    record.last = Math.max(record.last, at);
+    record.exposureMs += exposure;
     byItem.set(row.itemId, record);
   }
   return Object.fromEntries(
@@ -118,8 +124,7 @@ export async function getOwnSales(scope: MarketScope | null): Promise<OwnSales> 
       {
         qty: record.qty,
         samples: record.samples,
-        // The scan interval is the resolution floor.
-        elapsedHours: Math.max((record.last - record.first) / (60 * 60 * 1000), SCAN_INTERVAL_MINUTES / 60)
+        exposedHours: Math.max(record.exposureMs / (60 * 60 * 1000), SCAN_INTERVAL_MINUTES / 60)
       }
     ])
   );

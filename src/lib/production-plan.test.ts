@@ -17,6 +17,7 @@ function signal(overrides: Partial<MarketSignal> & { itemId: number }): MarketSi
     sellersInvisible: false,
     marketType: "commodity",
     bidOnlyCount: 0,
+    highestBid: 0,
     inferredSoldLow: 0,
     inferredSoldHigh: 0,
     supplyGrowth: 0,

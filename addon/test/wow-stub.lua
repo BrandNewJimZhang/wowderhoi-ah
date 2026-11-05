@@ -390,7 +390,14 @@ end
 
 C_Container = {
   GetContainerNumSlots = function(bag) return bed.bagSlots[bag] or 0 end,
-  GetContainerItemInfo = function(bag, slot) return bed.bagContents[bag .. ":" .. slot] end
+  GetContainerItemInfo = function(bag, slot) return bed.bagContents[bag .. ":" .. slot] end,
+  -- Free slots are a separate fixture. Without one the stub reports a
+  -- single 20-slot backpack, the same planning capacity the old hardcoded
+  -- constant used; `bed.freeBagSlots = {}` is an explicitly full client.
+  GetContainerNumFreeSlots = function(bag)
+    if bed.freeBagSlots then return bed.freeBagSlots[bag] or 0 end
+    return bag == 0 and 20 or 0
+  end
 }
 
 C_AuctionHouse.GetItemKeyFromItem = function(item)
@@ -465,6 +472,59 @@ C_AuctionHouse.CancelAuction = function(auctionID)
   bed.ownedAuctions[auctionID] = nil
   bed.fireEvent("OWNED_AUCTIONS_UPDATED")
 end
+
+-- ============================== Mailbox ===============================
+
+-- Fixtures: { sender, subject, money, hasItem, attachments = { "|Hitem:..|h" },
+-- invoice = { kind, name, player, bid, buyout, deposit, consignment } }.
+bed.mail = {}
+bed.mailFrame = newFrame("MailFrame")
+bed.mailFrame:Show()
+MailFrame = bed.mailFrame
+
+function bed.setMail(messages)
+  bed.mail = messages or {}
+end
+
+function GetInboxNumItems() return #bed.mail end
+
+function GetInboxHeaderInfo(index)
+  local message = bed.mail[index]
+  if not message then return end
+  local attachments = message.attachments or {}
+  return "Interface\\Icons\\INV_Letter", "Interface\\Stationery\\Test", message.sender or "Auction House",
+    message.subject or "", message.money or 0, message.cod or 0, message.daysLeft or 30,
+    message.hasItem == true, false, false, nil, false, #attachments
+end
+
+function GetInboxInvoiceInfo(index)
+  local invoice = bed.mail[index] and bed.mail[index].invoice
+  if not invoice then return end
+  return invoice.kind, invoice.name, invoice.player, invoice.bid or 0, invoice.buyout or 0,
+    invoice.deposit or 0, invoice.consignment or 0
+end
+
+function GetInboxItemLink(index, attachment)
+  local message = bed.mail[index]
+  return message and message.attachments and message.attachments[attachment]
+end
+
+C_Mail = {
+  HasInboxMoney = function(index)
+    return (bed.mail[index] and bed.mail[index].money or 0) > 0
+  end,
+  CanCheckInbox = function() return bed.canCheckInbox, 30 end
+}
+
+-- ============================== Crafting ==============================
+
+-- The client reports the crafted item and quantity; recipe info lets the
+-- addon map a recipe spell id to the dataset's recipe id.
+bed.recipeInfo = {}
+
+C_TradeSkillUI = {
+  GetRecipeInfo = function(recipeSpellID) return bed.recipeInfo[recipeSpellID] end
+}
 
 -- ============================== Test bed ==============================
 

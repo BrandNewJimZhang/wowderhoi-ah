@@ -8,7 +8,9 @@ export type Confidence = "high" | "medium" | "low";
 export type FillBasis = "own" | "proxy" | "prior" | "vendor";
 
 // Clean fill labels per item: collected auction sales only, within a window.
-export type OwnSales = Record<number, { qty: number; samples: number; elapsedHours: number }>;
+// `exposedHours` sums each listing's time on the book before its sale was
+// observed, which is the denominator the queue model needs.
+export type OwnSales = Record<number, { qty: number; samples: number; exposedHours: number }>;
 
 export type Tier = { p: number; q: number };
 
@@ -32,7 +34,8 @@ export type CoreMarketItem = {
   elapsedHours?: number;
   ownSold?: number;
   ownSamples?: number;
-  ownElapsedHours?: number;
+  ownExposedHours?: number;
+  highestBid?: number;
   demandPrior?: number;
   marketType?: MarketType;
   history?: { samples?: number };
@@ -63,8 +66,15 @@ export type CoreRow = {
   minPrice: number;
   ladderPrice: number;
   execQty: number;
+  // Quantity the shared allocator grants after ranking every row against
+  // one purse. Actions and both UIs use this, never execQty.
+  allocQty: number;
+  allocNet: number;
   sellP: number;
   listP: number;
+  vendorP: number;
+  samples: number;
+  highestBid: number;
   spreadPercent: number;
   netProfit: number;
   netPerUnit: number;

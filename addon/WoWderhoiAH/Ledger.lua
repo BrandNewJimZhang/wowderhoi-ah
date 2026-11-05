@@ -17,7 +17,10 @@
 local ADDON_NAME, WAH = ...
 
 local Ledger = {}
-Ledger.VERSION = 1
+-- Version 2: craft cost comes from material FIFO consumption, a sale may
+-- fill part of a posting, and trades carry the listing time that the fill
+-- model needs for exposure hours.
+Ledger.VERSION = 2
 
 local function round(value) return math.floor((value or 0) + 0.5) end
 
@@ -104,14 +107,15 @@ function Ledger.replay(events, market)
       local cost = event.cost or 0
       addLot(state, event.itemId, quantity, quantity > 0 and cost / quantity or 0, event.t)
     elseif kind == "craft" then
-      -- A craft consumes its materials and adds the product at the material
-      -- cost. Without the consumption the same units would be counted twice.
+      -- A craft consumes its materials and adds the product at their FIFO
+      -- cost. The capture side never prices the craft: the ledger is the
+      -- only authority for what the consumed units were booked at.
+      local basis = 0
       for _, material in ipairs(event.mats or {}) do
-        consume(state, material.itemId, material.qty or 0, event.t)
+        basis = basis + consume(state, material.itemId, material.qty or 0, event.t)
       end
       local quantity = event.qty or 0
-      local cost = event.cost or 0
-      addLot(state, event.itemId, quantity, quantity > 0 and cost / quantity or 0, event.t)
+      addLot(state, event.itemId, quantity, quantity > 0 and basis / quantity or 0, event.t)
     elseif kind == "vendor" then
       local basis = consume(state, event.itemId, event.qty or 0, event.t)
       state.capital.realized = state.capital.realized + (event.paid or 0) - basis
@@ -119,7 +123,7 @@ function Ledger.replay(events, market)
         t = event.t, itemId = event.itemId, qty = event.qty or 0,
         price = (event.qty or 0) > 0 and ((event.paid or 0) / event.qty) or 0,
         fee = 0, basis = basis, pnl = (event.paid or 0) - basis, channel = "vendor",
-        inferred = false
+        inferred = false, observedAt = event.t, censored = false
       }
     elseif kind == "post" then
       local key = postKey(event, index)
@@ -137,18 +141,30 @@ function Ledger.replay(events, market)
       local quantity = event.qty or (post and post.qty) or 0
       local price = event.price or (post and post.price) or 0
       local fee = event.fee or 0
-      local basis = consume(state, event.itemId or (post and post.itemId), quantity, event.t)
+      local itemId = event.itemId or (post and post.itemId)
+      local basis = consume(state, itemId, quantity, event.t)
       state.capital.realized = state.capital.realized + price * quantity - fee - basis
       state.capital.fees = state.capital.fees + fee
       if post then
-        state.capital.escrow = state.capital.escrow - post.deposit
-        posts[key] = nil
+        -- A commodity listing can fill in pieces: keep the remaining units
+        -- open and refund the deposit only when the posting is exhausted.
+        local remaining = (post.qty or 0) - quantity
+        if remaining > 0 then
+          post.qty = remaining
+        else
+          state.capital.escrow = state.capital.escrow - post.deposit
+          posts[key] = nil
+        end
       end
       state.trades[#state.trades + 1] = {
-        t = event.t, itemId = event.itemId or (post and post.itemId), qty = quantity,
+        t = event.t, itemId = itemId, qty = quantity,
         price = price, fee = fee, basis = basis,
         pnl = price * quantity - fee - basis, channel = "auction",
-        inferred = event.inferred == true
+        inferred = event.inferred == true,
+        listedAt = event.listedAt or (post and post.at),
+        observedAt = event.t,
+        censored = event.censored == true,
+        source = event.source
       }
     elseif kind == "cancel" then
       local key = postKey(event, index)
@@ -222,10 +238,20 @@ end
 -- Auction sales per item inside a window. These are the only clean fill
 -- labels the decision core ever receives: a collected sale is a fact, a
 -- public disappearance is an inference. Inferred trades are excluded.
+--
+-- Exposure hours are per sale, not first-to-last: each listing was on the
+-- book for the time between posting and the sale being observed, and a
+-- mailbox sale is observed when the player opens the mailbox (censored).
+-- Summing those windows gives units per exposed hour, which is what the
+-- queue model needs; a first-to-last span understates exposure whenever
+-- several listings sold close together.
 function Ledger.salesSince(windowSeconds, nowTs)
   local state = Ledger.current()
   local defaultDays = (WAH.RULES and WAH.RULES.fill and WAH.RULES.fill.ownSalesWindowDays) or 7
-  local cutoff = (nowTs or time()) - (windowSeconds or defaultDays * 24 * 3600)
+  local window = windowSeconds or defaultDays * 24 * 3600
+  local cutoff = (nowTs or time()) - window
+  local scanFloorHours = (WAH.RULES and WAH.RULES.scanIntervalMinutes or 15) / 60
+  local scanFloor = scanFloorHours * 3600
   local byItem = {}
   for _, trade in ipairs(state.trades or {}) do
     local quantity = trade.qty or 0
@@ -233,22 +259,20 @@ function Ledger.salesSince(windowSeconds, nowTs)
       and not trade.inferred and quantity > 0 then
       local record = byItem[trade.itemId]
       if not record then
-        record = { qty = 0, samples = 0, firstAt = trade.t, lastAt = trade.t }
+        record = { qty = 0, samples = 0, exposed = 0 }
         byItem[trade.itemId] = record
       end
       record.qty = record.qty + quantity
       record.samples = record.samples + 1
-      if trade.t < record.firstAt then record.firstAt = trade.t end
-      if trade.t > record.lastAt then record.lastAt = trade.t end
+      local observedAt = trade.observedAt or trade.t
+      local listedAt = trade.listedAt or (observedAt - scanFloor)
+      -- The window bounds which sales count, not how long a sale waited:
+      -- a listing that sat for a week belongs in its exposure.
+      record.exposed = record.exposed + math.max(observedAt - listedAt, scanFloor)
     end
   end
-  -- The scan interval is the resolution floor: sales reconciled in one
-  -- pass still describe a rate over at least that long. Read it from the
-  -- compiled rule so the in-game rate and the terminal's getOwnSales
-  -- cannot disagree if the cadence changes.
-  local scanFloorHours = (WAH.RULES and WAH.RULES.scanIntervalMinutes or 15) / 60
   for _, record in pairs(byItem) do
-    record.elapsedHours = math.max((record.lastAt - record.firstAt) / 3600, scanFloorHours)
+    record.exposedHours = math.max(record.exposed / 3600, scanFloorHours)
   end
   return byItem
 end

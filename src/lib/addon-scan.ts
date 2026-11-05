@@ -47,6 +47,9 @@ export type AddonScan = {
   faction: string;
   character: string | null;
   cash: number;
+  // Optional server opening epoch (seconds). Phase age is measured from it
+  // when present; without it the terminal falls back to the oldest scan.
+  openedAt: number | null;
   items: AddonScanItem[];
 };
 
@@ -323,6 +326,9 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
     faction: scan.faction,
     character: typeof scan.character === "string" ? scan.character : null,
     cash: optionalNonNegative(scan.cash, "cash", "scan"),
+    openedAt: typeof scan.openedAt === "number" && Number.isFinite(scan.openedAt) && scan.openedAt > 0
+      ? Math.round(scan.openedAt)
+      : null,
     items
   };
 }

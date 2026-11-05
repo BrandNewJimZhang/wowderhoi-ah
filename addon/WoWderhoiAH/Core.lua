@@ -224,7 +224,9 @@ function Core.fillProbability(input)
   local elapsed = math.max(input.elapsedHours or floor, floor)
   local hazard, basis, spread
   if ownSamples >= 3 and ownSold > 0 then
-    local rate = ownSold / math.max(input.ownElapsedHours or 1, floor)
+    -- Units per exposed hour: each sale contributes the time its listing
+    -- spent on the book, not the span between the first and last sale.
+    local rate = ownSold / math.max(input.ownExposedHours or 1, floor)
     local quantity = math.max(input.qty or 1, 1)
     hazard = rate / quantity
     basis = "own"
@@ -344,6 +346,9 @@ local function reasonFor(row)
     FILL_BASIS_TEXT[row.fillBasis or "prior"] or FILL_BASIS_TEXT.prior)
   if row.bidOnly and row.bidOnly > 0 then
     text = text .. string.format("，另有 %d 笔竞价", row.bidOnly)
+    if (row.highestBid or 0) > 0 then
+      text = text .. string.format("（最高 %d 铜）", row.highestBid)
+    end
   end
   if row.inferredSoldHigh and row.inferredSoldHigh > 0 then
     local low = row.inferredSoldLow or 0
@@ -353,6 +358,66 @@ local function reasonFor(row)
       or string.format("，推断消失 %d–%d 件", low, high))
   end
   return text
+end
+
+-- Fractional Kelly for one bet. win and loss are copper per unit; a
+-- non-positive edge is no bet, not a short one.
+function Core.kellyFraction(p, win, loss)
+  if win <= 0 or loss <= 0 then return 0 end
+  local odds = win / loss
+  local fraction = (p or 0) - (1 - (p or 0)) / odds
+  return math.max(0, math.min(1, fraction))
+end
+
+-- Budget for one opportunity, capped by the per-item exposure rule. A
+-- failed listing returns the goods, so the loss floor is the vendor price,
+-- matching Core.sellPlan's expiry residual.
+function Core.sizePosition(row, deployable, rules)
+  local portfolio = (rules and rules.portfolio) or {}
+  local feeRate = (rules and rules.feeRate) or 0.05
+  local unitCost = row.ladderPrice or 0
+  local capital = math.max(deployable or 0, 0)
+  local win = (row.listP or 0) * (1 - feeRate) - unitCost
+  local loss = math.max(unitCost - (row.vendorP or 0), 1)
+  local fraction = Core.kellyFraction(row.fillProb or 0, win, loss)
+    * (portfolio.kellyFraction or 0.25)
+  local itemCap = capital * (portfolio.maxItemExposure or 0.25)
+  local budget = math.min(capital * fraction, itemCap)
+  return {
+    budget = budget,
+    qty = unitCost > 0 and math.floor(budget / unitCost) or 0,
+    exploratory = (row.samples or 0) < (portfolio.minKellySamples or 10)
+  }
+end
+
+-- Greedy allocation across the already-ranked rows. Every row used to see
+-- the whole budget on its own, so two 60k opportunities could both be
+-- recommended to a 100k purse. Allocation only ever reduces a row's
+-- executable quantity; the market depth (execQty) stays as the ceiling.
+function Core.allocate(rows, deployable, rules)
+  local portfolio = (rules and rules.portfolio) or {}
+  local feeRate = (rules and rules.feeRate) or 0.05
+  local remaining = math.max(deployable or 0, 0) * (portfolio.dailyBudget or 0.5)
+  for _, row in ipairs(rows) do
+    row.allocQty = 0
+    row.allocNet = 0
+    local unit = row.ladderPrice or 0
+    if unit > 0 and remaining > 0 then
+      local cap = math.min((row.execQty or 0) * unit, remaining)
+      if not row.vendor then
+        cap = math.min(cap, Core.sizePosition(row, deployable, rules).budget)
+      end
+      local qty = math.min(row.execQty or 0, math.floor(cap / unit))
+      if qty > 0 then
+        row.allocQty = qty
+        row.allocNet = row.vendor
+          and (row.sellP - unit) * qty
+          or Core.netIfSold(row.listP, qty, unit, feeRate)
+        remaining = remaining - qty * unit
+      end
+    end
+  end
+  return rows
 end
 
 -- Evaluate one market state.
@@ -422,6 +487,12 @@ function Core.evaluate(input)
       local sellP = item.sellP
       local vendorP = item.vendorP or 0
       local listP = Core.listPrice(sellP or minPrice, vendorP, rules)
+      -- Bids are the only direct demand signal the client exposes. During
+      -- ignition they nudge the ranking; they never relax a gate.
+      local demandPrior = item.demandPrior or 1
+      if phase == "ignition" and (item.highestBid or 0) > 0 then
+        demandPrior = demandPrior * 1.2
+      end
 
       -- Class 1: vendor arbitrage. The NPC always buys, so no history,
       -- no spread window and no profit floor apply. Budget and bag space
@@ -451,9 +522,12 @@ function Core.evaluate(input)
             confidence = "high",
             supplyGrowth = 0,
             bidOnly = item.bidOnly or 0,
+            highestBid = item.highestBid or 0,
             inferredSoldLow = 0,
             inferredSoldHigh = 0,
-            demandPrior = item.demandPrior or 1
+            vendorP = vendorP,
+            samples = 0,
+            demandPrior = demandPrior
           }
           row.reason = reasonFor(row)
           row.score = scoreFor(phase, row, 0)
@@ -492,7 +566,7 @@ function Core.evaluate(input)
             qty = qty,
             ownSold = item.ownSold or 0,
             ownSamples = item.ownSamples or 0,
-            ownElapsedHours = item.ownElapsedHours or 0,
+            ownExposedHours = item.ownExposedHours or 0,
             sold = item.inferredSoldLow or 0,
             supply = item.quantity or 0,
             elapsedHours = item.elapsedHours or scanFloor
@@ -523,9 +597,12 @@ function Core.evaluate(input)
             confidence = confidence,
             supplyGrowth = item.supplyGrowth or 0,
             bidOnly = item.bidOnly or 0,
+            highestBid = item.highestBid or 0,
             inferredSoldLow = item.inferredSoldLow or 0,
             inferredSoldHigh = item.inferredSoldHigh or 0,
-            demandPrior = item.demandPrior or 1
+            vendorP = vendorP,
+            samples = samples,
+            demandPrior = demandPrior
           }
           row.reason = reasonFor(row)
           row.score = scoreFor(phase, row, item.supplyGrowth)
@@ -541,42 +618,49 @@ function Core.evaluate(input)
     if left.netProfit ~= right.netProfit then return left.netProfit > right.netProfit end
     return left.itemId < right.itemId
   end)
+  Core.allocate(rows, budget, rules)
 
   -- Conditional plans, not a bare action queue: each buy carries the
-  -- abort condition, and each held position carries its sell plan.
+  -- abort condition, and each held position carries its sell plan. The
+  -- quantity is the allocated one, not the market depth: the actions share
+  -- one purse.
   local actions = {}
-  for index, row in ipairs(rows) do
-    if index > 12 then break end
-    if row.vendor then
-      actions[#actions + 1] = {
-        kind = "buy",
-        itemId = row.itemId,
-        name = row.name,
-        qty = row.execQty,
-        maxUnitPrice = row.sellP,
-        expectedNet = row.netProfit,
-        fillProb = 1,
-        confidence = row.confidence,
-        exit = "vendor",
-        reason = row.reason
-      }
-    else
-      actions[#actions + 1] = {
-        kind = "buy",
-        itemId = row.itemId,
-        name = row.name,
-        qty = row.execQty,
-        maxUnitPrice = round(row.listP * (1 - feeRate)),
-        expectedNet = row.netProfit,
-        fillProb = row.fillProb,
-        confidence = row.confidence,
-        exit = "auction",
-        stop = {
-          kind = "abort",
-          ifPriceAbove = round(row.listP * (1 - feeRate))
-        },
-        reason = row.reason
-      }
+  local planned = 0
+  for _, row in ipairs(rows) do
+    if planned >= 12 then break end
+    if (row.allocQty or 0) > 0 then
+      planned = planned + 1
+      if row.vendor then
+        actions[#actions + 1] = {
+          kind = "buy",
+          itemId = row.itemId,
+          name = row.name,
+          qty = row.allocQty,
+          maxUnitPrice = row.sellP,
+          expectedNet = row.allocNet,
+          fillProb = 1,
+          confidence = row.confidence,
+          exit = "vendor",
+          reason = row.reason
+        }
+      else
+        actions[#actions + 1] = {
+          kind = "buy",
+          itemId = row.itemId,
+          name = row.name,
+          qty = row.allocQty,
+          maxUnitPrice = round(row.listP * (1 - feeRate)),
+          expectedNet = row.allocNet,
+          fillProb = row.fillProb,
+          confidence = row.confidence,
+          exit = "auction",
+          stop = {
+            kind = "abort",
+            ifPriceAbove = round(row.listP * (1 - feeRate))
+          },
+          reason = row.reason
+        }
+      end
     end
   end
   for itemId, position in pairs(positions) do

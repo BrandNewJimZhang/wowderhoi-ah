@@ -10,7 +10,12 @@ local DEFAULTS = {
   tooltip = true, -- trader section on item tooltips
   chart = true, -- price chart panel beside the auction frame
   tradeOnOpen = true, -- open the WAH deal page with the auction house
-  phaseOverride = "auto" -- "ignition" | "wave" | "settle" | "steady" | "auto"
+  phaseOverride = "auto", -- "ignition" | "wave" | "settle" | "steady" | "auto"
+  -- Capture switches double as rollback levers: turned off, the system
+  -- falls back to inferred sales and per-row quantities.
+  mailCapture = true, -- read collected sales from the mailbox
+  craftCapture = true, -- record crafts from TRADE_SKILL events
+  serverOpenedAt = 0 -- epoch seconds; 0 = derive age from the first scan
 }
 
 WAH.settings = nil -- assigned at ADDON_LOADED once SavedVariables exist

@@ -45,10 +45,21 @@ export async function POST(request: Request) {
 
   const market = await prisma.market.upsert({
     where: { realm_faction: { realm: scan.server, faction: scan.faction } },
-    create: { realm: scan.server, faction: scan.faction, cash: scan.cash, character: scan.character ?? "" },
+    create: {
+      realm: scan.server,
+      faction: scan.faction,
+      cash: scan.cash,
+      character: scan.character ?? "",
+      openedAt: scan.openedAt ? new Date(scan.openedAt * 1000) : null
+    },
     // A scan-only import carries no character, so it must not erase the one
-    // the last journal-bearing scan recorded.
-    update: { cash: scan.cash, ...(scan.character ? { character: scan.character } : {}) }
+    // the last journal-bearing scan recorded. Likewise an older addon that
+    // omits the opening time must not clear a configured anchor.
+    update: {
+      cash: scan.cash,
+      ...(scan.character ? { character: scan.character } : {}),
+      ...(scan.openedAt ? { openedAt: new Date(scan.openedAt * 1000) } : {})
+    }
   });
 
   // Full-table reads instead of `in` filters: the item table is small and
@@ -130,6 +141,7 @@ export async function POST(request: Request) {
       pnl: trade.pnl,
       channel: trade.channel,
       inferred: trade.inferred,
+      listedAt: trade.listedAt ? new Date(trade.listedAt * 1000) : null,
       realizedAt: new Date(trade.t * 1000)
     }));
     statements.push(

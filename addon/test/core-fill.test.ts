@@ -29,7 +29,7 @@ describe("fill evidence hierarchy", () => {
       qty: 10,
       ownSold: 20,
       ownSamples: 4,
-      ownElapsedHours: 2
+      ownExposedHours: 2
     });
     // 20 units over 2 hours = 10/hour; a 10-unit listing clears at 1/hour.
     expect(result.basis).toBe("own");
@@ -39,8 +39,8 @@ describe("fill evidence hierarchy", () => {
   });
 
   it("scales the own-sale hazard by the quantity being listed", () => {
-    const small = fill({ horizonHours: 1, qty: 10, ownSold: 20, ownSamples: 4, ownElapsedHours: 2 });
-    const large = fill({ horizonHours: 1, qty: 20, ownSold: 20, ownSamples: 4, ownElapsedHours: 2 });
+    const small = fill({ horizonHours: 1, qty: 10, ownSold: 20, ownSamples: 4, ownExposedHours: 2 });
+    const large = fill({ horizonHours: 1, qty: 20, ownSold: 20, ownSamples: 4, ownExposedHours: 2 });
     expect(large.point).toBeCloseTo(1 - Math.exp(-0.5), 3);
     expect(large.point).toBeLessThan(small.point);
   });
@@ -108,12 +108,27 @@ describe("ledger own-sale labels", () => {
     const text = lua.text(
       `(function()
         local sales = WowTest.ns.Ledger.salesSince(3600, ${now})
-        return sales[2589].qty .. "|" .. sales[2589].samples .. "|" .. string.format("%.2f", sales[2589].elapsedHours)
+        return sales[2589].qty .. "|" .. sales[2589].samples .. "|" .. string.format("%.2f", sales[2589].exposedHours)
       end)()`
     );
-    const floor = (lua.number("WowTest.ns.RULES.scanIntervalMinutes") / 60).toFixed(2);
-    expect(text).toBe(`8|2|${floor}`);
+    // Each sale contributes its own exposure window; without a listing
+    // time the scan interval is the resolution floor, so two sales are
+    // two floors of exposure, not one.
+    const floor = lua.number("WowTest.ns.RULES.scanIntervalMinutes") / 60;
+    expect(text).toBe(`8|2|${(floor * 2).toFixed(2)}`);
     expect(lua.text("(function() local s = WowTest.ns.Ledger.salesSince(3600, " + now + ") return tostring(s[2770] and s[2770].qty) end)()"))
       .toBe("2");
+  });
+
+  it("measures exposure from the listing time, not the span between sales", () => {
+    const lua = loadAddon();
+    const now = 1_700_000_000;
+    lua.exec(`WoWderhoiAH_Ledger = WowTest.ns.Ledger.replay({
+      { t = ${now - 600}, k = "sold", itemId = 2589, qty = 1, price = 100, listedAt = ${now - 6000} },
+      { t = ${now - 300}, k = "sold", itemId = 2589, qty = 1, price = 100, listedAt = ${now - 3300} }
+    }, "TestRealm|Alliance|Tester")`);
+    // 1.5h + 50min = 2.33h exposed; the old first-to-last span was 5 minutes.
+    expect(lua.text("(function() return string.format('%.2f', WowTest.ns.Ledger.salesSince(3600, " + now + ")[2589].exposedHours) end)()"))
+      .toBe("2.33");
   });
 });

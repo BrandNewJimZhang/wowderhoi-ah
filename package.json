@@ -1,6 +1,6 @@
 {
   "name": "wowderhoi-ah",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "license": "AGPL-3.0-or-later",
   "private": true,
   "type": "module",
@@ -22,7 +22,8 @@
     "perf:sweep": "tsx scripts/perf/sweep.ts",
     "test": "vitest run --exclude src/lib/perf-gates.test.ts && vitest run src/lib/perf-gates.test.ts",
     "recipes:fetch": "tsx scripts/fetch-recipes.ts",
-    "recipes:import": "tsx scripts/import-recipes.ts"
+    "recipes:import": "tsx scripts/import-recipes.ts",
+    "recipes:lua": "tsx scripts/gen-lua-recipes.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.10.0",

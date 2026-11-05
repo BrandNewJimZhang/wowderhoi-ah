@@ -17,6 +17,7 @@ export type MarketSnapshot = {
   // imported before the column existed.
   marketType?: string | null;
   bidOnlyCount?: number;
+  highestBid?: number;
   soldProxyLow?: number;
   soldProxyHigh?: number;
   supplyGrowth?: number;

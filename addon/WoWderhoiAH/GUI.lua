@@ -683,7 +683,11 @@ local function diagLine(text)
 end
 
 SLASH_WOWDERHOIAHDIAG1 = "/wahdiag"
-SlashCmdList["WOWDERHOIAHDIAG"] = function()
+SlashCmdList["WOWDERHOIAHDIAG"] = function(input)
+  if input and input:lower():match("^%s*mail%s*$") and WAH.Mail then
+    for _, line in ipairs(WAH.Mail.diagnostics()) do diagLine(line) end
+    return
+  end
   local timeLeftValue, timeLeftType = "n/a", "missing"
   if C_AuctionHouse.GetReplicateItemTimeLeft then
     local ok, value = pcall(C_AuctionHouse.GetReplicateItemTimeLeft, 1)
@@ -739,6 +743,14 @@ SlashCmdList["WOWDERHOIAHDIAG"] = function()
     coinString(ledger and ledger.capital.escrow or 0),
     coinString(ledger and ledger.capital.fees or 0),
     coinString(ledger and ledger.capital.depositsLost or 0)))
-  diagLine(string.format("phase: %s (override %s)", WAH.currentPhase and WAH.currentPhase() or "?",
-    (WAH.settings and WAH.settings.phaseOverride) or "auto"))
+  diagLine(string.format("phase: %s (override %s, openedAt %s)", WAH.currentPhase and WAH.currentPhase() or "?",
+    (WAH.settings and WAH.settings.phaseOverride) or "auto",
+    (WAH.settings and WAH.settings.serverOpenedAt and WAH.settings.serverOpenedAt > 0)
+      and tostring(WAH.settings.serverOpenedAt) or "auto"))
+  if WAH.Mail then
+    for _, line in ipairs(WAH.Mail.diagnostics()) do diagLine(line) end
+  end
+  if WAH.Craft then
+    for _, line in ipairs(WAH.Craft.diagnostics()) do diagLine(line) end
+  end
 end

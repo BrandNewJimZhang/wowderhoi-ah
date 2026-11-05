@@ -56,6 +56,7 @@ function signal(itemId: number): MarketSignal {
     sellersInvisible: false,
     marketType: null,
     bidOnlyCount: 0,
+    highestBid: 0,
     inferredSoldLow: 0,
     inferredSoldHigh: 0,
     supplyGrowth: 0,
@@ -139,5 +140,16 @@ describe("buildCoreInput", () => {
     const input = buildCoreInput(pairs(), { now: LATEST, phase: "settle", firstScanAt: tenDaysAgo });
     expect(input.market.firstScanAt).toBe(tenDaysAgo.getTime() / 1000);
     expect(input.phaseOverride).toBe("settle");
+  });
+});
+
+describe("bid demand signal", () => {
+  it("carries the highest bid into the core input", () => {
+    const input = buildCoreInput(
+      [{ history: history(2589), signal: { ...signal(2589), bidOnlyCount: 2, highestBid: 800 } }],
+      { now: LATEST, phase: "ignition" }
+    );
+    expect(input.market.items[2589].highestBid).toBe(800);
+    expect(input.market.items[2589].bidOnly).toBe(2);
   });
 });
