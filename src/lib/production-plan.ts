@@ -17,9 +17,6 @@ export function buildProductionPlan(
   // from it would manufacture profit the market cannot pay.
   const current = signals.filter((signal) => !signal.stale);
   const prices = new Map(current.map((signal) => [signal.itemId, signal.sellPrice]));
-  const vendorPrices = new Map(
-    current.filter((signal) => signal.vendorPrice > 0).map((signal) => [signal.itemId, signal.vendorPrice])
-  );
   const materialSupply = new Map(current.map((signal) => [signal.itemId, signal.quantity]));
   // Same capital base as the cockpit and the shared core: the planning
   // budget is an upper cap, never more than the scanned purse. `null` means
@@ -29,7 +26,6 @@ export function buildProductionPlan(
   const budget = cashCopper === null ? planned : Math.min(planned, cashCopper);
   const solution = solveProduction(recipes, {
     prices,
-    vendorPrices,
     capacity: productionCapacity,
     materialSupply,
     budget,

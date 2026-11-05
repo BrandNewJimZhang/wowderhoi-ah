@@ -16,7 +16,6 @@ export type LpRecipe = {
 
 export type ProductionOptions = {
   prices: Map<number, number>; // sell front per item, copper
-  vendorPrices?: Map<number, number>;
   capacity: Record<string, number>; // profession -> daily craft slots
   materialSupply?: Map<number, number>;
   budget?: number;
@@ -116,7 +115,10 @@ function unitEconomics(recipe: LpRecipe, options: ProductionOptions) {
   const missing: string[] = [];
   let cost = 0;
   for (const material of recipe.materials) {
-    const price = options.prices.get(material.itemId) ?? options.vendorPrices?.get(material.itemId);
+    // Materials are acquired at the same sell front the page shows. A
+    // material with no current listing has no price; its recipe is counted
+    // as missing data rather than priced from a vendor assumption.
+    const price = options.prices.get(material.itemId);
     if (price === undefined) missing.push(String(material.itemId));
     else cost += material.qty * price;
   }
