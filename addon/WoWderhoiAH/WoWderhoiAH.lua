@@ -67,8 +67,35 @@ end
 -- Write SavedVariables now instead of waiting for the next logout, so the
 -- desktop watcher sees a finished scan or a collected sale within seconds.
 -- A client without the API keeps its usual logout/reload flush.
+local flushTimer = 0
+local flushPending = false
+
 function WAH.flush()
+  -- An immediate save supersedes a queued one.
+  flushTimer = flushTimer + 1
+  flushPending = false
   if C_AddOns and C_AddOns.SaveAddOns then pcall(C_AddOns.SaveAddOns) end
+end
+
+-- Coalesced save for journal writes. A buy, a post, a craft and a manual
+-- entry all change the ledger, and none of them should wait for the next
+-- scan to reach the terminal. Batching through one delayed save keeps a
+-- mailbox sweep or a crafting spree from rewriting the file per event.
+function WAH.requestFlush(delay)
+  if flushPending then return end
+  if not (C_Timer and C_Timer.After) then
+    -- No scheduler to coalesce with: save now rather than lose the batch.
+    WAH.flush()
+    return
+  end
+  flushPending = true
+  flushTimer = flushTimer + 1
+  local token = flushTimer
+  C_Timer.After(delay or 2, function()
+    if flushTimer ~= token then return end
+    flushPending = false
+    WAH.flush()
+  end)
 end
 
 -- The 1.60 client documents item and money lookups under their C_
