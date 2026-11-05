@@ -64,6 +64,13 @@ function WAH.ahFrame()
   return _G.AuctionHouseFrame or _G.AuctionFrame
 end
 
+-- Write SavedVariables now instead of waiting for the next logout, so the
+-- desktop watcher sees a finished scan or a collected sale within seconds.
+-- A client without the API keeps its usual logout/reload flush.
+function WAH.flush()
+  if C_AddOns and C_AddOns.SaveAddOns then pcall(C_AddOns.SaveAddOns) end
+end
+
 -- The 1.60 client documents item and money lookups under their C_
 -- namespaces; the old global aliases are not part of that surface. These
 -- two shims are the only places that choose between the two, so a build
@@ -569,7 +576,7 @@ local function finishScan(totalAuctions)
   -- in seconds, not at the next logout. Fall back silently on clients that
   -- do not expose the API.
   local saveStart = debugprofilestop()
-  if C_AddOns and C_AddOns.SaveAddOns then pcall(C_AddOns.SaveAddOns) end
+  WAH.flush()
   -- Where the time went. /wahdiag prints this; without it a "slow scan"
   -- report cannot be told apart from a slow server response.
   WAH.lastScanStats = {

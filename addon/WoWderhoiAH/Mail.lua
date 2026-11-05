@@ -324,6 +324,9 @@ frame:RegisterEvent("MAIL_INBOX_UPDATE")
 frame:SetScript("OnEvent", function(_, event)
   if event == "MAIL_SHOW" or event == "MAIL_INBOX_UPDATE" then
     local stats = Mail.scan()
+    -- A confirmed sale is the fill model's clean label; flush it now so the
+    -- desktop sees it without waiting for the next auction scan.
+    if stats.sold + stats.expired + stats.reconfirmed > 0 and WAH.flush then WAH.flush() end
     if stats.sold > 0 or stats.expired > 0 then
       DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff33ff99WAH|r %s",
         string.format(WAH.L.MAIL_BOOKED, stats.sold, stats.expired)))
