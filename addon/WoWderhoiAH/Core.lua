@@ -400,6 +400,7 @@ function Core.allocate(rows, deployable, rules)
   for _, row in ipairs(rows) do
     row.allocQty = 0
     row.allocNet = 0
+    row.allocCost = 0
     -- The sample floor is a portfolio rule; the terminal must not re-derive
     -- the "exploratory" label from its own copy of the number.
     row.exploratory = false
@@ -415,11 +416,18 @@ function Core.allocate(rows, deployable, rules)
       if itemCap then cap = math.min(cap, itemCap) end
       local qty = math.min(row.execQty or 0, math.floor(cap / unit))
       if qty > 0 then
+        -- Rows are priced against the whole executable ladder, but an
+        -- allocation that buys fewer units only reaches the cheapest tiers.
+        -- Charging the deep average would understate the plan's profit and
+        -- overstate the cash it occupies.
+        local cost = row.tiers and Core.ladderCost(row.tiers, qty) or nil
+        local unitPrice = cost and cost / qty or unit
         row.allocQty = qty
-        row.allocNet = row.vendor
-          and (row.sellP - unit) * qty
-          or Core.netIfSold(row.listP, qty, unit, feeRate)
-        remaining = remaining - qty * unit
+        row.allocCost = round(cost or qty * unit)
+        row.allocNet = round(row.vendor
+          and (row.sellP - unitPrice) * qty
+          or Core.netIfSold(row.listP, qty, unitPrice, feeRate))
+        remaining = remaining - (cost or qty * unit)
       end
     end
   end
@@ -520,6 +528,9 @@ function Core.evaluate(input)
             vendor = true,
             minPrice = minPrice,
             ladderPrice = cost / qty,
+            -- Kept for the allocator: it reprices a reduced quantity from
+            -- the cheap end of the same book.
+            tiers = tiers,
             execQty = qty,
             sellP = vendorP,
             listP = vendorP,
@@ -594,6 +605,7 @@ function Core.evaluate(input)
             vendor = false,
             minPrice = minPrice,
             ladderPrice = average,
+            tiers = tiers,
             execQty = qty,
             sellP = sellP,
             listP = listP,
@@ -630,6 +642,9 @@ function Core.evaluate(input)
     return left.itemId < right.itemId
   end)
   Core.allocate(rows, budget, rules)
+  -- The ladder was only ever the allocator's input: keeping it on every
+  -- row would copy books the UIs already render from the scan.
+  for _, row in ipairs(rows) do row.tiers = nil end
 
   -- Conditional plans, not a bare action queue: each buy carries the
   -- abort condition, and each held position carries its sell plan. The
