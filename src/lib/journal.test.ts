@@ -69,7 +69,7 @@ describe("replayJournal", () => {
       { k: "post", t: 2, auctionID: 4, itemId: 1, qty: 2, price: 300, deposit: 10 },
       { k: "sold", t: 3, auctionID: 4, itemId: 1, qty: 2, price: 300, fee: 30, inferred: true },
       // The mail reports a smaller commission than the inferred 5% guess.
-      { k: "confirm", t: 9, auctionID: 4, itemId: 1, qty: 2, price: 300, fee: 20, censored: true, source: "mail" }
+      { k: "confirm", t: 9, auctionID: 4, itemId: 1, qty: 2, price: 300, fee: 20, censored: true }
     ]);
     // Revenue is counted once: 600 - 20 - 200. The inferred event's own
     // 30 fee is replaced, not added.
@@ -112,7 +112,7 @@ describe("replayJournal", () => {
       { k: "buy", t: 1, itemId: 1, qty: 2, cost: 200 },
       { k: "post", t: 2, auctionID: 4, itemId: 1, qty: 2, price: 300, deposit: 10 },
       { k: "sold", t: 3, auctionID: 4, itemId: 1, qty: 2, price: 300, fee: 30, inferred: true },
-      { k: "confirm", t: 9, auctionID: 4, itemId: 1, qty: 2, price: 300, fee: 20, censored: true, source: "mail" }
+      { k: "confirm", t: 9, auctionID: 4, itemId: 1, qty: 2, price: 300, fee: 20, censored: true }
     ];
     const fromLua = loadAddon().ledgerReplay(events) as Record<string, unknown>;
     const fromTs = replayJournal(events);

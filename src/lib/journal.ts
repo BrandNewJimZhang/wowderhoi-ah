@@ -23,7 +23,6 @@ export type JournalEvent = {
   // observed later than it happened (the mailbox is the observation).
   listedAt?: number;
   censored?: boolean;
-  source?: string;
 };
 
 export type JournalBook = {
@@ -52,7 +51,6 @@ export type JournalTrade = {
   listedAt?: number;
   observedAt: number;
   censored: boolean;
-  source?: string;
 };
 
 export type ReplayError = {
@@ -118,7 +116,6 @@ export function parseJournal(raw: unknown): JournalBook[] {
       if (event.inferred === true) parsed.inferred = true;
       if (typeof event.listedAt === "number") parsed.listedAt = event.listedAt;
       if (event.censored === true) parsed.censored = true;
-      if (typeof event.source === "string") parsed.source = event.source;
       const outputs = numericEntries(event.outputs).map((output) => {
         const row = (output ?? {}) as Record<string, unknown>;
         return { itemId: toNumber(row.itemId), qty: toNumber(row.qty) };
@@ -257,8 +254,7 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
           inferred: event.inferred === true,
           ...(listedAt !== undefined ? { listedAt } : {}),
           observedAt: at,
-          censored: event.censored === true,
-          ...(event.source !== undefined ? { source: event.source } : {})
+          censored: event.censored === true
         });
         break;
       }
@@ -287,7 +283,6 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
           if (event.listedAt !== undefined) trade.listedAt = event.listedAt;
           trade.observedAt = at;
           trade.censored = event.censored === true;
-          if (event.source !== undefined) trade.source = event.source;
         } else {
           // Only a truncated journal should get here; report it rather than
           // booking a sale whose lots were never consumed.

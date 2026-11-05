@@ -166,8 +166,7 @@ function Ledger.replay(events, market)
         inferred = event.inferred == true,
         listedAt = event.listedAt or (post and post.at),
         observedAt = event.t,
-        censored = event.censored == true,
-        source = event.source
+        censored = event.censored == true
       }
     elseif kind == "confirm" then
       -- The mailbox confirmed a sale that the owned-list reconcile had
@@ -194,7 +193,6 @@ function Ledger.replay(events, market)
         trade.listedAt = event.listedAt or trade.listedAt
         trade.observedAt = event.t
         trade.censored = event.censored == true
-        trade.source = event.source
       else
         -- Only a truncated journal should get here; report it rather than
         -- booking a sale whose lots were never consumed.

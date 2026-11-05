@@ -54,8 +54,7 @@ local function recordCraft(data)
     recipeId = Craft.lastRecipe,
     itemId = data.itemID,
     qty = quantity,
-    mats = mats,
-    source = "tradeskill"
+    mats = mats
   })
   Craft.recorded = Craft.recorded + 1
 end

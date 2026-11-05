@@ -209,9 +209,7 @@ Mail.scan = function()
               price = inferred.price,
               fee = invoice.consignment,
               listedAt = inferred.listedAt,
-              censored = true,
-              source = "mail",
-              mail = mark
+              censored = true
             })
             stats.reconfirmed = stats.reconfirmed + 1
           else
@@ -224,11 +222,8 @@ Mail.scan = function()
               qty = quantity,
               price = unitPrice,
               fee = invoice.consignment,
-              deposit = matched and matched.post.deposit or invoice.deposit,
               listedAt = matched and matched.post.at or nil,
               censored = true,
-              source = "mail",
-              mail = mark,
               inferred = false
             })
             stats.sold = stats.sold + 1
@@ -237,7 +232,7 @@ Mail.scan = function()
           -- An expired listing the addon never saw expire: the deposit is
           -- lost, the goods came back. Only book it when the posting is
           -- still open, or the event would double-count.
-          WAH.recordEvent({ k = "expire", auctionID = matched.auctionID, source = "mail" })
+          WAH.recordEvent({ k = "expire", auctionID = matched.auctionID })
           stats.expired = stats.expired + 1
         else
           stats.ignored = stats.ignored + 1
