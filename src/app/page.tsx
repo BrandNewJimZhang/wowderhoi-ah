@@ -128,7 +128,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
             </div>
           </Panel>
           <Panel>
-            <PanelHeader title="可执行机会" action={<span className="font-mono text-xs text-terminal-green">NPC必赚 + 最低价 vs 建议卖价</span>} />
+            <PanelHeader title="可执行机会" action={<span className="font-mono text-xs text-terminal-green">NPC必赚 + 最低价 vs 建议卖价 · 盘口深度口径</span>} />
             <div className="space-y-2 p-3 font-mono text-xs">
               {deals.length === 0 && (
                 <div className="text-terminal-muted">
@@ -150,7 +150,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                   <span className="flex items-center gap-3">
                     <Coins copper={deal.minPrice} />
                     <span className="text-terminal-muted">{deal.vendor ? "NPC价" : "建议卖价"} <Coins copper={deal.sellP} /></span>
-                    <span className="text-terminal-muted">净利 <Coins copper={deal.netProfit} /></span>
+                    <span className="text-terminal-muted">盘口净利 <Coins copper={deal.netProfit} /></span>
                   </span>
                 </div>
               ))}
