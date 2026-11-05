@@ -99,6 +99,15 @@ describe("Core.evaluate through fengari", () => {
     expect(row.netProfit).toBe(11688);
   });
 
+  it("spends nothing when the scan reported an empty purse", () => {
+    // Zero copper is a balance, not a missing field: the in-game radar goes
+    // silent because GetMoney returns 0, and the terminal must agree rather
+    // than fall back to the planning budget on the same character.
+    const input = commodityInput({ phase: "wave" });
+    input.capital = { cash: 0, budget: 500000 };
+    expect(runCore(input).rows).toHaveLength(0);
+  });
+
   it("never plans a spend larger than the cash the scan reported", () => {
     // The terminal used to pass its planning budget as the only spend cap,
     // so a 30k purse could be told to buy 94k worth of goods. The addon

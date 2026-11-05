@@ -47,7 +47,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   // The planning budget is a cap, not a purse: never allocate more than the
   // cash the latest scan reported. Core.lua applies the same bound to its
   // spend, so the opportunity list and the position sizing share one base.
-  const deployableCapital = scope && scope.cash > 0 ? Math.min(capitalBudget, scope.cash) : capitalBudget;
+  // A scanned 0 is an empty purse, not an unknown balance: the core funds
+  // nothing on it, so the label must not promise the planning budget.
+  const deployableCapital = scope ? Math.min(capitalBudget, scope.cash) : capitalBudget;
   // The shared core already allocated one purse across the ranked rows;
   // the terminal renders that result instead of running a second sizing
   // implementation.
@@ -65,7 +67,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
     }));
   // Same production plan as /recipes: one builder, so the dashboard and the
   // full page can never price a recipe against different inputs.
-  const production = buildProductionPlan(signals, recipeRows.map(recipeToLp), scope?.cash ?? 0);
+  const production = buildProductionPlan(signals, recipeRows.map(recipeToLp), scope?.cash ?? null);
   // The client table only ever receives the visible page; filtering and
   // sorting run here against the URL-provided view.
   const filtered = filterSortSignals(signals, view);

@@ -38,7 +38,7 @@ function historyItem(itemId: number, sellPrice: number, timestamp: Date = LATEST
 
 function fetchers(universe: MarketHistory[], latest: Date = LATEST) {
   return {
-    getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0, character: "Tester" }),
+    getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 500000, character: "Tester" }),
     getLatestSnapshotTime: async () => latest,
     getEarliestSnapshotTime: async () => universe.length > 0 ? universe[0].snapshots[0].timestamp : null,
     getMarketUniverse: async () => universe,
@@ -74,10 +74,22 @@ describe("createMarketSignalSource", () => {
     expect(bundle.evaluation.actions.some((action) => action.kind === "buy")).toBe(true);
   });
 
+  it("recommends nothing for a character whose scan saw an empty purse", async () => {
+    const source = createMarketSignalSource({
+      ...fetchers([historyItem(1, 200)]),
+      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0, character: "Tester" })
+    });
+    const bundle = await source.getMarketSignals();
+    // The market rows still exist -- the book is real -- but nothing is
+    // affordable, exactly as the in-game radar behaves with 0 copper.
+    expect(bundle.evaluation.rows).toHaveLength(0);
+    expect(bundle.evaluation.actions).toHaveLength(0);
+  });
+
   it("scopes every market read to the selected realm and faction", async () => {
     const seen: string[] = [];
     const source = createMarketSignalSource({
-      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0, character: "Tester" }),
+      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 500000, character: "Tester" }),
       getLatestSnapshotTime: async (scope) => { seen.push(scope?.id ?? "none"); return LATEST; },
       getEarliestSnapshotTime: async (scope) => { seen.push(scope?.id ?? "none"); return LATEST; },
       getMarketUniverse: async (scope) => { seen.push(scope?.id ?? "none"); return [historyItem(1, 200)]; },
@@ -95,7 +107,7 @@ describe("createMarketSignalSource", () => {
     let scopeId = "m1";
     let marker = "first";
     const source = createMarketSignalSource({
-      getMarketScope: async () => ({ id: scopeId, realm: "TestRealm", faction: "Alliance", cash: 0, character: "Tester" }),
+      getMarketScope: async () => ({ id: scopeId, realm: "TestRealm", faction: "Alliance", cash: 500000, character: "Tester" }),
       getLatestSnapshotTime: async () => LATEST,
       getEarliestSnapshotTime: async () => LATEST,
       getMarketUniverse: async () => {
@@ -127,7 +139,7 @@ describe("createMarketSignalSource", () => {
     let generation = new Date("2026-07-20T10:00:00Z");
     let price = 200;
     const source = createMarketSignalSource({
-      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0, character: "Tester" }),
+      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 500000, character: "Tester" }),
       getLatestSnapshotTime: async () => generation,
       getEarliestSnapshotTime: async () => LATEST,
       getMarketUniverse: async () => [historyItem(1, price, generation)],
@@ -158,7 +170,7 @@ describe("createMarketSignalSource", () => {
       return item;
     });
     const bundle = await createMarketSignalSource({
-      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0, character: "Tester" }),
+      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 500000, character: "Tester" }),
       getLatestSnapshotTime: async () => latest,
       getEarliestSnapshotTime: async () => earliest,
       getMarketUniverse: async () => universe,
@@ -178,7 +190,7 @@ describe("createMarketSignalSource", () => {
     let universeFetches = 0;
     const universe = Array.from({ length: 100 }, (_, index) => historyItem(index + 1, 200, opened));
     const source = createMarketSignalSource({
-      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0, character: "Tester" }),
+      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 500000, character: "Tester" }),
       getLatestSnapshotTime: async () => opened,
       getEarliestSnapshotTime: async () => opened,
       getMarketUniverse: async () => {
@@ -230,7 +242,7 @@ describe("createMarketSignalSource", () => {
   it("returns empty signals without caching when the store has no snapshots", async () => {
     let universeFetches = 0;
     const source = createMarketSignalSource({
-      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0, character: "Tester" }),
+      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 500000, character: "Tester" }),
       getLatestSnapshotTime: async () => null,
       getEarliestSnapshotTime: async () => null,
       getMarketUniverse: async () => {

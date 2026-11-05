@@ -55,6 +55,18 @@ describe("buildProductionPlan", () => {
     expect(solution.excluded).toBe(1);
   });
 
+  it("plans nothing against an empty purse", () => {
+    // Same rule as the shared core: 0 copper is what the scan saw, not
+    // "cash unknown". Falling back to the planning budget would have the
+    // terminal manufacture goods the character cannot pay for.
+    const { budget } = buildProductionPlan(
+      [signal({ itemId: 100 }), signal({ itemId: 200 })],
+      [RECIPE],
+      0
+    );
+    expect(budget).toBe(0);
+  });
+
   it("caps the production budget at the scanned cash", () => {
     const { budget } = buildProductionPlan(
       [signal({ itemId: 100 }), signal({ itemId: 200 })],

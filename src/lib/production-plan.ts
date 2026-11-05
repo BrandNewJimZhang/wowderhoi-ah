@@ -10,7 +10,7 @@ import { productionCapacity, productionDefaults } from "@/lib/production-config"
 export function buildProductionPlan(
   signals: MarketSignal[],
   recipes: LpRecipe[],
-  cashCopper = 0
+  cashCopper: number | null = null
 ): { solution: ProductionSolution; budget: number } {
   // A delisted item has no buyable materials and no sellable product: its
   // last sell front is history, not an achievable price. Pricing a recipe
@@ -22,9 +22,11 @@ export function buildProductionPlan(
   );
   const materialSupply = new Map(current.map((signal) => [signal.itemId, signal.quantity]));
   // Same capital base as the cockpit and the shared core: the planning
-  // budget is an upper cap, never more than the scanned purse.
+  // budget is an upper cap, never more than the scanned purse. `null` means
+  // the balance is unknown; a reported 0 is an empty purse and funds
+  // nothing.
   const planned = resolveBudgetCopper();
-  const budget = cashCopper > 0 ? Math.min(planned, cashCopper) : planned;
+  const budget = cashCopper === null ? planned : Math.min(planned, cashCopper);
   const solution = solveProduction(recipes, {
     prices,
     vendorPrices,

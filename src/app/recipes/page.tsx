@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export default async function RecipesPage() {
   const [{ signals, phase, scope }, recipeRows] = await Promise.all([getMarketSignals(), getRecipes()]);
   const recipes = recipeRows.map(recipeToLp);
-  const { solution, budget } = buildProductionPlan(signals, recipes, scope?.cash ?? 0);
+  const { solution, budget } = buildProductionPlan(signals, recipes, scope?.cash ?? null);
 
   return (
     <main className="terminal-grid min-h-screen bg-terminal-bg p-3 text-slate-200">

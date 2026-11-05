@@ -128,8 +128,9 @@ export function createMarketSignalSource(fetchers: SignalFetchers) {
         // Cash is what the character actually holds at the last scan; the
         // planning budget is a separate cap. Passing the budget as cash made
         // the terminal's capital block lie about the same field the addon
-        // fills from GetMoney().
-        cashCopper: scope?.cash ?? 0
+        // fills from GetMoney(). An absent market leaves it undefined
+        // ("unknown") rather than 0 ("broke").
+        cashCopper: scope?.cash
       });
       const bundle: MarketBundle = {
         scope,

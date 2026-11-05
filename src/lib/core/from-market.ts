@@ -105,7 +105,10 @@ export function buildCoreInput(
       items
     },
     capital: {
-      cash: options.cashCopper ?? 0,
+      // Undefined means "balance unknown" and lets the core fall back to
+      // the planning budget; a reported 0 is an empty purse and funds
+      // nothing.
+      cash: options.cashCopper,
       budget: options.budgetCopper ?? 0
     },
     capacity: {
