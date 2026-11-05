@@ -90,6 +90,9 @@ end
 function WAH.recordEvent(event)
   local recorded = Journal.append(event)
   if WAH.Ledger then WAH.Ledger.rebuild() end
+  -- Every journal write is new ledger state; queue one save so the terminal
+  -- sees a buy, a post or a craft without waiting for the next scan.
+  if WAH.requestFlush then WAH.requestFlush() end
   return recorded
 end
 

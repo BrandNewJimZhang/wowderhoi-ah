@@ -308,7 +308,7 @@ npm run recipes:lua
 npm run dev
 ```
 
-游戏内扫描后插件会自动调用 `SaveAddOns`（不支持时小退/`/reload`）；配置 `AQT_SAVEDVARS_PATH` 后运行 `npm run addon:watch`。导入是事务式的：快照、日线、头寸与成交一起落库；邮箱成交会在两次扫描之间单独触发一次账本重放，重复的快照本身不重复写入。
+游戏内扫描后插件会自动调用 `SaveAddOns`，任何账本写入（成交、买入、上架、制造、手动记录）也会在约 2 秒内合并落盘（不支持时小退/`/reload`）；配置 `AQT_SAVEDVARS_PATH` 后运行 `npm run addon:watch`。导入是事务式的：快照、日线、头寸与成交一起落库；账本变化会在两次扫描之间单独触发一次账本重放，重复的快照本身不重复写入。
 
 ### 边界
 

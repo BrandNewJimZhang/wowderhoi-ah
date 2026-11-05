@@ -105,4 +105,30 @@ describe("journal and ledger", () => {
     const lua = loadAddon();
     expect(() => lua.exec("WowTest.ns.Journal.append({ k = 'teleport' })")).toThrow(/unknown event/i);
   });
+
+  it("coalesces journal writes into one delayed save", () => {
+    const lua = loadAddon();
+    lua.exec("WowTest.savedCount = 0");
+    record(lua, { k: "buy", itemId: 2589, qty: 1, cost: 100 });
+    record(lua, { k: "post", auctionID: 7, itemId: 2589, qty: 1, price: 200, deposit: 10 });
+    // Both events queue one save, not two: a crafting spree or a mailbox
+    // sweep must not rewrite SavedVariables per event.
+    expect(lua.number("WowTest.savedCount")).toBe(0);
+    lua.exec("WowTest.runTimers()");
+    expect(lua.number("WowTest.savedCount")).toBe(1);
+    record(lua, { k: "cancel", auctionID: 7, refund: 10 });
+    lua.exec("WowTest.runTimers()");
+    expect(lua.number("WowTest.savedCount")).toBe(2);
+  });
+
+  it("lets an immediate save supersede the queued one", () => {
+    const lua = loadAddon();
+    lua.exec("WowTest.savedCount = 0");
+    record(lua, { k: "buy", itemId: 2589, qty: 1, cost: 100 });
+    // The mailbox and the scan call WAH.flush directly; the queued timer
+    // must not write the same state a second time.
+    lua.exec("WowTest.ns.flush()");
+    lua.exec("WowTest.runTimers()");
+    expect(lua.number("WowTest.savedCount")).toBe(1);
+  });
 });
