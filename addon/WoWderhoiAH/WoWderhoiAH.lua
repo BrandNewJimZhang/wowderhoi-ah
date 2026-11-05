@@ -449,6 +449,7 @@ end
 local function finishScan(totalAuctions)
   local finishStart = debugprofilestop()
   local processMs = scanState.processMs or 0
+  local waitMs = scanState.waitMs or 0
   local nowTs = time()
   local market = ensureSeries()
   local phase = WAH.currentPhase and WAH.currentPhase() or "steady"
@@ -568,6 +569,7 @@ local function finishScan(totalAuctions)
   -- report cannot be told apart from a slow server response.
   WAH.lastScanStats = {
     rows = totalAuctions or 0,
+    waitMs = waitMs,
     processMs = processMs,
     finishMs = finishMs,
     saveMs = debugprofilestop() - saveStart
@@ -606,6 +608,9 @@ local function startProcessing()
   if scanState.processing then return end
   scanState.processing = true
   scanState.cursor = 1
+  -- Time spent waiting for the server, kept apart from the time spent
+  -- processing it: only one of the two is ours.
+  scanState.waitMs = debugprofilestop() - (scanState.requestAt or debugprofilestop())
   chatMessage(string.format(L.SCAN_RECEIVED, scanState.total))
   frame:SetScript("OnUpdate", processReplicateChunk)
 end
@@ -629,6 +634,7 @@ local function startScan()
     itemsById = {},
     processing = false,
     processMs = 0,
+    requestAt = debugprofilestop(),
     capture = previousCapture()
   }
   WAH.scanRunning = true

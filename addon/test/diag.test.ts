@@ -27,6 +27,8 @@ describe("/wahdiag", () => {
     expect(lua.anyChat("scan age:")).toBe(true);
     expect(lua.anyChat("series:")).toBe(true);
     expect(lua.anyChat("capture tiers:")).toBe(true);
+    // Where a "slow scan" went: the server wait is not the addon's time.
+    expect(lua.anyChat("last scan: 2 rows | wait 0 ms | process 0 ms | finish 0 ms | save 0 ms")).toBe(true);
     expect(lua.anyChat("SaveAddOns: available")).toBe(true);
     expect(lua.anyChat("PostItem/PostCommodity: present/present")).toBe(true);
     expect(lua.anyChat("CalculateCommodityDeposit(2589,24,1): 72")).toBe(true);

@@ -709,9 +709,10 @@ SlashCmdList["WOWDERHOIAHDIAG"] = function()
   diagLine(string.format("series: %d points across %d items",
     points, market and (function() local n = 0 for _ in pairs(market.items) do n = n + 1 end return n end)() or 0))
   local stats = WAH.lastScanStats
-  diagLine(string.format("last scan: %d rows | process %.0f ms | finish %.0f ms | save %.0f ms",
-    stats and stats.rows or 0, stats and stats.processMs or 0,
-    stats and stats.finishMs or 0, stats and stats.saveMs or 0))
+  diagLine(string.format("last scan: %d rows | wait %.0f ms | process %.0f ms | finish %.0f ms | save %.0f ms",
+    stats and stats.rows or 0, stats and stats.waitMs or 0,
+    stats and stats.processMs or 0, stats and stats.finishMs or 0,
+    stats and stats.saveMs or 0))
   diagLine(string.format("capture tiers: %d items",
     (function() local n = 0 for _ in pairs(WoWderhoiAH_Capture and WoWderhoiAH_Capture.items or {}) do n = n + 1 end return n end)()))
   diagLine(string.format("SaveAddOns: %s", C_AddOns and C_AddOns.SaveAddOns and "available" or "missing"))
