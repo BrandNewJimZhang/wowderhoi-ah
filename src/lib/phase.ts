@@ -11,10 +11,6 @@ export function resolvePhase(ageHours: number, breadth: number): MarketPhase {
   return "steady";
 }
 
-export function phaseWindowHours(phase: MarketPhase): number {
-  return phaseHistory[phase].windowHours;
-}
-
 // Ignition deliberately has no history window. Statistics that still need a
 // window (trend, chart default) borrow the steady one from the same rule
 // table instead of restating the number.
