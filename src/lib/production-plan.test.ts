@@ -59,12 +59,16 @@ describe("buildProductionPlan", () => {
     // Same rule as the shared core: 0 copper is what the scan saw, not
     // "cash unknown". Falling back to the planning budget would have the
     // terminal manufacture goods the character cannot pay for.
-    const { budget } = buildProductionPlan(
-      [signal({ itemId: 100 }), signal({ itemId: 200 })],
+    const { budget, solution } = buildProductionPlan(
+      [signal({ itemId: 100, sellPrice: 10 }), signal({ itemId: 200, sellPrice: 1000 })],
       [RECIPE],
       0
     );
     expect(budget).toBe(0);
+    // The budget must bind the plan itself, not just the printed number:
+    // with 0 copper the LP has to plan zero crafts.
+    expect(solution.rows).toHaveLength(0);
+    expect(solution.totalProfit).toBe(0);
   });
 
   it("caps the production budget at the scanned cash", () => {

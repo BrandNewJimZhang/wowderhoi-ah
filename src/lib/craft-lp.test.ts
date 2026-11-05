@@ -75,6 +75,17 @@ describe("solveProduction", () => {
     expect(solution.shadowPrices.budget).toBeCloseTo(3.75, 5);
   });
 
+  it("treats an explicit zero budget as an empty purse", () => {
+    // buildProductionPlan always passes the resolved budget. A 0 there is
+    // the scanned cash, so skipping the constraint would plan crafts the
+    // character cannot pay for.
+    const solution = solveProduction([
+      RECIPE({ id: 1, name: "Broke", profession: "裁缝", materials: [{ itemId: 1, qty: 2 }], products: [{ itemId: 10, qty: 1 }] })
+    ], { prices, capacity: { 裁缝: 10 }, budget: 0, feeRate: 0.05 });
+    expect(solution.rows).toEqual([]);
+    expect(solution.totalProfit).toBe(0);
+  });
+
   it("falls back to a labelled greedy allocation when the LP is unavailable", () => {
     const solution = solveProduction([
       RECIPE({ id: 1, name: "A", profession: "裁缝", materials: [{ itemId: 1, qty: 1 }], products: [{ itemId: 10, qty: 1 }] })

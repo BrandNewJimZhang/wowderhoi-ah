@@ -200,7 +200,11 @@ export function solveProduction(recipes: LpRecipe[], options: ProductionOptions)
       });
     }
   }
-  if (options.budget && options.budget > 0) {
+  // An explicit 0 is the scanned purse, not "unlimited": buildProductionPlan
+  // always resolves a number, and skipping the constraint on 0 planned
+  // crafts the character cannot pay for. `undefined` means no budget was
+  // supplied at all.
+  if (options.budget !== undefined && options.budget >= 0) {
     constraints.push({
       name: "budget",
       coefficients: candidates.map((row) => row.unitCost),
