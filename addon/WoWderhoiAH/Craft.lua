@@ -17,17 +17,25 @@ local Craft = {
   unmapped = 0
 }
 
+-- A recipe whose product the dataset names must produce the crafted item;
+-- a stale craft-begin id or an id that collides with the dataset's own
+-- numbering would otherwise consume a different recipe's materials. A
+-- recipe without a recorded product cannot be checked and is accepted as
+-- before rather than losing the capture.
+local function produces(recipe, productItemId)
+  return not recipe.p or not productItemId or recipe.p == productItemId
+end
+
 local function recipeFor(recipeSpellID, productItemId)
   local recipes = WAH.RECIPES or {}
   local recipe = recipeSpellID and recipes[recipeSpellID]
-  if recipe then return recipe end
+  if recipe and produces(recipe, productItemId) then return recipe end
   -- The dataset id and the recipe spell id are not guaranteed to be the
   -- same field. Ask the client for the recipe id the dataset uses.
   if recipeSpellID and C_TradeSkillUI and C_TradeSkillUI.GetRecipeInfo then
     local ok, info = pcall(C_TradeSkillUI.GetRecipeInfo, recipeSpellID)
-    if ok and info and info.recipeID and recipes[info.recipeID] then
-      return recipes[info.recipeID]
-    end
+    local resolved = ok and info and info.recipeID and recipes[info.recipeID]
+    if resolved and produces(resolved, productItemId) then return resolved end
   end
   -- Last resort: a product produced by exactly one known recipe.
   local byProduct = WAH.RECIPE_BY_PRODUCT or {}

@@ -54,6 +54,19 @@ describe("craft capture", () => {
     expect(lua.number("WowTest.ns.Ledger.positions()[2302].cost")).toBe(250);
   });
 
+  it("rejects a recipe id that does not produce the crafted item", () => {
+    const lua = loadAddon();
+    record(lua, { k: "buy", itemId: 2318, qty: 10, cost: 1000 });
+    record(lua, { k: "buy", itemId: 2320, qty: 10, cost: 500 });
+    // Recipe 1353 produces 2302 from 2 leather + 1 thread. A craft result
+    // for 2303 under a stale 1353 capture must not consume 1353's materials:
+    // the product index resolves 2303 to its own recipe (4 leather + 1).
+    craft(lua, 1353, { itemID: 2303, quantity: 1 });
+    expect(lua.number("WowTest.ns.Journal.count()")).toBe(3);
+    expect(lua.number("WowTest.ns.Ledger.positions()[2303].cost")).toBe(450);
+    expect(lua.number("WowTest.ns.Ledger.positions()[2318].qty")).toBe(6);
+  });
+
   it("counts an unknown recipe as unmapped instead of booking a wrong cost", () => {
     const lua = loadAddon();
     craft(lua, 777777, { itemID: 999999, quantity: 1 });
