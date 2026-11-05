@@ -143,6 +143,32 @@ describe("replayJournal", () => {
     expect(fromTs.errors).toEqual(fromLua.errors);
   });
 
+  it("moves FIFO cost across a transfer instead of dropping the event", () => {
+    // The addon records a cross-character move on both sides with
+    // /wahtransfer. Ledger.lua consumes the sender's lots and re-adds them
+    // on the receiver at the printed unit cost; the terminal must replay
+    // the same events or its positions (and the P&L of later sales from the
+    // received goods) disagree with the book the player sees in game.
+    const events: JournalEvent[] = [
+      { k: "buy", t: 100, itemId: 2589, qty: 10, cost: 1000 },
+      { k: "transfer_out", t: 200, itemId: 2589, qty: 4, cost: 400 }
+    ];
+    const state = replayJournal(events);
+    expect(state.positions[2589]).toEqual({ qty: 6, cost: 600 });
+    expect(state.trades).toHaveLength(0);
+    expect(state.errors).toHaveLength(0);
+
+    const received = replayJournal([
+      { k: "transfer_in", t: 100, itemId: 2589, qty: 4, cost: 400 }
+    ]);
+    expect(received.positions[2589]).toEqual({ qty: 4, cost: 400 });
+    expect(received.errors).toHaveLength(0);
+
+    const fromLua = loadAddon().ledgerReplay(events) as Record<string, unknown>;
+    expect(state.positions).toEqual(fromLua.positions);
+    expect(state.errors).toEqual(fromLua.errors);
+  });
+
   it("matches the Lua ledger for the same journal", () => {
     const fromLua = loadAddon().ledgerReplay(EVENTS) as Record<string, unknown>;
     const fromTs = replayJournal(EVENTS);

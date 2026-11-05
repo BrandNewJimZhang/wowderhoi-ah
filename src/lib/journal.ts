@@ -324,6 +324,18 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
         delete openPosts[key];
         break;
       }
+      case "transfer_out": {
+        // Goods moved to another character. The sending book keeps the FIFO
+        // cost only long enough to consume it; the receiving character's
+        // journal records the same basis with transfer_in.
+        consume(event.itemId, event.qty ?? 0, at);
+        break;
+      }
+      case "transfer_in": {
+        const quantity = event.qty ?? 0;
+        addLot(event.itemId, quantity, quantity > 0 ? (event.cost ?? 0) / quantity : 0, at);
+        break;
+      }
       case "de":
       case "prospect":
       case "mill": {
