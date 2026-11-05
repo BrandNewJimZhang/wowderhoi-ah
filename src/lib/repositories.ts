@@ -80,6 +80,34 @@ export async function getRecipes() {
   return prisma.recipe.findMany({ orderBy: [{ profession: "asc" }, { name: "asc" }] });
 }
 
+// Positions and trades are rewritten by every import, including the
+// journal-only replay the mailbox triggers between scans. The signal bundle
+// caches per scan generation, so without this token a confirmed sale would
+// only reach the cockpit at the next scan. Counts, quantities and sums move
+// on buys, sales and confirm upgrades (which replace an inferred row in
+// place and therefore change pnl/fee without adding a row).
+export async function getLedgerRevision(scope: MarketScope | null): Promise<string> {
+  const where = scope ? { marketId: scope.id } : {};
+  const [trades, positions] = await Promise.all([
+    prisma.trade.aggregate({
+      where,
+      _count: { _all: true },
+      _max: { realizedAt: true },
+      _sum: { pnl: true, fee: true }
+    }),
+    prisma.position.aggregate({ where, _count: { _all: true }, _sum: { qty: true, costBasis: true } })
+  ]);
+  return [
+    trades._count._all,
+    trades._max.realizedAt?.getTime() ?? 0,
+    trades._sum.pnl ?? 0,
+    trades._sum.fee ?? 0,
+    positions._count._all,
+    positions._sum.qty ?? 0,
+    positions._sum.costBasis ?? 0
+  ].join(":");
+}
+
 export async function getPositions(scope: MarketScope | null): Promise<Record<number, { qty: number; cost: number }>> {
   const rows = await prisma.position.findMany({
     where: scope ? { marketId: scope.id } : {},

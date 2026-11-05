@@ -1,8 +1,8 @@
-// Serves the terminal's market bundle from a per-scan-generation cache:
-// the universe query, the price index, the signals and the shared
-// decision core only rerun when a new scan lands, so filter/sort/page
-// interactions pay one cheap timestamp probe instead of recomputing the
-// whole market on every request.
+// Serves the terminal's market bundle from a per-generation cache: the
+// universe query, the price index, the signals and the shared decision
+// core only rerun when a new scan lands or the journal projection moves,
+// so filter/sort/page interactions pay two cheap probes instead of
+// recomputing the whole market on every request.
 //
 // The phase is the exception. It is a function of wall-clock age, and a
 // generation can cross a boundary without a new scan; it is therefore
@@ -16,7 +16,7 @@ import type { MarketHistory, MarketSnapshot } from "@/lib/market-data";
 import { resolveBudgetCopper, resolvePhaseOverride } from "@/lib/config";
 import type { MarketPhase } from "@/lib/market-rules";
 import { resolvePhase } from "@/lib/phase";
-import { getEarliestSnapshotTime, getLatestSnapshotTime, getMarketUniverse, getOwnSales, getPositions } from "@/lib/repositories";
+import { getEarliestSnapshotTime, getLatestSnapshotTime, getLedgerRevision, getMarketUniverse, getOwnSales, getPositions } from "@/lib/repositories";
 import { getMarketScope, type MarketScope } from "@/lib/market-scope";
 
 export type MarketBundle = {
@@ -35,6 +35,9 @@ type SignalFetchers = {
   getMarketUniverse: (scope: MarketScope | null) => Promise<MarketHistory[]>;
   getPositions: (scope: MarketScope | null) => Promise<Record<number, { qty: number; cost: number }>>;
   getOwnSales: (scope: MarketScope | null) => Promise<OwnSales>;
+  // A journal-only import changes positions and confirmed sales without a
+  // new snapshot; the cache must key on the ledger too.
+  getLedgerRevision: (scope: MarketScope | null) => Promise<string>;
   recordDecisions?: (bundle: MarketBundle) => Promise<void>;
   // Injectable clock so the phase-boundary behaviour is testable.
   now?: () => Date;
@@ -43,6 +46,7 @@ type SignalFetchers = {
 type CacheEntry = {
   scopeId: string | null;
   latestAtMs: number;
+  ledgerRevision: string;
   anchorAtMs: number | null;
   breadth: number;
   phase: MarketPhase;
@@ -88,7 +92,9 @@ export function createMarketSignalSource(fetchers: SignalFetchers) {
       }
       const now = nowOf();
       const latestAtMs = latestSnapshotAt.getTime();
-      if (cached !== null && cached.scopeId === (scope?.id ?? null) && cached.latestAtMs === latestAtMs) {
+      const ledgerRevision = await fetchers.getLedgerRevision(scope);
+      if (cached !== null && cached.scopeId === (scope?.id ?? null) && cached.latestAtMs === latestAtMs
+        && cached.ledgerRevision === ledgerRevision) {
         const currentPhase = resolvePhaseOverride() ?? resolvePhase(ageHours(now, cached.anchorAtMs), cached.breadth);
         if (currentPhase === cached.phase) return cached.bundle;
       }
@@ -143,6 +149,7 @@ export function createMarketSignalSource(fetchers: SignalFetchers) {
       cached = {
         scopeId: scope?.id ?? null,
         latestAtMs,
+        ledgerRevision,
         anchorAtMs: anchorAt?.getTime() ?? null,
         breadth,
         phase,
@@ -161,6 +168,7 @@ const defaultSource = createMarketSignalSource({
   getMarketUniverse,
   getPositions,
   getOwnSales,
+  getLedgerRevision,
   recordDecisions: (bundle) => import("@/lib/decisions").then((module) => module.recordDecisions(bundle))
 });
 

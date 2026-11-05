@@ -43,7 +43,8 @@ function fetchers(universe: MarketHistory[], latest: Date = LATEST) {
     getEarliestSnapshotTime: async () => universe.length > 0 ? universe[0].snapshots[0].timestamp : null,
     getMarketUniverse: async () => universe,
     getPositions: async () => ({}),
-    getOwnSales: async () => ({})
+    getOwnSales: async () => ({}),
+    getLedgerRevision: async () => "0"
   };
 }
 
@@ -94,11 +95,12 @@ describe("createMarketSignalSource", () => {
       getEarliestSnapshotTime: async (scope) => { seen.push(scope?.id ?? "none"); return LATEST; },
       getMarketUniverse: async (scope) => { seen.push(scope?.id ?? "none"); return [historyItem(1, 200)]; },
       getPositions: async (scope) => { seen.push(scope?.id ?? "none"); return {}; },
-      getOwnSales: async (scope) => { seen.push(scope?.id ?? "none"); return {}; }
+      getOwnSales: async (scope) => { seen.push(scope?.id ?? "none"); return {}; },
+      getLedgerRevision: async (scope) => { seen.push(scope?.id ?? "none"); return "0"; }
     });
     const bundle = await source.getMarketSignals();
     expect(bundle.scope?.id).toBe("m1");
-    expect(seen).toEqual(["m1", "m1", "m1", "m1", "m1"]);
+    expect(seen).toEqual(["m1", "m1", "m1", "m1", "m1", "m1"]);
   });
 
   it("does not serve one market's bundle to another market with the same timestamp", async () => {
@@ -116,7 +118,8 @@ describe("createMarketSignalSource", () => {
         return [item];
       },
       getPositions: async () => ({}),
-      getOwnSales: async () => ({})
+      getOwnSales: async () => ({}),
+      getLedgerRevision: async () => "0"
     });
     expect((await source.getMarketSignals()).signals[0].name).toBe("first");
     scopeId = "m2";
@@ -144,7 +147,8 @@ describe("createMarketSignalSource", () => {
       getEarliestSnapshotTime: async () => LATEST,
       getMarketUniverse: async () => [historyItem(1, price, generation)],
       getPositions: async () => ({}),
-      getOwnSales: async () => ({})
+      getOwnSales: async () => ({}),
+      getLedgerRevision: async () => "0"
     });
     const first = await source.getMarketSignals();
     generation = new Date("2026-07-20T10:15:00Z");
@@ -152,6 +156,27 @@ describe("createMarketSignalSource", () => {
     const second = await source.getMarketSignals();
     expect(first.signals[0].sellPrice).toBe(200);
     expect(second.signals[0].sellPrice).toBe(400);
+  });
+
+  it("rebuilds when the journal changes without a new scan", async () => {
+    // The mailbox flushes a confirmed sale between scans. The ledger revision
+    // must break the cache even though the newest snapshot timestamp is the
+    // same, or the cockpit would keep the old fill evidence until the next
+    // /wahscan.
+    let ledgerRevision = "0";
+    let universeFetches = 0;
+    const source = createMarketSignalSource({
+      ...fetchers([historyItem(1, 200)]),
+      getMarketUniverse: async () => {
+        universeFetches += 1;
+        return [historyItem(1, 200)];
+      },
+      getLedgerRevision: async () => ledgerRevision
+    });
+    await source.getMarketSignals();
+    ledgerRevision = "1:1000";
+    await source.getMarketSignals();
+    expect(universeFetches).toBe(2);
   });
 
   it("evaluates the market under the same phase the bundle reports", async () => {
@@ -175,7 +200,8 @@ describe("createMarketSignalSource", () => {
       getEarliestSnapshotTime: async () => earliest,
       getMarketUniverse: async () => universe,
       getPositions: async () => ({}),
-      getOwnSales: async () => ({})
+      getOwnSales: async () => ({}),
+      getLedgerRevision: async () => "0"
     }).getMarketSignals();
     expect(bundle.phase).toBe("wave");
     expect(bundle.evaluation.phase).toBe(bundle.phase);
@@ -199,6 +225,7 @@ describe("createMarketSignalSource", () => {
       },
       getPositions: async () => ({}),
       getOwnSales: async () => ({}),
+      getLedgerRevision: async () => "0",
       now: () => clock
     });
     expect((await source.getMarketSignals()).phase).toBe("ignition");
@@ -250,7 +277,8 @@ describe("createMarketSignalSource", () => {
         return [];
       },
       getPositions: async () => ({}),
-      getOwnSales: async () => ({})
+      getOwnSales: async () => ({}),
+      getLedgerRevision: async () => "0"
     });
     expect((await source.getMarketSignals()).signals).toEqual([]);
     expect((await source.getMarketSignals()).signals).toEqual([]);
