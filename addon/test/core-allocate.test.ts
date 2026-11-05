@@ -150,3 +150,51 @@ describe("shared capital allocation", () => {
     expect(lua.number("WowTest.allocRows[2].allocQty")).toBe(100);
   });
 });
+
+describe("position sizing against a real book", () => {
+  // The fixture the radar tests use hides the sizing flaw: proxy evidence
+  // pins the fill probability near 1, so almost any loss term still yields
+  // a bet. A steady-phase row with only prior fill evidence is what the
+  // live market looks like, and it must still be funded.
+  function steadyItem(overrides: Record<string, unknown> = {}) {
+    return {
+      itemId: 4306,
+      name: "Silk Cloth",
+      itemClass: "Trade Goods",
+      marketType: "commodity",
+      vendorP: 10,
+      minPrice: 5000,
+      sellP: 5800,
+      quantity: 400,
+      numAuctions: 12,
+      sellers: 5,
+      // A deep ladder: the whole executable depth averages close to the
+      // price cap, which is exactly the case the old sizing zeroed.
+      tiers: [{ p: 5000, q: 40 }, { p: 5300, q: 160 }, { p: 5600, q: 200 }],
+      history: { samples: 60 },
+      ...overrides
+    };
+  }
+
+  it("funds a deep book on prior evidence instead of zeroing every row", () => {
+    const output = evaluate({ 4306: steadyItem() }, 1_000_000, "steady");
+    const row = output.rows[0];
+    expect(row.allocQty).toBeGreaterThan(0);
+    // The row still has to describe an executable trade, not the whole book.
+    expect(row.allocQty).toBeLessThanOrEqual(row.execQty);
+    expect(row.allocCost).toBeLessThanOrEqual(250_000);
+  });
+
+  it("sizes the bet at the entry price, not at the deep-ladder average", () => {
+    // Identical opportunity, one with a two-tier book and one with a book so
+    // deep that its average sits at the price cap. Sizing on the average
+    // would shrink the second to nothing; the edge at the front is the same.
+    const thin = evaluate({ 4306: steadyItem({ tiers: [{ p: 5000, q: 60 }], quantity: 60 }) }, 1_000_000, "steady");
+    const deep = evaluate({ 4306: steadyItem() }, 1_000_000, "steady");
+    expect(deep.rows[0].allocQty).toBeGreaterThan(0);
+    expect(thin.rows[0].allocQty).toBeGreaterThan(0);
+    // Same front, same fill prior: the funded amount may not collapse just
+    // because more supply is listed behind it.
+    expect(deep.rows[0].allocCost).toBeGreaterThan(thin.rows[0].allocCost * 0.5);
+  });
+});

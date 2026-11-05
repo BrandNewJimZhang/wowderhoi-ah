@@ -370,16 +370,27 @@ function Core.kellyFraction(p, win, loss)
   return math.max(0, math.min(1, fraction))
 end
 
--- Budget for one opportunity, capped by the per-item exposure rule. A
--- failed listing returns the goods, so the loss floor is the vendor price,
--- matching Core.sellPlan's expiry residual.
+-- Budget for one opportunity, capped by the per-item exposure rule.
+--
+-- The bet is sized at the entry price -- the front of the book, which is
+-- what the allocator's first units actually pay -- not at the deep-ladder
+-- average. Pricing the whole executable depth made every deep book look
+-- like a bet whose upside was only the per-unit floor while its downside
+-- was the entire purchase, and Kelly zeroed every realistic row.
+--
+-- The downside is one observed spread. A failed listing returns the goods,
+-- so the stake at risk is a price move against the position, not its full
+-- cost: charging cost - NPC value treated every flip as a total write-off,
+-- and a 5% margin measured against a 95% loss is not a bet at any fill
+-- chance below certainty. The allocator reprices whatever quantity the
+-- fraction funds from the cheap end of the same ladder.
 function Core.sizePosition(row, deployable, rules)
   local portfolio = (rules and rules.portfolio) or {}
   local feeRate = (rules and rules.feeRate) or 0.05
-  local unitCost = row.ladderPrice or 0
+  local unitCost = row.minPrice or row.ladderPrice or 0
   local capital = math.max(deployable or 0, 0)
   local win = (row.listP or 0) * (1 - feeRate) - unitCost
-  local loss = math.max(unitCost - (row.vendorP or 0), 1)
+  local loss = math.max((row.sellP or row.listP or unitCost) - unitCost, 1)
   local fraction = Core.kellyFraction(row.fillProb or 0, win, loss)
     * (portfolio.kellyFraction or 0.25)
   local itemCap = capital * (portfolio.maxItemExposure or 0.25)
