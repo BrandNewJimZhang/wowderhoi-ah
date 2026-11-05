@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bandFromInterval, fillCurve } from "@/lib/fill";
+import { bandFromInterval, fillBasisLabel, fillCurve } from "@/lib/fill";
 
 describe("fillCurve", () => {
   it("returns no points for an empty book", () => {
@@ -45,6 +45,22 @@ describe("fillCurve", () => {
     expect(points[0].fill).toBeLessThanOrEqual(1);
     expect(points[0].band[0]).toBeGreaterThanOrEqual(0);
     expect(points[0].band[1]).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("fillBasisLabel", () => {
+  it("names every evidence tier the core can emit", () => {
+    expect(fillBasisLabel("own")).toBe("自有成交");
+    expect(fillBasisLabel("observed-zero")).toBe("观测为零");
+    expect(fillBasisLabel("vendor")).toBe("NPC 收购");
+  });
+
+  it("falls back to the prior tier for missing or unknown evidence", () => {
+    // Core.lua resolves FILL_BASIS_TEXT the same way: an unknown tier is the
+    // absence of evidence, never an untranslated string in the UI.
+    expect(fillBasisLabel(null)).toBe("阶段先验");
+    expect(fillBasisLabel(undefined)).toBe("阶段先验");
+    expect(fillBasisLabel("some-future-tier")).toBe("阶段先验");
   });
 });
 

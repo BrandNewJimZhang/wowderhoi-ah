@@ -32,9 +32,12 @@ export const fillBasisLabels: Record<FillBasis, string> = {
 
 // Decision rows store the basis as a plain string; unknown or missing values
 // fall back to the label of the tier the core uses when nothing is observed.
+// Core.lua resolves FILL_BASIS_TEXT the same way, so a tier this build does
+// not know is reported as "prior" on both sides instead of leaking an
+// untranslated identifier into the UI.
 export function fillBasisLabel(basis: string | null | undefined): string {
   if (basis && basis in fillBasisLabels) return fillBasisLabels[basis as FillBasis];
-  return basis || fillBasisLabels.prior;
+  return fillBasisLabels.prior;
 }
 
 // Longer copy for the chart header, where the reader needs to know what the
