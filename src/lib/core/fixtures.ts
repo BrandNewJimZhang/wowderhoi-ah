@@ -19,7 +19,6 @@ export function commodityInput(overrides?: {
       firstScanAt: CORE_NOW - ageHours * 3600,
       items: overrides?.items ?? {
         2589: {
-          itemId: 2589,
           name: "亚麻布",
           itemClass: "Trade Goods",
           marketType: "commodity",

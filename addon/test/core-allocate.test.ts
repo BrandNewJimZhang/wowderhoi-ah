@@ -5,8 +5,8 @@ import { describe, expect, it } from "vitest";
 import { loadAddon, toLua } from "./wow-lua";
 
 function item(itemId: number, overrides: Record<string, unknown> = {}) {
+  // The map key is the identity; Core.evaluate never reads an id field.
   return {
-    itemId,
     name: `item-${itemId}`,
     itemClass: "Trade Goods",
     marketType: "commodity",

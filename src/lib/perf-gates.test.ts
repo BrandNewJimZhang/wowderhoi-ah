@@ -43,7 +43,6 @@ function coreInput(itemCount: number): CoreInput {
   for (let index = 0; index < itemCount; index += 1) {
     const min = 100 + index;
     items[10_000 + index] = {
-      itemId: 10_000 + index,
       name: `Item ${index}`,
       itemClass: "Trade Goods",
       vendorP: 1,

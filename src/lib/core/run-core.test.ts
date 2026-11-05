@@ -22,7 +22,6 @@ describe("Core.evaluate through fengari", () => {
     const output = runCore(commodityInput({
       items: {
         2589: {
-          itemId: 2589,
           name: "亚麻布",
           itemClass: "Trade Goods",
           vendorP: 100,
@@ -34,7 +33,6 @@ describe("Core.evaluate through fengari", () => {
           tiers: [{ p: 50, q: 100 }]
         },
         2592: {
-          itemId: 2592,
           name: "毛料",
           itemClass: "Trade Goods",
           vendorP: 0,
@@ -153,8 +151,8 @@ describe("Core.evaluate through fengari", () => {
     const input = commodityInput({
       ageHours: 1,
       items: {
-        1: { ...shared, itemId: 1, name: "Bag", demandPrior: 2 },
-        2: { ...shared, itemId: 2, name: "Armor", demandPrior: 1 }
+        1: { ...shared, name: "Bag", demandPrior: 2 },
+        2: { ...shared, name: "Armor", demandPrior: 1 }
       }
     });
     const output = runCore(input);
@@ -165,7 +163,6 @@ describe("Core.evaluate through fengari", () => {
   it("does not let a bid-only item enter the pricing book", () => {
     const input = commodityInput({ phase: "wave" });
     input.market.items[999] = {
-      itemId: 999,
       name: "Only Bids",
       itemClass: "Armor",
       minPrice: 0,

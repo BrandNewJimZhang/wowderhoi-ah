@@ -14,8 +14,11 @@ export type OwnSales = Record<number, { qty: number; samples: number; exposedHou
 
 export type Tier = { p: number; q: number };
 
+// The item's identity is its key in `market.items`: Core.evaluate reads
+// `pairs(items)` and never opens an item's own id field, and the Lua bridge
+// turns numeric object keys into Lua numbers. A copy inside the record was
+// a leftover of the string-keyed bridge and had no reader on either side.
 export type CoreMarketItem = {
-  itemId: number;
   name: string;
   quality?: number | string;
   itemClass?: string;

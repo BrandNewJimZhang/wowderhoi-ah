@@ -3,9 +3,10 @@
 // cross the boundary the same way in tests and in production.
 import { lua, to_jsstring, type LuaState } from "fengari";
 
-// JS value -> Lua table literal. Arrays become sequences, objects become
-// string-keyed tables; itemIds travel as a field, never as a key, because a
-// JS object key is a string and the addon indexes by number.
+// JS value -> Lua table literal. Arrays become sequences and objects become
+// tables. A numeric object key is an item id and is emitted as a Lua number,
+// because the addon indexes `market.items` by number and `pairs()` must not
+// hand it strings.
 export function toLua(value: unknown): string {
   if (value === null || value === undefined) return "nil";
   if (typeof value === "number" || typeof value === "boolean") return String(value);

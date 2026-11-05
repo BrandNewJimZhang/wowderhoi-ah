@@ -64,10 +64,9 @@ export function buildCoreInput(
     if (firstScanAt === null || earliest < firstScanAt) firstScanAt = earliest;
     const own = options.ownSales?.[signal.itemId];
     items[signal.itemId] = {
-      itemId: signal.itemId,
       name: signal.name,
       // The in-game builder passes the scan's quality; the terminal passes
-      // the item row's name so CoreRow quality is populated on both sides.
+      // the item row's quality so CoreRow quality is populated on both sides.
       quality: signal.quality,
       itemClass: signal.category,
       itemSubClass: history.subCategory,
