@@ -41,9 +41,17 @@ export function withGapBreaks(points: TimePoint[]): PlottedPoint[] {
     if (index > 0) {
       const previous = points[index - 1];
       const gap = point.ts - previous.ts;
-      const broken = point.kind === "daily" && previous.kind === "daily"
+      // A daily close is dated at midnight, so the step from the last close
+      // to the first intraday scan is under 48 hours by construction: that
+      // junction is a resolution change, not an outage. Two daily closes one
+      // day apart are the normal cadence; a missing day is 48 hours.
+      const bothDaily = point.kind === "daily" && previous.kind === "daily";
+      const mixed = (point.kind === "daily") !== (previous.kind === "daily");
+      const broken = bothDaily
         ? gap > 1.5 * DAY_MS
-        : interval !== null && gap > interval * 3;
+        : mixed
+          ? gap > 2 * DAY_MS
+          : interval !== null && gap > interval * 3;
       if (broken) {
         out.push({ ts: previous.ts + 1, price: null as unknown as number, min: null, gap: true });
       }

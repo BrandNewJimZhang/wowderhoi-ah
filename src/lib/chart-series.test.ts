@@ -63,6 +63,32 @@ describe("buildTimeSeries", () => {
     expect(plotted.find((point) => point.gap)?.ts).toBe(start + day + minute * 30 + 1);
   });
 
+  it("connects a daily close to the first intraday scan", () => {
+    const day = 24 * 60 * 60 * 1000;
+    const hour = 60 * 60 * 1000;
+    const daily = new Date("2026-07-19T00:00:00Z").getTime();
+    // Daily closes carry a midnight timestamp while scans carry the wall
+    // clock of the first import, so the junction can be nearly two days
+    // wide. That is a resolution change, not a scanning outage.
+    const plotted = withGapBreaks([
+      { ts: daily, price: 700, kind: "daily" },
+      { ts: daily + day + hour * 22, price: 900, kind: "scan" },
+      { ts: daily + day + hour * 22 + 15 * 60 * 1000, price: 950, kind: "scan" }
+    ]);
+    expect(plotted.filter((point) => point.gap)).toHaveLength(0);
+  });
+
+  it("breaks when the live scans are days after the last daily close", () => {
+    const day = 24 * 60 * 60 * 1000;
+    const daily = new Date("2026-07-14T00:00:00Z").getTime();
+    const plotted = withGapBreaks([
+      { ts: daily, price: 700, kind: "daily" },
+      { ts: daily + day * 6, price: 900, kind: "scan" },
+      { ts: daily + day * 6 + 15 * 60 * 1000, price: 950, kind: "scan" }
+    ]);
+    expect(plotted.filter((point) => point.gap)).toHaveLength(1);
+  });
+
   it("breaks a series where a day is missing between daily closes", () => {
     const day = 24 * 60 * 60 * 1000;
     const start = new Date("2026-07-16T00:00:00Z").getTime();
