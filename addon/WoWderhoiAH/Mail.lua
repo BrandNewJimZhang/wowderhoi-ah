@@ -15,25 +15,51 @@ local ADDON_NAME, WAH = ...
 local Mail = {}
 local SEEN_CAP = 500
 
+-- The store counts, per fingerprint, how many identical mails have already
+-- been booked. A commodity listing that fills in equal pieces produces
+-- several mails with the same subject, item and amounts; a set would treat
+-- the second one as a duplicate and silently undercount confirmed sales.
+-- Counts never decrease, so deleting a mail cannot make a later identical
+-- one book twice.
 local function seenStore()
   local store = WoWderhoiAH_MailSeen
-  if type(store) ~= "table" or store.v ~= 1 or type(store.keys) ~= "table" then
-    store = { v = 1, keys = {}, order = {} }
-    WoWderhoiAH_MailSeen = store
+  if type(store) == "table" and store.v == 2 and type(store.counts) == "table" then
+    store.order = store.order or {}
+    return store
   end
-  store.order = store.order or {}
+  -- Migrate the v1 set: every recorded fingerprint was booked once. Keeping
+  -- the keys is what stops the first scan after the upgrade from booking
+  -- the whole inbox a second time.
+  local counts = {}
+  if type(store) == "table" and type(store.keys) == "table" then
+    for fingerprint in pairs(store.keys) do counts[fingerprint] = 1 end
+  end
+  store = { v = 2, counts = counts, order = {} }
+  for fingerprint in pairs(counts) do store.order[#store.order + 1] = fingerprint end
+  WoWderhoiAH_MailSeen = store
   return store
 end
 
-local function seen(store, fingerprint)
-  if store.keys[fingerprint] then return true end
-  store.keys[fingerprint] = time()
-  store.order[#store.order + 1] = fingerprint
+-- Counts this mail's occurrence in the inbox. Returns true when the count
+-- exceeds what is already booked, and therefore should be booked now.
+local function firstUnbooked(store, tally, fingerprint)
+  tally[fingerprint] = (tally[fingerprint] or 0) + 1
+  return tally[fingerprint] > (store.counts[fingerprint] or 0)
+end
+
+local function commitTally(store, tally)
+  for fingerprint, count in pairs(tally) do
+    if count > (store.counts[fingerprint] or 0) then
+      if store.counts[fingerprint] == nil then
+        store.order[#store.order + 1] = fingerprint
+      end
+      store.counts[fingerprint] = count
+    end
+  end
   while #store.order > SEEN_CAP do
     local oldest = table.remove(store.order, 1)
-    store.keys[oldest] = nil
+    store.counts[oldest] = nil
   end
-  return false
 end
 
 local function headerAt(index)
@@ -89,8 +115,14 @@ local function nameIndex()
     if entry.name and #entry.name >= 3 then index[entry.name] = itemId end
   end
   local ledger = WAH.Ledger and WAH.Ledger.current() or nil
+  -- GetItemInfo is the expensive call here, and the journal can hold
+  -- thousands of trades naming the same handful of items: resolve each
+  -- item once per mailbox visit, not once per trade.
+  local resolved = {}
   local function add(itemId)
-    local name = itemId and C_Item and C_Item.GetItemInfo and C_Item.GetItemInfo(itemId)
+    if not itemId or resolved[itemId] then return end
+    resolved[itemId] = true
+    local name = C_Item and C_Item.GetItemInfo and C_Item.GetItemInfo(itemId)
     if name and #name >= 3 then index[name] = itemId end
   end
   for _, post in pairs(ledger and ledger.openPosts or {}) do add(post.itemId) end
@@ -176,6 +208,7 @@ Mail.scan = function()
   if not okCount or not count then return stats end
   stats.messages = count
   local store = seenStore()
+  local tally = {}
   local index = nameIndex()
   for message = 1, count do
     local okHeader, header = pcall(headerAt, message)
@@ -190,50 +223,56 @@ Mail.scan = function()
         local matched = matchPost(itemId, total)
         itemId = itemId or (matched and matched.post.itemId)
         local mark = fingerprint(header, invoice)
-        if seen(store, mark) then
-          stats.duplicates = stats.duplicates + 1
-        elseif not itemId then
+        if not itemId then
           -- No link, no name match, no unique open posting. Booking an
           -- unknown item would corrupt both the position and the fill
-          -- label, so the mail is counted and left unmarked for a later
-          -- scan that may know the name.
+          -- label, so the mail is counted and deliberately left out of the
+          -- tally: a later scan that knows the name must still book it.
           stats.unattributed = stats.unattributed + 1
         elseif isSale then
-          local inferred = (not matched) and inferredSale(itemId, total) or nil
-          if inferred then
-            WAH.recordEvent({
-              k = "confirm",
-              auctionID = inferred.auctionID,
-              itemId = itemId,
-              qty = inferred.qty,
-              price = inferred.price,
-              fee = invoice.consignment,
-              listedAt = inferred.listedAt,
-              censored = true
-            })
-            stats.reconfirmed = stats.reconfirmed + 1
+          if not firstUnbooked(store, tally, mark) then
+            stats.duplicates = stats.duplicates + 1
           else
-            local quantity = matched and matched.quantity or 1
-            local unitPrice = matched and matched.post.price or total
-            WAH.recordEvent({
-              k = "sold",
-              auctionID = matched and matched.auctionID or nil,
-              itemId = itemId,
-              qty = quantity,
-              price = unitPrice,
-              fee = invoice.consignment,
-              listedAt = matched and matched.post.at or nil,
-              censored = true,
-              inferred = false
-            })
-            stats.sold = stats.sold + 1
+            local inferred = (not matched) and inferredSale(itemId, total) or nil
+            if inferred then
+              WAH.recordEvent({
+                k = "confirm",
+                auctionID = inferred.auctionID,
+                itemId = itemId,
+                qty = inferred.qty,
+                price = inferred.price,
+                fee = invoice.consignment,
+                listedAt = inferred.listedAt,
+                censored = true
+              })
+              stats.reconfirmed = stats.reconfirmed + 1
+            else
+              local quantity = matched and matched.quantity or 1
+              local unitPrice = matched and matched.post.price or total
+              WAH.recordEvent({
+                k = "sold",
+                auctionID = matched and matched.auctionID or nil,
+                itemId = itemId,
+                qty = quantity,
+                price = unitPrice,
+                fee = invoice.consignment,
+                listedAt = matched and matched.post.at or nil,
+                censored = true,
+                inferred = false
+              })
+              stats.sold = stats.sold + 1
+            end
           end
         elseif matched then
           -- An expired listing the addon never saw expire: the deposit is
           -- lost, the goods came back. Only book it when the posting is
           -- still open, or the event would double-count.
-          WAH.recordEvent({ k = "expire", auctionID = matched.auctionID })
-          stats.expired = stats.expired + 1
+          if firstUnbooked(store, tally, mark) then
+            WAH.recordEvent({ k = "expire", auctionID = matched.auctionID })
+            stats.expired = stats.expired + 1
+          else
+            stats.duplicates = stats.duplicates + 1
+          end
         else
           stats.ignored = stats.ignored + 1
         end
@@ -242,6 +281,7 @@ Mail.scan = function()
       end
     end
   end
+  commitTally(store, tally)
   return stats
 end
 

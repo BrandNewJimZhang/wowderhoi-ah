@@ -284,7 +284,7 @@ an issue; see [CONTRIBUTING.md](CONTRIBUTING.md). Security notes in
 ### 游戏内
 
 - `/wahscan` 全量扫描（v4：盘口阶梯、卖家、到期桶、竞价需求、消失量区间）；`/wahauto` 自动重扫；`/wahphase` 手动阶段；`/wahopen` 设开服锚点；`/wahcapture mail|craft on|off` 开关采集。
-- 邮箱成交采集：开箱即读取发票，把成交写成 `inferred = false` 的确认成交（带去重指纹），并记录挂单时间用于暴露时间口径。
+- 邮箱成交采集：开箱即读取发票，把成交写成 `inferred = false` 的确认成交（同价分批成交按指纹计数去重），并记录挂单时间用于暴露时间口径；暂时无法归因的邮件不记为已处理，后续扫描认识物品时会补记。
 - 制造采集：按 `TRADE_SKILL_ITEM_CRAFTED_RESULT` 记账，产物成本 = 材料 FIFO 成本；未知配方只计数，不猜成本。
 - `/wahtrade` 驾驶舱：可执行净利榜（预算内可买 / 买价 / 建议卖价 / 分配后净利 / 成交率），NPC 必赚优先；实时价格簿与核验购买。
 - `/wahsell` 卖出与在售：押金 12/24/48 小时、售出/流拍保本价、压价上架、被压价提示、撤单重挂；客户端拦截时降级为价格助手，不假装成功。

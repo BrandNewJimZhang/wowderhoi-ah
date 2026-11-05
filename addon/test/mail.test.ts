@@ -62,6 +62,63 @@ describe("mailbox capture", () => {
     expect(lua.number("WowTest.ns.Journal.count()")).toBe(3);
   });
 
+  it("books two identical sale mails instead of treating the second as a duplicate", () => {
+    const lua = loadAddon();
+    lua.exec('WowTest.itemInfo[2589] = { name = "亚麻布" }');
+    record(lua, { k: "buy", itemId: 2589, qty: 10, cost: 1000 });
+    record(lua, { k: "post", auctionID: 8, itemId: 2589, qty: 10, price: 100, deposit: 300 });
+    // A commodity listing that filled in two equal pieces produces two
+    // mails with the same subject, item and amounts. Only a count, not a
+    // set, can tell them apart.
+    const mail = toLua(saleMail("Auction successful", "亚麻布", 500, 25, 475));
+    lua.exec(`WowTest.setMail({ ${mail}, ${mail} })`);
+
+    const result = scan(lua);
+    expect(result.sold).toBe(2);
+    expect(result.duplicates).toBe(0);
+    expect(lua.number("WowTest.ns.Ledger.positions()[2589] == nil and 0 or WowTest.ns.Ledger.positions()[2589].qty")).toBe(0);
+  });
+
+  it("books only the identical mail that arrived after the last visit", () => {
+    const lua = loadAddon();
+    lua.exec('WowTest.itemInfo[2589] = { name = "亚麻布" }');
+    record(lua, { k: "buy", itemId: 2589, qty: 20, cost: 2000 });
+    record(lua, { k: "post", auctionID: 9, itemId: 2589, qty: 20, price: 100, deposit: 300 });
+    const mail = toLua(saleMail("Auction successful", "亚麻布", 500, 25, 475));
+    lua.exec(`WowTest.setMail({ ${mail} })`);
+    expect(scan(lua).sold).toBe(1);
+
+    lua.exec(`WowTest.setMail({ ${mail}, ${mail} })`);
+    const result = scan(lua);
+    expect(result.sold).toBe(1);
+    expect(result.duplicates).toBe(1);
+    expect(lua.number("WowTest.ns.Journal.count()")).toBe(4);
+  });
+
+  it("books an unattributable mail once a later scan can name the item", () => {
+    const lua = loadAddon();
+    lua.exec('WowTest.itemInfo[2589] = { name = "亚麻布" }');
+    lua.exec(`WowTest.setMail({ ${toLua(saleMail("Auction successful: 亚麻布", "亚麻布", 1200, 60, 1140))} })`);
+    // No scan and no ledger posting can name the item yet.
+    expect(scan(lua).unattributed).toBe(1);
+    // The posting names it from now on: the skipped mail must still book.
+    record(lua, { k: "post", auctionID: 7, itemId: 2589, qty: 1, price: 1200, deposit: 0 });
+    expect(scan(lua).sold).toBe(1);
+  });
+
+  it("resolves each ledger item once per mailbox visit", () => {
+    const lua = loadAddon();
+    lua.exec('WowTest.itemInfo[2589] = { name = "亚麻布" }');
+    for (let index = 0; index < 6; index += 1) {
+      record(lua, { k: "sold", auctionID: 100 + index, itemId: 2589, qty: 1, price: 100, fee: 5, inferred: true });
+    }
+    lua.exec("WowTest.itemInfoCalls = 0");
+    lua.exec("WowTest.setMail({})");
+    scan(lua);
+    // Six trades name the same item; the name index must ask the client once.
+    expect(lua.number("WowTest.itemInfoCalls")).toBe(1);
+  });
+
   it("confirms a sale that reconciled inference booked before the mailbox", () => {
     const lua = loadAddon();
     lua.exec('WowTest.itemInfo[2589] = { name = "亚麻布" }');
