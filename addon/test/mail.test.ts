@@ -174,6 +174,19 @@ describe("mailbox capture", () => {
     expect(lua.number("WowTest.ns.Ledger.capital().escrow")).toBe(0);
   });
 
+  it("books a sale whose commission is zero", () => {
+    const lua = loadAddon();
+    lua.exec('WowTest.itemInfo[2589] = { name = "亚麻布" }');
+    record(lua, { k: "buy", itemId: 2589, qty: 1, cost: 10 });
+    record(lua, { k: "post", auctionID: 7, itemId: 2589, qty: 1, price: 15, deposit: 1 });
+    // A cheap sale can carry no commission at all. Money without an item
+    // attachment is the sale signal; the cut is not part of the classifier.
+    lua.exec(`WowTest.setMail({ ${toLua(saleMail("Auction successful", "亚麻布", 15, 0, 15))} })`);
+    expect(scan(lua).sold).toBe(1);
+    expect(lua.number("WowTest.ns.Journal.last('sold').inferred == false and 1 or 0")).toBe(1);
+    expect(lua.number("WowTest.ns.Journal.last('sold').fee")).toBe(0);
+  });
+
   it("books an expired listing from the returned-item mail", () => {
     const lua = loadAddon();
     lua.exec('WowTest.itemInfo[2589] = { name = "亚麻布" }');

@@ -217,7 +217,10 @@ Mail.scan = function()
       local invoice = invoiceAt(message)
       local texts = { header.subject, invoice and invoice.name or "" }
       local itemId = itemFromLink(message) or itemFromText(texts, index)
-      local isSale = header.money > 0 and invoice and invoice.consignment > 0
+      -- Money without a returned item is a sale. The commission is not part
+      -- of the classifier: a cheap sale can legitimately carry a zero cut,
+      -- and keying on it dropped those confirmed sales entirely.
+      local isSale = header.money > 0 and invoice ~= nil and not header.hasItem
       local isExpiry = header.hasItem and header.money == 0 and invoice ~= nil
       if isSale or isExpiry then
         local total = isSale and (invoice.buyout > 0 and invoice.buyout or header.money) or (invoice.buyout or 0)
