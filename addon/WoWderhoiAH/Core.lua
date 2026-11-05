@@ -204,6 +204,14 @@ local function fillPriorRules()
   return compiled
 end
 
+-- The window every fill chance is quoted for. The radar, the item chart,
+-- the sell page and the terminal's calibration must use the same one; the
+-- review page used to measure outcomes over 72h against a 24h prediction.
+local function fillHorizonHours()
+  local fill = WAH.RULES and WAH.RULES.fill
+  return (fill and fill.horizonHours) or 24
+end
+
 -- Units listed at or below `price`, excluding the player's own listings
 -- (the scan already removed them). Used by both the fill model and the
 -- sell plan so a listing's queue is measured the same way in each.
@@ -259,7 +267,7 @@ end
 -- Fewer than three own sales is not evidence; the output is always an
 -- interval, never a point dressed up as precision.
 function Core.fillProbability(input)
-  local horizon = input.horizonHours or 24
+  local horizon = input.horizonHours or fillHorizonHours()
   local phase = input.phase or "steady"
   local marketType = input.marketType or "commodity"
   local ownSold = input.ownSold or 0
@@ -467,8 +475,9 @@ local function reasonFor(row)
   local high = (row.fillProbHigh or row.fillProb or 0) * 100
   -- "可买" is the allocated column; the reason quotes the book depth, so it
   -- says 盘口 rather than using the same word for two different quantities.
-  local text = string.format("价差 %.0f%%，盘口 %d 件，每件净利 %d 铜，24 小时成交率 %.0f%%（%.0f–%.0f%%，%s）",
-    row.spreadPercent, row.execQty, row.netPerUnit or 0, (row.fillProb or 0) * 100, low, high,
+  local text = string.format("价差 %.0f%%，盘口 %d 件，每件净利 %d 铜，%d 小时成交率 %.0f%%（%.0f–%.0f%%，%s）",
+    row.spreadPercent, row.execQty, row.netPerUnit or 0, fillHorizonHours(),
+    (row.fillProb or 0) * 100, low, high,
     FILL_BASIS_TEXT[row.fillBasis or "prior"] or FILL_BASIS_TEXT.prior)
   if row.bidOnly and row.bidOnly > 0 then
     text = text .. string.format("，另有 %d 笔竞价", row.bidOnly)
@@ -738,7 +747,7 @@ function Core.evaluate(input)
           excluded.net = excluded.net + 1
         else
           local low, high, point, fillBasis, fillHazard = Core.fillProbability({
-            horizonHours = 24,
+            horizonHours = fillHorizonHours(),
             phase = phase,
             marketType = marketType,
             qty = qty,

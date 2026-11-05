@@ -8,7 +8,7 @@ import { Coins } from "@/components/coins";
 import { qualityColorClass } from "@/lib/quality";
 import { ItemIcon } from "@/components/item-icon";
 import { describeFreshness } from "@/lib/freshness";
-import { SCAN_INTERVAL_MINUTES } from "@/lib/market-rules";
+import { fillRules, SCAN_INTERVAL_MINUTES } from "@/lib/market-rules";
 import { bandFromInterval } from "@/lib/fill";
 import { buildTimeSeries } from "@/lib/chart-series";
 import { currentScanDemand, sellPriceOf } from "@/lib/market-data";
@@ -103,7 +103,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
             </div>
           </Panel>
           <Panel>
-            <PanelHeader title="24 小时成交概率" />
+            <PanelHeader title={`${fillRules.horizonHours} 小时成交概率`} />
             <div className="p-3">
               {hazardPerHour !== null && fillEstimate
                 ? <FillProbabilityChart tiers={bookTiers} hazardPerHour={hazardPerHour} supply={latest?.quantity ?? 0} basis={fillBasis} quantity={fillEstimate.execQty} band={fillBand} />

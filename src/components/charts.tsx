@@ -16,6 +16,7 @@ import {
 import { formatWowMoney } from "@/lib/wow-money";
 import { fillBasisDescriptions, fillCurve } from "@/lib/fill";
 import { withGapBreaks, type TimePoint } from "@/lib/chart-series";
+import { fillRules } from "@/lib/market-rules";
 import type { FillBasis } from "@/lib/core/types";
 
 const formatGold = (copper: number) => formatWowMoney(copper, { compact: true });
@@ -157,14 +158,14 @@ export function OrderBookChart({ tiers, sellP, minPrice }: { tiers: BookTier[]; 
 const FILL_BASIS_LABELS = fillBasisDescriptions;
 
 export function FillProbabilityChart({ tiers, hazardPerHour, supply, basis, quantity, band = 0.35 }: { tiers: BookTier[]; hazardPerHour: number; supply: number; basis: Exclude<FillBasis, "vendor">; quantity: number; band?: number }) {
-  const data = fillCurve(tiers, hazardPerHour, supply, 24, band, quantity);
+  const data = fillCurve(tiers, hazardPerHour, supply, fillRules.horizonHours, band, quantity);
   if (data.length === 0) {
     return <div className="p-4 font-mono text-xs text-terminal-muted">没有盘口深度，无法估计成交概率</div>;
   }
   return (
     <div>
       <div className="mb-1 font-mono text-[10px] text-terminal-muted">
-        24 小时成交概率 · {FILL_BASIS_LABELS[basis]}
+        {fillRules.horizonHours} 小时成交概率 · {FILL_BASIS_LABELS[basis]}
       </div>
       <ResponsiveContainer width="100%" height={240}>
         <ComposedChart data={data} margin={{ top: 18, right: 20, bottom: 8, left: 8 }}>

@@ -15,6 +15,7 @@
 // book and relisted -- where the purchase itself leaves the queue, so only
 // the units it did not buy remain ahead.
 import type { FillBasis } from "@/lib/core/types";
+import { fillRules } from "@/lib/market-rules";
 
 export type FillTier = { p: number; q: number };
 export type FillPoint = { price: number; fill: number; band: [number, number] };
@@ -61,7 +62,7 @@ export function fillCurve(
   tiers: FillTier[],
   hazardPerHour: number,
   supply: number,
-  horizonHours = 24,
+  horizonHours: number = fillRules.horizonHours,
   band = 0.35,
   quantity = 1
 ): FillPoint[] {

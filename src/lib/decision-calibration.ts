@@ -1,21 +1,28 @@
 // Compares the fill chance a recommendation predicted with what actually
-// sold. A decision is "filled" when a confirmed sale of the same item is
-// booked inside the window after it was made. Inferred sales are excluded:
-// they are vanished listings, which may be cancellations.
+// sold. A decision is "filled" when a confirmed auction sale of the same
+// item is booked inside the prediction horizon after it was made. Inferred
+// sales are excluded: they are vanished listings, which may be
+// cancellations. Vendor sales are excluded too: they are a different exit
+// from the auction book the prediction describes, and a vendor-arbitrage
+// recommendation's fillProb is 1 by construction rather than an estimate.
 //
 // The comparison is descriptive. The player chooses which recommendations
 // to act on, so the sample is selected; the page says so next to the table.
+import { fillRules } from "@/lib/market-rules";
+
 export type CalibrationDecision = {
   itemId: number | null;
   kind: string;
   at: Date;
   fillProb: number | null;
+  fillBasis: string | null;
 };
 
 export type CalibrationTrade = {
   itemId: number;
   realizedAt: Date;
   inferred: boolean;
+  channel: string;
 };
 
 export type CalibrationBucket = {
@@ -30,23 +37,25 @@ export type CalibrationBucket = {
 
 const CALIBRATION_BUCKET_MIN_SAMPLES = 10;
 
-// How long after a decision a sale still counts as its outcome. The review
-// page queries decisions over the same window, so the table never mixes a
-// 72-hour comparison with a three-scan decision set.
-export const CALIBRATION_WINDOW_HOURS = 72;
+// How far back the review page lists decisions. The outcome window is the
+// prediction horizon (fillRules.horizonHours), not this number: a decision
+// older than the horizon is still listed, but a later sale cannot confirm a
+// prediction that only covered the first 24 hours.
+export const DECISION_LOG_WINDOW_HOURS = 72;
 
 const BOUNDS = [0, 0.2, 0.4, 0.6, 0.8, 1.0001];
 
 export function bucketPredictions(
   decisions: CalibrationDecision[],
   trades: CalibrationTrade[],
-  windowHours = CALIBRATION_WINDOW_HOURS
+  windowHours = fillRules.horizonHours
 ): CalibrationBucket[] {
-  const confirmed = trades.filter((trade) => !trade.inferred);
+  const confirmed = trades.filter((trade) => !trade.inferred && trade.channel === "auction");
   const windowMs = windowHours * 60 * 60 * 1000;
   const usable = decisions.filter(
     (decision): decision is CalibrationDecision & { itemId: number; fillProb: number } =>
       decision.kind === "buy"
+      && decision.fillBasis !== "vendor"
       && decision.itemId !== null
       && typeof decision.fillProb === "number"
       && Number.isFinite(decision.fillProb)

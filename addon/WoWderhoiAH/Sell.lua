@@ -155,7 +155,7 @@ local function planFor(itemId, duration, quantity)
     local ownSales = WAH.Ledger and WAH.Ledger.salesSince and WAH.Ledger.salesSince() or {}
     local own = ownSales[itemId]
     local _, _, _, basis, hazard = WAH.Core.fillProbability({
-      horizonHours = 24,
+      horizonHours = (WAH.RULES.fill and WAH.RULES.fill.horizonHours) or 24,
       phase = WAH.currentPhase and WAH.currentPhase() or "steady",
       marketType = scanned.marketType or WAH.Core.marketTypeFor(scanned),
       qty = qty,

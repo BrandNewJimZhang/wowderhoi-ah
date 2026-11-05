@@ -6,7 +6,8 @@ import { getMarketSignals } from "@/lib/market-signals";
 import { getPositions } from "@/lib/repositories";
 import { alphaDecay, evaluatePolicy } from "@/lib/off-policy";
 import { designExperiment, experimentResults } from "@/lib/experiments";
-import { bucketPredictions, CALIBRATION_WINDOW_HOURS } from "@/lib/decision-calibration";
+import { bucketPredictions, DECISION_LOG_WINDOW_HOURS } from "@/lib/decision-calibration";
+import { fillRules } from "@/lib/market-rules";
 import { phaseLabels } from "@/lib/phase";
 import { fillBasisLabel } from "@/lib/fill";
 import { summarizeTrades } from "@/lib/trade-summary";
@@ -23,7 +24,7 @@ export default async function ReviewPage() {
   // The prediction table compares every decision made in the calibration
   // window; ordering by time and taking a handful of rows turned the sample
   // into the newest two or three scans.
-  const calibrationSince = new Date(new Date().getTime() - CALIBRATION_WINDOW_HOURS * 60 * 60 * 1000);
+  const calibrationSince = new Date(new Date().getTime() - DECISION_LOG_WINDOW_HOURS * 60 * 60 * 1000);
   const [trades, decisions, calibrationTrades, positions] = await Promise.all([
     prisma.trade.findMany({ where: marketWhere, orderBy: { realizedAt: "desc" }, take: 100 }),
     prisma.decision.findMany({
@@ -36,7 +37,7 @@ export default async function ReviewPage() {
     // would otherwise drop the fills of older decisions.
     prisma.trade.findMany({
       where: { ...marketWhere, realizedAt: { gte: calibrationSince } },
-      select: { itemId: true, realizedAt: true, inferred: true }
+      select: { itemId: true, realizedAt: true, inferred: true, channel: true }
     }),
     getPositions(scope)
   ]);
@@ -68,7 +69,8 @@ export default async function ReviewPage() {
       itemId: decision.itemId,
       kind: decision.kind,
       at: decision.at,
-      fillProb: decision.fillProb
+      fillProb: decision.fillProb,
+      fillBasis: decision.fillBasis
     })),
     calibrationTrades
   );
@@ -255,7 +257,7 @@ export default async function ReviewPage() {
       </Panel>
 
       <Panel>
-        <PanelHeader title="预测校准" action={<span className="font-mono text-xs text-terminal-muted">预测成交率 vs 72 小时内确认成交</span>} />
+        <PanelHeader title="预测校准" action={<span className="font-mono text-xs text-terminal-muted">预测成交率 vs 预测 {fillRules.horizonHours} 小时内确认拍卖成交</span>} />
         <div className="space-y-2 p-3 font-mono text-xs">
           {calibration.every((bucket) => bucket.decisions === 0) && (
             <div className="text-terminal-muted">还没有带成交率预测的买入决策；先在新版本下导入一次扫描。</div>

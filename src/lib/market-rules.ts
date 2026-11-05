@@ -37,7 +37,12 @@ export const DEFAULT_BUDGET_COPPER = 1_000_000;
 // Evidence window for own fills. A collected sale is the only clean label
 // the client ever gives; the addon ledger and the terminal query must read
 // the same window or their fill estimates describe different populations.
-export const fillRules = { ownSalesWindowDays: 7 } as const;
+//
+// horizonHours is the window every fill chance is quoted for -- the radar,
+// the item chart, the sell plan and the review calibration. Measuring an
+// outcome over a different window (72h used to be applied to a 24h
+// prediction) compares two different questions and biases the calibration.
+export const fillRules = { ownSalesWindowDays: 7, horizonHours: 24 } as const;
 
 // Fill-rate priors per phase and market type, as expected sales per hour
 // expressed as a share of listed supply. The core shrinks an observed zero

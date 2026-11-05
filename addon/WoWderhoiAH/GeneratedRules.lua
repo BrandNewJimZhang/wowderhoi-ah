@@ -47,7 +47,8 @@ WAH.RULES = {
   }
 },
   fill = {
-  ownSalesWindowDays = 7
+  ownSalesWindowDays = 7,
+  horizonHours = 24
 },
   fillPrior = {
   priorStrengthHours = 50,
