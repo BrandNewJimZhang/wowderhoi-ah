@@ -169,9 +169,12 @@ end
 
 -- One authority for the listing price. The floor keeps the listing above
 -- the vendor price; the undercut is a compiled rule, not a local constant.
+-- The result is whole copper: commodity tier prices are buyout/count and
+-- can be fractional, but the client posts in copper and the journal must
+-- record the price it actually posted at.
 function Core.listPrice(sellP, vendorP, rules)
   local undercut = (rules and rules.sellFront and rules.sellFront.undercutCopper) or 1
-  return math.max((vendorP or 0) + 1, (sellP or 0) - undercut)
+  return math.max((vendorP or 0) + 1, math.floor((sellP or 0) - undercut))
 end
 
 function Core.sellBreakeven(unitCost, feeRate)

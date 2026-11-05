@@ -43,6 +43,10 @@ describe("decision core parity", () => {
     // Undercut one copper, but never at or below the vendor price.
     expect(lua.number("WowTest.ns.Core.listPrice(8400, 100, WowTest.ns.RULES)")).toBe(8399);
     expect(lua.number("WowTest.ns.Core.listPrice(50, 100, WowTest.ns.RULES)")).toBe(101);
+    // Commodity tiers are buyout/count and can be fractional; the client
+    // posts in whole copper, so the recorded price must be an integer.
+    expect(lua.number("WowTest.ns.Core.listPrice(33.333333333333336, 0, WowTest.ns.RULES)")).toBe(32);
+    expect(lua.number("WowTest.ns.Core.listPrice(100.5, 100, WowTest.ns.RULES)")).toBe(101);
   });
 
   it("walks the ladder cheapest-first and refuses a short book", () => {

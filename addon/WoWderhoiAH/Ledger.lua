@@ -121,10 +121,14 @@ function Ledger.replay(events, market)
     elseif kind == "vendor" then
       local basis = consume(state, event.itemId, event.qty or 0, event.t)
       state.capital.realized = state.capital.realized + (event.paid or 0) - basis
+      -- Money is whole copper. A unit price can be fractional (a stack
+      -- bought or sold as a lot), but the trade rows must survive an
+      -- integer-column projection: round the unit price and the realized
+      -- cash once, here, and identically on both runtimes.
       state.trades[#state.trades + 1] = {
         t = event.t, itemId = event.itemId, qty = event.qty or 0,
-        price = (event.qty or 0) > 0 and ((event.paid or 0) / event.qty) or 0,
-        fee = 0, basis = basis, pnl = (event.paid or 0) - basis, channel = "vendor",
+        price = (event.qty or 0) > 0 and round((event.paid or 0) / event.qty) or 0,
+        fee = 0, basis = basis, pnl = round((event.paid or 0) - basis), channel = "vendor",
         inferred = false, observedAt = event.t, censored = false
       }
     elseif kind == "post" then
@@ -160,8 +164,8 @@ function Ledger.replay(events, market)
       end
       state.trades[#state.trades + 1] = {
         t = event.t, itemId = itemId, qty = quantity,
-        price = price, fee = fee, basis = basis,
-        pnl = price * quantity - fee - basis, channel = "auction",
+        price = round(price), fee = round(fee), basis = basis,
+        pnl = round(price * quantity - fee - basis), channel = "auction",
         auctionID = event.auctionID,
         inferred = event.inferred == true,
         listedAt = event.listedAt or (post and post.at),
@@ -187,8 +191,8 @@ function Ledger.replay(events, market)
         state.capital.realized = state.capital.realized
           + (price * quantity - fee) - (trade.price * trade.qty - trade.fee)
         state.capital.fees = state.capital.fees + fee - trade.fee
-        trade.qty, trade.price, trade.fee = quantity, price, fee
-        trade.pnl = price * quantity - fee - trade.basis
+        trade.qty, trade.price, trade.fee = quantity, round(price), round(fee)
+        trade.pnl = round(price * quantity - fee - trade.basis)
         trade.inferred = false
         trade.listedAt = event.listedAt or trade.listedAt
         trade.observedAt = event.t

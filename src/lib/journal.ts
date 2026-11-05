@@ -218,10 +218,14 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
         const basis = consume(event.itemId, event.qty ?? 0, at);
         const paid = event.paid ?? 0;
         capital.realized += paid - basis;
+        // Money is whole copper. A unit price can be fractional (a stack
+        // bought or sold as a lot), but trade rows must survive an
+        // integer-column projection: round the unit price and the realized
+        // cash once, here, and identically to Ledger.lua.
         trades.push({
           t: at, itemId: event.itemId ?? null, qty: event.qty ?? 0,
-          price: (event.qty ?? 0) > 0 ? paid / (event.qty ?? 1) : 0,
-          fee: 0, basis, pnl: paid - basis, channel: "vendor", inferred: false,
+          price: (event.qty ?? 0) > 0 ? round(paid / (event.qty ?? 1)) : 0,
+          fee: 0, basis, pnl: round(paid - basis), channel: "vendor", inferred: false,
           observedAt: at, censored: false
         });
         break;
@@ -259,8 +263,8 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
         }
         const listedAt = event.listedAt ?? post?.at;
         trades.push({
-          t: at, itemId: itemId ?? null, qty: quantity, price, fee, basis,
-          pnl: price * quantity - fee - basis, channel: "auction",
+          t: at, itemId: itemId ?? null, qty: quantity, price: round(price), fee: round(fee), basis,
+          pnl: round(price * quantity - fee - basis), channel: "auction",
           ...(event.auctionID !== undefined ? { auctionID: event.auctionID } : {}),
           inferred: event.inferred === true,
           ...(listedAt !== undefined ? { listedAt } : {}),
@@ -287,9 +291,9 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
           capital.realized += price * quantity - fee - (trade.price * trade.qty - trade.fee);
           capital.fees += fee - trade.fee;
           trade.qty = quantity;
-          trade.price = price;
-          trade.fee = fee;
-          trade.pnl = price * quantity - fee - trade.basis;
+          trade.price = round(price);
+          trade.fee = round(fee);
+          trade.pnl = round(price * quantity - fee - trade.basis);
           trade.inferred = false;
           if (event.listedAt !== undefined) trade.listedAt = event.listedAt;
           trade.observedAt = at;

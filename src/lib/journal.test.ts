@@ -63,6 +63,28 @@ describe("replayJournal", () => {
     expect(state.trades[0].pnl).toBe(90);
   });
 
+  it("books fractional unit prices as whole copper", () => {
+    // Commodity tiers are buyout/count, so a sale can carry 100/3 copper.
+    // The client posts in whole copper and the trade table stores integers:
+    // a fractional row must never reach the import and fail it wholesale.
+    const events: JournalEvent[] = [
+      { k: "buy", t: 1, itemId: 1, qty: 3, cost: 100 },
+      { k: "buy", t: 1, itemId: 2, qty: 3, cost: 100 },
+      { k: "post", t: 2, auctionID: 9, itemId: 1, qty: 3, price: 100 / 3, deposit: 10 },
+      { k: "sold", t: 3, auctionID: 9, itemId: 1, qty: 3, price: 100 / 3, fee: 5 },
+      { k: "vendor", t: 4, itemId: 2, qty: 3, paid: 100 }
+    ];
+    const state = replayJournal(events);
+    expect(state.trades[0].price).toBe(33);
+    expect(state.trades[0].pnl).toBe(-5);
+    expect(state.trades[1].price).toBe(33);
+    expect(state.trades[1].pnl).toBe(0);
+    expect(state.trades.every((trade) => Number.isInteger(trade.price) && Number.isInteger(trade.pnl) && Number.isInteger(trade.fee))).toBe(true);
+    // The Lua ledger rounds identically, so the projections stay equal.
+    const fromLua = loadAddon().ledgerReplay(events) as { trades: unknown };
+    expect(state.trades).toEqual(fromLua.trades);
+  });
+
   it("upgrades an inferred sale when the mailbox confirms it", () => {
     const state = replayJournal([
       { k: "buy", t: 1, itemId: 1, qty: 2, cost: 200 },
