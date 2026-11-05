@@ -106,6 +106,21 @@ describe("mailbox capture", () => {
     expect(scan(lua).sold).toBe(1);
   });
 
+  it("flushes SavedVariables when a sale is booked, not on a repeat visit", () => {
+    const lua = loadAddon();
+    lua.exec('WowTest.itemInfo[2589] = { name = "亚麻布" }');
+    record(lua, { k: "buy", itemId: 2589, qty: 4, cost: 4000 });
+    record(lua, { k: "post", auctionID: 7, itemId: 2589, qty: 4, price: 1200, deposit: 100 });
+    lua.exec(`WowTest.setMail({ ${toLua(saleMail("Auction successful", "亚麻布", 4800, 240, 4560))} })`);
+    lua.exec("WowTest.savedCount = 0");
+
+    lua.exec("WowTest.fireEvent('MAIL_SHOW')");
+    // The terminal must see the confirmed sale now, not at the next scan.
+    expect(lua.number("WowTest.savedCount")).toBe(1);
+    lua.exec("WowTest.fireEvent('MAIL_SHOW')");
+    expect(lua.number("WowTest.savedCount")).toBe(1);
+  });
+
   it("resolves each ledger item once per mailbox visit", () => {
     const lua = loadAddon();
     lua.exec('WowTest.itemInfo[2589] = { name = "亚麻布" }');
