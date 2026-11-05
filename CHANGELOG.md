@@ -17,10 +17,14 @@
   leaves a stored anchor alone when the field is absent.
 - The terminal reads the allocator's `exploratory` label instead of
   comparing sample counts against its own copy of `minKellySamples`.
+- The "环比" label says which baseline it actually uses: the previous
+  scan that priced the item, not necessarily the immediately previous one.
 
 ### Removed
 
 - The unused `Core.weightedPercentile` helper.
+- Write-only journal fields (`source`, the mailbox fingerprint, the sold
+  event's `deposit`); the replay never read them.
 
 ## v0.5.0 — 2026-11-05
 

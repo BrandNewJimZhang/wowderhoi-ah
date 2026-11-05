@@ -218,7 +218,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                   <span className="flex items-center gap-3">
                     <Coins copper={signal.sellPrice} />
                     {signal.stale && <span className="text-[10px] text-terminal-muted" title="最近一次扫描中已无在售挂单，价格是上次有货时的值">已下架</span>}
-                    <span title="相对上次扫描的建议卖价" className={signal.changePercent >= 0 ? "text-terminal-red" : "text-terminal-green"}>{formatPercent(signal.changePercent)}</span>
+                    <span title="相对该物品上次有报价扫描的建议卖价" className={signal.changePercent >= 0 ? "text-terminal-red" : "text-terminal-green"}>{formatPercent(signal.changePercent)}</span>
                   </span>
                 </div>
               ))}

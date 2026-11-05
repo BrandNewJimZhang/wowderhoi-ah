@@ -43,7 +43,7 @@ export type MarketSignal = {
   sellSamples: number;
   spreadPercent: number; // (sellPrice - minPrice) / sellPrice
   trendPercent: number; // (sellPrice - sellRef) / sellRef
-  changePercent: number; // sellPrice vs the previous scan's sell front
+  changePercent: number; // sellPrice vs the previous snapshot that priced this item
   realSellPrice: number | null; // deflated by the market price index
 };
 
