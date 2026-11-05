@@ -168,7 +168,6 @@ export async function POST(request: Request) {
         sellerCount: item.sellerCount,
         sellersInvisible: item.sellersInvisible,
         ownerVisible: item.ownerVisible,
-        selfExclusion: item.selfExclusion,
         observationVersion: scan.observationVersion,
         sellerHHI: item.sellerHHI,
         topSellerShare: item.topSellerShare,

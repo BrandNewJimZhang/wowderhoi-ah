@@ -26,7 +26,6 @@ WoWderhoiAH_ScanData = {
 \t\t\t["numAuctions"] = 12,
 \t\t\t["sellers"] = 7,
 \t\t\t["ownerVisible"] = true,
-\t\t\t["selfExclusion"] = "owner",
 \t\t\t["sellerHHI"] = 0.4,
 \t\t\t["topSellerShare"] = 0.6,
 \t\t\t["bidOnly"] = 0,
@@ -114,7 +113,6 @@ describe("normalizeAddonScan", () => {
       numAuctions: 12,
       sellerCount: 7,
       ownerVisible: true,
-      selfExclusion: "owner",
       sellerHHI: 0.4,
       topSellerShare: 0.6,
       bidOnlyCount: 0,
@@ -126,7 +124,6 @@ describe("normalizeAddonScan", () => {
     // A row without the hygiene fields is treated as unobservable and not
     // attributable, never as "clean".
     expect(blackLotus?.ownerVisible).toBe(false);
-    expect(blackLotus?.selfExclusion).toBe("none");
     expect(blackLotus?.quality).toBe("rare");
     expect(blackLotus?.category).toBe("unknown");
     // Entries without vendorP (unsellable-to-NPC items) normalize to 0.

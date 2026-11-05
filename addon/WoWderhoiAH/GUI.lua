@@ -770,14 +770,22 @@ SlashCmdList["WOWDERHOIAHDIAG"] = function(input)
   diagLine(string.format("owner visibility: %d visible / %d hidden / %d priced items", visible, hidden, items))
   local scanData = WoWDerhoiAH_ScanData
   local selfListings, selfQty = 0, 0
+  local byOwner, byOwned, byNone = 0, 0, 0
   if scanData then
     for _, entry in pairs(scanData.items or {}) do
       selfListings = selfListings + (entry.selfListings or 0)
       selfQty = selfQty + (entry.selfQty or 0)
+      if entry.selfExclusion == "owner" then byOwner = byOwner + 1
+      elseif entry.selfExclusion == "owned" then byOwned = byOwned + 1
+      elseif entry.selfExclusion == "none" then byNone = byNone + 1 end
     end
   end
   diagLine(string.format("own listings excluded: %d listings / %d units | observation v%s",
     selfListings, selfQty, tostring(scanData and scanData.observationVersion or "n/a")))
+  -- Which channel could identify the player's listings. "none" means the
+  -- book may still contain them; those rows are not calibration evidence.
+  diagLine(string.format("own exclusion channel: owner %d / owned %d / none %d items",
+    byOwner, byOwned, byNone))
   diagLine(string.format("scan age: %s min, %s total auctions",
     tostring(WAH.scanAgeMinutes and math.floor(WAH.scanAgeMinutes() or -1) or -1),
     tostring(WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.total or 0)))

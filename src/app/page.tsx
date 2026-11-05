@@ -3,9 +3,9 @@ import { alertMetricLabels, evaluateAlertRules, formatAlertValue, type AlertMetr
 import {
   getAlertRules,
   getRecipes,
-  getUpcomingEvents,
   getWatchedItemIds
 } from "@/lib/repositories";
+import { loadDemandEvents, upcomingDemandEvents } from "@/lib/events-calendar";
 import { buildProductionPlan } from "@/lib/production-plan";
 import { recipeToLp } from "@/lib/recipes";
 import { getMarketSignals } from "@/lib/market-signals";
@@ -28,13 +28,13 @@ const qualityName = (value: number | string | undefined) =>
 
 export default async function Home({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const view = parseMarketView(await searchParams);
-  const [{ scope, signals, latestSnapshotAt, phase, evaluation }, upcomingEvents, watchedIds, alertRules, recipeRows] = await Promise.all([
+  const [{ scope, signals, latestSnapshotAt, phase, evaluation }, watchedIds, alertRules, recipeRows] = await Promise.all([
     getMarketSignals(),
-    getUpcomingEvents(),
     getWatchedItemIds(),
     getAlertRules(),
     getRecipes()
   ]);
+  const upcomingEvents = upcomingDemandEvents(loadDemandEvents(), Math.floor(new Date().getTime() / 1000));
   const freshness = describeFreshness(latestSnapshotAt, new Date());
   const watchedSignals = signals.filter((signal) => watchedIds.has(signal.itemId));
   // Alerts and the action list only see the newest scan's book: a price
@@ -264,9 +264,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
             <div className="space-y-2 p-3 font-mono text-xs">
               {upcomingEvents.length === 0 && <div className="text-terminal-muted">暂无已录入的版本事件</div>}
               {upcomingEvents.map((event) => (
-                <div key={event.id} className="flex items-center justify-between gap-2">
-                  <span className="text-slate-200">{event.eventName}</span>
-                  <span className="text-terminal-muted">{event.startTime.toISOString().slice(0, 10)}</span>
+                <div key={`${event.name}-${event.startsAt}`} className="flex items-center justify-between gap-2">
+                  <span className="text-slate-200">{event.name}</span>
+                  <span className="text-terminal-muted">{new Date(event.startsAt * 1000).toISOString().slice(0, 10)}</span>
                 </div>
               ))}
             </div>

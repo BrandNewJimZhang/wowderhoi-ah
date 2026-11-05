@@ -34,10 +34,6 @@ export type AddonScanItem = {
   // True when at least one listing named its owner. The fill model reads it:
   // hidden owners mean a disappearance is unobservable, not zero.
   ownerVisible: boolean;
-  // How the scanner identified the player's own listings: by owner name,
-  // by matching the owned-auction list, or not at all ("none" = the book may
-  // still contain them and the row is not calibration evidence).
-  selfExclusion: "owner" | "owned" | "none";
   sellerHHI: number | null; // other sellers' supply concentration, 0..1
   topSellerShare: number | null;
   bidOnlyCount: number;
@@ -244,12 +240,6 @@ function normalizeMarketType(value: unknown, itemId: string): AddonMarketType | 
   throw new Error(`Addon scan item ${itemId}: marketType must be "commodity" or "item", got ${JSON.stringify(value)}`);
 }
 
-function normalizeSelfExclusion(value: unknown, itemId: string): "owner" | "owned" | "none" {
-  if (value === undefined || value === null) return "none";
-  if (value === "owner" || value === "owned" || value === "none") return value;
-  throw new Error(`Addon scan item ${itemId}: selfExclusion must be "owner", "owned" or "none", got ${JSON.stringify(value)}`);
-}
-
 function optionalShare(value: unknown, field: string, itemId: string): number | null {
   if (value === undefined || value === null) return null;
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) {
@@ -338,7 +328,6 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
       sellerCount: !priced ? 0 : entry.sellers === undefined ? numAuctions : optionalNonNegative(entry.sellers, "sellers", key),
       sellersInvisible: entry.sellersInvisible === true,
       ownerVisible: entry.ownerVisible === true,
-      selfExclusion: normalizeSelfExclusion(entry.selfExclusion, key),
       sellerHHI: optionalShare(entry.sellerHHI, "sellerHHI", key),
       topSellerShare: optionalShare(entry.topSellerShare, "topSellerShare", key),
       bidOnlyCount,

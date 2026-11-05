@@ -72,11 +72,9 @@ model AuctionSnapshot {
   // True when the scan could see owner names for this item. Hidden owners
   // make the flow proxy unobservable rather than zero.
   ownerVisible     Boolean  @default(false) @map("owner_visible")
-  // How the scanner excluded the player's own listings: owner name, the
-  // owned-auction list, or not at all. Null on rows from older builds.
-  selfExclusion    String?  @map("self_exclusion")
-  // Hygiene generation of soldProxyLow/High. 2 excludes own listings and
-  // purchases; the calibration only reads >= 2.
+  // Hygiene generation of soldProxyLow/High (see OBSERVATION_VERSION in
+  // src/lib/market-rules.ts). Calibration only reads the current generation
+  // and rows whose owners were fully visible.
   observationVersion Int?   @map("observation_version")
   // Other sellers' supply concentration (0..1). Null when owners are hidden.
   sellerHHI        Float?   @map("seller_hhi")
@@ -192,16 +190,6 @@ model Recipe {
   createdAt       DateTime @default(now()) @map("created_at")
 
   @@index([profession])
-}
-
-model Event {
-  id        String   @id @default(cuid())
-  eventType String   @map("event_type")
-  eventName String   @map("event_name")
-  startTime DateTime @map("start_time")
-  endTime   DateTime @map("end_time")
-
-  @@index([eventType, startTime])
 }
 
 // Single-operator local terminal: no userId columns anywhere.

@@ -18,7 +18,6 @@ function scanItem(partial: Partial<AddonScanItem> & Pick<AddonScanItem, "itemId"
     sellerCount: 2,
     sellersInvisible: false,
     ownerVisible: true,
-    selfExclusion: "owner",
     sellerHHI: null,
     topSellerShare: null,
     bidOnlyCount: 0,
