@@ -118,7 +118,8 @@ Ledger 是 Journal 的纯投影：
 - `inferred = false`，事件带 `listedAt`（挂单时间）与 `censored = true`（成交在开箱时才被观测）；
 - 如果这笔成交在开箱前已经被在售对账推断过，写 `confirm` 升级那笔推断，不重复记账；
 - 去重指纹存 `WoWderhoiAH_MailSeen`（上限 500），重复开箱不会重复记账；
-- 开关 `mailCapture` 关闭后系统退回推断成交。
+- `/wahcapture mail off` 关闭采集，系统退回推断成交；`/wahcapture mail on` 恢复。
+  `/wahdiag` 会打印两个采集开关的当前状态，关闭后已入账的记录保留不动。
 
 同一物品多次成交的暴露时间按每笔挂单分别累计，而不是首末成交时间差：后者会把
 “几笔挂单同时卖出”当成极短曝光，系统性高估成交速度。

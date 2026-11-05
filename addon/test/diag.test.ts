@@ -36,6 +36,9 @@ describe("/wahdiag", () => {
     expect(lua.anyChat("throttle ready: true")).toBe(true);
     expect(lua.anyChat("journal:")).toBe(true);
     expect(lua.anyChat("phase:")).toBe(true);
+    // The capture switches are the documented rollback levers; the state
+    // has to be readable or "turned it off" cannot be verified in game.
+    expect(lua.anyChat("capture: mail on | craft on")).toBe(true);
   });
 
   it("reports missing APIs as missing instead of guessing", () => {

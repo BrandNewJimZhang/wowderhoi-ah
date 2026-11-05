@@ -62,9 +62,9 @@ AQT_BUDGET_COPPER="500000"          # 终端计划预算；与扫描里的现金
 | `PostItem` 缺失 | 卖出页降级为价格助手 |
 | `throttle ready` 为 false | 自动扫描退避；手动降低扫描频率 |
 | 扫描超时 | 确认 AH 开着；失败会指数退避，连续失败 3 次降为 10 分钟 |
-| mail 发票字段为空 | 该客户端不暴露发票；`mailCapture` 关闭，系统退回推断成交 |
+| mail 发票字段为空 | 该客户端不暴露发票；`/wahcapture mail off` 关闭采集，系统退回推断成交 |
 | 邮箱成交显示 unattributed | 物品不在扫描名表且无唯一开仓挂单；下次扫描后自动重试，不写错账 |
-| craft 一直 unmapped | 配方 id 与数据集不一致且产物非唯一；对照 `/wahdiag` 的 recipe 计数，补映射 |
+| craft 一直 unmapped | 配方 id 与数据集不一致且产物非唯一；对照 `/wahdiag` 的 recipe 计数，补映射；需要停掉采集时用 `/wahcapture craft off` |
 | 阶段一直停在点火期 | `/wahopen` 未设或设成了未来时间；`/wahopen -<小时数>` 校正 |
 
 ## 2. 点火期（0–6 小时）

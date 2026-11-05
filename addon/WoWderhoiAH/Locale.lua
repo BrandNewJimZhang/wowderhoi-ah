@@ -141,6 +141,8 @@ local L = {
   OPEN_USAGE = "Usage: /wahopen now | /wahopen <epoch> | /wahopen -<hours> | /wahopen auto",
   OPEN_SET = "Server opening time set to %s; phase age is measured from it.",
   OPEN_CLEARED = "Server opening time cleared; phase age is measured from the first scan.",
+  CAPTURE_USAGE = "Usage: /wahcapture mail|craft on|off",
+  CAPTURE_SET = "Capture %s: %s. The ledger keeps what it already booked.",
   SELL_DEPOSIT_UNAVAILABLE = "unavailable",
   SELL_STATUS_FMT = "%d bag kinds | %d owned | %s deployable",
   SELL_BLOCKED = "The client blocked %s. Posting falls back to manual; nothing was recorded.",
@@ -287,6 +289,8 @@ if GetLocale() == "zhCN" then
   L.OPEN_USAGE = "用法：/wahopen now | /wahopen <epoch 秒> | /wahopen -<小时数> | /wahopen auto"
   L.OPEN_SET = "开服时间已设为 %s，阶段按它推进。"
   L.OPEN_CLEARED = "已清除开服时间，阶段改按首次扫描推进。"
+  L.CAPTURE_USAGE = "用法：/wahcapture mail|craft on|off"
+  L.CAPTURE_SET = "采集 %s：%s。已入账的记录不会回滚。"
   L.SELL_DEPOSIT_UNAVAILABLE = "不可用"
   L.SELL_STATUS_FMT = "背包 %d 种 | 在售 %d 笔 | 可动用 %s"
   L.SELL_BLOCKED = "客户端拦截了 %s。上架已降级为手动，账本没有记录。"

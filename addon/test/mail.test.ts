@@ -117,6 +117,24 @@ describe("mailbox capture", () => {
     expect(lua.number("WowTest.ns.Ledger.positions()[2589].qty")).toBe(5);
   });
 
+  it("stops booking once capture is switched off", () => {
+    const lua = loadAddon();
+    lua.exec('WowTest.itemInfo[2589] = { name = "亚麻布" }');
+    record(lua, { k: "buy", itemId: 2589, qty: 10, cost: 8000 });
+    record(lua, { k: "post", auctionID: 7, itemId: 2589, qty: 10, price: 1200, deposit: 500 });
+    lua.exec(`WowTest.setMail({ ${toLua(saleMail("Auction successful", "亚麻布", 12000, 600, 11400))} })`);
+    // The documented rollback lever has to work from inside the game: a
+    // broken invoice parser must be switchable off without editing files.
+    lua.exec("SlashCmdList['WOWDERHOIAHCAPTURE']('mail off')");
+    expect(lua.eval("WowTest.ns.settings.mailCapture")).toBe(false);
+    expect(scan(lua).sold).toBe(0);
+    expect(lua.number("WowTest.ns.Journal.count()")).toBe(2);
+    lua.exec("SlashCmdList['WOWDERHOIAHCAPTURE']('mail on')");
+    expect(lua.eval("WowTest.ns.settings.mailCapture")).toBe(true);
+    expect(scan(lua).sold).toBe(1);
+    expect(lua.number("WowTest.ns.Journal.count()")).toBe(3);
+  });
+
   it("counts an unattributable sale instead of guessing an item", () => {
     const lua = loadAddon();
     lua.exec(`WowTest.setMail({ ${toLua(saleMail("Auction successful: 陌生物品", "陌生物品", 5000, 250, 4750))} })`);

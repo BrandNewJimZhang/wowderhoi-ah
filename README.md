@@ -75,6 +75,9 @@ buy/sell API paths) stay per branch. See [CONTRIBUTING.md](CONTRIBUTING.md).
 - `/wahopen now|-<hours>|<epoch>|auto` — set the server opening anchor so
   phase age survives a reinstall or cleared SavedVariables; `auto` clears
   it, and the next scan clears it in the terminal too.
+- `/wahcapture mail|craft on|off` — the rollback lever for the two
+  collectors: turn one off and the system falls back to inferred sales or
+  skips craft booking; `/wahdiag` prints the current state.
 - Mailbox capture — `MAIL_SHOW` / `MAIL_INBOX_UPDATE` turn collected sale
   mails into confirmed `sold` events (`inferred = false`) with the posting
   time; a sale the sell panel already inferred is upgraded with `confirm`
@@ -280,7 +283,7 @@ an issue; see [CONTRIBUTING.md](CONTRIBUTING.md). Security notes in
 
 ### 游戏内
 
-- `/wahscan` 全量扫描（v4：盘口阶梯、卖家、到期桶、竞价需求、消失量区间）；`/wahauto` 自动重扫；`/wahphase` 手动阶段；`/wahopen` 设开服锚点。
+- `/wahscan` 全量扫描（v4：盘口阶梯、卖家、到期桶、竞价需求、消失量区间）；`/wahauto` 自动重扫；`/wahphase` 手动阶段；`/wahopen` 设开服锚点；`/wahcapture mail|craft on|off` 开关采集。
 - 邮箱成交采集：开箱即读取发票，把成交写成 `inferred = false` 的确认成交（带去重指纹），并记录挂单时间用于暴露时间口径。
 - 制造采集：按 `TRADE_SKILL_ITEM_CRAFTED_RESULT` 记账，产物成本 = 材料 FIFO 成本；未知配方只计数，不猜成本。
 - `/wahtrade` 驾驶舱：可执行净利榜（预算内可买 / 买价 / 建议卖价 / 分配后净利 / 成交率），NPC 必赚优先；实时价格簿与核验购买。

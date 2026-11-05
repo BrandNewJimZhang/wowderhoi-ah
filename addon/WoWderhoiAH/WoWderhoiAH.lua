@@ -897,6 +897,31 @@ end
 SLASH_WOWDERHOIAHOPEN1 = "/wahopen"
 SlashCmdList["WOWDERHOIAHOPEN"] = setOpenedAt
 
+-- Capture rollback levers. Both collectors read these switches; the options
+-- panel only carries display settings, so the switches need a command --
+-- a lever the player cannot reach is not a rollback path.
+local function setCapture(input)
+  local target, state = (input or ""):lower():match("^%s*(%S+)%s*(%S*)%s*$")
+  if target ~= "mail" and target ~= "craft" then
+    chatMessage(L.CAPTURE_USAGE)
+    return
+  end
+  if state ~= "" and state ~= "on" and state ~= "off" then
+    chatMessage(L.CAPTURE_USAGE)
+    return
+  end
+  local enabled = state ~= "off"
+  if target == "mail" then
+    WAH.settings.mailCapture = enabled
+  else
+    WAH.settings.craftCapture = enabled
+  end
+  chatMessage(string.format(L.CAPTURE_SET, target, enabled and "on" or "off"))
+end
+
+SLASH_WOWDERHOIAHCAPTURE1 = "/wahcapture"
+SlashCmdList["WOWDERHOIAHCAPTURE"] = setCapture
+
 -- Free bag slots across the backpack and the four equipped bags. The
 -- aggregate is the executable-quantity ceiling; stackSize x slots is an
 -- upper bound when a purchase mixes stack sizes, which is the intended

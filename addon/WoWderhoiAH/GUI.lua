@@ -747,6 +747,9 @@ SlashCmdList["WOWDERHOIAHDIAG"] = function(input)
     (WAH.settings and WAH.settings.phaseOverride) or "auto",
     (WAH.settings and WAH.settings.serverOpenedAt and WAH.settings.serverOpenedAt > 0)
       and tostring(WAH.settings.serverOpenedAt) or "auto"))
+  diagLine(string.format("capture: mail %s | craft %s",
+    (WAH.settings and WAH.settings.mailCapture == false) and "off" or "on",
+    (WAH.settings and WAH.settings.craftCapture == false) and "off" or "on"))
   if WAH.Mail then
     for _, line in ipairs(WAH.Mail.diagnostics()) do diagLine(line) end
   end
