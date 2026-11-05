@@ -29,6 +29,18 @@ describe("capacity inputs", () => {
     lua.exec("WowTest.freeBagSlots = {}");
     expect(lua.number("WowTest.ns.coreInput().capacity.bagSlots")).toBe(0);
   });
+
+  it("hands the core the purse before the daily share", () => {
+    const lua = loadAddon();
+    scanned(lua);
+    // The core applies portfolio.dailyBudget once, during allocation.
+    // Discounting it here would give the in-game radar half the spend the
+    // terminal grants for the same cash.
+    const input = lua.eval(
+      "(function() local i = WowTest.ns.coreInput() return i.capital.cash .. '|' .. i.capital.budget end)()"
+    );
+    expect(input).toBe("1000000|1000000");
+  });
 });
 
 describe("server opening anchor", () => {

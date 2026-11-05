@@ -53,12 +53,16 @@ export async function POST(request: Request) {
       openedAt: scan.openedAt ? new Date(scan.openedAt * 1000) : null
     },
     // A scan-only import carries no character, so it must not erase the one
-    // the last journal-bearing scan recorded. Likewise an older addon that
-    // omits the opening time must not clear a configured anchor.
+    // the last journal-bearing scan recorded. An opening time of null means
+    // the addon did not report the field (an older version) and must leave a
+    // configured anchor alone; 0 means the player cleared it with
+    // /wahopen auto and the stored anchor must go too.
     update: {
       cash: scan.cash,
       ...(scan.character ? { character: scan.character } : {}),
-      ...(scan.openedAt ? { openedAt: new Date(scan.openedAt * 1000) } : {})
+      ...(scan.openedAt === null ? {} : {
+        openedAt: scan.openedAt > 0 ? new Date(scan.openedAt * 1000) : null
+      })
     }
   });
 

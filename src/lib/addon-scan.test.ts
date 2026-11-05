@@ -118,6 +118,20 @@ describe("normalizeAddonScan", () => {
     expect(blackLotus?.vendorPrice).toBe(0);
   });
 
+  it("distinguishes an omitted opening time from an explicit clear", () => {
+    // The addon sends 0 after /wahopen auto, and omits the field entirely
+    // on versions that predate the anchor. Null means "not reported": the
+    // import must leave a configured anchor alone. Zero means "cleared":
+    // the terminal must drop the anchor it kept.
+    const raw = rawScan() as Record<string, unknown>;
+    delete raw.openedAt;
+    expect(normalizeAddonScan(raw).openedAt).toBeNull();
+    raw.openedAt = 0;
+    expect(normalizeAddonScan(raw).openedAt).toBe(0);
+    raw.openedAt = 1721700000;
+    expect(normalizeAddonScan(raw).openedAt).toBe(1721700000);
+  });
+
   it("preserves a fractional unit price in the ladder", () => {
     // The scanner derives a tier price as buyout / count, which is not an
     // integer when a stack's buyout does not divide evenly. Rounding it on

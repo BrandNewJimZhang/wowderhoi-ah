@@ -326,7 +326,10 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
     faction: scan.faction,
     character: typeof scan.character === "string" ? scan.character : null,
     cash: optionalNonNegative(scan.cash, "cash", "scan"),
-    openedAt: typeof scan.openedAt === "number" && Number.isFinite(scan.openedAt) && scan.openedAt > 0
+    // null = the addon did not report the field (an older version), so the
+    // import must leave a configured anchor alone. 0 = the player cleared
+    // it, so the import must drop the anchor it kept.
+    openedAt: typeof scan.openedAt === "number" && Number.isFinite(scan.openedAt) && scan.openedAt >= 0
       ? Math.round(scan.openedAt)
       : null,
     items

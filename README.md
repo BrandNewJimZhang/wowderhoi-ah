@@ -73,10 +73,13 @@ buy/sell API paths) stay per branch. See [CONTRIBUTING.md](CONTRIBUTING.md).
 - `/wahphase ignition|wave|settle|steady|auto` — override the phase when
   the automatic breadth/age rule lags the real market.
 - `/wahopen now|-<hours>|<epoch>|auto` — set the server opening anchor so
-  phase age survives a reinstall or cleared SavedVariables.
+  phase age survives a reinstall or cleared SavedVariables; `auto` clears
+  it, and the next scan clears it in the terminal too.
 - Mailbox capture — `MAIL_SHOW` / `MAIL_INBOX_UPDATE` turn collected sale
   mails into confirmed `sold` events (`inferred = false`) with the posting
-  time; duplicates are fingerprinted and never booked twice.
+  time; a sale the sell panel already inferred is upgraded with `confirm`
+  instead of being booked twice; duplicates are fingerprinted and never
+  booked twice.
 - Craft capture — `TRADE_SKILL_CRAFT_BEGIN` / `TRADE_SKILL_ITEM_CRAFTED_RESULT`
   book the product at the materials' FIFO cost from the compiled recipe
   table; an unknown recipe is counted, never guessed.
