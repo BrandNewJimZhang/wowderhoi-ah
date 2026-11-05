@@ -219,6 +219,14 @@ function Ledger.replay(events, market)
       state.capital.escrow = math.max(0, state.capital.escrow - lost)
       state.capital.depositsLost = state.capital.depositsLost + lost
       posts[key] = nil
+    elseif kind == "transfer_out" then
+      -- Goods moved to another character. The journal keeps the FIFO cost
+      -- the sending book carried, so the receiving book can add the same
+      -- basis instead of inventing a zero-cost lot.
+      consume(state, event.itemId, event.qty or 0, event.t)
+    elseif kind == "transfer_in" then
+      local quantity = event.qty or 0
+      addLot(state, event.itemId, quantity, quantity > 0 and (event.cost or 0) / quantity or 0, event.t)
     elseif kind == "de" or kind == "prospect" or kind == "mill" then
       local basis = consume(state, event.itemId, event.qty or 0, event.t)
       local outputs = event.outputs or {}
@@ -271,6 +279,22 @@ end
 
 function Ledger.capital()
   return Ledger.current().capital
+end
+
+-- Units the player bought inside [from, to], per item. The scan's flow
+-- inference reads this: a unit that vanished because the player bought it
+-- is the player's own demand, not evidence about the market. The journal is
+-- the only place a purchase is a fact, so this is the only authority.
+function Ledger.purchasesBetween(from, to)
+  local events = WAH.Journal and WAH.Journal.current() or {}
+  local byItem = {}
+  for _, event in ipairs(events) do
+    local at = event.t or 0
+    if event.k == "buy" and at >= (from or 0) and at <= (to or 0) then
+      byItem[event.itemId] = (byItem[event.itemId] or 0) + (event.qty or 0)
+    end
+  end
+  return byItem
 end
 
 -- Auction sales per item inside a window. These are the only clean fill

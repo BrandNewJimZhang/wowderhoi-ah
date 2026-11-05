@@ -198,9 +198,15 @@ Mail.available = function()
   return type(GetInboxNumItems) == "function" and type(GetInboxHeaderInfo) == "function"
 end
 
+-- Money seen in the mailbox at the last scan. Display only: the purse is
+-- GetMoney(), and the terminal never budgets against uncollected mail.
+Mail.pendingCash = function()
+  return (Mail.last and Mail.last.cash) or 0
+end
+
 Mail.scan = function()
   local stats = { available = Mail.available(), messages = 0, sold = 0, expired = 0,
-    unattributed = 0, duplicates = 0, reconfirmed = 0, ignored = 0 }
+    unattributed = 0, duplicates = 0, reconfirmed = 0, ignored = 0, cash = 0 }
   Mail.last = stats
   if not stats.available then return stats end
   if WAH.settings and WAH.settings.mailCapture == false then return stats end
@@ -214,6 +220,10 @@ Mail.scan = function()
   for message = 1, count do
     local okHeader, header = pcall(headerAt, message)
     if okHeader and header then
+      -- Money sitting in the inbox is earned but not spendable: the purse
+      -- (GetMoney) is the only live balance, and this is a display-only
+      -- in-transit figure.
+      stats.cash = stats.cash + (header.money or 0)
       local invoice = invoiceAt(message)
       local texts = { header.subject, invoice and invoice.name or "" }
       local itemId = itemFromLink(message) or itemFromText(texts, index)

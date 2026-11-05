@@ -15,6 +15,10 @@ local DEFAULTS = {
   -- falls back to inferred sales and per-row quantities.
   mailCapture = true, -- read collected sales from the mailbox
   craftCapture = true, -- record crafts from TRADE_SKILL events
+  -- Price x duration search on the sell page. Off, the page posts the
+  -- one-copper undercut at the selected duration, which is what a player
+  -- who does not trust the model wants.
+  pricing = true,
   serverOpenedAt = 0 -- epoch seconds; 0 = derive age from the first scan
 }
 
@@ -41,7 +45,8 @@ local OPTIONS = {
   { key = "autoScan", label = L.OPT_AUTOSCAN, tip = string.format(L.OPT_AUTOSCAN_TIP, scanMinutes) },
   { key = "tooltip", label = L.OPT_TOOLTIP, tip = L.OPT_TOOLTIP_TIP },
   { key = "chart", label = L.OPT_CHART, tip = L.OPT_CHART_TIP },
-  { key = "tradeOnOpen", label = L.OPT_TRADE_ON_OPEN, tip = L.OPT_TRADE_ON_OPEN_TIP }
+  { key = "tradeOnOpen", label = L.OPT_TRADE_ON_OPEN, tip = L.OPT_TRADE_ON_OPEN_TIP },
+  { key = "pricing", label = L.OPT_PRICING, tip = L.OPT_PRICING_TIP }
 }
 
 panel:SetScript("OnShow", function(self)

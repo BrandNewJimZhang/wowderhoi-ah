@@ -91,6 +91,14 @@ local L = {
   RADAR_NONE = "No opportunity clears this phase's gates right now.",
   STATUS_LINE = "Scan %d min ago | %d items listed | %s | sellers visible %d%%",
   STATUS_LINE_NO_SCAN = "No scan yet | %s | run /wahscan",
+  STATUS_SELF = " | own listings excluded: %d",
+  NEXT_STEPS = "Next",
+  COL_ACTION = "Action",
+  ACTION_BUY = "Buy",
+  ACTION_SELL = "Sell",
+  ACTIONS_FOUND = "%d next steps.",
+  ACTIONS_EMPTY = "No next step clears this phase's gates.",
+  ACTION_ABORT = "Abandon above %s",
   PURCHASE_UNCONFIRMED = "Purchase not confirmed by the client - it is not in the ledger. Check the auction house before assuming it failed.",
   PHASE_LABELS = { ignition = "Ignition", wave = "Wave", settle = "Settle", steady = "Steady" },
   -- Money suffixes and sort markers sit in the locale table because they
@@ -155,7 +163,19 @@ local L = {
   OPT_CHART = "Price chart beside the auction frame",
   OPT_CHART_TIP = "Order-book ladder and windowed trend (1h/6h/24h/7d/all) for the item most recently hovered while the AH is open.",
   OPT_TRADE_ON_OPEN = "Open the WAH deal page with the auction house",
-  OPT_TRADE_ON_OPEN_TIP = "Show the standalone WAH panel beside the auction house. /wahtrade toggles it manually."
+  OPT_TRADE_ON_OPEN_TIP = "Show the standalone WAH panel beside the auction house. /wahtrade toggles it manually.",
+  OPT_PRICING = "Sell page: choose price and duration",
+  OPT_PRICING_TIP = "Search price and 12/24/48h duration by expected net after fees and deposit risk. /wahpricing toggles it.",
+  PRICING_SET = "price search %s",
+  PRICING_USAGE = "Usage: /wahpricing on|off",
+  SELL_RECOMMEND = "Recommended: %s / %dh / fill %d%%",
+  TRANSFER_USAGE = "Usage: /wahtransfer <itemId> <qty> out | /wahtransfer <itemId> <qty> in [unit cost in copper]",
+  TRANSFER_OUT = "Moved %d x item %d out at %s each; record the same cost on the receiving character.",
+  TRANSFER_IN = "Received %d x item %d at %s each.",
+  TRANSFER_NO_POSITION = "The ledger has no position in that item on this character.",
+  STATUS_MAIL = " | mail in transit %s",
+  COST_USAGE = "Usage: /wahcost <itemId> <qty> <paid copper> — records a vendor sale the client does not report",
+  COST_RECORDED = "Booked a vendor sale: %d x item %d for %s.",
 }
 
 if GetLocale() == "zhCN" then
@@ -242,6 +262,14 @@ if GetLocale() == "zhCN" then
   L.RADAR_NONE = "当前没有满足本阶段门槛的可执行机会。"
   L.STATUS_LINE = "扫描于 %d 分钟前 | 在售 %d 种 | %s | 卖家可见 %d%%"
   L.STATUS_LINE_NO_SCAN = "尚未扫描 | %s | 运行 /wahscan"
+  L.STATUS_SELF = " | 自有挂单已排除 %d 笔"
+  L.NEXT_STEPS = "下一步"
+  L.COL_ACTION = "动作"
+  L.ACTION_BUY = "买入"
+  L.ACTION_SELL = "卖出"
+  L.ACTIONS_FOUND = "下一步动作 %d 条。"
+  L.ACTIONS_EMPTY = "当前没有满足本阶段门槛的下一步动作。"
+  L.ACTION_ABORT = "若价格高于 %s 则放弃"
   L.PURCHASE_UNCONFIRMED = "客户端未确认这次购买，账本没有记录。请到拍卖行核对后再判断是否失败。"
   L.PHASE_LABELS = { ignition = "点火期", wave = "洪流期", settle = "沉淀期", steady = "稳态" }
   L.MONEY_G = "金"
@@ -303,6 +331,18 @@ if GetLocale() == "zhCN" then
   L.OPT_CHART_TIP = "拍卖行开着时，为最近悬停的物品显示盘口阶梯与可切换时间窗（1时/6时/24时/7天/全部）的走势图。"
   L.OPT_TRADE_ON_OPEN = "打开拍卖行时显示 WAH 交易页"
   L.OPT_TRADE_ON_OPEN_TIP = "在拍卖行旁显示独立的 WAH 面板；/wahtrade 可随时开关。"
+  L.OPT_PRICING = "卖出页：自动选择价格与时长"
+  L.OPT_PRICING_TIP = "按扣费后与押金风险后的期望净利，在价格与 12/24/48 小时中搜索最优组合；/wahpricing 可开关。"
+  L.PRICING_SET = "价格搜索 %s"
+  L.PRICING_USAGE = "用法：/wahpricing on|off"
+  L.SELL_RECOMMEND = "推荐：%s / %d 小时 / 成交率 %d%%"
+  L.TRANSFER_USAGE = "用法：/wahtransfer <物品ID> <数量> out 或 /wahtransfer <物品ID> <数量> in [单位成本（铜）]"
+  L.TRANSFER_OUT = "已转出 %d 件物品 %d，单位成本 %s；请在接收角色上按同一成本记入。"
+  L.TRANSFER_IN = "已接收 %d 件物品 %d，单位成本 %s。"
+  L.TRANSFER_NO_POSITION = "本角色账本里没有这件物品的持仓。"
+  L.STATUS_MAIL = " | 在途 %s"
+  L.COST_USAGE = "用法：/wahcost <物品ID> <数量> <卖得铜币>——补记客户端不会上报的卖店交易"
+  L.COST_RECORDED = "已记录卖店：%d 件物品 %d，共 %s。"
 end
 
 WAH.L = L

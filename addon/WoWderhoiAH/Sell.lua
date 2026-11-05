@@ -119,9 +119,11 @@ end
 
 -- ============================== Pricing ==============================
 
--- The sell plan is Core.sellPlan; this function only supplies the two
--- inputs the core cannot know: the client's deposit and the ledger's
--- cost basis for the units being sold.
+-- The sell plan is Core.sellPlan; this function only supplies the inputs
+-- the core cannot know: the client's deposits and the ledger's cost basis
+-- for the units being sold. The fill hazard comes from the same estimator
+-- the radar uses, so the price search and the radar cannot disagree about
+-- how fast this item moves.
 local function planFor(itemId, duration, quantity)
   local entry
   for _, candidate in ipairs(bagItems) do
@@ -133,7 +135,12 @@ local function planFor(itemId, duration, quantity)
     return nil, "noScan", entry
   end
   local qty = math.max(1, math.floor(quantity or entry.count or 1))
-  local deposit, depositAvailable = depositFor(entry, duration or selectedDuration, qty)
+  local deposits, depositAvailable = {}, false
+  for _, hours in ipairs(DURATIONS) do
+    local deposit, available = depositFor(entry, hours, qty)
+    deposits[hours] = deposit
+    if available then depositAvailable = true end
+  end
   local position = { qty = qty, cost = 0 }
   local ledger = WAH.Ledger and WAH.Ledger.current()
   local held = ledger and ledger.positions and ledger.positions[itemId]
@@ -142,11 +149,40 @@ local function planFor(itemId, duration, quantity)
     -- before the addon was installed); cost per unit stays the booked one.
     position.cost = held.cost / held.qty * qty
   end
+  local opts = { deposit = deposits[duration or selectedDuration] or 0,
+    deposits = deposits, duration = duration or selectedDuration }
+  if WAH.settings and WAH.settings.pricing ~= false then
+    local ownSales = WAH.Ledger and WAH.Ledger.salesSince and WAH.Ledger.salesSince() or {}
+    local own = ownSales[itemId]
+    local _, _, _, basis, hazard = WAH.Core.fillProbability({
+      horizonHours = 24,
+      phase = WAH.currentPhase and WAH.currentPhase() or "steady",
+      marketType = scanned.marketType or WAH.Core.marketTypeFor(scanned),
+      qty = qty,
+      ownSold = own and own.qty or 0,
+      ownSamples = own and own.samples or 0,
+      ownExposedHours = own and own.exposedHours or 0,
+      sold = scanned.inferredSoldLow or 0,
+      supply = scanned.quantity or 0,
+      elapsedHours = scanned.elapsedHours or ((WAH.RULES.scanIntervalMinutes or 15) / 60),
+      observable = scanned.ownerVisible == true and not scanned.sellersInvisible
+    })
+    -- Only item-specific evidence earns a re-priced listing. A phase-wide
+    -- prior knows nothing about this book's queue, and searching price and
+    -- duration on it would dress a guess up as an optimum.
+    if basis ~= "prior" then
+      -- The queue model needs the other sellers' ladder; own listings are
+      -- already out of it.
+      opts.hazard = hazard
+      opts.supply = scanned.quantity
+      opts.tiers = scanned.tiers
+    end
+  end
   local plan = WAH.Core.sellPlan({
     itemId = itemId,
     sellP = scanned.sellP,
     vendorP = scanned.vendorP
-  }, position, WAH.RULES, { deposit = deposit })
+  }, position, WAH.RULES, opts)
   if not plan then return nil, "noPrice", entry end
   plan.depositAvailable = depositAvailable
   return plan, nil, entry
@@ -199,7 +235,9 @@ local function postItem(itemId, duration, quantity)
     return false, "noLocation"
   end
   local qty = plan.quantity
-  local durationValue = duration or selectedDuration
+  -- The search may have chosen a shorter or longer listing than the button
+  -- the player last pressed; post the plan that was shown.
+  local durationValue = plan.duration or duration or selectedDuration
   pendingPost = {
     itemId = itemId,
     name = entry.name,
@@ -546,6 +584,10 @@ local function render()
         L.SELL_EXPIRE_BREAKEVEN, coinString(plan.expireBreakeven)),
       string.format("%s: %s", L.SELL_LOSS, coinString(plan.lossIfExpired))
     }
+    if plan.optimized then
+      table.insert(lines, 3, string.format(L.SELL_RECOMMEND, coinString(plan.listP),
+        plan.duration or 24, math.floor((plan.fillProb or 0) * 100 + 0.5)))
+    end
     sell.detail:SetText(table.concat(lines, "\n"))
   else
     sell.bagScroll:Hide()

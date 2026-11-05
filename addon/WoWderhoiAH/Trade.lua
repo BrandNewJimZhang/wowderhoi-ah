@@ -28,8 +28,9 @@ local PANEL_HEIGHT = 540
 local trade = nil
 local results = {} -- search rows
 local deals = {} -- radar rows from Core.evaluate
+local actionRows = {} -- conditional plans from the same evaluation
 local lastEvaluation = nil
-local mode = "deals" -- which list the scroll frame renders
+local mode = "deals" -- "deals" | "actions" | "results"
 local searchState = nil
 local searching = nil -- "browse" | "list" | nil
 local pendingPurchase = nil -- a purchase awaiting AUCTION_HOUSE_PURCHASE_COMPLETED
@@ -69,7 +70,8 @@ end
 local function moneyCell(value) return money(value) end
 local function countCell(value) return tostring(value or 0) end
 local function fillCell(value)
-  local pct = math.floor((value or 0) * 100 + 0.5)
+  if value == nil then return "|cffaaaaaa—|r" end
+  local pct = math.floor(value * 100 + 0.5)
   local color = pct >= 60 and "|cff55ff55" or (pct >= 30 and "|cffffd100" or "|cffaaaaaa")
   return string.format("%s%d%%|r", color, pct)
 end
@@ -88,6 +90,12 @@ local RADAR_COLUMNS = {
   { key = "allocNet", label = "COL_NET", cell = moneyCell },
   { key = "fillProb", label = "COL_FILL", cell = fillCell }
 }
+local ACTION_COLUMNS = {
+  { key = "qty", label = "COL_LISTED", cell = countCell },
+  { key = "price", label = "COL_UNIT", cell = moneyCell, asc = true },
+  { key = "net", label = "COL_NET", cell = moneyCell },
+  { key = "fillProb", label = "COL_FILL", cell = fillCell }
+}
 local RESULT_COLUMNS = {
   { key = "count", label = "COL_LISTED", cell = countCell },
   { key = "unitPrice", label = "COL_UNIT", cell = moneyCell, asc = true },
@@ -97,21 +105,36 @@ local RESULT_COLUMNS = {
 local sortKey = nil
 local sortAsc = false
 
+local function columnsForMode()
+  if mode == "deals" then return RADAR_COLUMNS end
+  if mode == "actions" then return ACTION_COLUMNS end
+  return RESULT_COLUMNS
+end
+
 local function columnAt(slot)
-  local columns = mode == "deals" and RADAR_COLUMNS or RESULT_COLUMNS
+  local columns = columnsForMode()
   return columns[slot - (COL_COUNT - #columns)]
+end
+
+local function visibleRows()
+  if mode == "deals" then return deals end
+  if mode == "actions" then return actionRows end
+  return results
 end
 
 -- The radar keeps Core's order: vendor arbitrage first, then the phase's
 -- score. A user sort overrides it until the next evaluation.
 local function applySort()
-  local rows = mode == "deals" and deals or results
+  local rows = visibleRows()
   if not sortKey then
     if mode == "results" then
       table.sort(rows, function(left, right) return left.unitPrice < right.unitPrice end)
     end
     return
   end
+  -- Plans keep the core's urgency order; a column click must not reorder
+  -- "what to do next" into "what looks biggest".
+  if mode == "actions" then return end
   table.sort(rows, function(left, right)
     if left[sortKey] == right[sortKey] then return left.name < right.name end
     if sortAsc then return left[sortKey] < right[sortKey] end
@@ -165,11 +188,49 @@ local function statusLine()
   end
   local visible, total = sellerVisibility(scan)
   local pct = total > 0 and math.floor(visible / total * 100 + 0.5) or 0
-  return string.format(L.STATUS_LINE, math.floor(age), count, label, pct)
+  local line = string.format(L.STATUS_LINE, math.floor(age), count, label, pct)
+  -- The book the radar priced excludes the player's own listings; say so,
+  -- otherwise "why is my item missing" has no answer on the page.
+  local selfListings = 0
+  for _, entry in pairs(scan) do
+    selfListings = selfListings + (entry.selfListings or 0)
+  end
+  if selfListings > 0 then
+    line = line .. string.format(L.STATUS_SELF, selfListings)
+  end
+  -- Money in the mailbox is earned but not spendable. It is shown so the
+  -- purse does not look wrong after a sale, and never budgeted against.
+  local pending = WAH.Mail and WAH.Mail.pendingCash and WAH.Mail.pendingCash() or 0
+  if pending > 0 then
+    line = line .. string.format(L.STATUS_MAIL, coinString(pending))
+  end
+  return line
 end
 
 local function refreshStatus()
   if trade and trade.status then trade.status:SetText(statusLine()) end
+end
+
+-- Conditional plans in the shape the table renders. A buy carries the price
+-- the allocated quantity pays; a sell carries the listing price the core
+-- already netted.
+local function rebuildActions()
+  wipe(actionRows)
+  if not lastEvaluation then return end
+  for _, action in ipairs(lastEvaluation.actions) do
+    if #actionRows >= 12 then break end
+    actionRows[#actionRows + 1] = {
+      kind = action.kind,
+      itemId = action.itemId,
+      name = action.name or tostring(action.itemId),
+      qty = action.qty or 0,
+      price = action.kind == "buy" and (action.unitPrice or action.maxUnitPrice) or action.price,
+      net = action.expectedNet or 0,
+      fillProb = action.kind == "buy" and action.fillProb or nil,
+      reason = action.reason,
+      stop = action.stop
+    }
+  end
 end
 
 local function refreshRadar()
@@ -183,6 +244,7 @@ local function refreshRadar()
   end
   lastEvaluation = WAH.Core.evaluate(WAH.coreInput())
   for _, row in ipairs(lastEvaluation.rows) do deals[#deals + 1] = row end
+  rebuildActions()
   applySort()
   refreshStatus()
   if #deals == 0 then
@@ -434,8 +496,8 @@ end
 
 renderRows = function()
   if not trade then return end
-  local rows = mode == "deals" and deals or results
-  trade.headItem:SetText(L.COL_ITEM .. sortMark("name"))
+  local rows = visibleRows()
+  trade.headItem:SetText((mode == "actions" and L.COL_ACTION or L.COL_ITEM) .. sortMark("name"))
   for slot = 1, COL_COUNT do
     local column = columnAt(slot)
     trade.headers[slot]:SetText(column and (L[column.label] .. sortMark(column.key)) or "")
@@ -468,6 +530,32 @@ renderRows = function()
           searchState = nil
           searching = nil
           WAH.searchItem(row.itemId, row.name)
+        end)
+      elseif mode == "actions" then
+        rowFrame.icon:SetTexture(WAH.itemIcon(row.itemId))
+        rowFrame.showTooltip = function()
+          GameTooltip:SetHyperlink("item:" .. row.itemId)
+          if row.reason then GameTooltip:AddLine(row.reason, 1, 0.82, 0) end
+          if row.stop and row.stop.ifPriceAbove then
+            GameTooltip:AddLine(string.format(L.ACTION_ABORT, coinString(row.stop.ifPriceAbove)), 1, 1, 1)
+          end
+        end
+        local tag = row.kind == "sell" and L.ACTION_SELL or L.ACTION_BUY
+        local color = row.kind == "sell" and "|cff66ccff" or "|cff55ff55"
+        rowFrame.name:SetText(string.format("%s%s|r %s", color, tag, row.name))
+        rowFrame.buy:SetText(row.kind == "sell" and L.SELL_PAGE or L.FIND)
+        rowFrame.buy:SetScript("OnClick", function()
+          if row.kind == "sell" then
+            if WAH.openSell then WAH.openSell() end
+            -- Preselect the item whose plan the player clicked; the sell
+            -- page recomputes the plan against the live bag.
+            if WAH.Sell and WAH.Sell.select then WAH.Sell.select(row.itemId) end
+          else
+            trade.searchBox:SetText(row.name)
+            searchState = nil
+            searching = nil
+            WAH.searchItem(row.itemId, row.name)
+          end
         end)
       else
         rowFrame.icon:SetTexture(row.texture or WAH.itemIcon(row.itemId))
@@ -649,7 +737,27 @@ local function createTradeFrame()
     FauxScrollFrame_SetOffset(trade.scroll, 0)
     renderRows()
   end)
-  local scanButton = headerButton(L.FULL_SCAN, dealsButton, 78, function()
+  local actionsButton = headerButton(L.NEXT_STEPS, dealsButton, 58, function()
+    -- Evaluate first: the plan must describe the scan on screen, not the
+    -- one the radar happened to render last.
+    if not currentScan() then
+      chatMessage(L.DEALS_NEED_SCAN)
+      return
+    end
+    mode = "deals"
+    refreshRadar()
+    rebuildActions()
+    mode = "actions"
+    sortKey = nil
+    FauxScrollFrame_SetOffset(trade.scroll, 0)
+    renderRows()
+    if #actionRows > 0 then
+      chatMessage(string.format(L.ACTIONS_FOUND, #actionRows))
+    else
+      chatMessage(L.ACTIONS_EMPTY)
+    end
+  end)
+  local scanButton = headerButton(L.FULL_SCAN, actionsButton, 78, function()
     if WAH.startScan then WAH.startScan() end
   end)
   local optionsButton = headerButton(L.OPTIONS, scanButton, 56, function() WAH.openSettings() end)

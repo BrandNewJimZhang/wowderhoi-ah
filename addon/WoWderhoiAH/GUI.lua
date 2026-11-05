@@ -768,6 +768,16 @@ SlashCmdList["WOWDERHOIAHDIAG"] = function(input)
     for _, series in pairs(market.items) do points = points + #series.t end
   end
   diagLine(string.format("owner visibility: %d visible / %d hidden / %d priced items", visible, hidden, items))
+  local scanData = WoWDerhoiAH_ScanData
+  local selfListings, selfQty = 0, 0
+  if scanData then
+    for _, entry in pairs(scanData.items or {}) do
+      selfListings = selfListings + (entry.selfListings or 0)
+      selfQty = selfQty + (entry.selfQty or 0)
+    end
+  end
+  diagLine(string.format("own listings excluded: %d listings / %d units | observation v%s",
+    selfListings, selfQty, tostring(scanData and scanData.observationVersion or "n/a")))
   diagLine(string.format("scan age: %s min, %s total auctions",
     tostring(WAH.scanAgeMinutes and math.floor(WAH.scanAgeMinutes() or -1) or -1),
     tostring(WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.total or 0)))
@@ -810,9 +820,12 @@ SlashCmdList["WOWDERHOIAHDIAG"] = function(input)
     (WAH.settings and WAH.settings.phaseOverride) or "auto",
     (WAH.settings and WAH.settings.serverOpenedAt and WAH.settings.serverOpenedAt > 0)
       and tostring(WAH.settings.serverOpenedAt) or "auto"))
-  diagLine(string.format("capture: mail %s | craft %s",
+  diagLine(string.format("capture: mail %s | craft %s | pricing %s",
     (WAH.settings and WAH.settings.mailCapture == false) and "off" or "on",
-    (WAH.settings and WAH.settings.craftCapture == false) and "off" or "on"))
+    (WAH.settings and WAH.settings.craftCapture == false) and "off" or "on",
+    (WAH.settings and WAH.settings.pricing == false) and "off" or "on"))
+  diagLine(string.format("mail in transit: %s", coinString(
+    WAH.Mail and WAH.Mail.pendingCash and WAH.Mail.pendingCash() or 0)))
   if WAH.Mail then
     for _, line in ipairs(WAH.Mail.diagnostics()) do diagLine(line) end
   end
