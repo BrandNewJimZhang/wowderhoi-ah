@@ -151,9 +151,11 @@ npm run addon:watch
 
 The watcher posts `{ scan, journal }` to `/api/import/addon-scan`. The
 import is transactional: the snapshot, daily OHLC (built from the sell
-front), positions and trades land all-or-nothing; duplicate scan
-timestamps are skipped. `WoWderhoiAH_Capture` is the previous scan's
-tier-level identity table, used only for the flow estimate.
+front), positions and trades land all-or-nothing. A duplicate scan
+timestamp carrying a journal still replays the ledger, so a sale the
+mailbox flushed between scans reaches the terminal immediately; only a
+journal-less duplicate is skipped. `WoWderhoiAH_Capture` is the previous
+scan's tier-level identity table, used only for the flow estimate.
 
 Every terminal read is scoped to one `Market` (realm + faction): the
 market of the newest snapshot, or `AQT_MARKET="realm|faction"` when you
@@ -306,7 +308,7 @@ npm run recipes:lua
 npm run dev
 ```
 
-游戏内扫描后插件会自动调用 `SaveAddOns`（不支持时小退/`/reload`）；配置 `AQT_SAVEDVARS_PATH` 后运行 `npm run addon:watch`。导入是事务式的：快照、日线、头寸与成交一起落库；重复扫描时间戳自动跳过。
+游戏内扫描后插件会自动调用 `SaveAddOns`（不支持时小退/`/reload`）；配置 `AQT_SAVEDVARS_PATH` 后运行 `npm run addon:watch`。导入是事务式的：快照、日线、头寸与成交一起落库；邮箱成交会在两次扫描之间单独触发一次账本重放，重复的快照本身不重复写入。
 
 ### 边界
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseSavedVariables } from "@/lib/addon-scan";
-import { bookForCharacter, parseJournal, replayJournal, type JournalEvent } from "@/lib/journal";
+import { bookForCharacter, journalRevision, parseJournal, replayJournal, type JournalEvent } from "@/lib/journal";
 import { loadAddon } from "../../addon/test/wow-lua";
 
 const EVENTS: JournalEvent[] = [
@@ -164,6 +164,51 @@ WoWderhoiAH_Journal = {
   it("returns no books for an absent journal", () => {
     expect(parseJournal(undefined)).toEqual([]);
     expect(parseJournal({})).toEqual([]);
+  });
+});
+
+describe("journalRevision", () => {
+  const base = {
+    books: {
+      "TestRealm|Alliance|Main": {
+        dropped: 0,
+        e: [
+          { k: "buy", t: 1, itemId: 2589, qty: 4, cost: 400 },
+          { k: "sold", t: 2, auctionID: 7, itemId: 2589, qty: 4, price: 500, fee: 25, inferred: false }
+        ]
+      }
+    }
+  };
+
+  it("is stable while the journal is unchanged", () => {
+    expect(journalRevision(base)).toBe(journalRevision(structuredClone(base)));
+  });
+
+  it("changes when an action is appended to the same scan", () => {
+    // The mailbox flushes a sale without a new scan: the revision is what
+    // tells the watcher there is journal work to import even though
+    // scannedAt did not move.
+    const before = journalRevision(base);
+    const after = journalRevision({
+      books: {
+        ...base.books,
+        "TestRealm|Alliance|Main": {
+          dropped: 0,
+          e: [...base.books["TestRealm|Alliance|Main"].e, { k: "confirm", t: 3, auctionID: 7, itemId: 2589, qty: 4, price: 500, fee: 20 }]
+        }
+      }
+    });
+    expect(after).not.toBe(before);
+  });
+
+  it("changes when the oldest events are truncated", () => {
+    const truncated = structuredClone(base);
+    truncated.books["TestRealm|Alliance|Main"].dropped = 1;
+    expect(journalRevision(truncated)).not.toBe(journalRevision(base));
+  });
+
+  it("is empty without a journal", () => {
+    expect(journalRevision(undefined)).toBe("");
   });
 });
 

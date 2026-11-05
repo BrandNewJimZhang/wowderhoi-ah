@@ -4,7 +4,36 @@ import { prisma } from "@/lib/prisma";
 import { normalizeAddonScan } from "@/lib/addon-scan";
 import { mergeScanIntoDailySummaries } from "@/lib/daily-summary";
 import { diffScanItems } from "@/lib/scan-import";
-import { bookForCharacter, parseJournal, replayJournal } from "@/lib/journal";
+import { bookForCharacter, parseJournal, replayJournal, type ReplayState } from "@/lib/journal";
+
+// The journal projection is replaced wholesale on every import: the replay
+// is the single authority for positions and realized trades.
+function journalStatements(replay: ReplayState, marketId: string): Prisma.PrismaPromise<unknown>[] {
+  const positions = Object.entries(replay.positions).map(([itemId, position]) => ({
+    marketId,
+    itemId: Number(itemId),
+    qty: position.qty,
+    costBasis: position.cost
+  }));
+  const trades = replay.trades.map((trade) => ({
+    marketId,
+    itemId: trade.itemId ?? 0,
+    qty: trade.qty,
+    price: trade.price,
+    fee: trade.fee,
+    pnl: trade.pnl,
+    channel: trade.channel,
+    inferred: trade.inferred,
+    listedAt: trade.listedAt ? new Date(trade.listedAt * 1000) : null,
+    realizedAt: new Date(trade.t * 1000)
+  }));
+  return [
+    prisma.position.deleteMany({ where: { marketId } }),
+    ...(positions.length > 0 ? [prisma.position.createMany({ data: positions })] : []),
+    prisma.trade.deleteMany({ where: { marketId } }),
+    ...(trades.length > 0 ? [prisma.trade.createMany({ data: trades })] : [])
+  ];
+}
 
 // Imports one addon snapshot plus the character's action journal. The
 // snapshot is the market observation; the journal is the only clean
@@ -37,10 +66,32 @@ export async function POST(request: Request) {
       timestamp: scan.scannedAt,
       market: { is: { realm: scan.server, faction: scan.faction } }
     },
-    select: { id: true }
+    select: { id: true, marketId: true }
   });
   if (duplicate) {
-    return NextResponse.json({ error: `Scan at ${scan.scannedAt.toISOString()} already imported` }, { status: 409 });
+    // The mailbox and the sell page flush the journal between scans. The
+    // snapshot is already imported, but the actions inside it are not: a
+    // duplicate timestamp carrying a journal replays the ledger so a
+    // confirmed sale reaches the terminal without waiting for the next
+    // scan. Scan-only tooling keeps the old "already imported" answer.
+    if (!journalPresent) {
+      return NextResponse.json({ error: `Scan at ${scan.scannedAt.toISOString()} already imported` }, { status: 409 });
+    }
+    const book = bookForCharacter(
+      parseJournal(payload.journal),
+      scan.character ? [scan.server, scan.faction, scan.character].join("|") : null
+    );
+    const replay = replayJournal(book?.events ?? []);
+    await prisma.$transaction(journalStatements(replay, duplicate.marketId));
+    return NextResponse.json({
+      duplicate: true,
+      journalUpdated: true,
+      scannedAt: scan.scannedAt.toISOString(),
+      marketId: duplicate.marketId,
+      positions: Object.keys(replay.positions).length,
+      trades: replay.trades.length,
+      journalErrors: replay.errors.length
+    });
   }
 
   const market = await prisma.market.upsert({
@@ -130,30 +181,7 @@ export async function POST(request: Request) {
   ];
 
   if (replay) {
-    const positions = Object.entries(replay.positions).map(([itemId, position]) => ({
-      marketId: market.id,
-      itemId: Number(itemId),
-      qty: position.qty,
-      costBasis: position.cost
-    }));
-    const trades = replay.trades.map((trade) => ({
-      marketId: market.id,
-      itemId: trade.itemId ?? 0,
-      qty: trade.qty,
-      price: trade.price,
-      fee: trade.fee,
-      pnl: trade.pnl,
-      channel: trade.channel,
-      inferred: trade.inferred,
-      listedAt: trade.listedAt ? new Date(trade.listedAt * 1000) : null,
-      realizedAt: new Date(trade.t * 1000)
-    }));
-    statements.push(
-      prisma.position.deleteMany({ where: { marketId: market.id } }),
-      ...(positions.length > 0 ? [prisma.position.createMany({ data: positions })] : []),
-      prisma.trade.deleteMany({ where: { marketId: market.id } }),
-      ...(trades.length > 0 ? [prisma.trade.createMany({ data: trades })] : [])
-    );
+    statements.push(...journalStatements(replay, market.id));
   }
 
   await prisma.$transaction(statements);

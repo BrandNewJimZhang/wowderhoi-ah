@@ -5,6 +5,7 @@
 // Run alongside the game client:  npm run addon:watch
 import { readFileSync, watchFile } from "node:fs";
 import { parseSavedVariables } from "@/lib/addon-scan";
+import { journalRevision } from "@/lib/journal";
 import { SCAN_PIPELINE_VERSION } from "@/lib/market-rules";
 
 // Nothing else in this process loads .env (the Prisma import that did so
@@ -21,6 +22,10 @@ if (!savedVarsPath) {
 const importUrl = process.env.AQT_IMPORT_URL ?? "http://localhost:3000/api/import/addon-scan";
 
 let lastImportedScanAt = 0;
+// The mailbox flushes a sale between two scans. A scan timestamp that did
+// not move can still carry new actions, so the journal revision is part of
+// the "is there anything to import" test.
+let lastJournalRevision = "";
 
 
 async function importLatestScan() {
@@ -34,7 +39,8 @@ async function importLatestScan() {
     console.log("Stale scan from an old addon version on disk — rescan in game (/wahscan) to produce current-pipeline data.");
     return;
   }
-  if (scan.scannedAt <= lastImportedScanAt) return;
+  const revision = journalRevision(parsed.WoWderhoiAH_Journal);
+  if (scan.scannedAt <= lastImportedScanAt && revision === lastJournalRevision) return;
 
   const response = await fetch(importUrl, {
     method: "POST",
@@ -47,11 +53,14 @@ async function importLatestScan() {
   if (!response.ok && response.status !== 409) {
     throw new Error(`Import failed (${response.status}): ${JSON.stringify(body)}`);
   }
-  lastImportedScanAt = scan.scannedAt;
+  lastImportedScanAt = Math.max(lastImportedScanAt, scan.scannedAt);
+  lastJournalRevision = revision;
   console.log(
     response.status === 409
       ? `Scan ${new Date(scan.scannedAt * 1000).toISOString()} already imported, skipping.`
-      : `Imported ${body.imported} items, ${body.positions} positions and ${body.trades} trades from scan ${body.scannedAt}.`
+      : body.journalUpdated
+        ? `Journal for scan ${body.scannedAt} updated without a new scan: ${body.positions} positions, ${body.trades} trades.`
+        : `Imported ${body.imported} items, ${body.positions} positions and ${body.trades} trades from scan ${body.scannedAt}.`
   );
 }
 

@@ -145,6 +145,17 @@ function postKey(event: JournalEvent, index: number): string {
   return String(event.auctionID ?? `event:${index}`);
 }
 
+// A cheap change token for the watcher. The mailbox flushes a collected
+// sale without producing a new scan, so a file newness check keyed on
+// scannedAt alone would never import it. Appending an event or dropping the
+// oldest one both move the revision; rewriting the file unchanged does not.
+export function journalRevision(raw: unknown): string {
+  return parseJournal(raw)
+    .map((book) => `${book.key}:${book.events.length}:${book.dropped}`)
+    .sort()
+    .join("|");
+}
+
 export function replayJournal(events: JournalEvent[]): ReplayState {
   const lots = new Map<number, JournalLot[]>();
   const positions: Record<number, { qty: number; cost: number }> = {};
