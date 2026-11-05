@@ -160,7 +160,8 @@ Ledger 是 Journal 的纯投影：
   一次扫描，界面显示该角色名。
 - `AuctionSnapshot`：v4 全字段 + `topTiers` / `expiring`；`marketType` 保存扫描时的
   市场类型，空值只出现在该列引入前导入的旧行，核心会退回自己的分类逻辑。观测洁净度
-  单独存：`ownerVisible`、`selfExclusion`、`observationVersion`（校准只读 ≥ 2），
+  单独存：`ownerVisible`、`sellersInvisible`、`observationVersion`（校准只读当前
+  `OBSERVATION_VERSION` 及以上，且 `sellersInvisible = false`），
   以及卖家集中度 `sellerHHI` / `topSellerShare`（owner 不可见时为空）。`priced = false`
   标记纯需求行，所有价格序列查询都必须过滤 `priced: true`。市场身份只存在 `Market` 行，
   快照不重复存 realm/faction。快照、日线与决策的 `marketId` 都是必填：它们不可能脱离
@@ -172,9 +173,9 @@ Ledger 是 Journal 的纯投影：
   预期净利、成交概率、成交依据、分配数量与成交价；复盘页按它做分桶预测校准
   （72 小时内同物品确认成交），少于 10 条决策的桶只显示“样本不足”。
 - `Recipe`：`data/recipes.forever.json` 的投影，导入时整体替换。
-- `Event`：团本重置、暗月、阶段开放等需求脉冲的日历（当前只做展示）。参与排序的
-  版本是 `src/data/events.json`，由 `gen:lua-rules` 编译成 `WAH.EVENTS`；`startsAt = 0`
-  的条目是模板，永远不会命中。
+- 需求日历：唯一来源是 `src/data/events.json`，由 `gen:lua-rules` 编译成
+  `WAH.EVENTS` 参与排序，首页“版本日历”也读同一份文件。`startsAt = 0` 的条目是模板，
+  永远不会命中；未写 `endsAt` 表示瞬时事件，结束时间取 `startsAt`。
 
 ## 3. 算法
 
@@ -245,9 +246,12 @@ P(fill ≤ T) = 1 − exp(−h · T)
 `h₀` 与先验强度 `P`（默认 50 单位·小时）来自 `src/lib/market-rules.ts` 的
 `fillPrior`，编译进 `WAH.RULES.fillPrior`；核心不再自带一份数字。`proxy` 与
 `observed-zero` 用 Gamma–Poisson 收缩：盘口越大、观测越久，先验权重越小。
-`npm run calibrate` 只读 `observationVersion >= 2` 的快照，按阶段 × 市场类型输出
-中位数与四分位；样本不足 500 条时只打印“样本不足”，脚本从不改规则文件——人审后改
-`fillPrior` 再重新生成。
+`npm run calibrate` 只读当前 `OBSERVATION_VERSION` 及以上、且卖家完全可见
+（`sellersInvisible = false`）的快照：owner 隐藏时下沿恒为 0，那是缺失数据，不是零成交，
+学进去会把先验压向零。阶段与宽度按**那次扫描的整个市场**判定（每个时间戳的在售种类数、
+市场最早扫描或开服锚点），不是按单个物品的首次出现。输出按阶段 × 市场类型的中位数与
+四分位；样本不足 500 条时只打印“样本不足”，脚本从不改规则文件——人审后改 `fillPrior`
+再重新生成。
 
 样本少于 3 时自己的成交不算证据；三种等级都输出 `[low, high]` 区间，界面标注来源。
 `own` 来自 Journal 的 `sold` 事件（近 7 天，`inferred = false`，只算拍卖行渠道）。曝光
@@ -295,8 +299,10 @@ phase = ignition  if age < 6h  or breadth < 80
 
 三项修正叠加在排序分上，不改变门槛：**卖家集中度**（`1 − 0.15 × HHI`，只在 owner
 可见时生效）、**时间成本**（除以“拍卖行往返 + 买入”的预计分钟数）、以及需求事件
-（`src/data/events.json` 编译进 `WAH.EVENTS`，只缩放排序先验）。每行同时给出
-`netPerMinute`，游戏内与终端显示同一个努力调整后的收益。
+（`src/data/events.json` 编译进 `WAH.EVENTS`，只缩放排序先验；未写 `endsAt` 表示瞬时
+事件，结束时间取 `startsAt`，结束早于开始会直接报错）。每行与每条行动都给出
+`netPerMinute`（买入计“往返 + 买入”，上架计“往返 + 上架”），游戏内行动提示框与终端
+行动清单显示同一个努力调整后的收益。
 
 竞价是客户端唯一直接暴露的需求信号：`highestBid > 0` 只在点火期抬高排序权重，
 不放松任何门槛，也不进入置信度。之后按排序做一次共享预算分配（见 3.8）。

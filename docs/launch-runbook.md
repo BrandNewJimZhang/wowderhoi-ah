@@ -126,9 +126,10 @@ AQT_BUDGET_COPPER="500000"          # 终端计划预算；与扫描里的现金
 ## 7. 校准纪律
 
 - 只用真实成交校准阈值；公共挂单分布不是利润分布。
-- 成交率先验用 `npm run calibrate`：它只读 `observationVersion >= 2`（已剔除自有挂单与
-  自有买入）的快照，按阶段 × 市场类型打印中位数与四分位。样本不足 500 条时只打印
-  “样本不足”；脚本不改规则文件，人审后改 `fillPrior` 再 `npm run gen:lua-rules`。
+- 成交率先验用 `npm run calibrate`：它只读当前 `OBSERVATION_VERSION`（已剔除自有挂单与
+  自有买入）且卖家完全可见的快照，按那次扫描的整个市场判定阶段与宽度，再按阶段 × 市场
+  类型打印中位数与四分位。样本不足 500 条时只打印“样本不足”；脚本不改规则文件，人审后
+  改 `fillPrior` 再 `npm run gen:lua-rules`。
 - 每阶段只改三档：`minSpread`、`minNet`、`minListings`；改完重新生成 Lua 规则并跑漂移测试。
 - 推断成交单独统计；不要把它和真实成交混在一起算胜率。
 - 产能配置（`src/lib/production-config.ts`）按角色实际时间调整，不要为了排名好看调高。
