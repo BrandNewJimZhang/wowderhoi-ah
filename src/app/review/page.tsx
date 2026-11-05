@@ -266,7 +266,9 @@ export default async function ReviewPage() {
               <span className="flex items-center gap-3">
                 <span className="text-slate-100">{bucket.decisions} 条决策 · 成交 {bucket.filled}</span>
                 <span className={bucket.enoughSamples ? "text-terminal-amber" : "text-terminal-muted"}>
-                  {bucket.decisions >= 10 ? `实测成交率 ${(bucket.rate * 100).toFixed(0)}%` : "样本不足，不下结论"}
+                  {/* The threshold lives in decision-calibration.ts; the
+                      page must not carry a second copy of it. */}
+                  {bucket.enoughSamples ? `实测成交率 ${(bucket.rate * 100).toFixed(0)}%` : "样本不足，不下结论"}
                 </span>
               </span>
             </div>
