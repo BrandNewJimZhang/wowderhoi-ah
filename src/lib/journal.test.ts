@@ -63,6 +63,29 @@ describe("replayJournal", () => {
     expect(state.trades[0].pnl).toBe(90);
   });
 
+  it("upgrades an inferred sale when the mailbox confirms it", () => {
+    const state = replayJournal([
+      { k: "buy", t: 1, itemId: 1, qty: 2, cost: 200 },
+      { k: "post", t: 2, auctionID: 4, itemId: 1, qty: 2, price: 300, deposit: 10 },
+      { k: "sold", t: 3, auctionID: 4, itemId: 1, qty: 2, price: 300, fee: 30, inferred: true },
+      // The mail reports a smaller commission than the inferred 5% guess.
+      { k: "confirm", t: 9, auctionID: 4, itemId: 1, qty: 2, price: 300, fee: 20, censored: true, source: "mail" }
+    ]);
+    // Revenue is counted once: 600 - 20 - 200. The inferred event's own
+    // 30 fee is replaced, not added.
+    expect(state.capital.realized).toBe(380);
+    expect(state.capital.fees).toBe(20);
+    expect(state.trades).toHaveLength(1);
+    expect(state.trades[0].inferred).toBe(false);
+    expect(state.trades[0].observedAt).toBe(9);
+    expect(state.errors).toHaveLength(0);
+  });
+
+  it("reports a confirmation whose inferred sale was truncated", () => {
+    const state = replayJournal([{ k: "confirm", t: 1, auctionID: 4, itemId: 1, qty: 2, price: 300, fee: 20 }]);
+    expect(state.errors[0]).toMatchObject({ kind: "confirm_without_sale", itemId: 1 });
+  });
+
   it("consumes materials when replaying a craft", () => {
     const state = replayJournal([
       { k: "buy", t: 1, itemId: 1000, qty: 10, cost: 10000 },
@@ -82,6 +105,20 @@ describe("replayJournal", () => {
   it("reports an unknown event kind instead of silently dropping it", () => {
     const state = replayJournal([{ k: "teleport", t: 1 }]);
     expect(state.errors[0]).toMatchObject({ kind: "unknown_event", name: "teleport" });
+  });
+
+  it("matches the Lua ledger when confirming an inferred sale", () => {
+    const events: JournalEvent[] = [
+      { k: "buy", t: 1, itemId: 1, qty: 2, cost: 200 },
+      { k: "post", t: 2, auctionID: 4, itemId: 1, qty: 2, price: 300, deposit: 10 },
+      { k: "sold", t: 3, auctionID: 4, itemId: 1, qty: 2, price: 300, fee: 30, inferred: true },
+      { k: "confirm", t: 9, auctionID: 4, itemId: 1, qty: 2, price: 300, fee: 20, censored: true, source: "mail" }
+    ];
+    const fromLua = loadAddon().ledgerReplay(events) as Record<string, unknown>;
+    const fromTs = replayJournal(events);
+    expect(fromTs.capital).toEqual(fromLua.capital);
+    expect(fromTs.trades).toEqual(fromLua.trades);
+    expect(fromTs.errors).toEqual(fromLua.errors);
   });
 
   it("matches the Lua ledger for the same journal", () => {

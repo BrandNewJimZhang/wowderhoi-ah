@@ -89,10 +89,14 @@ local function nameIndex()
     if entry.name and #entry.name >= 3 then index[entry.name] = itemId end
   end
   local ledger = WAH.Ledger and WAH.Ledger.current() or nil
-  for _, post in pairs(ledger and ledger.openPosts or {}) do
-    local name = post.itemId and C_Item and C_Item.GetItemInfo and C_Item.GetItemInfo(post.itemId)
-    if name and #name >= 3 then index[name] = post.itemId end
+  local function add(itemId)
+    local name = itemId and C_Item and C_Item.GetItemInfo and C_Item.GetItemInfo(itemId)
+    if name and #name >= 3 then index[name] = itemId end
   end
+  for _, post in pairs(ledger and ledger.openPosts or {}) do add(post.itemId) end
+  -- Trades matter when the posting is already closed: a sale the reconcile
+  -- inferred removed its post, and the mail that confirms it arrives after.
+  for _, trade in ipairs(ledger and ledger.trades or {}) do add(trade.itemId) end
   return index
 end
 
@@ -128,6 +132,23 @@ local function matchPost(itemId, totalBuyout)
   return found
 end
 
+-- A sale the owned-list reconcile already booked as an inference, before
+-- the mailbox was opened. The mail is the confirmation of that same trade,
+-- so it must upgrade the label, not book the revenue again.
+local function inferredSale(itemId, total)
+  local ledger = WAH.Ledger and WAH.Ledger.current() or nil
+  local found
+  for _, trade in ipairs(ledger and ledger.trades or {}) do
+    if trade.inferred and trade.channel == "auction" and trade.auctionID
+      and trade.itemId == itemId
+      and math.abs((trade.price or 0) * (trade.qty or 0) - total) <= 1 then
+      if found then return nil end -- ambiguous: never pick one of several
+      found = trade
+    end
+  end
+  return found
+end
+
 -- The invoice's item name is part of the identity: using the resolved
 -- itemId instead would make a repeat visit look new whenever the name index
 -- could not resolve the item (for example after the posting was closed).
@@ -146,7 +167,8 @@ end
 
 Mail.scan = function()
   local stats = { available = Mail.available(), messages = 0, sold = 0, expired = 0,
-    unattributed = 0, duplicates = 0, ignored = 0 }
+    unattributed = 0, duplicates = 0, reconfirmed = 0, ignored = 0 }
+  Mail.last = stats
   if not stats.available then return stats end
   if WAH.settings and WAH.settings.mailCapture == false then return stats end
   if MailFrame and MailFrame.IsShown and not MailFrame:IsShown() then return stats end
@@ -177,23 +199,40 @@ Mail.scan = function()
           -- scan that may know the name.
           stats.unattributed = stats.unattributed + 1
         elseif isSale then
-          local quantity = matched and matched.quantity or 1
-          local unitPrice = matched and matched.post.price or total
-          WAH.recordEvent({
-            k = "sold",
-            auctionID = matched and matched.auctionID or nil,
-            itemId = itemId,
-            qty = quantity,
-            price = unitPrice,
-            fee = invoice.consignment,
-            deposit = matched and matched.post.deposit or invoice.deposit,
-            listedAt = matched and matched.post.at or nil,
-            censored = true,
-            source = "mail",
-            mail = mark,
-            inferred = false
-          })
-          stats.sold = stats.sold + 1
+          local inferred = (not matched) and inferredSale(itemId, total) or nil
+          if inferred then
+            WAH.recordEvent({
+              k = "confirm",
+              auctionID = inferred.auctionID,
+              itemId = itemId,
+              qty = inferred.qty,
+              price = inferred.price,
+              fee = invoice.consignment,
+              listedAt = inferred.listedAt,
+              censored = true,
+              source = "mail",
+              mail = mark
+            })
+            stats.reconfirmed = stats.reconfirmed + 1
+          else
+            local quantity = matched and matched.quantity or 1
+            local unitPrice = matched and matched.post.price or total
+            WAH.recordEvent({
+              k = "sold",
+              auctionID = matched and matched.auctionID or nil,
+              itemId = itemId,
+              qty = quantity,
+              price = unitPrice,
+              fee = invoice.consignment,
+              deposit = matched and matched.post.deposit or invoice.deposit,
+              listedAt = matched and matched.post.at or nil,
+              censored = true,
+              source = "mail",
+              mail = mark,
+              inferred = false
+            })
+            stats.sold = stats.sold + 1
+          end
         elseif matched then
           -- An expired listing the addon never saw expire: the deposit is
           -- lost, the goods came back. Only book it when the posting is
@@ -236,6 +275,11 @@ Mail.diagnostics = function()
     end
   end
   line(string.format("mail: seen %d fingerprints", #seenStore().order))
+  local last = Mail.last
+  if last then
+    line(string.format("mail: last scan %d messages, %d sold, %d confirmed, %d expired, %d duplicates, %d unattributed",
+      last.messages, last.sold, last.reconfirmed, last.expired, last.duplicates, last.unattributed))
+  end
   return lines
 end
 

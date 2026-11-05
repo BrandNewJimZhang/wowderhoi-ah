@@ -17,10 +17,12 @@
 local ADDON_NAME, WAH = ...
 
 local Ledger = {}
--- Version 2: craft cost comes from material FIFO consumption, a sale may
--- fill part of a posting, and trades carry the listing time that the fill
--- model needs for exposure hours.
-Ledger.VERSION = 2
+-- Version 3: trades carry the auctionID that a mailbox confirmation uses to
+-- upgrade an inferred sale; a stored v2 ledger from the previous release
+-- has no such field and must be rebuilt rather than reused.
+-- (Version 2 introduced material-FIFO craft cost, partial fills and the
+-- listing time the fill model needs for exposure hours.)
+Ledger.VERSION = 3
 
 local function round(value) return math.floor((value or 0) + 0.5) end
 
@@ -160,12 +162,46 @@ function Ledger.replay(events, market)
         t = event.t, itemId = itemId, qty = quantity,
         price = price, fee = fee, basis = basis,
         pnl = price * quantity - fee - basis, channel = "auction",
+        auctionID = event.auctionID,
         inferred = event.inferred == true,
         listedAt = event.listedAt or (post and post.at),
         observedAt = event.t,
         censored = event.censored == true,
         source = event.source
       }
+    elseif kind == "confirm" then
+      -- The mailbox confirmed a sale that the owned-list reconcile had
+      -- booked as an inference. Upgrade that trade in place: booking the
+      -- sale again would count the revenue and the consumed lots twice.
+      local trade
+      for _, candidate in ipairs(state.trades) do
+        if candidate.inferred and candidate.channel == "auction"
+          and event.auctionID ~= nil and candidate.auctionID == event.auctionID then
+          trade = candidate
+          break
+        end
+      end
+      if trade then
+        local quantity = event.qty or trade.qty
+        local price = event.price or trade.price
+        local fee = event.fee or trade.fee
+        state.capital.realized = state.capital.realized
+          + (price * quantity - fee) - (trade.price * trade.qty - trade.fee)
+        state.capital.fees = state.capital.fees + fee - trade.fee
+        trade.qty, trade.price, trade.fee = quantity, price, fee
+        trade.pnl = price * quantity - fee - trade.basis
+        trade.inferred = false
+        trade.listedAt = event.listedAt or trade.listedAt
+        trade.observedAt = event.t
+        trade.censored = event.censored == true
+        trade.source = event.source
+      else
+        -- Only a truncated journal should get here; report it rather than
+        -- booking a sale whose lots were never consumed.
+        state.errors[#state.errors + 1] = {
+          t = event.t, kind = "confirm_without_sale", itemId = event.itemId
+        }
+      end
     elseif kind == "cancel" then
       local key = postKey(event, index)
       local post = posts[key]

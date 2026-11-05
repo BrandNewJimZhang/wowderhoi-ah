@@ -44,6 +44,9 @@ export type JournalTrade = {
   pnl: number;
   channel: string;
   inferred: boolean;
+  // The posting this sale belongs to. A mailbox confirmation upgrades the
+  // inferred trade that reconcile booked for the same posting.
+  auctionID?: number | string;
   // When the goods were listed, so the fill model can sum exposure hours
   // rather than the span between the first and last sale.
   listedAt?: number;
@@ -250,12 +253,46 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
         trades.push({
           t: at, itemId: itemId ?? null, qty: quantity, price, fee, basis,
           pnl: price * quantity - fee - basis, channel: "auction",
+          ...(event.auctionID !== undefined ? { auctionID: event.auctionID } : {}),
           inferred: event.inferred === true,
           ...(listedAt !== undefined ? { listedAt } : {}),
           observedAt: at,
           censored: event.censored === true,
           ...(event.source !== undefined ? { source: event.source } : {})
         });
+        break;
+      }
+      case "confirm": {
+        // The mailbox confirmed a sale reconcile had booked as an
+        // inference. Upgrade the trade in place; booking it again would
+        // count the revenue and the consumed lots twice.
+        const trade = trades.find(
+          (candidate) =>
+            candidate.inferred
+            && candidate.channel === "auction"
+            && event.auctionID !== undefined
+            && candidate.auctionID === event.auctionID
+        );
+        if (trade) {
+          const quantity = event.qty ?? trade.qty;
+          const price = event.price ?? trade.price;
+          const fee = event.fee ?? trade.fee;
+          capital.realized += price * quantity - fee - (trade.price * trade.qty - trade.fee);
+          capital.fees += fee - trade.fee;
+          trade.qty = quantity;
+          trade.price = price;
+          trade.fee = fee;
+          trade.pnl = price * quantity - fee - trade.basis;
+          trade.inferred = false;
+          if (event.listedAt !== undefined) trade.listedAt = event.listedAt;
+          trade.observedAt = at;
+          trade.censored = event.censored === true;
+          if (event.source !== undefined) trade.source = event.source;
+        } else {
+          // Only a truncated journal should get here; report it rather than
+          // booking a sale whose lots were never consumed.
+          errors.push({ t: at, kind: "confirm_without_sale", itemId: event.itemId });
+        }
         break;
       }
       case "cancel": {

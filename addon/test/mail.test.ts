@@ -18,6 +18,7 @@ function scan(lua: WowLua) {
     expired: read("expired"),
     unattributed: read("unattributed"),
     duplicates: read("duplicates"),
+    reconfirmed: read("reconfirmed"),
     ignored: read("ignored")
   };
 }
@@ -59,6 +60,28 @@ describe("mailbox capture", () => {
     expect(result.sold).toBe(0);
     expect(result.duplicates).toBe(1);
     expect(lua.number("WowTest.ns.Journal.count()")).toBe(3);
+  });
+
+  it("confirms a sale that reconciled inference booked before the mailbox", () => {
+    const lua = loadAddon();
+    lua.exec('WowTest.itemInfo[2589] = { name = "亚麻布" }');
+    record(lua, { k: "buy", itemId: 2589, qty: 4, cost: 4000 });
+    record(lua, { k: "post", auctionID: 7, itemId: 2589, qty: 4, price: 1200, deposit: 100 });
+    // The listing vanished from the owned list before the mailbox was
+    // opened: the sell panel booked it as an inferred sale and closed the
+    // posting. The mail must confirm that trade, not book it a second time.
+    record(lua, { k: "sold", auctionID: 7, itemId: 2589, qty: 4, price: 1200, fee: 240, inferred: true });
+    const realized = lua.number("WowTest.ns.Ledger.capital().realized");
+    lua.exec(`WowTest.setMail({ ${toLua(saleMail("Auction successful", "亚麻布", 4800, 240, 4560))} })`);
+
+    const result = scan(lua);
+    expect(result.sold).toBe(0);
+    expect(result.reconfirmed).toBe(1);
+    expect(lua.number("WowTest.ns.Journal.count()")).toBe(4);
+    expect(lua.number("WowTest.ns.Ledger.current().trades[1].inferred == false and 1 or 0")).toBe(1);
+    expect(lua.number("WowTest.ns.Ledger.capital().realized")).toBe(realized);
+    // The sale now counts as a clean fill label.
+    expect(lua.number("WowTest.ns.Ledger.salesSince(86400)[2589].samples")).toBe(1);
   });
 
   it("books a commodity partial fill and keeps the rest of the posting open", () => {

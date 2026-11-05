@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- A mailbox sale that reconcile had already booked as an inferred trade is
+  now upgraded with a `confirm` event instead of being booked again; the
+  revenue, fee and consumed lots are corrected in place and the trade
+  becomes a clean fill label. `Ledger.VERSION` 3 forces a rebuild of the
+  stored projection.
+- The in-game core input no longer pre-applies `portfolio.dailyBudget`:
+  the allocator applies it once, so the game and the terminal spend the
+  same share of the same purse.
+- `/wahopen auto` now clears the opening anchor in the terminal as well:
+  the scan always reports `openedAt` (0 = cleared), and the import only
+  leaves a stored anchor alone when the field is absent.
+- The terminal reads the allocator's `exploratory` label instead of
+  comparing sample counts against its own copy of `minKellySamples`.
+
+### Removed
+
+- The unused `Core.weightedPercentile` helper.
+
 ## v0.5.0 — 2026-11-05
 
 The learning loop gets its first clean labels.

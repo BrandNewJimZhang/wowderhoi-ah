@@ -77,7 +77,7 @@ t, min, sell, q, e
 ### 2.4 `WoWderhoiAH_Journal` 与 `WoWderhoiAH_Ledger`
 
 Journal 是追加式事实，按 `realm|faction|character` 分册，事件种类：
-`buy / post / cancel / sold / expire / craft / vendor / de / prospect / mill`。
+`buy / post / cancel / sold / confirm / expire / craft / vendor / de / prospect / mill`。
 当前插件自动写入买、挂、撤、成交（邮箱确认或挂单消失推断）、流拍与制造；
 `vendor / de / prospect / mill` 已有解析与重放路径，但采集器尚未接入，导入端和界面
 不假设它们一定存在。
@@ -98,7 +98,10 @@ Ledger 是 Journal 的纯投影：
 - 分解/勘探/研磨把输入成本按产出数量分摊到产出批次；
 - 账本缺失历史时记 `short_position`，不伪造成本；
 - 消失且无流拍事件的在售挂单记为“推断成交”，照常标注；终端的已实现、胜率、
-  Alpha 衰减与决策校准只使用确认成交，推断部分单列显示。
+  Alpha 衰减与决策校准只使用确认成交，推断部分单列显示；
+- 邮箱确认的成交如果对应一笔已推断的成交，写 `confirm` 原地升级该笔交易
+  （补上真实手续费、清掉推断标记），而不是再记一次成交——否则同一笔钱会被
+  记两遍，成本批次也会被消耗两遍。
 
 桌面的 `src/lib/journal.ts` 用同一套规则重放，并有与 Lua 的 parity 测试。
 
@@ -113,6 +116,7 @@ Ledger 是 Journal 的纯投影：
   都匹配不到就只计数、不写事件，绝不把成交记到猜测的物品上；
 - 数量 = 发票总价 / 挂单单价，能识别商品的部分成交；无挂单时按 1 件并标 `source = "mail"`；
 - `inferred = false`，事件带 `listedAt`（挂单时间）与 `censored = true`（成交在开箱时才被观测）；
+- 如果这笔成交在开箱前已经被在售对账推断过，写 `confirm` 升级那笔推断，不重复记账；
 - 去重指纹存 `WoWderhoiAH_MailSeen`（上限 500），重复开箱不会重复记账；
 - 开关 `mailCapture` 关闭后系统退回推断成交。
 
@@ -122,7 +126,8 @@ Ledger 是 Journal 的纯投影：
 ### 2.6 SQLite / Prisma
 
 - `Market`：realm+faction，最近一次扫描的现金与角色（`character`，仅扫描的导入不改写角色），
-  以及可空的开服时刻 `openedAt`（`/wahopen` 写入）。持仓、成交和现金都来自同一个角色的
+  以及可空的开服时刻 `openedAt`（`/wahopen` 写入；`/wahopen auto` 会清空它，
+  下一次扫描把这个清空同步到终端，而不是让终端继续沿用旧锚点）。持仓、成交和现金都来自同一个角色的
   一次扫描，界面显示该角色名。
 - `AuctionSnapshot`：v4 全字段 + `topTiers` / `expiring`；`marketType` 保存扫描时的
   市场类型，空值只出现在该列引入前导入的旧行，核心会退回自己的分类逻辑。`priced = false`
@@ -329,7 +334,8 @@ p_real(t) = p(t) / P(t) · 100
 
 1. 第一次扫描写入 v4：盘口、卖家、到期桶、竞价、扫描龄、可选开服时刻。
 2. 买 → 挂 → 成交/流拍闭环可重放，P&L 与金币变化一致（误差 = 手续费 + 押金）。
-3. 邮箱成交写入 `inferred = false` 的 `sold`，重复开箱不重复记账；成交率按暴露时间估计。
+3. 邮箱成交写入 `inferred = false` 的 `sold`；若该笔此前已被推断，则写 `confirm` 升级，
+   同一笔成交只记一次账；重复开箱不重复记账；成交率按暴露时间估计。
 4. 制造写入 `craft`，产物成本等于材料 FIFO 账面成本；材料未入账时标短头寸，不静默记零。
 5. 雷达每行有可买数量（分配后）、买价、建议卖价、净利（分配后）、成交率。
 6. 所有百分比带分母与窗口；P10 只出现在统计区。

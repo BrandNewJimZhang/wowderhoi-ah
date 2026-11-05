@@ -15,8 +15,9 @@ Journal.VERSION = 1
 Journal.CAP = 5000
 
 local EVENT_KINDS = {
-  buy = true, post = true, cancel = true, sold = true, expire = true,
-  craft = true, vendor = true, de = true, prospect = true, mill = true
+  buy = true, post = true, cancel = true, sold = true, confirm = true,
+  expire = true, craft = true, vendor = true, de = true, prospect = true,
+  mill = true
 }
 
 local function bookKey()
