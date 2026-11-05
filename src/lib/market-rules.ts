@@ -19,6 +19,11 @@ export const AH_FEE_RATE = 0.05;
 // rule carries it into the addon ticker, so the two sides cannot disagree.
 export const SCAN_INTERVAL_MINUTES = 15;
 
+// A scan older than this is labelled stale in the in-game tooltip and in
+// the terminal banner. One value: the player must not see the same scan
+// marked expired on one surface and fresh on the other.
+export const SCAN_STALE_MINUTES = 30;
+
 // Fallback daily capital when AQT_BUDGET_COPPER is unset. One value for the
 // cockpit, the signal bundle and the production network.
 export const DEFAULT_BUDGET_COPPER = 1_000_000;

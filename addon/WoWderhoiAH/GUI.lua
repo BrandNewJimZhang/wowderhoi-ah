@@ -84,7 +84,8 @@ local function appendTraderSection(tooltip)
   local phase = WAH.currentPhase and WAH.currentPhase() or "steady"
   if scanned then
     local age = math.floor(WAH.scanAgeMinutes() or 0)
-    local stale = age >= 30
+    -- Same compiled threshold as the terminal banner: one scan, one verdict.
+    local stale = age >= WAH.RULES.scanStaleMinutes
     tooltip:AddDoubleLine(string.format(L.TT_SCAN_HEADER, age) .. " |cff888888" .. phaseLabel(phase) .. "|r", "")
     -- Sell front leads every other price: it is the action anchor.
     if scanned.sellP then

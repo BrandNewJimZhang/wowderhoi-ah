@@ -13,9 +13,10 @@ describe("describeFreshness", () => {
     expect(describeFreshness(minutesAgo(0), now)).toEqual({ label: "刚刚", stale: false });
   });
 
-  it("marks data stale from 2 hours in an hourly market", () => {
-    expect(describeFreshness(minutesAgo(45), now)).toEqual({ label: "45 分钟前", stale: false });
-    expect(describeFreshness(minutesAgo(90), now)).toEqual({ label: "1 小时前", stale: false });
+  it("flips stale at the compiled threshold shared with the addon", () => {
+    expect(describeFreshness(minutesAgo(15), now)).toEqual({ label: "15 分钟前", stale: false });
+    expect(describeFreshness(minutesAgo(30), now)).toEqual({ label: "30 分钟前", stale: true });
+    expect(describeFreshness(minutesAgo(90), now)).toEqual({ label: "1 小时前", stale: true });
     expect(describeFreshness(minutesAgo(3 * 60), now)).toEqual({ label: "3 小时前", stale: true });
   });
 

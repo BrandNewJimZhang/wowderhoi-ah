@@ -10,6 +10,7 @@ import {
   AH_FEE_RATE,
   SCAN_INTERVAL_MINUTES,
   SCAN_PIPELINE_VERSION,
+  SCAN_STALE_MINUTES,
   fillRules,
   marketTypeRules,
   phaseBoundaries,
@@ -61,6 +62,7 @@ WAH.PIPELINE_VERSION = ${SCAN_PIPELINE_VERSION}
 WAH.RULES = {
   feeRate = ${AH_FEE_RATE},
   scanIntervalMinutes = ${SCAN_INTERVAL_MINUTES},
+  scanStaleMinutes = ${SCAN_STALE_MINUTES},
   sellFront = ${luaTable(sellFrontRules, "")},
   phaseBoundaries = ${luaTable(phaseBoundaries, "")},
   phaseHistory = ${luaTable(phaseHistory, "")},

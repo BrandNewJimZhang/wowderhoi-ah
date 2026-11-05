@@ -9,6 +9,7 @@ WAH.PIPELINE_VERSION = 4
 WAH.RULES = {
   feeRate = 0.05,
   scanIntervalMinutes = 15,
+  scanStaleMinutes = 30,
   sellFront = {
   alpha = 0.03,
   noiseMultiple = 3,
