@@ -2,7 +2,7 @@
 // money supply by multiples, so a +50% price can mean "more gold" rather
 // than "more demand". This module builds a market-wide price index from
 // the scans and converts nominal prices into real ones.
-import type { MarketHistory } from "@/lib/market-data";
+import { sellPriceOf, type MarketHistory } from "@/lib/market-data";
 import { median } from "@/lib/median";
 
 export type PriceIndex = {
@@ -36,10 +36,7 @@ export function buildPriceIndex(items: MarketHistory[]): PriceIndex {
     }
     const snapshots = [...item.snapshots].sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
     for (const snapshot of snapshots) {
-      // Legacy rows carry 0 in the sell-front column; fall back to P10
-      // instead of letting the zero empty the day's observation.
-      record(utcDateKey(snapshot.timestamp), item.itemId,
-        snapshot.sellPrice && snapshot.sellPrice > 0 ? snapshot.sellPrice : snapshot.marketPrice);
+      record(utcDateKey(snapshot.timestamp), item.itemId, sellPriceOf(snapshot));
     }
   }
   const dates = Array.from(byDate.keys()).sort();

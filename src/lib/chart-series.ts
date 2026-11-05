@@ -6,6 +6,7 @@
 // half-day. The current day is never counted twice: its close is derived
 // from the snapshots already in the series.
 import { utcDateKey } from "@/lib/deflator";
+import { sellPriceOf } from "@/lib/market-data";
 import { median } from "@/lib/median";
 
 export type TimePoint = {
@@ -82,8 +83,7 @@ export function buildTimeSeries(snapshots: SnapshotLike[], dailySummaries: Daily
     }));
   const snapshotPoints: TimePoint[] = ordered.map((snapshot) => ({
     ts: snapshot.timestamp.getTime(),
-    // Legacy rows imported before the sell front existed carry 0 there.
-    price: snapshot.sellPrice > 0 ? snapshot.sellPrice : snapshot.marketPrice,
+    price: sellPriceOf(snapshot),
     min: snapshot.minPrice,
     volume: snapshot.quantity,
     kind: "scan" as const

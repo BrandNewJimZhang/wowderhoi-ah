@@ -8,7 +8,7 @@
 //
 // The anchor is the sell front. P10 remains a statistic; it is not a
 // reference price and must not drive a recommendation.
-import type { MarketHistory, MarketSnapshot } from "@/lib/market-data";
+import { sellPriceOf, type MarketHistory } from "@/lib/market-data";
 import { median } from "@/lib/median";
 import { historyWindowHours } from "@/lib/phase";
 import type { MarketPhase } from "@/lib/market-rules";
@@ -47,12 +47,6 @@ export type MarketSignal = {
   realSellPrice: number | null; // deflated by the market price index
 };
 
-function sellOf(snapshot: MarketSnapshot): number {
-  // Legacy rows imported before the sell front existed carry 0, not
-  // undefined; `??` would keep the zero and erase the price entirely.
-  return snapshot.sellPrice && snapshot.sellPrice > 0 ? snapshot.sellPrice : snapshot.marketPrice;
-}
-
 export function buildMarketSignal(
   item: MarketHistory,
   now: Date,
@@ -68,7 +62,7 @@ export function buildMarketSignal(
   const windowHours = historyWindowHours(phase);
   const windowStart = now.getTime() - windowHours * 60 * 60 * 1000;
   const windowSnapshots = snapshots.filter((snapshot) => snapshot.timestamp.getTime() >= windowStart);
-  const snapshotPrices = windowSnapshots.map(sellOf).filter((value) => value > 0);
+  const snapshotPrices = windowSnapshots.map(sellPriceOf).filter((value) => value > 0);
   // The universe query keeps only the last 48 snapshots (about 12 hours),
   // which is shorter than the wave, settle and steady windows. Days older
   // than the snapshot window contribute their closing sell front — the
@@ -82,12 +76,12 @@ export function buildMarketSignal(
     .map((summary) => summary.closePrice)
     .filter((value) => value > 0);
   const prices = [...dailyPrices, ...snapshotPrices];
-  const sellPrice = sellOf(latest);
+  const sellPrice = sellPriceOf(latest);
   const sellRef = prices.length > 0 ? median(prices) : sellPrice;
   // The sample count must describe the median's inputs, not every row in the
   // window: a legacy or demand-only row carries no usable sell price.
   const sellSamples = prices.length;
-  const previousSell = previous ? sellOf(previous) : 0;
+  const previousSell = previous ? sellPriceOf(previous) : 0;
   return {
     itemId: item.itemId,
     name: item.name,

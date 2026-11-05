@@ -29,6 +29,13 @@ export type MarketHistory = Omit<Item, "id" | "createdAt" | "updatedAt"> & {
   dailySummaries: Array<Omit<DailySummary, "id" | "itemId" | "item" | "marketId">>;
 };
 
+// The decision anchor is the sell front, but rows imported before that
+// column existed carry 0, not undefined. `??` would keep the zero and erase
+// the price, so those rows fall back to the P10 statistic.
+export function sellPriceOf(snapshot: { sellPrice?: number; marketPrice: number }): number {
+  return snapshot.sellPrice && snapshot.sellPrice > 0 ? snapshot.sellPrice : snapshot.marketPrice;
+}
+
 // Bids are a per-scan demand signal. A demand-only row from an older scan
 // describes a book that is gone; showing it next to today's prices would
 // claim demand the market no longer has, so only the newest generation
