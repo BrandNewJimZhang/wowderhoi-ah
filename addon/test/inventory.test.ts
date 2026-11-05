@@ -62,6 +62,19 @@ describe("server opening anchor", () => {
     expect(lua.text("WowTest.ns.currentPhase()")).toBe("ignition");
   });
 
+  it("feeds the anchored phase to the decision core", () => {
+    const lua = loadAddon();
+    scanned(lua);
+    // The status line and the radar gates must name the same phase: a
+    // configured anchor that only reached the status line would leave the
+    // core on ignition thresholds (the loosest) while the header said wave.
+    const phaseOf = () =>
+      lua.text("(function() return WowTest.ns.Core.evaluate(WowTest.ns.coreInput()).phase end)()");
+    expect(phaseOf()).toBe("ignition");
+    lua.exec("WowTest.ns.settings.serverOpenedAt = " + (1_700_000_000 - 10 * 3600));
+    expect(phaseOf()).toBe("wave");
+  });
+
   it("accepts 'now' and relative hours", () => {
     const lua = loadAddon();
     lua.exec("SlashCmdList['WOWDERHOIAHOPEN']('now')");

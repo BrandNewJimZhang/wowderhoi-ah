@@ -928,8 +928,12 @@ function WAH.coreInput()
     capacity = { bagSlots = freeBagSlots(), stackSize = 20 }
   }
   if not scan then return input end
-  local override = WAH.settings and WAH.settings.phaseOverride
-  if override and override ~= "auto" then input.phaseOverride = override end
+  -- The phase is whatever WAH.currentPhase resolves -- manual override,
+  -- the /wahopen anchor, or the series age. Passing it keeps the radar's
+  -- gates on the same phase the status line names; letting the core re-derive
+  -- from firstScanAt would ignore a configured opening time and run ignition
+  -- gates (the loosest) on a mature market.
+  input.phaseOverride = WAH.currentPhase()
   local ledger = WAH.Ledger and WAH.Ledger.current() or nil
   local ownWindowDays = (WAH.RULES.fill and WAH.RULES.fill.ownSalesWindowDays) or 7
   local ownSales = ledger and WAH.Ledger.salesSince(ownWindowDays * 24 * 3600, input.now) or {}
