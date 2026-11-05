@@ -11,6 +11,17 @@ function row(overrides: Partial<CalibrationRow> & { itemId: number; timestamp: D
     soldLow: 0,
     observationVersion: 2,
     priced: true,
+    sellersInvisible: false,
+    ...overrides
+  };
+}
+
+function scope(overrides: Partial<Parameters<typeof calibrationObservations>[1]> = {}) {
+  return {
+    scanMinutes: 15,
+    marketOpenedAt: at(-800 * 60),
+    breadthByScan: new Map<number, number>(),
+    marketFirstScanAt: at(0),
     ...overrides
   };
 }
@@ -22,7 +33,7 @@ describe("fill-prior calibration", () => {
         row({ itemId: 1, timestamp: at(0), supply: 100 }),
         row({ itemId: 1, timestamp: at(15), supply: 100, soldLow: 10 })
       ],
-      { scanMinutes: 15, breadth: 900, marketOpenedAt: at(-800 * 60) }
+      scope({ breadthByScan: new Map([[at(15).getTime(), 900]]) })
     );
     expect(observations).toHaveLength(1);
     // 10 units over 100 supply in a quarter hour.
@@ -37,7 +48,20 @@ describe("fill-prior calibration", () => {
         row({ itemId: 1, timestamp: at(15), soldLow: 10, observationVersion: 1 }),
         row({ itemId: 1, timestamp: at(30), soldLow: 12, observationVersion: null })
       ],
-      { scanMinutes: 15, breadth: 900, marketOpenedAt: null }
+      scope({ marketOpenedAt: null })
+    );
+    expect(observations).toHaveLength(0);
+  });
+
+  it("never learns from a book whose owners were hidden", () => {
+    // A hidden-owner book reports a zero lower edge by construction. Feeding
+    // that into the prior would teach the model that nothing ever sells.
+    const observations = calibrationObservations(
+      [
+        row({ itemId: 1, timestamp: at(0), sellersInvisible: true }),
+        row({ itemId: 1, timestamp: at(15), sellersInvisible: true })
+      ],
+      scope({ marketOpenedAt: null })
     );
     expect(observations).toHaveLength(0);
   });
@@ -45,9 +69,31 @@ describe("fill-prior calibration", () => {
   it("skips gaps that are paused scans rather than rates", () => {
     const observations = calibrationObservations(
       [row({ itemId: 1, timestamp: at(0) }), row({ itemId: 1, timestamp: at(180), soldLow: 10 })],
-      { scanMinutes: 15, breadth: 900, marketOpenedAt: null }
+      scope({ marketOpenedAt: null })
     );
     expect(observations).toHaveLength(0);
+  });
+
+  it("labels an item that appeared late by the market's age and breadth", () => {
+    // The item's own history starts at minute 1000 (~17h) with all its rows
+    // a quarter hour apart; a per-item age would call that ignition, while
+    // the market itself is 17h old with 900 kinds listed -- wave.
+    const observations = calibrationObservations(
+      [
+        row({ itemId: 9, timestamp: at(1000) }),
+        row({ itemId: 9, timestamp: at(1015), soldLow: 5 })
+      ],
+      scope({
+        marketOpenedAt: null,
+        marketFirstScanAt: at(0),
+        breadthByScan: new Map([
+          [at(1000).getTime(), 900],
+          [at(1015).getTime(), 900]
+        ])
+      })
+    );
+    expect(observations).toHaveLength(1);
+    expect(observations[0].phase).toBe("wave");
   });
 
   it("summarizes per phase and market type with quantiles", () => {

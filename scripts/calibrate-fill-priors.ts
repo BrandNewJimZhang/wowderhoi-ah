@@ -6,7 +6,7 @@
 //   AQT_MARKET="无情|Alliance" npm run calibrate
 import { prisma } from "@/lib/prisma";
 import { calibrationObservations, formatCalibration, summarizeCalibration } from "@/lib/calibrate";
-import { SCAN_INTERVAL_MINUTES } from "@/lib/market-rules";
+import { OBSERVATION_VERSION, SCAN_INTERVAL_MINUTES } from "@/lib/market-rules";
 
 async function main() {
   const scope = process.env.AQT_MARKET?.split("|");
@@ -16,23 +16,48 @@ async function main() {
   });
   if (markets.length === 0) throw new Error("no imported market; run a scan import first");
   for (const market of markets) {
-    const rows = await prisma.auctionSnapshot.findMany({
-      where: { marketId: market.id, priced: true, observationVersion: { gte: 2 } },
-      select: {
-        itemId: true,
-        timestamp: true,
-        marketType: true,
-        quantity: true,
-        soldProxyLow: true,
-        observationVersion: true,
-        priced: true
-      },
-      orderBy: { timestamp: "asc" }
-    });
-    const breadth = new Set(rows.map((row) => row.itemId)).size;
+    // Observations come from clean rows only, but breadth and age are
+    // properties of the whole market: a hidden-owner or pre-hygiene scan
+    // still proves how many kinds were listed and when the market started.
+    const [rows, breadthByTimestamp, earliest] = await Promise.all([
+      prisma.auctionSnapshot.findMany({
+        where: {
+          marketId: market.id,
+          priced: true,
+          observationVersion: { gte: OBSERVATION_VERSION },
+          sellersInvisible: false
+        },
+        select: {
+          itemId: true,
+          timestamp: true,
+          marketType: true,
+          quantity: true,
+          soldProxyLow: true,
+          observationVersion: true,
+          priced: true,
+          sellersInvisible: true
+        },
+        orderBy: { timestamp: "asc" }
+      }),
+      prisma.auctionSnapshot.groupBy({
+        by: ["timestamp"],
+        where: { marketId: market.id, priced: true },
+        _count: { _all: true }
+      }),
+      prisma.auctionSnapshot.aggregate({
+        where: { marketId: market.id, priced: true },
+        _min: { timestamp: true }
+      })
+    ]);
+    const breadthByScan = new Map(breadthByTimestamp.map((entry) => [entry.timestamp.getTime(), entry._count._all]));
     const observations = calibrationObservations(
       rows.map((row) => ({ ...row, supply: row.quantity, soldLow: row.soldProxyLow })),
-      { scanMinutes: SCAN_INTERVAL_MINUTES, breadth, marketOpenedAt: market.openedAt }
+      {
+        scanMinutes: SCAN_INTERVAL_MINUTES,
+        marketOpenedAt: market.openedAt,
+        breadthByScan,
+        marketFirstScanAt: earliest._min.timestamp
+      }
     );
     console.log(`\n${market.realm}|${market.faction}: ${rows.length} clean rows, ${observations.length} observations`);
     for (const line of formatCalibration(summarizeCalibration(observations))) console.log(line);

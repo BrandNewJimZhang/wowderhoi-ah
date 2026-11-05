@@ -722,10 +722,9 @@ local function finishScan(totalAuctions)
 
   WoWderhoiAH_ScanData = {
     dataVersion = WAH.PIPELINE_VERSION,
-    -- 2: the inferred flow excludes the player's own listings and purchases.
-    -- The terminal labels every snapshot with it so a calibration never
-    -- mixes pre-hygiene rows with clean ones.
-    observationVersion = 2,
+    -- The inferred flow's hygiene level; the terminal labels every snapshot
+    -- with it so a calibration never mixes pre-hygiene rows with clean ones.
+    observationVersion = WAH.OBSERVATION_VERSION,
     scannedAt = nowTs,
     server = GetRealmName(),
     faction = UnitFactionGroup("player"),

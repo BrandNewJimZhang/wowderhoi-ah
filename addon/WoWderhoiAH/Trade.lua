@@ -226,6 +226,7 @@ local function rebuildActions()
       qty = action.qty or 0,
       price = action.kind == "buy" and (action.unitPrice or action.maxUnitPrice) or action.price,
       net = action.expectedNet or 0,
+      perMinute = action.netPerMinute or 0,
       fillProb = action.kind == "buy" and action.fillProb or nil,
       reason = action.reason,
       stop = action.stop
@@ -535,6 +536,9 @@ renderRows = function()
         rowFrame.icon:SetTexture(WAH.itemIcon(row.itemId))
         rowFrame.showTooltip = function()
           GameTooltip:SetHyperlink("item:" .. row.itemId)
+          if row.perMinute and row.perMinute > 0 then
+            GameTooltip:AddLine(string.format(L.ACTION_PER_MINUTE, coinString(row.perMinute)), 1, 1, 1)
+          end
           if row.reason then GameTooltip:AddLine(row.reason, 1, 0.82, 0) end
           if row.stop and row.stop.ifPriceAbove then
             GameTooltip:AddLine(string.format(L.ACTION_ABORT, coinString(row.stop.ifPriceAbove)), 1, 1, 1)

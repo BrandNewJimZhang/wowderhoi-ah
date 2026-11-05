@@ -9,6 +9,7 @@ import { demandBands } from "@/lib/demand";
 import { loadDemandEvents } from "@/lib/events-calendar";
 import {
   AH_FEE_RATE,
+  OBSERVATION_VERSION,
   SCAN_INTERVAL_MINUTES,
   SCAN_PIPELINE_VERSION,
   SCAN_STALE_MINUTES,
@@ -62,6 +63,7 @@ export function generateLuaRules(): string {
 local ADDON_NAME, WAH = ...
 
 WAH.PIPELINE_VERSION = ${SCAN_PIPELINE_VERSION}
+WAH.OBSERVATION_VERSION = ${OBSERVATION_VERSION}
 
 WAH.RULES = {
   feeRate = ${AH_FEE_RATE},

@@ -165,7 +165,7 @@ local function planFor(itemId, duration, quantity)
       sold = scanned.inferredSoldLow or 0,
       supply = scanned.quantity or 0,
       elapsedHours = scanned.elapsedHours or ((WAH.RULES.scanIntervalMinutes or 15) / 60),
-      observable = scanned.ownerVisible == true and not scanned.sellersInvisible
+      observable = WAH.Core.isObservable(scanned)
     })
     -- Only item-specific evidence earns a re-priced listing. A phase-wide
     -- prior knows nothing about this book's queue, and searching price and

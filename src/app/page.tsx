@@ -115,6 +115,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                       <span>{action.qty} 件</span>
                       <span>上限 <Coins copper={action.maxUnitPrice} /></span>
                       <span>净利 <Coins copper={action.expectedNet} /></span>
+                      <span>每分钟 <Coins copper={action.netPerMinute} /></span>
                       <span>成交率 {(action.fillProb * 100).toFixed(0)}%</span>
                       {action.stop && <span className="text-terminal-amber">高于 <Coins copper={action.stop.ifPriceAbove} /> 放弃</span>}
                       <span className="text-slate-400">{action.reason}</span>
@@ -123,6 +124,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                     <span className="flex items-center gap-3 text-terminal-muted">
                       <span>{action.qty} 件 @ <Coins copper={action.price} /></span>
                       <span>售出净利 <Coins copper={action.expectedNet} /></span>
+                      <span>每分钟 <Coins copper={action.netPerMinute} /></span>
                     </span>
                   )}
                 </div>

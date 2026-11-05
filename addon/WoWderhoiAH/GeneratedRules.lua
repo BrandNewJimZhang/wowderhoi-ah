@@ -5,6 +5,7 @@
 local ADDON_NAME, WAH = ...
 
 WAH.PIPELINE_VERSION = 4
+WAH.OBSERVATION_VERSION = 2
 
 WAH.RULES = {
   feeRate = 0.05,

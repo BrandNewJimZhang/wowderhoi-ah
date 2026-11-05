@@ -25,18 +25,24 @@ function item(itemId: number, overrides: Record<string, unknown> = {}) {
   };
 }
 
-function evaluate(items: Record<number, unknown>, budget: number, phase = "wave") {
+function evaluate(
+  items: Record<number, unknown>,
+  budget: number,
+  phase = "wave",
+  positions: Record<number, { qty: number; cost: number }> = {}
+) {
   const lua = loadAddon();
   const input = {
     now: 1_700_000_000,
     phaseOverride: phase,
     market: { firstScanAt: 1_700_000_000 - 30 * 3600, items },
     capital: { cash: budget, budget },
-    capacity: { bagSlots: 20, stackSize: 20 }
+    capacity: { bagSlots: 20, stackSize: 20 },
+    positions
   };
   return lua.coreEval(input) as {
     rows: Array<{ itemId: number; execQty: number; allocQty: number; allocNet: number; allocCost: number; allocUnitPrice: number; ladderPrice: number; vendor: boolean; exploratory: boolean; samples: number; score: number; netPerMinute: number }>;
-    actions: Array<{ kind: string; itemId: number; qty: number; expectedNet: number }>;
+    actions: Array<{ kind: string; itemId: number; qty: number; expectedNet: number; netPerMinute: number }>;
   };
 }
 
@@ -236,5 +242,27 @@ describe("score corrections", () => {
     const output = evaluate({ 2589: item(2589) }, 100000);
     expect(output.rows[0].netPerMinute).toBeGreaterThan(0);
     expect(output.rows[0].netPerMinute).toBeLessThan(output.rows[0].allocNet);
+  });
+
+  it("prices a buy and a sell action with their own effort minutes", () => {
+    const lua = loadAddon();
+    // A listing costs the round trip plus posting, not plus buying. Set the
+    // posting minutes apart from the buying ones so the two plans cannot
+    // accidentally share a formula.
+    lua.exec("WowTest.ns.RULES.timeCost.postMinutes = 8");
+    const output = lua.coreEval({
+      now: 1_700_000_000,
+      phaseOverride: "wave",
+      market: { firstScanAt: 1_700_000_000 - 30 * 3600, items: { 2589: item(2589) } },
+      capital: { cash: 100000, budget: 100000 },
+      capacity: { bagSlots: 20, stackSize: 20 },
+      positions: { 2589: { qty: 10, cost: 8000 } }
+    }) as {
+      actions: Array<{ kind: string; expectedNet: number; netPerMinute: number }>;
+    };
+    const buy = output.actions.find((action) => action.kind === "buy");
+    const sell = output.actions.find((action) => action.kind === "sell");
+    expect(buy?.netPerMinute).toBe(Math.round(buy!.expectedNet / 12));
+    expect(sell?.netPerMinute).toBe(Math.round(sell!.expectedNet / 18));
   });
 });

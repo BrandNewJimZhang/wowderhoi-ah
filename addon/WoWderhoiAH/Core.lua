@@ -197,7 +197,8 @@ end
 -- here would drift from the one the calibration script edits.
 local function fillPriorRules()
   local compiled = WAH.RULES and WAH.RULES.fillPrior
-  if type(compiled) ~= "table" or type(compiled.hazard) ~= "table" then
+  if type(compiled) ~= "table" or type(compiled.hazard) ~= "table"
+    or type(compiled.priorStrengthHours) ~= "number" then
     error("WAH.RULES.fillPrior missing: run `npm run gen:lua-rules`")
   end
   return compiled
@@ -231,7 +232,7 @@ function Core.fillProbability(input)
   local prior = fillPriorRules()
   local phasePriors = prior.hazard[phase] or prior.hazard.steady
   local priorHazard = phasePriors[marketType] or phasePriors.commodity
-  local priorStrength = prior.priorStrengthHours or 500
+  local priorStrength = prior.priorStrengthHours
   local hazard, basis, spread
   if ownSamples >= 3 and ownSold > 0 then
     -- Units per exposed hour: each sale contributes the time its listing
@@ -266,6 +267,14 @@ function Core.fillProbability(input)
   -- The hazard is returned so a chart can anchor its curve to this estimate
   -- instead of inverting a point that the cap can round to exactly 1.
   return low, high, point, basis, hazard
+end
+
+-- A book is observable only when every row named its owner. A partially
+-- hidden book reports an empty lower edge by construction, which is missing
+-- data, not evidence that nothing sold; the radar and the sell planner must
+-- make the same call.
+function Core.isObservable(item)
+  return item ~= nil and item.ownerVisible == true and not item.sellersInvisible
 end
 
 function Core.phaseFor(ageHours, breadth, boundaries)
@@ -362,6 +371,18 @@ end
 
 local CONFIDENCE_WEIGHT = { high = 1, medium = 0.75, low = 0.45 }
 
+-- Effort per action, from the compiled rule source. A buy pays the round
+-- trip plus the purchase; a post pays the round trip plus the listing. One
+-- helper, so ranking and both cockpits measure the same minutes.
+local function effortMinutes(kind)
+  local timeCost = (WAH.RULES and WAH.RULES.timeCost) or {}
+  local minutes = timeCost.overheadMinutes or 10
+  if kind == "sell" then
+    return minutes + (timeCost.postMinutes or 2)
+  end
+  return minutes + (timeCost.buyMinutes or 2)
+end
+
 local function scoreFor(phase, row, supplyGrowth)
   if row.vendor then return math.huge end
   local fill = row.fillProb or 0
@@ -375,8 +396,6 @@ local function scoreFor(phase, row, supplyGrowth)
   end
   -- Net per minute of play. Ranking divides by the effort a trade costs;
   -- an opportunity that takes several trips must clear a higher bar.
-  local timeCost = (WAH.RULES and WAH.RULES.timeCost) or {}
-  local minutes = (timeCost.overheadMinutes or 10) + (timeCost.buyMinutes or 2)
   local base
   if phase == "ignition" then
     -- No history: rank by absolute net times the prior fill chance and
@@ -388,7 +407,7 @@ local function scoreFor(phase, row, supplyGrowth)
   else
     base = row.netProfit * fill * confidence
   end
-  return base * concentration * 10 / math.max(minutes, 1)
+  return base * concentration / math.max(effortMinutes("buy"), 1)
 end
 
 local FILL_BASIS_TEXT = {
@@ -480,6 +499,7 @@ function Core.allocate(rows, deployable, rules)
     row.allocQty = 0
     row.allocNet = 0
     row.allocCost = 0
+    row.netPerMinute = 0
     -- The row's buy price: the average actually paid for the allocated
     -- quantity. Before an allocation exists, the deep-ladder average still
     -- describes the book the row was ranked from.
@@ -519,9 +539,7 @@ function Core.allocate(rows, deployable, rules)
           or Core.netIfSold(row.listP, qty, unitPrice, feeRate))
         -- Effort-adjusted return: the same coins earned in one trip are
         -- worth more than in four. Displayed by both cockpits.
-        local timeCost = (WAH.RULES and WAH.RULES.timeCost) or {}
-        local minutes = (timeCost.overheadMinutes or 10) + (timeCost.buyMinutes or 2)
-        row.netPerMinute = round(row.allocNet / math.max(minutes, 1))
+        row.netPerMinute = round(row.allocNet / math.max(effortMinutes("buy"), 1))
         remaining = remaining - cost
       end
     end
@@ -690,7 +708,7 @@ function Core.evaluate(input)
             elapsedHours = item.elapsedHours or scanFloor,
             -- Observability decides between "nothing disappeared" and "we
             -- could not see": hidden owners make the proxy unobservable.
-            observable = item.ownerVisible == true and not item.sellersInvisible
+            observable = Core.isObservable(item)
           })
           local confidence = Core.confidenceFor(samples, sellers, qty, phase)
           -- No fill evidence at all: history depth can still make the trade
@@ -766,6 +784,7 @@ function Core.evaluate(input)
           maxUnitPrice = row.sellP,
           unitPrice = row.allocUnitPrice,
           expectedNet = row.allocNet,
+          netPerMinute = row.netPerMinute or 0,
           fillProb = 1,
           fillBasis = "vendor",
           allocQty = row.allocQty,
@@ -783,6 +802,7 @@ function Core.evaluate(input)
           maxUnitPrice = round(row.listP * (1 - feeRate)),
           unitPrice = row.allocUnitPrice,
           expectedNet = row.allocNet,
+          netPerMinute = row.netPerMinute or 0,
           fillProb = row.fillProb,
           fillBasis = row.fillBasis,
           allocQty = row.allocQty,
@@ -806,13 +826,16 @@ function Core.evaluate(input)
         -- Net against the price the listing will carry, not the raw front:
         -- the undercut is real money and the two must not disagree.
         local price = Core.listPrice(sellP, item and item.vendorP or 0, rules)
+        local expectedNet = round(Core.netIfSold(price, position.qty, position.cost / position.qty, feeRate))
         actions[#actions + 1] = {
           kind = "sell",
           itemId = itemId,
           name = item and item.name,
           qty = position.qty,
           price = price,
-          expectedNet = round(Core.netIfSold(price, position.qty, position.cost / position.qty, feeRate)),
+          expectedNet = expectedNet,
+          -- The sell plan costs a round trip plus the listing, not a buy.
+          netPerMinute = round(expectedNet / math.max(effortMinutes("sell"), 1)),
           reason = "持仓卖出计划"
         }
       end

@@ -124,6 +124,8 @@ export type CoreAction =
       // not the deep-ladder average the row was ranked from.
       unitPrice: number;
       expectedNet: number;
+      // Allocated net divided by the round-trip minutes a buy costs.
+      netPerMinute: number;
       fillProb: number;
       fillBasis: FillBasis;
       allocQty: number;
@@ -140,6 +142,8 @@ export type CoreAction =
       qty: number;
       price: number;
       expectedNet: number;
+      // Net divided by the round-trip minutes a listing costs.
+      netPerMinute: number;
       reason: string;
     };
 

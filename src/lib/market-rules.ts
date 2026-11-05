@@ -10,6 +10,12 @@
 // meaning of the stored prices changed, not just their values.
 export const SCAN_PIPELINE_VERSION = 4;
 
+// Bumped when a scan's inferred flow starts excluding another source of
+// self-contamination. The addon stamps it on every scan and the calibration
+// only trusts rows at or above this version; a literal in either place would
+// let the two drift apart.
+export const OBSERVATION_VERSION = 2;
+
 // Auction house cut on a successful sale. Deposits are refunded on sale
 // and lost only on expiry/cancel, so they never enter this rate.
 export const AH_FEE_RATE = 0.05;
@@ -66,8 +72,8 @@ export const concentrationRules = { weight: 0.15 } as const;
 // they do not pretend to a stopwatch.
 export const timeCostRules = {
   overheadMinutes: 10, // a round trip to the auction house
-  buyMinutes: 2,
-  postMinutes: 2
+  buyMinutes: 2, // buying the allocated quantity
+  postMinutes: 2 // listing a position, used by the sell plan's per-minute net
 } as const;
 
 // Depth-aware sell front. The upper book is noise (thin, stale listings

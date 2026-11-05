@@ -3,12 +3,15 @@
 // suggested values. It never edits the rule file: a human reads the table,
 // decides, and reruns the generator.
 //
-// Only scans stamped observationVersion >= 2 qualify. Older rows counted
-// the player's own listings as supply and the player's own purchases as
-// demand, so they would calibrate the model against an echo of itself.
+// Only scans stamped with the current OBSERVATION_VERSION qualify. Older
+// rows counted the player's own listings as supply and the player's own
+// purchases as demand, so they would calibrate the model against an echo
+// of itself. A book with hidden owners is excluded for the same reason: its
+// lower edge is zero by construction, which is missing data, not evidence
+// that nothing sold.
 import { median } from "@/lib/median";
 import { resolvePhase } from "@/lib/phase";
-import type { MarketPhase, MarketType } from "@/lib/market-rules";
+import { OBSERVATION_VERSION, type MarketPhase, type MarketType } from "@/lib/market-rules";
 
 export type CalibrationRow = {
   itemId: number;
@@ -18,6 +21,19 @@ export type CalibrationRow = {
   soldLow: number;
   observationVersion: number | null;
   priced: boolean;
+  sellersInvisible: boolean;
+};
+
+type CalibrationScope = {
+  scanMinutes: number;
+  marketOpenedAt: Date | null;
+  // Priced items per scan timestamp (epoch ms). Breadth is a property of
+  // the whole market, so it must include rows this module never learns
+  // from -- hidden-owner books and pre-hygiene scans.
+  breadthByScan: Map<number, number>;
+  // The oldest priced scan, used as the age anchor when no opening time is
+  // configured.
+  marketFirstScanAt: Date | null;
 };
 
 export type CalibrationObservation = {
@@ -40,12 +56,14 @@ export type CalibrationBucket = {
 // [scan floor, 2h] is a paused addon or a manual rescan, not a rate.
 export function calibrationObservations(
   rows: CalibrationRow[],
-  options: { scanMinutes: number; breadth: number; marketOpenedAt: Date | null }
+  options: CalibrationScope
 ): CalibrationObservation[] {
   const floorHours = options.scanMinutes / 60;
+  const anchor = options.marketOpenedAt?.getTime() ?? options.marketFirstScanAt?.getTime() ?? null;
   const byItem = new Map<number, CalibrationRow[]>();
   for (const row of rows) {
-    if (!row.priced || (row.observationVersion ?? 0) < 2 || row.supply <= 0) continue;
+    if (!row.priced || (row.observationVersion ?? 0) < OBSERVATION_VERSION || row.supply <= 0) continue;
+    if (row.sellersInvisible) continue;
     if (row.marketType !== "commodity" && row.marketType !== "item") continue;
     const list = byItem.get(row.itemId) ?? [];
     list.push(row);
@@ -57,16 +75,18 @@ export function calibrationObservations(
     for (let index = 1; index < list.length; index += 1) {
       const previous = list[index - 1];
       const latest = list[index];
-      const elapsedHours = (latest.timestamp.getTime() - previous.timestamp.getTime()) / (60 * 60 * 1000);
+      const latestAt = latest.timestamp.getTime();
+      const elapsedHours = (latestAt - previous.timestamp.getTime()) / (60 * 60 * 1000);
       if (elapsedHours < floorHours || elapsedHours > 2) continue;
       // The observation belongs to the later scan: its supply is the
-      // denominator, its disappearance the numerator.
-      const openedAt = options.marketOpenedAt;
-      const ageHours = Math.max(0, (latest.timestamp.getTime() - (openedAt?.getTime() ?? list[0].timestamp.getTime())) / (60 * 60 * 1000));
+      // denominator, its disappearance the numerator. Age and breadth come
+      // from that scan's whole market, not from this item's own history:
+      // an item that first appeared late is not a young market.
+      const ageHours = Math.max(0, (latestAt - (anchor ?? latestAt)) / (60 * 60 * 1000));
       observations.push({
         itemId: latest.itemId,
         marketType: latest.marketType as MarketType,
-        phase: resolvePhase(ageHours, options.breadth),
+        phase: resolvePhase(ageHours, options.breadthByScan.get(latestAt) ?? 0),
         hazard: latest.soldLow / (latest.supply * elapsedHours)
       });
     }
@@ -110,7 +130,7 @@ export function summarizeCalibration(observations: CalibrationObservation[]): Ca
 
 // A bucket only becomes a suggestion with enough independent item-level
 // observations; below this the script says so instead of printing noise.
-export const CALIBRATION_MIN_SAMPLES = 500;
+const CALIBRATION_MIN_SAMPLES = 500;
 
 export function formatCalibration(buckets: CalibrationBucket[]): string[] {
   const lines = ["phase     type       samples  median/h   p25/h      p75/h"];

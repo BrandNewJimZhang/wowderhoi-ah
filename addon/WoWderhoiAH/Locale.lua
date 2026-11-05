@@ -99,6 +99,7 @@ local L = {
   ACTIONS_FOUND = "%d next steps.",
   ACTIONS_EMPTY = "No next step clears this phase's gates.",
   ACTION_ABORT = "Abandon above %s",
+  ACTION_PER_MINUTE = "Net per minute: %s",
   PURCHASE_UNCONFIRMED = "Purchase not confirmed by the client - it is not in the ledger. Check the auction house before assuming it failed.",
   PHASE_LABELS = { ignition = "Ignition", wave = "Wave", settle = "Settle", steady = "Steady" },
   -- Money suffixes and sort markers sit in the locale table because they
@@ -270,6 +271,7 @@ if GetLocale() == "zhCN" then
   L.ACTIONS_FOUND = "下一步动作 %d 条。"
   L.ACTIONS_EMPTY = "当前没有满足本阶段门槛的下一步动作。"
   L.ACTION_ABORT = "若价格高于 %s 则放弃"
+  L.ACTION_PER_MINUTE = "每分钟净利：%s"
   L.PURCHASE_UNCONFIRMED = "客户端未确认这次购买，账本没有记录。请到拍卖行核对后再判断是否失败。"
   L.PHASE_LABELS = { ignition = "点火期", wave = "洪流期", settle = "沉淀期", steady = "稳态" }
   L.MONEY_G = "金"
