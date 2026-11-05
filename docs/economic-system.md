@@ -32,7 +32,8 @@
 
 一次全量扫描的最新快照：
 
-- 元数据：`dataVersion`、`scannedAt`、`server`、`faction`、`character`、`cash`、`total`。
+- 元数据：`dataVersion`、`scannedAt`、`server`、`faction`、`character`、`cash`、
+  `bagSlots`（扫描时的背包空位；终端读不到背包，缺这个字段就只能用规划默认值）、`total`。
 - `items[itemId]`：名称、品质、物品类别、市场类型（`marketType`：`commodity` | `item`，
   扫描时按当时的物品记录判定一次，是两端唯一的分类来源）、NPC 价、最低价、建议卖价
   （深度感知）、P5、P10、在售量、挂单数、卖家数、卖家是否可见、竞价单数、最高竞价、
@@ -134,7 +135,9 @@ Ledger 是 Journal 的纯投影：
 
 - `Market`：realm+faction，最近一次扫描的现金与角色（`character`，仅扫描的导入不改写角色），
   以及可空的开服时刻 `openedAt`（`/wahopen` 写入；`/wahopen auto` 会清空它，
-  下一次扫描把这个清空同步到终端，而不是让终端继续沿用旧锚点）。持仓、成交和现金都来自同一个角色的
+  下一次扫描把这个清空同步到终端，而不是让终端继续沿用旧锚点）和可空的
+  `bagSlots`（最近一次扫描的背包空位；空值只出现在不上报该字段的旧插件导入，
+  此时共享核心才使用规划默认值）。持仓、成交和现金都来自同一个角色的
   一次扫描，界面显示该角色名。
 - `AuctionSnapshot`：v4 全字段 + `topTiers` / `expiring`；`marketType` 保存扫描时的
   市场类型，空值只出现在该列引入前导入的旧行，核心会退回自己的分类逻辑。`priced = false`

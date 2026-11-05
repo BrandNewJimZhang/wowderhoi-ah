@@ -101,7 +101,8 @@ export async function POST(request: Request) {
       faction: scan.faction,
       cash: scan.cash,
       character: scan.character ?? "",
-      openedAt: scan.openedAt ? new Date(scan.openedAt * 1000) : null
+      openedAt: scan.openedAt ? new Date(scan.openedAt * 1000) : null,
+      bagSlots: scan.bagSlots
     },
     // A scan-only import carries no character, so it must not erase the one
     // the last journal-bearing scan recorded. An opening time of null means
@@ -113,7 +114,10 @@ export async function POST(request: Request) {
       ...(scan.character ? { character: scan.character } : {}),
       ...(scan.openedAt === null ? {} : {
         openedAt: scan.openedAt > 0 ? new Date(scan.openedAt * 1000) : null
-      })
+      }),
+      // Null means an older addon that did not report bags; keep the last
+      // known capacity rather than resetting the core to its fallback.
+      ...(scan.bagSlots === null ? {} : { bagSlots: scan.bagSlots })
     }
   });
 

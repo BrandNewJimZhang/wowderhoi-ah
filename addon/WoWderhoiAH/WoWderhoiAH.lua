@@ -146,6 +146,21 @@ local function expiryBucket(seconds)
   return "late"
 end
 
+-- Free bag slots across the backpack and the four equipped bags. The
+-- aggregate is the executable-quantity ceiling; stackSize x slots assumes
+-- every item stacks to the client maximum, so it can overstate how many
+-- units fit when the item stacks smaller. Reading each item's own stack
+-- size per candidate would be exact but costs a GetItemInfo per row, and
+-- the budget and the book depth usually bind first.
+local function freeBagSlots()
+  if not (C_Container and C_Container.GetContainerNumFreeSlots) then return 20 end
+  local total = 0
+  for bag = 0, 4 do
+    total = total + (C_Container.GetContainerNumFreeSlots(bag) or 0)
+  end
+  return total
+end
+
 -- ============================== Capture ==============================
 
 local function newEntry(name, quality, cached)
@@ -557,6 +572,10 @@ local function finishScan(totalAuctions)
     -- terminal would fall back to the earliest scan, which a fresh install
     -- resets to "just opened".
     openedAt = (WAH.settings and WAH.settings.serverOpenedAt) or 0,
+    -- Free bag slots at scan time. The terminal runs the same decision core
+    -- but cannot see the player's bags; without this it sized every
+    -- recommendation against a planning constant.
+    bagSlots = freeBagSlots(),
     total = totalAuctions or 0,
     items = items
   }
@@ -930,21 +949,6 @@ end
 
 SLASH_WOWDERHOIAHCAPTURE1 = "/wahcapture"
 SlashCmdList["WOWDERHOIAHCAPTURE"] = setCapture
-
--- Free bag slots across the backpack and the four equipped bags. The
--- aggregate is the executable-quantity ceiling; stackSize x slots assumes
--- every item stacks to the client maximum, so it can overstate how many
--- units fit when the item stacks smaller. Reading each item's own stack
--- size per candidate would be exact but costs a GetItemInfo per row, and
--- the budget and the book depth usually bind first.
-local function freeBagSlots()
-  if not (C_Container and C_Container.GetContainerNumFreeSlots) then return 20 end
-  local total = 0
-  for bag = 0, 4 do
-    total = total + (C_Container.GetContainerNumFreeSlots(bag) or 0)
-  end
-  return total
-end
 
 -- Assemble the decision core's input from the latest scan, the retained
 -- series, the journal-derived positions and the player's deployable

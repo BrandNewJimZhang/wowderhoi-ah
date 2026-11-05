@@ -50,6 +50,10 @@ export type AddonScan = {
   // Optional server opening epoch (seconds). Phase age is measured from it
   // when present; without it the terminal falls back to the oldest scan.
   openedAt: number | null;
+  // Free bag slots the scanner saw. The terminal runs the same decision core
+  // but cannot read the player's bags; null means an older addon that did not
+  // report the field, so the core keeps its planning fallback.
+  bagSlots: number | null;
   items: AddonScanItem[];
 };
 
@@ -331,6 +335,9 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
     // it, so the import must drop the anchor it kept.
     openedAt: typeof scan.openedAt === "number" && Number.isFinite(scan.openedAt) && scan.openedAt >= 0
       ? Math.round(scan.openedAt)
+      : null,
+    bagSlots: typeof scan.bagSlots === "number"
+      ? Math.round(optionalNonNegative(scan.bagSlots, "bagSlots", "scan"))
       : null,
     items
   };

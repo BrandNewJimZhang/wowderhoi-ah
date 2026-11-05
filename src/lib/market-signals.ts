@@ -136,7 +136,11 @@ export function createMarketSignalSource(fetchers: SignalFetchers) {
         // the terminal's capital block lie about the same field the addon
         // fills from GetMoney(). An absent market leaves it undefined
         // ("unknown") rather than 0 ("broke").
-        cashCopper: scope?.cash
+        cashCopper: scope?.cash,
+        // The scan recorded the player's free bag slots; without them the
+        // terminal sized every recommendation against a planning constant
+        // the in-game radar never uses.
+        bagSlots: scope?.bagSlots ?? undefined
       });
       const bundle: MarketBundle = {
         scope,

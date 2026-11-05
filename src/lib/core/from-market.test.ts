@@ -110,6 +110,14 @@ describe("buildCoreInput", () => {
     expect(Object.keys(input.capital ?? {}).sort()).toEqual(["budget", "cash"]);
   });
 
+  it("hands the scan's free bag slots to the core", () => {
+    // The terminal has no bag access; the scan is the only source. A value
+    // of 0 is a real observation and must not be replaced by the fallback.
+    expect(buildCoreInput(pairs(), { now: LATEST, phase: "wave", bagSlots: 3 }).capacity?.bagSlots).toBe(3);
+    expect(buildCoreInput(pairs(), { now: LATEST, phase: "wave", bagSlots: 0 }).capacity?.bagSlots).toBe(0);
+    expect(buildCoreInput(pairs(), { now: LATEST, phase: "wave" }).capacity?.bagSlots).toBe(20);
+  });
+
   it("hands the scan's market classification to the core", () => {
     // A Trade Goods item would derive as a commodity from its class, but the
     // scanner saw a unique-lot book. The scan's classification is the

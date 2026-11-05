@@ -44,6 +44,16 @@ describe("forever replicate scan v4", () => {
     expect(lua.number("WowTest.savedCount")).toBeGreaterThan(0);
   });
 
+  it("records the free bag slots the scan was taken with", () => {
+    // The terminal runs the same decision core but cannot read the bags.
+    // Without this field it sized recommendations against a planning
+    // constant; the scan must carry what the client actually reported.
+    const lua = auctionPage();
+    lua.exec("WowTest.freeBagSlots = { [0] = 2, [1] = 3, [2] = 1 }");
+    lua.runScan([{ itemId: 2589, name: "Linen Cloth", count: 20, buyout: 20000 }]);
+    expect(lua.number("WoWderhoiAH_ScanData.bagSlots")).toBe(6);
+  });
+
   it("sums listings that share a unit price into one ladder rung", () => {
     const lua = auctionPage();
     lua.runScan([

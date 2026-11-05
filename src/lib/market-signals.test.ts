@@ -75,6 +75,22 @@ describe("createMarketSignalSource", () => {
     expect(bundle.evaluation.actions.some((action) => action.kind === "buy")).toBe(true);
   });
 
+  it("sizes recommendations against the bag slots the scan recorded", async () => {
+    // A full client cannot carry a purchase, so the shared core must see the
+    // scan's zero; a capacity the terminal invented would recommend buying
+    // into a full bag.
+    const full = createMarketSignalSource({
+      ...fetchers([historyItem(1, 200)]),
+      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 500000, character: "Tester", bagSlots: 0 })
+    });
+    expect((await full.getMarketSignals()).evaluation.actions).toHaveLength(0);
+    const roomy = createMarketSignalSource({
+      ...fetchers([historyItem(1, 200)]),
+      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 500000, character: "Tester", bagSlots: 6 })
+    });
+    expect((await roomy.getMarketSignals()).evaluation.actions.length).toBeGreaterThan(0);
+  });
+
   it("recommends nothing for a character whose scan saw an empty purse", async () => {
     const source = createMarketSignalSource({
       ...fetchers([historyItem(1, 200)]),

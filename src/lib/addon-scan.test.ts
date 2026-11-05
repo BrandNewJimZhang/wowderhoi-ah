@@ -8,6 +8,7 @@ WoWderhoiAH_ScanData = {
 \t["server"] = "Anniversary",
 \t["faction"] = "Alliance",
 \t["character"] = "Tester",
+\t["bagSlots"] = 14,
 \t["total"] = 15,
 \t["items"] = {
 \t\t[2770] = {
@@ -130,6 +131,20 @@ describe("normalizeAddonScan", () => {
     expect(normalizeAddonScan(raw).openedAt).toBe(0);
     raw.openedAt = 1721700000;
     expect(normalizeAddonScan(raw).openedAt).toBe(1721700000);
+  });
+
+  it("distinguishes unreported bag slots from a full client", () => {
+    // Null means an addon that predates the field: the import must keep the
+    // capacity it learned earlier. Zero is a real observation (every bag
+    // full) and must reach the core as zero.
+    const raw = rawScan() as Record<string, unknown>;
+    expect(normalizeAddonScan(raw).bagSlots).toBe(14);
+    delete raw.bagSlots;
+    expect(normalizeAddonScan(raw).bagSlots).toBeNull();
+    raw.bagSlots = 0;
+    expect(normalizeAddonScan(raw).bagSlots).toBe(0);
+    raw.bagSlots = -1;
+    expect(() => normalizeAddonScan(raw)).toThrow(/bagSlots/);
   });
 
   it("preserves a fractional unit price in the ladder", () => {
