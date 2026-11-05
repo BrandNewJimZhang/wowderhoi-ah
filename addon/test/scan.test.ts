@@ -134,6 +134,16 @@ describe("forever replicate scan v4", () => {
       .toBe(lua.number("WowTest.ns.history(2589).samples"));
   });
 
+  it("borrows the compiled steady window when the phase has none", () => {
+    const lua = auctionPage();
+    lua.runScan([{ itemId: 2589, name: "Linen", count: 10, buyout: 10000 }]);
+    expect(lua.text("WowTest.ns.currentPhase()")).toBe("ignition");
+    // Ignition's own window is 0; the trend/chart statistic reads the
+    // steady window from the same compiled table instead of a literal.
+    expect(lua.number("WowTest.ns.history(2589).windowHours"))
+      .toBe(lua.number("WowTest.ns.RULES.phaseHistory.steady.windowHours"));
+  });
+
   it("applies a phase override on the next call despite the phase cache", () => {
     const lua = auctionPage();
     lua.runScan([{ itemId: 2589, name: "Linen", count: 10, buyout: 10000 }]);

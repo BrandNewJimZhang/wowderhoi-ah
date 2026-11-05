@@ -15,6 +15,13 @@ export function phaseWindowHours(phase: MarketPhase): number {
   return phaseHistory[phase].windowHours;
 }
 
+// Ignition deliberately has no history window. Statistics that still need a
+// window (trend, chart default) borrow the steady one from the same rule
+// table instead of restating the number.
+export function historyWindowHours(phase: MarketPhase): number {
+  return phaseHistory[phase].windowHours || phaseHistory.steady.windowHours;
+}
+
 export const phaseLabels: Record<MarketPhase, string> = {
   ignition: "点火期",
   wave: "洪流期",

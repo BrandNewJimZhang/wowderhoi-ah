@@ -10,7 +10,7 @@
 // reference price and must not drive a recommendation.
 import type { MarketHistory, MarketSnapshot } from "@/lib/market-data";
 import { median } from "@/lib/median";
-import { phaseWindowHours } from "@/lib/phase";
+import { historyWindowHours } from "@/lib/phase";
 import type { MarketPhase } from "@/lib/market-rules";
 import { realPrice, utcDateKey, type PriceIndex } from "@/lib/deflator";
 
@@ -65,7 +65,7 @@ export function buildMarketSignal(
   const latest = snapshots[snapshots.length - 1];
   const previous = snapshots[snapshots.length - 2];
   const phase = options?.phase ?? "steady";
-  const windowHours = phaseWindowHours(phase) || 168;
+  const windowHours = historyWindowHours(phase);
   const windowStart = now.getTime() - windowHours * 60 * 60 * 1000;
   const windowSnapshots = snapshots.filter((snapshot) => snapshot.timestamp.getTime() >= windowStart);
   const snapshotPrices = windowSnapshots.map(sellOf).filter((value) => value > 0);

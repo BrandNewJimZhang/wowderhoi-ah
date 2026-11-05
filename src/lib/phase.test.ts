@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { phaseDescription, phaseLabels, phaseWindowHours, resolvePhase } from "@/lib/phase";
-import { phaseBoundaries } from "@/lib/market-rules";
+import { historyWindowHours, phaseDescription, phaseLabels, phaseWindowHours, resolvePhase } from "@/lib/phase";
+import { phaseBoundaries, phaseHistory } from "@/lib/market-rules";
 
 describe("resolvePhase", () => {
   it("uses breadth to keep a small market in ignition even when it is old", () => {
@@ -23,6 +23,14 @@ describe("resolvePhase", () => {
   it("exposes the phase's history window", () => {
     expect(phaseWindowHours("wave")).toBe(6);
     expect(phaseWindowHours("steady")).toBe(168);
+  });
+
+  it("borrows the steady window where a phase has none", () => {
+    // Ignition has no history by design; the trend statistic must still
+    // read the window from the rule table, not a second literal.
+    expect(phaseWindowHours("ignition")).toBe(0);
+    expect(historyWindowHours("ignition")).toBe(phaseHistory.steady.windowHours);
+    expect(historyWindowHours("wave")).toBe(phaseHistory.wave.windowHours);
   });
 
   it("has a label and a strategy note for every phase", () => {
