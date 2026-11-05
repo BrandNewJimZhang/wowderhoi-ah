@@ -4,7 +4,8 @@
 -- cancelled or been repriced; the mailbox is the one place the client says
 -- "this auction sold for X, commission Y". This module translates sale and
 -- expiry mails into journal events and never guesses: an unattributable
--- mail is counted and skipped, not booked against a random item.
+-- mail is counted and left for a later scan, not booked against a random
+-- item and not marked as handled.
 --
 -- The invoice and header calls are classic globals present in the 1.60
 -- client but absent from the generated API documentation, so every read is
