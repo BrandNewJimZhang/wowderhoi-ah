@@ -23,7 +23,11 @@ local ADDON_NAME, WAH = ...
 local L = WAH.L
 local Core = WAH.Core
 
-local PROCESS_PER_FRAME = 200
+-- The row count is only a safety cap; FRAME_BUDGET_MS is the real throttle.
+-- A low cap makes the scan take more frames without using the budget: on a
+-- fast client 200 rows finish well under 8 ms, and the scan then runs
+-- several times longer than the work actually needs.
+local PROCESS_PER_FRAME = 1000
 local FRAME_BUDGET_MS = 8
 -- A replicate scan is one server response; if it has not arrived by then,
 -- the request was refused or lost. Abort loudly instead of leaving the
@@ -42,7 +46,12 @@ local HOUR, DAY = 3600, 86400
 local SCAN_FLOOR_HOURS = AUTO_SCAN_INTERVAL / HOUR
 
 local frame -- created below; scanner helpers close over it
-local scanState = nil -- { itemsById, itemInfoCache, cursor, total, processing, capture }
+local scanState = nil -- { itemsById, cursor, total, processing, processMs, capture }
+
+-- Item metadata resolved once per session, not once per scan. The client's
+-- item database loads lazily, so an unresolved lookup is retried next scan
+-- instead of caching a nil class and a zero vendor price forever.
+local itemInfoCache = {}
 local lastScanStartedAt = 0
 local scanFailures = 0
 local backoffUntil = 0
@@ -140,10 +149,11 @@ local function newEntry(name, quality, cached)
     itemSubClass = cached.subClass,
     vendorP = cached.vendorP,
     minPrice = nil,
-    listings = {}, -- { price = unit price, count }
-    flowKeys = {}, -- owner|unitPrice -> quantity, matched across scans
+    tierQuantity = {}, -- unitPrice -> quantity, aggregated as rows arrive
+    -- owner ("" when hidden) -> unitPrice -> { q = quantity, t = shortest
+    -- remaining time }. Matched across scans to infer disappearances.
+    flow = {},
     ownerTotals = {}, -- owner -> quantity across all prices, detects repricing
-    flowTimeLeft = {}, -- flow key -> shortest remaining time seen
     bidAmount = 0,
     bidOnly = 0,
     hasBuyout = false,
@@ -169,19 +179,20 @@ local function recordAuction(index)
 
   local entry = scanState.itemsById[itemId]
   if not entry then
-    local cached = scanState.itemInfoCache[itemId]
-    if cached == nil then
+    local cached = itemInfoCache[itemId]
+    if not cached then
       -- GetItemInfo is the single most expensive call per new itemId. Read
-      -- every field once, cache it for the scan's lifetime, and let repeat
-      -- listings reuse the result.
+      -- every field once, cache it for the session, and let repeat listings
+      -- and later scans reuse the result.
       local _, _, _, _, _, itemClass, itemSubClass, _, _, _, vendorPrice = WAH.getItemInfo(itemId)
-      if itemClass == nil and C_Item and C_Item.RequestLoadItemDataByID then
+      cached = { class = itemClass, subClass = itemSubClass, vendorP = vendorPrice or 0 }
+      if itemClass ~= nil then
+        itemInfoCache[itemId] = cached
+      elseif C_Item and C_Item.RequestLoadItemDataByID then
         -- The item database loads lazily on modern clients. Ask once so the
         -- next scan can price vendor arbitrage for this item.
         C_Item.RequestLoadItemDataByID(itemId)
       end
-      cached = { class = itemClass, subClass = itemSubClass, vendorP = vendorPrice or 0 }
-      scanState.itemInfoCache[itemId] = cached
     end
     entry = newEntry(name, quality, cached)
     scanState.itemsById[itemId] = entry
@@ -205,37 +216,41 @@ local function recordAuction(index)
   local unitPrice = buyoutPrice / count
   entry.hasBuyout = true
   if not entry.minPrice or unitPrice < entry.minPrice then entry.minPrice = unitPrice end
-  entry.listings[#entry.listings + 1] = { price = unitPrice, count = count }
+  entry.tierQuantity[unitPrice] = (entry.tierQuantity[unitPrice] or 0) + count
   entry.quantity = entry.quantity + count
   entry.numAuctions = entry.numAuctions + 1
-  local flowKey = (seller or "?") .. "|" .. unitPrice
-  entry.flowKeys[flowKey] = (entry.flowKeys[flowKey] or 0) + count
+  -- A listing's identity across scans is owner + unit price. Grouping by
+  -- owner first means the per-row path never builds a key string; it looks
+  -- up one table and allocates one small record per new (owner, price) pair.
+  local ownerKey = seller or ""
+  local ownerFlow = entry.flow[ownerKey]
+  if not ownerFlow then
+    ownerFlow = {}
+    entry.flow[ownerKey] = ownerFlow
+  end
+  local flow = ownerFlow[unitPrice]
+  if flow then
+    flow.q = flow.q + count
+    if timeLeft and (not flow.t or timeLeft < flow.t) then flow.t = timeLeft end
+  else
+    ownerFlow[unitPrice] = { q = count, t = timeLeft }
+  end
   if seller then
     entry.ownerTotals[seller] = (entry.ownerTotals[seller] or 0) + count
   end
-  if timeLeft then
-    local current = entry.flowTimeLeft[flowKey]
-    if not current or timeLeft < current then entry.flowTimeLeft[flowKey] = timeLeft end
-  end
-  entry.expiring[expiryBucket(timeLeft)] = entry.expiring[expiryBucket(timeLeft)] + 1
+  local bucket = expiryBucket(timeLeft)
+  entry.expiring[bucket] = entry.expiring[bucket] + 1
 end
 
-local function aggregateTiers(listings)
-  local byPrice = {}
-  for _, listing in ipairs(listings) do
-    local tier = byPrice[listing.price]
-    if not tier then
-      tier = { p = listing.price, q = 0 }
-      byPrice[listing.price] = tier
-    end
-    tier.q = tier.q + listing.count
-  end
+-- One pass over the distinct prices the scan already aggregated, sorted
+-- once. The result feeds Core.sellFrontSorted / Core.percentileOfSorted
+-- directly, so the finish phase never re-copies the book per statistic.
+local function aggregateTiers(tierQuantity)
   local tiers = {}
-  for _, tier in pairs(byPrice) do tiers[#tiers + 1] = tier end
-  table.sort(tiers, function(left, right)
-    if left.p == right.p then return left.q < right.q end
-    return left.p < right.p
-  end)
+  for price, quantity in pairs(tierQuantity) do
+    tiers[#tiers + 1] = { p = price, q = quantity }
+  end
+  table.sort(tiers, function(left, right) return left.p < right.p end)
   return tiers
 end
 
@@ -374,6 +389,10 @@ end
 local function previousCapture()
   local capture = WoWderhoiAH_Capture
   if type(capture) ~= "table" or capture.v ~= WAH.PIPELINE_VERSION then return nil end
+  -- Captures written before the owner-keyed shape carry flat "owner|price"
+  -- strings. They cannot be matched, so the first scan after the upgrade
+  -- starts a fresh baseline instead of crashing on a string.
+  if capture.shape ~= "owner-price" then return nil end
   if capture.market ~= marketKey() then return nil end
   return capture
 end
@@ -393,23 +412,23 @@ local function inferFlow(entry, previous, elapsedSeconds)
   if not previous or elapsedSeconds <= 0 then return 0, 0, 0 end
   local high = 0
   local liveOwners = {}
-  for key, quantity in pairs(previous.keys or {}) do
-    local remaining = entry.flowKeys[key] or 0
-    local timeLeft = previous.t and previous.t[key]
-    -- A listing cannot have sold if its previous remaining time was shorter
-    -- than the gap between scans: that disappearance is an expiry.
-    local live = timeLeft and timeLeft > elapsedSeconds + 60
-    if quantity > remaining and (not timeLeft or live) then
-      high = high + (quantity - remaining)
-    end
-    if live then
-      local owner = key:match("^(.-)|")
-      if owner and owner ~= "?" then
-        -- Only units that could not have expired contribute to the lower
-        -- edge; an owner total that moved between prices stays unchanged.
-        liveOwners[owner] = (liveOwners[owner] or 0) + quantity
+  for owner, prices in pairs(previous.keys or {}) do
+    local nowByPrice = entry.flow[owner]
+    local liveQuantity = 0
+    for price, was in pairs(prices) do
+      local now = nowByPrice and nowByPrice[price]
+      local remaining = now and now.q or 0
+      -- A listing cannot have sold if its previous remaining time was shorter
+      -- than the gap between scans: that disappearance is an expiry.
+      local live = was.t and was.t > elapsedSeconds + 60
+      if was.q > remaining and (not was.t or live) then
+        high = high + (was.q - remaining)
       end
+      -- Only units that could not have expired contribute to the lower
+      -- edge; an owner total that moved between prices stays unchanged.
+      if live then liveQuantity = liveQuantity + was.q end
     end
+    if liveQuantity > 0 and owner ~= "" then liveOwners[owner] = liveQuantity end
   end
   local low = 0
   for owner, quantity in pairs(liveOwners) do
@@ -428,6 +447,8 @@ local function inferFlow(entry, previous, elapsedSeconds)
 end
 
 local function finishScan(totalAuctions)
+  local finishStart = debugprofilestop()
+  local processMs = scanState.processMs or 0
   local nowTs = time()
   local market = ensureSeries()
   local phase = WAH.currentPhase and WAH.currentPhase() or "steady"
@@ -440,15 +461,14 @@ local function finishScan(totalAuctions)
   for itemId, entry in pairs(scanState.itemsById) do
     itemCount = itemCount + 1
     if entry.hasBuyout then
-      table.sort(entry.listings, function(left, right) return left.price < right.price end)
-      local tiers = aggregateTiers(entry.listings)
+      local tiers = aggregateTiers(entry.tierQuantity)
       local storedTiers = topTiers(tiers, 8)
       local marketType = Core.marketTypeFor({
         itemClass = entry.itemClass,
         quantity = entry.quantity,
         numAuctions = entry.numAuctions
       })
-      local sellP = Core.sellFront(tiers, {
+      local sellP = Core.sellFrontSorted(tiers, {
         rules = WAH.RULES.sellFront,
         byCount = marketType == "item",
         early = phase == "ignition"
@@ -466,8 +486,8 @@ local function finishScan(totalAuctions)
         vendorP = entry.vendorP,
         minPrice = math.floor((entry.minPrice or 0) + 0.5),
         sellP = math.floor((sellP or entry.minPrice or 0) + 0.5),
-        p5 = math.floor((Core.weightedPercentile(tiers, 0.05) or entry.minPrice or 0) + 0.5),
-        marketPrice = math.floor((Core.weightedPercentile(tiers, 0.10) or entry.minPrice or 0) + 0.5),
+        p5 = math.floor((Core.percentileOfSorted(tiers, 0.05) or entry.minPrice or 0) + 0.5),
+        marketPrice = math.floor((Core.percentileOfSorted(tiers, 0.10) or entry.minPrice or 0) + 0.5),
         quantity = entry.quantity,
         numAuctions = entry.numAuctions,
         sellers = sellers,
@@ -482,8 +502,7 @@ local function finishScan(totalAuctions)
         elapsedHours = math.max(elapsedSeconds / HOUR, SCAN_FLOOR_HOURS)
       }
       captureItems[itemId] = {
-        keys = entry.flowKeys,
-        t = entry.flowTimeLeft,
+        keys = entry.flow,
         total = entry.quantity
       }
     elseif entry.bidOnly > 0 then
@@ -530,6 +549,7 @@ local function finishScan(totalAuctions)
   }
   WoWderhoiAH_Capture = {
     v = WAH.PIPELINE_VERSION,
+    shape = "owner-price",
     at = nowTs,
     market = marketKey(),
     items = captureItems
@@ -538,10 +558,20 @@ local function finishScan(totalAuctions)
   scanState = nil
   WAH.scanRunning = false
   scanFailures = 0
+  local finishMs = debugprofilestop() - finishStart
   -- Write SavedVariables immediately so the desktop watcher sees this scan
   -- in seconds, not at the next logout. Fall back silently on clients that
   -- do not expose the API.
+  local saveStart = debugprofilestop()
   if C_AddOns and C_AddOns.SaveAddOns then pcall(C_AddOns.SaveAddOns) end
+  -- Where the time went. /wahdiag prints this; without it a "slow scan"
+  -- report cannot be told apart from a slow server response.
+  WAH.lastScanStats = {
+    rows = totalAuctions or 0,
+    processMs = processMs,
+    finishMs = finishMs,
+    saveMs = debugprofilestop() - saveStart
+  }
   chatMessage(string.format(
     L.SCAN_COMPLETE .. "%s",
     totalAuctions or 0, itemCount,
@@ -565,6 +595,7 @@ local function processReplicateChunk()
     if debugprofilestop() - frameStart >= FRAME_BUDGET_MS then break end
   end
   scanState.cursor = index
+  scanState.processMs = (scanState.processMs or 0) + (debugprofilestop() - frameStart)
   if index > total then
     frame:SetScript("OnUpdate", nil)
     finishScan(total)
@@ -596,8 +627,8 @@ local function startScan()
   end
   scanState = {
     itemsById = {},
-    itemInfoCache = {},
     processing = false,
+    processMs = 0,
     capture = previousCapture()
   }
   WAH.scanRunning = true
@@ -684,25 +715,67 @@ end)
 -- The phase is derived from data age and market breadth, never the
 -- calendar. A manual override is available for the first hours after a
 -- server opens, when breadth lags behind reality.
+--
+-- Breadth costs one pass over the whole scan, and WAH.history asks for the
+-- phase per item -- so recomputing it inside a radar refresh made the
+-- refresh quadratic in the number of items. The answer only moves at the
+-- phase boundaries (hours) or when the scan or the override changes, so a
+-- few seconds of memoization is free.
+local phaseCache = { scan = nil, override = nil, at = nil, value = nil }
+local PHASE_CACHE_SECONDS = 5
+
 function WAH.currentPhase()
   local override = WAH.settings and WAH.settings.phaseOverride
   if override and override ~= "auto" then return override end
   local scan = WAH.currentScan()
   if not scan then return "ignition" end
+  local now = time()
+  if phaseCache.scan == scan and phaseCache.override == override
+    and phaseCache.at and now - phaseCache.at < PHASE_CACHE_SECONDS then
+    return phaseCache.value
+  end
   local breadth = 0
   for _, item in pairs(scan.items or {}) do
     if item.minPrice and item.minPrice > 0 then breadth = breadth + 1 end
   end
   local market = WAH.seriesMarket()
-  local firstScanAt = market and market.firstScanAt or scan.scannedAt or time()
-  local ageHours = math.max(0, (time() - firstScanAt) / HOUR)
-  return Core.phaseFor(ageHours, breadth, WAH.RULES.phaseBoundaries)
+  local firstScanAt = market and market.firstScanAt or scan.scannedAt or now
+  local ageHours = math.max(0, (now - firstScanAt) / HOUR)
+  local value = Core.phaseFor(ageHours, breadth, WAH.RULES.phaseBoundaries)
+  phaseCache = { scan = scan, override = override, at = now, value = value }
+  return value
 end
 
 function WAH.scanAgeMinutes()
   local scan = WAH.currentScan()
   if not scan or not scan.scannedAt then return nil end
   return math.max(0, (time() - scan.scannedAt) / 60)
+end
+
+-- One definition of "the sample window". The chart asks for explicit
+-- windows; the decision core asks for the phase's.
+local function historyWindowHours()
+  local phase = WAH.currentPhase()
+  local phaseRule = WAH.RULES.phaseHistory[phase] or { windowHours = 168 }
+  local window = phaseRule.windowHours or 168
+  if window <= 0 then window = 168 end
+  return window
+end
+
+-- Sample count only. The decision core never reads point tables, so a
+-- radar refresh must not build one table per history point per item.
+function WAH.historySamples(itemId)
+  local market = WAH.seriesMarket()
+  local series = market and market.items[itemId]
+  if not series or #series.t == 0 then return 0 end
+  local cutoff = time() - historyWindowHours() * HOUR
+  local count = 0
+  for index = 1, #series.t do
+    if series.t[index] >= cutoff then count = count + 1 end
+  end
+  -- An item whose retained points all predate the window still has one
+  -- usable sample: its latest point, matching WAH.history.
+  return count > 0 and count or 1
 end
 
 -- Single history authority. The decision core reads samples; the tooltip
@@ -712,9 +785,7 @@ function WAH.history(itemId, windowHours)
   local market = WAH.seriesMarket()
   local series = market and market.items[itemId]
   if not series or #series.t == 0 then return nil end
-  local phase = WAH.currentPhase()
-  local phaseRule = WAH.RULES.phaseHistory[phase] or { windowHours = 168 }
-  local window = windowHours or phaseRule.windowHours
+  local window = windowHours or historyWindowHours()
   if window <= 0 then window = 168 end
   local cutoff = time() - window * HOUR
   local sells, pts = {}, {}
@@ -807,7 +878,7 @@ function WAH.coreInput()
   local ownSales = ledger and WAH.Ledger.salesSince(ownWindowDays * 24 * 3600, input.now) or {}
   for itemId, entry in pairs(scan.items or {}) do
     if entry.minPrice and entry.minPrice > 0 then
-      local history = WAH.history(itemId)
+      local samples = WAH.historySamples(itemId)
       local own = ownSales[itemId]
       input.market.items[itemId] = {
         itemId = itemId,
@@ -834,7 +905,7 @@ function WAH.coreInput()
         ownSamples = own and own.samples or 0,
         ownElapsedHours = own and own.elapsedHours or 0,
         demandPrior = Core.demandFor(entry.itemClass, entry.itemSubClass),
-        history = history and { samples = history.samples } or nil
+        history = samples > 0 and { samples = samples } or nil
       }
     end
   end

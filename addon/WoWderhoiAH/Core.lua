@@ -60,8 +60,11 @@ function Core.totalQuantity(tiers)
   return total
 end
 
-function Core.weightedPercentile(tiers, fraction)
-  local sorted = Core.sortedTiers(tiers)
+-- Percentile of a ladder the caller already built with `sortedTiers` (or
+-- the scanner's aggregateTiers, which produces the same shape). Scanning
+-- prices thousands of books per scan; re-copying and re-sorting the same
+-- ladder for P5, P10 and the sell front is pure garbage.
+function Core.percentileOfSorted(sorted, fraction)
   local total = Core.totalQuantity(sorted)
   if total <= 0 then return nil end
   local threshold = total * fraction
@@ -73,6 +76,10 @@ function Core.weightedPercentile(tiers, fraction)
   return sorted[#sorted].p
 end
 
+function Core.weightedPercentile(tiers, fraction)
+  return Core.percentileOfSorted(Core.sortedTiers(tiers), fraction)
+end
+
 -- Depth-aware sell front.
 --
 -- The upper book is noise: thin, stale listings nobody transacts against.
@@ -81,13 +88,16 @@ end
 -- front is the cheapest price whose cumulative quantity reaches the depth
 -- target. Item auctions are unique lots, so their depth is measured in
 -- listings, not in units.
-function Core.sellFront(tiers, opts)
+--
+-- `sorted` must be price-sorted and validated (Core.sortedTiers or the
+-- scanner's aggregateTiers). The scanner prices every item on every scan;
+-- handing it the book it just built avoids a second copy-and-sort.
+function Core.sellFrontSorted(sorted, opts)
   local rules = (opts and opts.rules) or (WAH.RULES and WAH.RULES.sellFront) or {}
-  local sorted = Core.sortedTiers(tiers)
   local total = Core.totalQuantity(sorted)
   if total <= 0 then return nil end
   local noiseMultiple = rules.noiseMultiple or 3
-  local median = Core.weightedPercentile(sorted, 0.5)
+  local median = Core.percentileOfSorted(sorted, 0.5)
   local filtered = {}
   local filteredTotal = 0
   for _, tier in ipairs(sorted) do
@@ -111,6 +121,10 @@ function Core.sellFront(tiers, opts)
     if cumulative >= target then return tier.p end
   end
   return filtered[#filtered].p
+end
+
+function Core.sellFront(tiers, opts)
+  return Core.sellFrontSorted(Core.sortedTiers(tiers), opts)
 end
 
 -- Largest quantity the player can actually buy under a price cap, a

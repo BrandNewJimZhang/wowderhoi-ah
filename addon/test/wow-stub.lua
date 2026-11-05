@@ -209,6 +209,7 @@ Settings = {
 -- GetItemInfo global is deliberately absent so the addon's shim is what runs.
 C_Item = {
   GetItemInfo = function(itemId)
+    bed.itemInfoCalls = (bed.itemInfoCalls or 0) + 1
     local info = bed.itemInfo[itemId] or {}
     return info.name, nil, nil, nil, nil, info.class or "Trade Goods", info.subClass or "Other",
       nil, nil, nil, info.vendorP or 0

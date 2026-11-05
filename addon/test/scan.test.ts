@@ -44,6 +44,34 @@ describe("forever replicate scan v4", () => {
     expect(lua.number("WowTest.savedCount")).toBeGreaterThan(0);
   });
 
+  it("sums listings that share a unit price into one ladder rung", () => {
+    const lua = auctionPage();
+    lua.runScan([
+      { itemId: 2589, name: "Linen", count: 5, buyout: 1000 },
+      { itemId: 2589, name: "Linen", count: 7, buyout: 1400 },
+      { itemId: 2589, name: "Linen", count: 3, buyout: 1800 }
+    ]);
+    // The scan aggregates rungs as rows arrive; two books at 200/unit are
+    // one rung of 12, not two entries the finish phase has to sort and merge.
+    expect(lua.number("WoWderhoiAH_ScanData.items[2589].tiers[1].p")).toBe(200);
+    expect(lua.number("WoWderhoiAH_ScanData.items[2589].tiers[1].q")).toBe(12);
+    expect(lua.number("WoWderhoiAH_ScanData.items[2589].tiers[2].p")).toBe(600);
+    expect(lua.number("WoWderhoiAH_ScanData.items[2589].tiers[2].q")).toBe(3);
+    expect(lua.number("#WoWderhoiAH_ScanData.items[2589].tiers")).toBe(2);
+  });
+
+  it("resolves item metadata once per session instead of once per scan", () => {
+    const lua = auctionPage();
+    const row = [{ itemId: 2589, name: "Linen", count: 10, buyout: 10000 }];
+    lua.runScan(row);
+    const afterFirst = lua.number("WowTest.itemInfoCalls or 0");
+    lua.exec("WowTest.advance(900)");
+    lua.runScan(row);
+    const afterSecond = lua.number("WowTest.itemInfoCalls or 0");
+    expect(afterFirst).toBeGreaterThan(0);
+    expect(afterSecond).toBe(afterFirst);
+  });
+
   it("keeps the top of the price ladder so a multi-unit purchase can be priced", () => {
     const lua = auctionPage();
     lua.runScan([
@@ -90,6 +118,54 @@ describe("forever replicate scan v4", () => {
     // would drag the sell median and every chart toward zero.
     expect(lua.eval("WoWderhoiAH_Series.markets['TestRealm|Alliance'].items[700] == nil")).toBe(true);
     expect(lua.number("WoWderhoiAH_Series.markets['TestRealm|Alliance'].items[701].sell[1]")).toBe(500);
+  });
+
+  it("counts the core's history samples without materializing chart points", () => {
+    const lua = auctionPage();
+    const scan = (sell: number) => lua.runScan([
+      { itemId: 2589, name: "Linen", count: 10, buyout: sell * 10 }
+    ]);
+    scan(1000);
+    lua.exec("WowTest.advance(900)");
+    scan(1050);
+    // The radar asks for a count per item; the chart asks for points. Both
+    // must agree on which retained points belong to the phase window.
+    expect(lua.number("WowTest.ns.historySamples(2589)"))
+      .toBe(lua.number("WowTest.ns.history(2589).samples"));
+  });
+
+  it("applies a phase override on the next call despite the phase cache", () => {
+    const lua = auctionPage();
+    lua.runScan([{ itemId: 2589, name: "Linen", count: 10, buyout: 10000 }]);
+    expect(lua.text("WowTest.ns.currentPhase()")).toBe("ignition");
+    lua.exec("WowTest.ns.settings.phaseOverride = 'wave'");
+    expect(lua.text("WowTest.ns.currentPhase()")).toBe("wave");
+  });
+
+  it("stores flow identity by owner, not by a concatenated key", () => {
+    const lua = auctionPage();
+    lua.runScan([
+      { itemId: 2589, name: "Linen", count: 10, buyout: 10000, owner: "Alice", timeLeft: 7200 }
+    ]);
+    expect(lua.number("WoWderhoiAH_Capture.items[2589].keys['Alice'][1000].q")).toBe(10);
+    expect(lua.number("WoWderhoiAH_Capture.items[2589].keys['Alice'][1000].t")).toBe(7200);
+  });
+
+  it("ignores a capture written before the owner-keyed shape", () => {
+    const lua = auctionPage();
+    // The old shape keyed flow by the string "owner|unitPrice". Treating it
+    // as owner -> price would iterate a number and error; the first scan
+    // after the upgrade must start a fresh baseline.
+    lua.exec(`WoWderhoiAH_Capture = {
+      v = WowTest.ns.PIPELINE_VERSION,
+      at = time(),
+      market = GetRealmName() .. "|" .. UnitFactionGroup(),
+      items = { [2589] = { keys = { ["Alice|1000"] = 100 }, t = { ["Alice|1000"] = 7200 }, total = 100 } }
+    }`);
+    lua.runScan([
+      { itemId: 2589, name: "Linen", count: 60, buyout: 6000, timeLeft: 6300 }
+    ]);
+    expect(lua.number("WoWderhoiAH_ScanData.items[2589].inferredSoldHigh")).toBe(0);
   });
 
   it("infers disappeared quantity as an interval when the same tier shrinks", () => {
@@ -175,17 +251,18 @@ describe("forever replicate scan v4", () => {
 
   it("does not skip a row when the per-frame budget boundary falls mid-book", () => {
     const lua = auctionPage();
-    // PROCESS_PER_FRAME is 200 and the stub clock never trips the time
-    // budget, so 250 rows span two OnUpdate calls. The old cursor advanced
-    // after the budget check and dropped row 201 at exactly this boundary.
-    const items = Array.from({ length: 250 }, (_, index) => ({
+    // PROCESS_PER_FRAME is the safety cap and the stub clock never trips the
+    // time budget, so 2500 rows span three OnUpdate calls. The old cursor
+    // advanced after the budget check and dropped the row at exactly this
+    // boundary.
+    const items = Array.from({ length: 2500 }, (_, index) => ({
       itemId: 10000 + index,
       name: `Item ${index}`,
       count: 1,
       buyout: 100 + index
     }));
     lua.runScan(items);
-    expect(countItems(lua)).toBe(250);
+    expect(countItems(lua)).toBe(2500);
   });
 
   it("does not consume a stale replicate count from an item search", () => {
