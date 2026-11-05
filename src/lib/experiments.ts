@@ -2,6 +2,7 @@
 // from your own actions. The plan is deliberately small — a few units at
 // a few price levels — so a wrong belief costs little and the fill times
 // are attributable to the price rather than to a market-wide shock.
+import { median } from "@/lib/median";
 
 export type ExperimentLevel = { price: number; qty: number };
 
@@ -45,14 +46,13 @@ export function experimentResults(
   return levels.map((level) => {
     const matched = rows.filter((trade) => Math.abs(trade.price - level.price) <= 0.5);
     const hours = matched
-      .map((trade) => (trade.realizedAt.getTime() - (trade.listedAt as Date).getTime()) / (60 * 60 * 1000))
-      .sort((left, right) => left - right);
+      .map((trade) => (trade.realizedAt.getTime() - (trade.listedAt as Date).getTime()) / (60 * 60 * 1000));
     return {
       price: level.price,
       qty: level.qty,
       filled: matched.length,
       units: matched.reduce((sum, trade) => sum + trade.qty, 0),
-      medianHours: hours.length > 0 ? hours[Math.ceil(hours.length / 2) - 1] : null
+      medianHours: hours.length > 0 ? median(hours) : null
     };
   });
 }
