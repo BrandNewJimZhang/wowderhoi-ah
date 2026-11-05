@@ -122,7 +122,7 @@ export default async function RecipesPage() {
             <Panel>
               <PanelHeader title="口径" />
               <div className="space-y-2 p-3 font-mono text-[11px] text-terminal-muted">
-                <p>成本 = 材料按当前建议卖价（没有则 NPC 价）；收入 = 成品建议卖价，扣 5% 手续费。</p>
+                <p>成本 = 材料按当前建议卖价；收入 = 成品建议卖价，扣 5% 手续费。没有在售行情的材料或成品计入「缺价」，该配方不计算，而不是按 NPC 价兜底。</p>
                 <p>约束 = 每专业每日制造次数、材料在售量、预算。LP 解向下取整，报告的净利按整数计划重算。</p>
                 <p>配方来自「无限图鉴 wuxianwow.com」的 1.60 客户端导出；产能是本终端配置，不是客户端事实。</p>
               </div>
