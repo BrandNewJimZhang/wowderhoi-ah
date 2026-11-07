@@ -52,4 +52,28 @@ describe("trader tooltip section", () => {
     `);
     expect(lua.tooltipText()).not.toContain("WoWderhoi AHelper");
   });
+
+  it("rejects a battle pet link and a link that only contains item:", () => {
+    const lua = auctionPage();
+    lua.exec(`
+      GameTooltip._lines = {}
+      GameTooltip._link = "|Hitem:4338:0:0:0|h[Mageweave Cloth]|h"
+      GameTooltip._itemName = "Mageweave Cloth"
+      GameTooltip:SetHyperlink("battlepet:123")
+    `);
+    expect(lua.tooltipText()).not.toContain("WoWderhoi AHelper");
+    lua.exec(`
+      GameTooltip._lines = {}
+      GameTooltip:SetHyperlink("prefix-item:4338")
+    `);
+    expect(lua.tooltipText()).not.toContain("WoWderhoi AHelper");
+  });
+
+  it("parses only anchored item links", () => {
+    const lua = auctionPage();
+    expect(lua.eval(`WowTest.ns.itemIdFromLink("spell:116")`)).toBeNull();
+    expect(lua.eval(`WowTest.ns.itemIdFromLink("prefix-item:4338")`)).toBeNull();
+    expect(lua.number(`WowTest.ns.itemIdFromLink("|Hitem:4338:0:0|h[Mageweave]|h")`)).toBe(4338);
+    expect(lua.number(`WowTest.ns.itemIdFromLink("|cffa335ee|Hitem:4338:0:0|h[Mageweave]|h")`)).toBe(4338);
+  });
 });

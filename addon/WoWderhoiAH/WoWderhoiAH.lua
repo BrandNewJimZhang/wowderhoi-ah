@@ -118,6 +118,19 @@ function WAH.coinString(amount)
   return GetCoinTextureString(amount)
 end
 
+-- Only an item link carries a trader panel. SetHyperlink receives the raw
+-- "item:id:..." form; GetItem returns the full "|Hitem:id:...|h[name]|h"
+-- form. Both are anchored, so a spell/unit/battlepet link, or a string that
+-- merely contains "item:" somewhere, is rejected. Pasted item links often
+-- carry a color prefix before |H, which the third form accepts.
+function WAH.itemIdFromLink(link)
+  if type(link) ~= "string" then return nil end
+  local id = link:match("^item:(%d+)")
+    or link:match("^|Hitem:(%d+)")
+    or link:match("^|c%x%x%x%x%x%x%x%x|Hitem:(%d+)")
+  return tonumber(id)
+end
+
 function WAH.itemIcon(itemId)
   if C_Item and C_Item.GetItemIconByID then
     local icon = C_Item.GetItemIconByID(itemId)

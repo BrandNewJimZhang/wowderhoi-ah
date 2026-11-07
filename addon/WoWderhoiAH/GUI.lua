@@ -93,18 +93,18 @@ local function appendTraderSection(tooltip, hyperlink)
   if tooltip ~= GameTooltip then return end
   if tooltip.wahAppended then return end
   if WAH.settings and not WAH.settings.tooltip then return end
-  local _, link = tooltip:GetItem()
   -- SetHyperlink serves spell and unit buttons too, and the client reuses
   -- one GameTooltip: after an item hover, a non-item hyperlink can still
   -- report that old item through GetItem(). Only a link that is itself an
   -- item may carry the trader section; otherwise the price panel appeared
   -- on talent and character buttons.
+  local itemId
   if hyperlink ~= nil then
-    if type(hyperlink) ~= "string" or not hyperlink:find("item:", 1, true) then return end
-    link = hyperlink
+    itemId = WAH.itemIdFromLink(hyperlink)
+  else
+    local _, link = tooltip:GetItem()
+    itemId = WAH.itemIdFromLink(link)
   end
-  if not link or not link:find("item:", 1, true) then return end
-  local itemId = tonumber(link:match("item:(%d+)"))
   if not itemId then return end
   lastTooltipItemId = itemId
   local scanned = currentItem(itemId)
@@ -744,7 +744,7 @@ SLASH_WOWDERHOIAHPRICE1 = "/wahprice"
 SlashCmdList["WOWDERHOIAHPRICE"] = function(input)
   local itemId
   if input and input ~= "" then
-    itemId = tonumber(input:match("item:(%d+)")) or tonumber(input)
+    itemId = WAH.itemIdFromLink(input) or tonumber(input)
   end
   if not itemId then
     local _, cursorItemId = GetCursorInfo()
