@@ -37,6 +37,9 @@
   (`replicateRequested`, `browseQuery`, `bought`, `commodityConfirmed`,
   `cancelled`).
 
+- The speculative `export type { Server }` re-export in `scripts/perf/host.ts`;
+  no caller imported it.
+
 ### Changed
 
 - `execQty`, `netProfit`, `netPerUnit` and `ladderPrice` are now

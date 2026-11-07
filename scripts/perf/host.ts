@@ -1,4 +1,4 @@
-import { createServer, type Server } from "node:net";
+import { createServer } from "node:net";
 import { execFileSync } from "node:child_process";
 import process from "node:process";
 
@@ -62,7 +62,3 @@ export function killTree(pid: number): boolean {
     return false;
   }
 }
-
-// Reference the imports above so they're not tree-shaken in type-checks
-// against future callers that pass a Server through.
-export type { Server };
