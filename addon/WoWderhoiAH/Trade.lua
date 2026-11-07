@@ -33,9 +33,11 @@ local lastEvaluation = nil
 local mode = "deals" -- "deals" | "actions" | "results"
 local searchState = nil
 local searching = nil -- "browse" | "list" | nil
--- The last browse query, kept so the server's answer can be ranked by name
--- instead of opening whichever row happened to be cheapest.
-local browseQuery = nil
+-- The server name-search fallback. One browse may be in flight; a second
+-- keystroke replaces `queued`, so an answer is never scored against a query
+-- that did not produce it. The response that lands while a newer query is
+-- waiting is discarded, not opened.
+local browse = nil -- { query = string, queued = string|nil }
 local pendingPurchase = nil -- a purchase awaiting AUCTION_HOUSE_PURCHASE_COMPLETED
 
 local function chatMessage(text)
@@ -625,6 +627,9 @@ function WAH.searchItem(itemId, name)
     name = info.itemName or name or tostring(itemId),
     commodity = info.isCommodity
   }
+  -- Opening an item resolves the name search: the browse that produced it
+  -- has no answer left to deliver.
+  browse = nil
   searching = "list"
   mode = "results"
   -- Drop the previous item's rows before the new response arrives: a stale
@@ -663,6 +668,19 @@ local function resolveFromScan(query)
   return best and { itemId = best.itemId, name = best.name } or nil
 end
 
+-- Start one browse and remember the query it was sent for. Any answer that
+-- arrives is ranked against this query, never against a newer text box.
+local function sendBrowseQuery(query)
+  browse = { query = query, queued = nil }
+  searching = "browse"
+  searchState = nil
+  mode = "results"
+  C_AuctionHouse.SendBrowseQuery({
+    searchString = query,
+    sorts = { { sortOrder = Enum.AuctionHouseSortOrder.Price, reverseSort = false } }
+  })
+end
+
 runSearch = function()
   if not trade then return end
   if WAH.scanRunning then
@@ -681,15 +699,13 @@ runSearch = function()
     return
   end
   -- Nothing in the scan matches: fall back to the server's own name search,
-  -- then open the result whose name is the closest match.
-  searching = "browse"
-  searchState = nil
-  mode = "results"
-  browseQuery = query
-  C_AuctionHouse.SendBrowseQuery({
-    searchString = query,
-    sorts = { { sortOrder = Enum.AuctionHouseSortOrder.Price, reverseSort = false } }
-  })
+  -- then open the result whose name is the closest match. Only one browse
+  -- may be in flight; a newer query waits for the answer to be discarded.
+  if browse then
+    browse.queued = query
+    return
+  end
+  sendBrowseQuery(query)
 end
 
 -- ============================== Frame =================================
@@ -948,12 +964,14 @@ tradeEvents:SetScript("OnEvent", function(_, event, payload, extra)
     if trade then trade:Hide() end
     searching = nil
     searchState = nil
+    browse = nil
     pendingPurchase = nil
     return
   end
   if event == "AUCTION_HOUSE_BROWSE_FAILURE" then
     if searching then
       searching = nil
+      browse = nil
       chatMessage(L.SEARCH_FAILED)
     end
     return
@@ -993,6 +1011,15 @@ tradeEvents:SetScript("OnEvent", function(_, event, payload, extra)
   -- ranking opens the one the player meant, and a page where nothing
   -- matches is a failure rather than an arbitrary first row.
   if searching == "browse" and not searchState then
+    -- This answer belongs to an older query: drop it and send the text the
+    -- player has typed since. Scoring it against the new query is the race
+    -- that opened the wrong item.
+    if browse and browse.queued then
+      local nextQuery = browse.queued
+      sendBrowseQuery(nextQuery)
+      return
+    end
+    local currentQuery = browse and browse.query
     local candidates = {}
     for _, result in pairs(C_AuctionHouse.GetBrowseResults() or {}) do
       local itemKey = result.itemKey
@@ -1008,7 +1035,8 @@ tradeEvents:SetScript("OnEvent", function(_, event, payload, extra)
         candidates[#candidates + 1] = candidate
       end
     end
-    local best = WAH.Core.rankSearch(candidates, browseQuery)[1]
+    local best = WAH.Core.rankSearch(candidates, currentQuery)[1]
+    browse = nil
     if not best then
       searching = nil
       chatMessage(L.SEARCH_FAILED)

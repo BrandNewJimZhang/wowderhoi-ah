@@ -77,4 +77,56 @@ describe("browse fallback", () => {
     `);
     expect(targetItemId(lua)).toBe(222);
   });
+
+  it("discards an in-flight answer and sends the newest query", () => {
+    const lua = loadAddon();
+    lua.setScan([LINEN]);
+    lua.openTab();
+    lua.exec(`
+      WowTest.sentBrowse = {}
+      C_AuctionHouse.SendBrowseQuery = function(query)
+        WowTest.sentBrowse[#WowTest.sentBrowse + 1] = query.searchString
+      end
+      WowTest.ah.itemKeys[111] = { itemID = 111, itemName = "Arcane Crystal Growth", isCommodity = false }
+      WowTest.ah.itemKeys[222] = { itemID = 222, itemName = "Arcane Crystal", isCommodity = false }
+      WowTest.ah.browse = {
+        { itemKey = C_AuctionHouse.MakeItemKey(111), minPrice = 100 },
+        { itemKey = C_AuctionHouse.MakeItemKey(222), minPrice = 500 }
+      }
+      local trade = WowTest.ns.tradeFrame()
+      trade.searchBox:SetText("arcane crystal growth")
+      WowTest.clickButton(WowTest.ns.L.SEARCH)
+      trade.searchBox:SetText("arcane crystal")
+      WowTest.clickButton(WowTest.ns.L.SEARCH)
+    `);
+    // The second search is queued, not sent: only one browse is in flight.
+    expect(lua.value("WowTest.sentBrowse")).toEqual(["arcane crystal growth"]);
+    // The first answer arrives, is discarded, and the queued query is sent.
+    lua.exec("WowTest.fireEvent('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED')");
+    expect(lua.value("WowTest.sentBrowse")).toEqual(["arcane crystal growth", "arcane crystal"]);
+    // The second answer is scored against the second query: exact "Arcane
+    // Crystal" wins over the prefix, where the stale query would have
+    // opened "Arcane Crystal Growth".
+    lua.exec("WowTest.fireEvent('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED')");
+    expect(targetItemId(lua)).toBe(222);
+  });
+
+  it("fails instead of opening an arbitrary row when nothing matches", () => {
+    const lua = loadAddon();
+    lua.setScan([LINEN]);
+    lua.openTab();
+    lua.exec(`
+      C_AuctionHouse.SendBrowseQuery = function() end
+      WowTest.ah.itemKeys[111] = { itemID = 111, itemName = "Arcane Crystal", isCommodity = false }
+      WowTest.ah.browse = {
+        { itemKey = C_AuctionHouse.MakeItemKey(111), minPrice = 100 }
+      }
+      local trade = WowTest.ns.tradeFrame()
+      trade.searchBox:SetText("zzzz")
+      WowTest.clickButton(WowTest.ns.L.SEARCH)
+      WowTest.fireEvent('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED')
+    `);
+    expect(lua.eval("WowTest.searchQuery == nil")).toBe(true);
+    expect(lua.anyChat("搜索失败")).toBe(true);
+  });
 });
