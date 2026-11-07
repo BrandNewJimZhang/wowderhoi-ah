@@ -30,6 +30,9 @@
 
 - `Core.searchScore` is module-internal in both runtimes; `rankSearch` is
   the only public search entry point.
+- The unused `Core.executableQty` helper and write-only test-stub state
+  (`replicateRequested`, `browseQuery`, `bought`, `commodityConfirmed`,
+  `cancelled`).
 
 ### Changed
 
@@ -69,6 +72,10 @@
   opening an arbitrary first row.
 - Bare numeric queries parse identically in both runtimes: `0x10` searches
   names instead of silently addressing item 16 in one of them.
+- An empty radar names the risk model when it refused every gate-passer,
+  instead of reporting the refusals as an insufficient purse.
+- `/wahdiag` counts ScanData/Capture assembly in the finish time, and the
+  finish-frame gate asserts the mean and maximum of the sliced frames.
 - The fill model no longer overstates the chance of a listing on a book
   whose persisted ladder was truncated; unseen units count as queue.
 - The trader tooltip section and its chart no longer appear on talent,
