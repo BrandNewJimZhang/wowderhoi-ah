@@ -1074,7 +1074,12 @@ end
 -- "4338" and "item:4338" address an item directly; anything else is a
 -- whitespace-tokenised name query.
 function Core.parseSearchQuery(raw)
-  local text = (raw or ""):match("^%s*(.-)%s*$"):lower()
+  -- The terminal's parser treats Unicode spaces as separators. A Chinese
+  -- IME emits U+3000 (full-width space) and pasted names carry U+00A0
+  -- (no-break space); Lua's `%s` is ASCII-only, so without this the same
+  -- query tokenised alone in game and matched in the terminal.
+  local text = (raw or ""):gsub("\227\128\128", " "):gsub("\194\160", " ")
+  text = text:match("^%s*(.-)%s*$"):lower()
   if text == "" then return nil end
   -- Bare digits only. `tonumber` would also accept hex, exponents and
   -- fractions, which the terminal's /^\d+$/ rejects; "0x10" must search
