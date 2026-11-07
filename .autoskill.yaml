@@ -1,0 +1,11 @@
+ship:
+  gates:
+    - name: tests
+      run: npm test
+      timeout_seconds: 1800
+    - name: typecheck
+      run: npx tsc --noEmit
+      timeout_seconds: 600
+    - name: lint
+      run: npx eslint .
+      timeout_seconds: 600
