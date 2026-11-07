@@ -94,6 +94,12 @@
   item through `GetItem()`, which is no longer trusted. Link parsing is
   anchored, so a battle-pet link or a string merely containing `item:` is
   rejected too.
+- The radar omits "0 more were refused by the risk model" when that count
+  is zero, matching the terminal's message instead of printing a fourth,
+  empty cause.
+- The desktop "下一步行动" empty state reuses the reason-aware message from
+  "可执行机会", so an unfunded purse or exposure cap is not reported as
+  "nothing passed the gates".
 
 ## v0.6.0 — 2026-11-05
 

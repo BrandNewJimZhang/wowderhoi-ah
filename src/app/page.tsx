@@ -117,7 +117,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
             <PanelHeader title="下一步行动" action={<span className="font-mono text-xs text-terminal-muted">共享决策核心 · 条件策略</span>} />
             <div className="space-y-2 p-3 font-mono text-xs">
               {evaluation.actions.length === 0 && (
-                <div className="text-terminal-muted">当前没有通过门槛的行动；先扫描，或等待阶段变化。</div>
+                <div className="text-terminal-muted">{emptyDealsMessage}</div>
               )}
               {evaluation.actions.slice(0, 8).map((action) => (
                 <div key={`${action.kind}-${action.itemId}`} className="flex flex-wrap items-center justify-between gap-2 border-b border-terminal-border/60 pb-1 last:border-0">

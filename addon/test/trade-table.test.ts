@@ -220,5 +220,7 @@ describe("rainy-day radar", () => {
     // daily share just cannot reach it.
     expect(lua.anyChat("钱包不足 1 条")).toBe(true);
     expect(lua.anyChat("盘口 1 条")).toBe(false);
+    // A zero risk-model count is not a fourth cause and must not be printed.
+    expect(lua.anyChat("另有 0 条")).toBe(false);
   });
 });

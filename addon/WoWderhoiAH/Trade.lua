@@ -272,9 +272,14 @@ local function refreshRadar()
       -- Rows the risk model refuses never reach `rows`, so their count is
       -- the excluded.sizing gate rather than an unfunded cause.
       local unfunded = lastEvaluation.diagnostics and lastEvaluation.diagnostics.unfunded or {}
-      chatMessage(string.format(L.RADAR_UNFUNDED, considered,
-        unfunded.purse or 0, unfunded.exposure or 0, unfunded.depth or 0,
-        sizing))
+      local message = string.format(L.RADAR_UNFUNDED, considered,
+        unfunded.purse or 0, unfunded.exposure or 0, unfunded.depth or 0)
+      -- A risk-model count of zero is not a cause; saying "0 more" reads as
+      -- a fourth bucket that happened to be empty.
+      if sizing > 0 then
+        message = message .. string.format(L.RADAR_UNFUNDED_SIZING, sizing)
+      end
+      chatMessage(message)
     end
   else
     chatMessage(string.format(L.RADAR_FOUND, #deals,
