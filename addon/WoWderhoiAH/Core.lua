@@ -671,6 +671,13 @@ function Core.evaluate(input)
     or Core.phaseFor(ageHours, breadth, rules.phaseBoundaries)
   local historyRule = (rules.phaseHistory or {})[phase] or { windowHours = 0, minSamples = 0 }
   local typeRules = ((rules.marketTypeRules or {})[phase]) or {}
+  -- The per-unit ceiling a gate applies: the listing net of the fee, minus
+  -- the phase's minimum unit profit. The buy action's abort price must be
+  -- this same marginal; break-even would let a player pay a price the gate
+  -- already rejected.
+  local function unitPriceCap(listP, marketRules)
+    return listP * (1 - feeRate) - ((marketRules and marketRules.minUnitProfit) or 0)
+  end
   local bagSlots = capacity.bagSlots or 20
   local stackSize = capacity.stackSize or 20
   local bagCapacity = bagSlots * stackSize
@@ -769,7 +776,7 @@ function Core.evaluate(input)
         -- resell at the live sell front. A historical median is context for
         -- the trend, never the reference a spread is measured against.
         local spread = sellP and sellP > 0 and (sellP - minPrice) / sellP or 0
-        local priceCap = listP * (1 - feeRate) - (marketRules and marketRules.minUnitProfit or 0)
+        local priceCap = unitPriceCap(listP, marketRules)
         local qty, cost, average = Core.executableQtySorted(tiers, priceCap, budget, bagCapacity)
         local net = qty > 0 and Core.netIfSold(listP, qty, cost / qty, feeRate) or 0
         if listings < ((marketRules and marketRules.minListings) or 1) then
@@ -922,12 +929,15 @@ function Core.evaluate(input)
         reason = row.reason
       }
     else
+      -- Whole copper, rounded down: paying one copper above the cap already
+      -- breaks the unit-profit floor the gate applied.
+      local abortPrice = math.floor(unitPriceCap(row.listP, typeRules[row.marketType] or typeRules.item))
       actions[#actions + 1] = {
         kind = "buy",
         itemId = row.itemId,
         name = row.name,
         qty = row.allocQty,
-        maxUnitPrice = round(row.listP * (1 - feeRate)),
+        maxUnitPrice = abortPrice,
         unitPrice = row.allocUnitPrice,
         expectedNet = row.allocNet,
         netPerMinute = row.netPerMinute or 0,
@@ -939,7 +949,7 @@ function Core.evaluate(input)
         exit = "auction",
         stop = {
           kind = "abort",
-          ifPriceAbove = round(row.listP * (1 - feeRate))
+          ifPriceAbove = abortPrice
         },
         reason = row.reason
       }

@@ -213,7 +213,11 @@ describe("Core.evaluate through fengari", () => {
     const sell = output.actions.find((action) => action.kind === "sell");
     expect(buy).toBeDefined();
     expect(sell).toBeDefined();
-    expect(buy && buy.kind === "buy" && buy.stop?.ifPriceAbove).toBeGreaterThan(0);
+    // The abort price is the gate's own unit-price cap, not break-even:
+    // wave commodity requires 75 copper of unit profit, so 999 * 0.95 - 75.
+    // A stop at 999 * 0.95 would let the player buy a price the gate rejects.
+    expect(buy && buy.kind === "buy" && buy.maxUnitPrice).toBe(874);
+    expect(buy && buy.kind === "buy" && buy.stop?.ifPriceAbove).toBe(874);
     expect(sell && sell.kind === "sell" && sell.price).toBe(999);
     // The sell plan nets the price the listing will actually carry (the
     // front minus the undercut), not the raw front.

@@ -79,6 +79,10 @@
 
 ### Fixed
 
+- A buy action's displayed `maxUnitPrice` and `stop.ifPriceAbove` are the
+  gate's own unit-price cap (`listP · (1 − fee) − minUnitProfit`), not the
+  break-even price. The old value let a conditional plan accept a price the
+  phase gate had already rejected.
 - A second search typed while a browse is in flight is queued: the older
   answer is discarded and the newest query is sent, instead of the first
   response being scored against the new text.
