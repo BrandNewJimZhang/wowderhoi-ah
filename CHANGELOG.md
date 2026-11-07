@@ -5,12 +5,15 @@
 ### Added
 
 - `/wahdiag` splits a scan into wait, client API, Lua, finish and save
-  milliseconds and prints their shares; the finish phase now runs across
-  frames and the SavedVariables write is deferred by one frame.
+  milliseconds and prints their shares, counting the per-item `GetItemInfo`
+  lookup as client time; the finish phase now runs across frames and the
+  SavedVariables write is deferred by one frame.
 - `Core.allocate` reports `row.unfunded` (`kelly`, `exposure`, `purse`,
   `depth`) and `diagnostics.unfunded`, and publishes the funded rows as
-  `output.opportunities`. Both UIs render that list and explain an empty
-  one from the same diagnostics instead of guessing the purse.
+  `output.opportunities`. A remaining share that cannot buy one unit is a
+  `purse` cause, not a book-depth one. Both UIs render that list and
+  explain an empty one from the same diagnostics instead of guessing the
+  purse.
 - A shared search fixture (`data/search-parity.json`) runs the same cases
   through `Core.rankSearch` and `src/lib/search.ts`.
 - Scans stamp `historySamples` on each priced item, and the importer,

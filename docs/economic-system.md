@@ -40,8 +40,10 @@
   （深度感知）、P5、P10、在售量、挂单数、卖家数、卖家是否可见、`ownerVisible`、
   `selfExclusion`（`owner` / `owned` / `none`，即自有挂单的识别通道）、被排除的自有
   挂单数与件数（`selfListings`/`selfQty`）、卖家集中度（`sellerHHI`、`topSellerShare`）、
-  竞价单数、最高竞价、top-8 盘口阶梯、到期桶（soon/mid/late）、推断消失量区间
-  （`inferredSoldLow`/`inferredSoldHigh`）、供给增速。
+  竞价单数、最高竞价、top-8 盘口阶梯与 `tierTruncated`（阶梯不止八档时为 true，
+  核心据此把不可见深度计入队列）、到期桶（soon/mid/late）、推断消失量区间
+  （`inferredSoldLow`/`inferredSoldHigh`）、供给增速、扫描时按阶段窗口统计的
+  `historySamples`（终端直接使用；没有该字段的旧快照回退到卖价样本数）。
 
   自有挂单不进入盘口、卖家数、供给与消失量：卖价前沿必须是别人的报价，否则卖出页会
   建议你压自己 1 铜，`minSellers` 也会被你自己满足。`owner` 带 `-Realm` 后缀时按 `-`
@@ -73,10 +75,13 @@ t, min, sell, q, e
 
 ### 2.3 `WoWDerhoiAH_Capture`
 
-上一次扫描的身份表，按卖家分层：`owner（隐藏时为 ""）-> unitPrice -> { q = 数量, t = 最短剩余时间 }`。
-按卖家分组而不是拼接 `owner|price` 字符串，是因为扫描每行都要写这张表——拼字符串
-意味着每条挂单一次浮点转字符串和一次长键哈希。`shape = "owner-price"` 标记新结构；
-旧结构的身份表无法匹配，第一次扫描直接从空基线开始，不崩溃。
+上一次扫描的身份表，按卖家分层：`owner（隐藏时为 ""）-> unitPrice -> 打包数`。
+打包数是一个 double：`quantity * 2^20 + 时间码`，整数部分为数量，低 20 位是最短
+剩余时间（0 表示未知）。按卖家分组而不是拼接 `owner|price` 字符串，是因为扫描每行
+都要写这张表——拼字符串意味着每条挂单一次浮点转字符串和一次长键哈希；每个
+`(卖家, 单价)` 存一张 `{ q, t }` 小表则要在 17 万行扫描里分配同样多的表。
+`shape = "owner-price-packed"` 标记该结构；旧的 `owner-price` 身份表无法匹配，
+第一次扫描直接从空基线开始，不崩溃。
 
 相邻扫描据此给出消失量区间：
 
@@ -409,7 +414,8 @@ f* = p − (1 − p) / b,  b = 盈利 / 亏损
 因为少买只会吃到便宜的档位；沿用全深度均价会同时低估利润、高估占用资金。
 
 `Core.allocate` 只产生两个输出：每条候选行的 `unfunded` 原因
-（`kelly | exposure | purse | depth`）与汇总的 `diagnostics.unfunded`；真正得到铜板的行
+（`kelly | exposure | purse | depth`；`kelly` 只在直接以未筛行调用 `allocate` 时出现，
+`evaluate` 已把零比例行计入 `excluded.sizing`）与汇总的 `diagnostics.unfunded`；真正得到铜板的行
 组成 `output.opportunities`。游戏内雷达、终端“可执行机会”和“预算内分配”只渲染
 `opportunities`，空态必须引用 `diagnostics` 说明具体原因，不得把所有零分配都解释成
 钱包不足。
