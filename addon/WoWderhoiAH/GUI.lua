@@ -814,10 +814,27 @@ SlashCmdList["WOWDERHOIAHDIAG"] = function(input)
   diagLine(string.format("series: %d points across %d items",
     points, market and (function() local n = 0 for _ in pairs(market.items) do n = n + 1 end return n end)() or 0))
   local stats = WAH.lastScanStats
-  diagLine(string.format("last scan: %d rows | wait %.0f ms | process %.0f ms | finish %.0f ms | save %.0f ms",
+  diagLine(string.format(
+    "last scan: %d rows | wait %.0f ms | api %.0f ms | lua %.0f ms | finish %.0f ms | save %.0f ms",
     stats and stats.rows or 0, stats and stats.waitMs or 0,
-    stats and stats.processMs or 0, stats and stats.finishMs or 0,
-    stats and stats.saveMs or 0))
+    stats and stats.apiMs or 0, stats and stats.luaMs or 0,
+    stats and stats.finishMs or 0, stats and stats.saveMs or 0))
+  -- A single "process" number could not answer whether the scan was slow in
+  -- the client's replicate calls or in our own aggregation. The split does;
+  -- the shares make the answer readable without arithmetic in the head.
+  local waitMs = stats and stats.waitMs or 0
+  local finishMs = stats and stats.finishMs or 0
+  local saveMs = stats and stats.saveMs or 0
+  local totalMs = waitMs + (stats and stats.apiMs or 0) + (stats and stats.luaMs or 0)
+    + finishMs + saveMs
+  local function share(value)
+    if totalMs <= 0 then return 0 end
+    return math.floor(value / totalMs * 100 + 0.5)
+  end
+  diagLine(string.format(
+    "scan time split: api %d%% | lua %d%% | finish %d%% | save %d%% (wait %d%%)",
+    share(stats and stats.apiMs or 0), share(stats and stats.luaMs or 0),
+    share(finishMs), share(saveMs), share(waitMs)))
   diagLine(string.format("capture tiers: %d items",
     (function() local n = 0 for _ in pairs(WoWderhoiAH_Capture and WoWderhoiAH_Capture.items or {}) do n = n + 1 end return n end)()))
   diagLine(string.format("SaveAddOns: %s", C_AddOns and C_AddOns.SaveAddOns and "available" or "missing"))

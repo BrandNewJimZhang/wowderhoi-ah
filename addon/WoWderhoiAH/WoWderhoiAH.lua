@@ -334,12 +334,18 @@ local function recordAuction(index)
   -- level, levelType, minBid, minIncrement, buyoutPrice, bidAmount,
   -- highBidder, bidderFullName, owner, ownerFullName, saleStatus, itemID,
   -- hasAllInfo.
+  --
+  -- Only these two client calls are counted as API time. Everything after
+  -- them is our own aggregation; /wahdiag subtracts apiMs from processMs to
+  -- report the two separately.
+  local apiStart = debugprofilestop()
   local name, _, count, quality, _, _, _, _, _, buyoutPrice, bidAmount, _, _,
     owner, ownerFullName, _, itemId = C_AuctionHouse.GetReplicateItemInfo(index)
-  if not (itemId and name) then return end
-  local seller = owner or ownerFullName
   local timeLeft = C_AuctionHouse.GetReplicateItemTimeLeft
     and timeLeftSeconds(C_AuctionHouse.GetReplicateItemTimeLeft(index)) or nil
+  scanState.apiMs = (scanState.apiMs or 0) + (debugprofilestop() - apiStart)
+  if not (itemId and name) then return end
+  local seller = owner or ownerFullName
 
   local entry = scanState.itemsById[itemId]
   if not entry then
@@ -676,6 +682,7 @@ end
 local function finishScan(totalAuctions)
   local finishStart = debugprofilestop()
   local processMs = scanState.processMs or 0
+  local apiMs = scanState.apiMs or 0
   local waitMs = scanState.waitMs or 0
   local nowTs = time()
   local market = ensureSeries()
@@ -834,10 +841,13 @@ local function finishScan(totalAuctions)
   local saveStart = debugprofilestop()
   WAH.flush()
   -- Where the time went. /wahdiag prints this; without it a "slow scan"
-  -- report cannot be told apart from a slow server response.
+  -- report cannot be told apart from a slow server response, a slow client
+  -- call or our own Lua work.
   WAH.lastScanStats = {
     rows = totalAuctions or 0,
     waitMs = waitMs,
+    apiMs = apiMs,
+    luaMs = math.max(0, processMs - apiMs),
     processMs = processMs,
     finishMs = finishMs,
     saveMs = debugprofilestop() - saveStart
@@ -906,6 +916,7 @@ local function startScan()
     itemsById = {},
     processing = false,
     processMs = 0,
+    apiMs = 0,
     requestAt = debugprofilestop(),
     capture = previousCapture()
   }
