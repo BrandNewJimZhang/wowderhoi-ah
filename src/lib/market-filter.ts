@@ -21,6 +21,20 @@ export type MarketView = {
 
 export const MARKET_PAGE_SIZE = 50;
 
+// Serializes a view back into URL params. The default column is written
+// only after the player chose it: without the flag the table cannot tell a
+// default from a click, and clicking the default column while searching
+// would not survive the next render.
+export function buildMarketQuery(view: Pick<MarketView, "query" | "category" | "sortKey" | "sortExplicit" | "sortAsc" | "page">): string {
+  const params = new URLSearchParams();
+  if (view.query) params.set("q", view.query);
+  if (view.category) params.set("cat", view.category);
+  if (view.sortExplicit) params.set("sort", view.sortKey);
+  if (view.sortAsc) params.set("dir", "asc");
+  if (view.page > 1) params.set("page", String(view.page));
+  return params.toString();
+}
+
 // Parses URL search params into a validated table view; unknown or
 // malformed values fall back to defaults instead of leaking into queries.
 export function parseMarketView(params: Record<string, string | string[] | undefined>): MarketView {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MarketSignal } from "@/lib/analytics";
-import { filterSortSignals, paginate, parseMarketView } from "@/lib/market-filter";
+import { buildMarketQuery, filterSortSignals, paginate, parseMarketView } from "@/lib/market-filter";
 
 function makeSignal(partial: Partial<MarketSignal> & Pick<MarketSignal, "itemId" | "name">): MarketSignal {
   return {
@@ -137,6 +137,37 @@ describe("parseMarketView", () => {
 
   it("uses the first value when a param repeats", () => {
     expect(parseMarketView({ q: ["a", "b"], sort: ["sellRef", "sellPrice"] })).toMatchObject({ query: "a", sortKey: "sellRef" });
+  });
+});
+
+describe("buildMarketQuery", () => {
+  it("omits the default column while no column was chosen", () => {
+    // parseMarketView names spreadPercent as the default; writing it back
+    // without the flag would turn the next request into an explicit sort
+    // and silently disable relevance ranking for the search.
+    expect(buildMarketQuery(parseMarketView({ q: "linen" }))).toBe("q=linen");
+  });
+
+  it("round-trips an explicit default column", () => {
+    const view = {
+      ...parseMarketView({ q: "linen" }),
+      sortKey: "spreadPercent" as const,
+      sortExplicit: true,
+      sortAsc: true
+    };
+    const search = buildMarketQuery(view);
+    expect(search).toBe("q=linen&sort=spreadPercent&dir=asc");
+    expect(parseMarketView(Object.fromEntries(new URLSearchParams(search)))).toMatchObject({
+      query: "linen",
+      sortKey: "spreadPercent",
+      sortExplicit: true,
+      sortAsc: true
+    });
+  });
+
+  it("writes a page only when it is not the first", () => {
+    expect(buildMarketQuery(parseMarketView({}))).toBe("");
+    expect(buildMarketQuery(parseMarketView({ page: "3" }))).toBe("page=3");
   });
 });
 

@@ -7,7 +7,7 @@ import { useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { MarketSignal } from "@/lib/analytics";
-import type { MarketView, SignalSortKey } from "@/lib/market-filter";
+import { buildMarketQuery, type MarketView, type SignalSortKey } from "@/lib/market-filter";
 import { formatPercent } from "@/lib/utils";
 import { qualityColorClass } from "@/lib/quality";
 import { Coins } from "@/components/coins";
@@ -44,14 +44,7 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
   // Rebuild params from the server-provided view so the URL stays the
   // single source of table state; `page` resets on any other change.
   const apply = (patch: Partial<MarketView> & { page?: number }) => {
-    const next = { ...view, page: 1, ...patch };
-    const params = new URLSearchParams();
-    if (next.query) params.set("q", next.query);
-    if (next.category) params.set("cat", next.category);
-    if (next.sortKey !== "spreadPercent") params.set("sort", next.sortKey);
-    if (next.sortAsc) params.set("dir", "asc");
-    if (next.page > 1) params.set("page", String(next.page));
-    const search = params.toString();
+    const search = buildMarketQuery({ ...view, page: 1, ...patch });
     router.replace(`${pathname}${search ? `?${search}` : ""}` as Parameters<typeof router.replace>[0], { scroll: false });
   };
 
@@ -61,10 +54,20 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
     debounceRef.current = setTimeout(() => apply({ query: value }), 300);
   };
 
+  // A query with no clicked column is sorted by relevance, not by the
+  // default key the view still names; marking that key would point at an
+  // order the server did not apply.
+  const relevanceActive = view.query !== "" && !view.sortExplicit;
   const toggleSort = (key: SignalSortKey) => {
-    apply(key === view.sortKey ? { sortAsc: !view.sortAsc } : { sortKey: key, sortAsc: false });
+    if (key === view.sortKey && view.sortExplicit) {
+      apply({ sortAsc: !view.sortAsc });
+    } else {
+      // Choosing a column, including the default one, is an explicit sort
+      // and must be written to the URL; otherwise a search keeps winning.
+      apply({ sortKey: key, sortAsc: false, sortExplicit: true });
+    }
   };
-  const sortMark = (key: SignalSortKey) => (key === view.sortKey ? (view.sortAsc ? " ▲" : " ▼") : "");
+  const sortMark = (key: SignalSortKey) => (!relevanceActive && key === view.sortKey ? (view.sortAsc ? " ▲" : " ▼") : "");
   const inputClass = "border border-terminal-border bg-terminal-panel2 px-2 py-1 text-slate-100 focus:outline-none";
 
   if (totalCount === 0) {
@@ -155,7 +158,7 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
         </table>
       </div>
       <div className="border-t border-terminal-border px-3 py-2 font-mono text-[10px] text-terminal-muted">
-        价差% = (建议卖价 − 最低价) / 建议卖价 · 趋势% = 相对阶段窗口的建议卖价中位 · 环比% = 相对该物品上次有报价扫描的建议卖价（中间扫描无货时跨过） · 已下架（排在最后）= 最近一次扫描已无该物品挂单
+        价差% = (建议卖价 − 最低价) / 建议卖价 · 趋势% = 相对阶段窗口的建议卖价中位 · 环比% = 相对该物品上次有报价扫描的建议卖价（中间扫描无货时跨过） · 已下架（排在最后）= 最近一次扫描已无该物品挂单 · 搜索未选列时按相关度排序
       </div>
     </div>
   );
