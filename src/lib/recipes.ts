@@ -18,7 +18,7 @@ export type DatasetRecipe = {
   products: Array<{ itemId: number; name: string; qty: number; quality?: number; ilvl?: number }>;
 };
 
-export type RecipeDataset = {
+type RecipeDataset = {
   source: string;
   fetchedAt: string;
   total: number;
@@ -36,7 +36,7 @@ export function loadRecipeDataset(): RecipeDataset {
 
 // One mapper for both shapes: the committed dataset and the imported table
 // carry the same fields, so a second mapping is a drift risk, not a layer.
-export type RecipeSourceRow = {
+type RecipeSourceRow = {
   id: number;
   name: string;
   profession: string;
@@ -66,7 +66,7 @@ export function recipeToLp(recipe: RecipeSourceRow): LpRecipe {
   };
 }
 
-export type RecipeProjection = {
+type RecipeProjection = {
   id: number;
   name: string;
   profession: string;

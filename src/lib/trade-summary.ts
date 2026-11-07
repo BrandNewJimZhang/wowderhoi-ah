@@ -4,7 +4,7 @@
 // stay in the ledger and stay labelled, but they are guesses: counting them
 // as realized cash or as calibration labels overstates both the P&L and the
 // quality of the evidence.
-export type TradeLike = { pnl: number; fee: number; inferred: boolean };
+type TradeLike = { pnl: number; fee: number; inferred: boolean };
 
 // One label per sale channel. The portfolio table printed the raw journal
 // identifier ("auction"/"vendor") while the review page translated it, so
@@ -18,7 +18,7 @@ export function tradeChannelLabel(channel: string): string {
   return TRADE_CHANNEL_LABELS[channel] ?? channel;
 }
 
-export type TradeSummary = {
+type TradeSummary = {
   confirmedRealized: number;
   inferredRealized: number;
   confirmedFees: number;

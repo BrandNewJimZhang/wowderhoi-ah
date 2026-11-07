@@ -6,7 +6,7 @@ import { SCAN_PIPELINE_VERSION } from "@/lib/market-rules";
 // Quality index -> name mapping shared with the perf fixtures generator.
 export const QUALITY_NAMES = ["poor", "common", "uncommon", "rare", "epic", "legendary"] as const;
 
-export type AddonTier = { p: number; q: number };
+type AddonTier = { p: number; q: number };
 
 type AddonMarketType = "commodity" | "item";
 
@@ -58,7 +58,7 @@ export type AddonScanItem = {
   expiring: { soon: number; mid: number; late: number };
 };
 
-export type AddonScan = {
+type AddonScan = {
   scannedAt: Date;
   server: string;
   faction: string;

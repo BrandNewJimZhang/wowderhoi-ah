@@ -25,15 +25,15 @@ export type JournalEvent = {
   censored?: boolean;
 };
 
-export type JournalBook = {
+type JournalBook = {
   key: string;
   events: JournalEvent[];
   dropped: number;
 };
 
-export type JournalLot = { qty: number; unitCost: number; at: number };
+type JournalLot = { qty: number; unitCost: number; at: number };
 
-export type JournalTrade = {
+type JournalTrade = {
   t: number;
   itemId: number | null;
   qty: number;
@@ -53,7 +53,7 @@ export type JournalTrade = {
   censored: boolean;
 };
 
-export type ReplayError = {
+type ReplayError = {
   t: number;
   kind: string;
   itemId?: number;

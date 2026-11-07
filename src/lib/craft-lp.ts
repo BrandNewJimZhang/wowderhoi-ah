@@ -14,7 +14,7 @@ export type LpRecipe = {
   products: Array<{ itemId: number; qty: number }>;
 };
 
-export type ProductionOptions = {
+type ProductionOptions = {
   prices: Map<number, number>; // sell front per item, copper
   capacity: Record<string, number>; // profession -> daily craft slots
   materialSupply?: Map<number, number>;
@@ -24,7 +24,7 @@ export type ProductionOptions = {
   preferGreedy?: boolean;
 };
 
-export type ProductionRow = {
+type ProductionRow = {
   recipe: LpRecipe;
   unitCost: number;
   unitRevenue: number;

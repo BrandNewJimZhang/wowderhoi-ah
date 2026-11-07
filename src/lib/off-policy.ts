@@ -22,9 +22,9 @@ export type RealizedTrade = {
   inferred?: boolean;
 };
 
-export type TargetPolicy = (decision: LoggedDecision) => boolean;
+type TargetPolicy = (decision: LoggedDecision) => boolean;
 
-export type PolicyEstimate = {
+type PolicyEstimate = {
   estimate: number; // weighted mean P&L of matched trades
   matched: number;
   decisions: number;
@@ -77,7 +77,7 @@ export function evaluatePolicy(
   };
 }
 
-export type DecayBucket = {
+type DecayBucket = {
   start: Date;
   end: Date;
   count: number;
@@ -85,7 +85,7 @@ export type DecayBucket = {
   winRate: number;
 };
 
-export type DecayReport = {
+type DecayReport = {
   buckets: DecayBucket[];
   decaying: boolean;
   reason: string | null;

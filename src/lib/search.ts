@@ -4,7 +4,7 @@
 // rules themselves cannot be shared across languages, so the fixture is the
 // contract instead of a second prose copy that drifts.
 
-export type ParsedSearchQuery = {
+type ParsedSearchQuery = {
   text: string;
   // A numeric query or an item hyperlink id addresses one item directly.
   id: number | null;
@@ -13,7 +13,7 @@ export type ParsedSearchQuery = {
   tokens: string[];
 };
 
-export type SearchCandidate = {
+type SearchCandidate = {
   itemId: number;
   name: string;
   // A book the player can buy from outranks a bid-only observation at the

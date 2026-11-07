@@ -5,14 +5,14 @@
 import { QUALITY_NAMES } from "@/lib/addon-scan";
 import { SCAN_PIPELINE_VERSION } from "@/lib/market-rules";
 
-export type SnapshotPoint = {
+type SnapshotPoint = {
   minPrice: number;
   marketPrice: number;
   quantity: number;
   numAuctions: number;
 };
 
-export type SyntheticItem = {
+type SyntheticItem = {
   itemId: number;
   name: string;
   qualityIndex: number;

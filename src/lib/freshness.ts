@@ -4,7 +4,7 @@
 // must not read expired in game and fresh in the terminal.
 import { SCAN_STALE_MINUTES } from "@/lib/market-rules";
 
-export type Freshness = { label: string; stale: boolean };
+type Freshness = { label: string; stale: boolean };
 
 export function describeFreshness(latest: Date | null, now: Date): Freshness {
   if (!latest) return { label: "无数据", stale: true };

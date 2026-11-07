@@ -5,9 +5,9 @@
 import { median } from "@/lib/median";
 import { fillRules } from "@/lib/market-rules";
 
-export type ExperimentLevel = { price: number; qty: number };
+type ExperimentLevel = { price: number; qty: number };
 
-export type ExperimentPlan = {
+type ExperimentPlan = {
   itemId: number;
   levels: ExperimentLevel[];
   horizonHours: number;
@@ -17,7 +17,7 @@ export type ExperimentPlan = {
 // Prices are spaced around the sell front: one undercut level, the front
 // itself, and one optimistic level. Inventory is split as evenly as the
 // integer lots allow.
-export type ExperimentTrade = {
+type ExperimentTrade = {
   itemId: number;
   price: number;
   qty: number;
@@ -26,7 +26,7 @@ export type ExperimentTrade = {
   inferred: boolean;
 };
 
-export type ExperimentResult = {
+type ExperimentResult = {
   price: number; // the price a confirmed sale was booked at, copper per unit
   filled: number; // confirmed sales booked at this price
   units: number;

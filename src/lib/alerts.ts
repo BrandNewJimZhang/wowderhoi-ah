@@ -41,7 +41,7 @@ type RuleShape = {
   enabled: boolean;
 };
 
-export type TriggeredAlert = { rule: RuleShape; signal: MarketSignal; actual: number };
+type TriggeredAlert = { rule: RuleShape; signal: MarketSignal; actual: number };
 
 export function evaluateAlertRules(rules: RuleShape[], signals: MarketSignal[]): TriggeredAlert[] {
   const byItemId = new Map(signals.map((signal) => [signal.itemId, signal]));

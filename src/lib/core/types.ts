@@ -4,11 +4,11 @@
 // type unions come from the rule source so the two declarations cannot drift.
 import type { MarketPhase, MarketType } from "@/lib/market-rules";
 
-export type Confidence = "high" | "medium" | "low";
+type Confidence = "high" | "medium" | "low";
 export type FillBasis = "own" | "proxy" | "observed-zero" | "prior" | "vendor";
 // Why a candidate row received no copper. The core decides this; a UI must
 // not infer "the purse was too small" from a zero quantity.
-export type UnfundedReason = "kelly" | "exposure" | "purse" | "depth";
+type UnfundedReason = "kelly" | "exposure" | "purse" | "depth";
 
 // Clean fill labels per item: collected auction sales only, within a window.
 // `exposedHours` sums each listing's time on the book before its sale was
@@ -128,7 +128,7 @@ export type CoreRow = {
   score?: number;
 };
 
-export type CoreAction =
+type CoreAction =
   | {
       kind: "buy";
       itemId: number;

@@ -7,7 +7,7 @@ import type { CoreInput, CoreMarketItem, OwnSales, Tier } from "@/lib/core/types
 import type { MarketHistory } from "@/lib/market-data";
 import { SCAN_INTERVAL_MINUTES, type MarketPhase } from "@/lib/market-rules";
 
-export type CoreBuildOptions = {
+type CoreBuildOptions = {
   now: Date;
   phase: MarketPhase;
   // The first scan of the market. The signal source reads it from the store;

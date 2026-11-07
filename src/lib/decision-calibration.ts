@@ -10,7 +10,7 @@
 // to act on, so the sample is selected; the page says so next to the table.
 import { fillRules } from "@/lib/market-rules";
 
-export type CalibrationDecision = {
+type CalibrationDecision = {
   itemId: number | null;
   kind: string;
   at: Date;
@@ -18,7 +18,7 @@ export type CalibrationDecision = {
   fillBasis: string | null;
 };
 
-export type CalibrationTrade = {
+type CalibrationTrade = {
   itemId: number;
   realizedAt: Date;
   inferred: boolean;

@@ -3,9 +3,9 @@
 // the market never printed. Unpriced rows stay visible in the table but are
 // excluded from the value, cost and unrealized totals, which are labelled
 // as covering quoted positions only.
-export type PositionInput = { qty: number; cost: number };
+type PositionInput = { qty: number; cost: number };
 
-export type PositionRow = {
+type PositionRow = {
   itemId: number;
   name: string;
   qty: number;
@@ -17,7 +17,7 @@ export type PositionRow = {
   unrealized: number | null; // null when unpriced
 };
 
-export type PositionValuation = {
+type PositionValuation = {
   rows: PositionRow[];
   pricedValue: number;
   pricedCost: number;

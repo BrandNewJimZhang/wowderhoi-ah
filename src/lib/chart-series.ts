@@ -19,7 +19,7 @@ export type TimePoint = {
   kind?: "daily" | "scan";
 };
 
-export type PlottedPoint = TimePoint & { gap?: boolean };
+type PlottedPoint = TimePoint & { gap?: boolean };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

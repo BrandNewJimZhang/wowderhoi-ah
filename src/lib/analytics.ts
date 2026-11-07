@@ -142,7 +142,7 @@ export function buildMarketSignal(
   };
 }
 
-export type WeekdaySeasonality = {
+type WeekdaySeasonality = {
   weekday: number; // 0 = Sunday .. 6 = Saturday (UTC)
   priceDeviation: number; // weekday median close vs overall median, percent
   listedShare: number; // weekday share of total listed quantity, percent

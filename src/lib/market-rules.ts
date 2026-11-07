@@ -120,7 +120,7 @@ export const phaseHistory: Record<MarketPhase, { windowHours: number; minSamples
   steady: { windowHours: 168, minSamples: 48 }
 };
 
-export type MarketTypeRule = {
+type MarketTypeRule = {
   minListings: number; // buyable listings before the book is real
   minSellers: number; // distinct owners; falls back to listings when hidden
   minSpread: number; // sellP vs minP, below this the trade is noise

@@ -3,7 +3,7 @@
 // fixes), so the routine import path issues zero per-item statements.
 import type { AddonScanItem } from "@/lib/addon-scan";
 
-export type ExistingItemRow = {
+type ExistingItemRow = {
   itemId: number;
   name: string;
   quality: string;

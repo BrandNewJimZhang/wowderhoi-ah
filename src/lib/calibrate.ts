@@ -39,7 +39,7 @@ type CalibrationScope = {
   marketFirstScanAt: Date | null;
 };
 
-export type CalibrationObservation = {
+type CalibrationObservation = {
   itemId: number;
   marketType: MarketType;
   phase: MarketPhase;
