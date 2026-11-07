@@ -32,7 +32,7 @@ describe("/wahdiag", () => {
     // Where a "slow scan" went: the server wait, the client calls and our
     // own Lua work are separate numbers, and the shares answer the question
     // without arithmetic in the head.
-    expect(lua.anyChat("last scan: 2 rows | wait 0 ms | api 0 ms | lua 0 ms | finish 0 ms | save 0 ms")).toBe(true);
+    expect(lua.anyChat("last scan: 2 rows | wait 0 ms | api 0 ms | lua 0 ms | finish 0 ms (max frame 0 ms, 0 frames) | save 0 ms")).toBe(true);
     expect(lua.anyChat("scan time split: api 0% | lua 0% | finish 0% | save 0% (wait 0%)")).toBe(true);
     expect(lua.anyChat("SaveAddOns: available")).toBe(true);
     expect(lua.anyChat("PostItem/PostCommodity: present/present")).toBe(true);
