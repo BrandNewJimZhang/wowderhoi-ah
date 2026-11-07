@@ -141,7 +141,16 @@ local function tooltipShowItem(tooltip, source, itemId, itemName)
 end
 
 function GameTooltip:SetHyperlink(link)
-  tooltipShowItem(self, "hyperlink:" .. tostring(link), tonumber(tostring(link):match("item:(%d+)")) or 0, link)
+  local text = tostring(link)
+  if text:find("item:", 1, true) then
+    tooltipShowItem(self, "hyperlink:" .. text, tonumber(text:match("item:(%d+)")) or 0, link)
+    return
+  end
+  -- The client reuses one GameTooltip. A spell or unit hyperlink replaces
+  -- the visible lines but not the item fields the last item left behind;
+  -- that stale link is exactly what a tooltip hook must not trust.
+  self._source = "hyperlink:" .. text
+  self:Show()
 end
 
 DEFAULT_CHAT_FRAME = { AddMessage = function(_, text) bed.chat[#bed.chat + 1] = text end }

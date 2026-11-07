@@ -89,12 +89,21 @@ local function hideChart()
   end
 end
 
-local function appendTraderSection(tooltip)
+local function appendTraderSection(tooltip, hyperlink)
   if tooltip ~= GameTooltip then return end
   if tooltip.wahAppended then return end
   if WAH.settings and not WAH.settings.tooltip then return end
   local _, link = tooltip:GetItem()
-  if not link then return end
+  -- SetHyperlink serves spell and unit buttons too, and the client reuses
+  -- one GameTooltip: after an item hover, a non-item hyperlink can still
+  -- report that old item through GetItem(). Only a link that is itself an
+  -- item may carry the trader section; otherwise the price panel appeared
+  -- on talent and character buttons.
+  if hyperlink ~= nil then
+    if type(hyperlink) ~= "string" or not hyperlink:find("item:", 1, true) then return end
+    link = hyperlink
+  end
+  if not link or not link:find("item:", 1, true) then return end
   local itemId = tonumber(link:match("item:(%d+)"))
   if not itemId then return end
   lastTooltipItemId = itemId
@@ -166,18 +175,29 @@ GameTooltip:HookScript("OnHide", function(tooltip)
 end)
 
 if TooltipDataProcessor and Enum and Enum.TooltipDataType then
-  TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, appendTraderSection)
+  -- The post-call passes (tooltip, tooltipData); wrap it so the data table
+  -- is not mistaken for a hyperlink.
+  TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip)
+    appendTraderSection(tooltip)
+  end)
 end
 if GameTooltip:HasScript("OnTooltipSetItem") then
-  GameTooltip:HookScript("OnTooltipSetItem", appendTraderSection)
+  GameTooltip:HookScript("OnTooltipSetItem", function(tooltip) appendTraderSection(tooltip) end)
 end
 for _, method in ipairs({
-  "SetBagItem", "SetAuctionItem", "SetAuctionSellItem", "SetHyperlink",
+  "SetBagItem", "SetAuctionItem", "SetAuctionSellItem",
   "SetInventoryItem", "SetMerchantItem", "SetGuildBankItem"
 }) do
   if GameTooltip[method] then
     hooksecurefunc(GameTooltip, method, function(tooltip) appendTraderSection(tooltip) end)
   end
+end
+-- Hyperlinks carry their own type, so the hook hands the link to the gate
+-- instead of trusting whatever the shared tooltip still holds.
+if GameTooltip.SetHyperlink then
+  hooksecurefunc(GameTooltip, "SetHyperlink", function(tooltip, link)
+    appendTraderSection(tooltip, link)
+  end)
 end
 
 -- ============================== Chart ===============================
