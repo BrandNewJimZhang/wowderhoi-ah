@@ -113,7 +113,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
                       : signal?.stale
                         ? "最近一次扫描中已无在售挂单，无法估计成交概率；价格是上次有货时的值。"
                         : latest
-                          ? "该物品未通过当前阶段门槛，暂无成交概率估计；先看盘口与建议卖价。"
+                          ? "该物品未通过当前阶段门槛或风险仓位检查，暂无成交概率估计；先看盘口与建议卖价。"
                           : "尚无扫描数据"}
                   </div>}
             </div>

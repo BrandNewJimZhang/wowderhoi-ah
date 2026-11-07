@@ -89,7 +89,7 @@ local L = {
   COL_TOTAL = "Total",
   RADAR_FOUND = "%d executable opportunities (%s).",
   RADAR_NONE = "No opportunity clears this phase's gates right now.",
-  RADAR_UNFUNDED = "%d candidates cleared the gates but none was funded: purse %d, risk sizing %d, item exposure %d, book depth %d.",
+  RADAR_UNFUNDED = "%d candidates cleared the gates but none was funded: purse %d, item exposure %d, book depth %d; %d more were refused by the risk model.",
   RADAR_SIZING = "%d gate-passing opportunities were refused by the risk model (fill chance does not cover the spread); no executable trade.",
   STATUS_LINE = "Scan %d min ago | %d items listed | %s | sellers visible %d%%",
   STATUS_LINE_NO_SCAN = "No scan yet | %s | run /wahscan",
@@ -263,7 +263,7 @@ if GetLocale() == "zhCN" then
   L.COL_TOTAL = "总价"
   L.RADAR_FOUND = "可执行机会 %d 个（%s）。"
   L.RADAR_NONE = "当前没有满足本阶段门槛的可执行机会。"
-  L.RADAR_UNFUNDED = "通过门槛 %d 条，均未获资金：钱包不足 %d 条、风险仓位 %d 条、单物品敞口 %d 条、盘口 %d 条。"
+  L.RADAR_UNFUNDED = "通过门槛 %d 条，均未获资金：钱包不足 %d 条、单物品敞口 %d 条、盘口 %d 条；另有 %d 条被风险模型拒绝。"
   L.RADAR_SIZING = "本阶段门槛后有 %d 条机会被风险模型拒绝（成交率不足以覆盖价差），没有可执行交易。"
   L.STATUS_LINE = "扫描于 %d 分钟前 | 在售 %d 种 | %s | 卖家可见 %d%%"
   L.STATUS_LINE_NO_SCAN = "尚未扫描 | %s | 运行 /wahscan"

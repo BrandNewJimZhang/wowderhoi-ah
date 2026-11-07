@@ -269,11 +269,12 @@ local function refreshRadar()
       chatMessage(string.format(L.RADAR_SIZING, sizing))
     else
       -- Why the candidates got no copper is the core's answer, not a guess.
-      -- Kelly, exposure, the purse and the ladder are different problems.
+      -- Rows the risk model refuses never reach `rows`, so their count is
+      -- the excluded.sizing gate rather than an unfunded cause.
       local unfunded = lastEvaluation.diagnostics and lastEvaluation.diagnostics.unfunded or {}
       chatMessage(string.format(L.RADAR_UNFUNDED, considered,
-        unfunded.purse or 0, unfunded.kelly or 0,
-        unfunded.exposure or 0, unfunded.depth or 0))
+        unfunded.purse or 0, unfunded.exposure or 0, unfunded.depth or 0,
+        sizing))
     end
   else
     chatMessage(string.format(L.RADAR_FOUND, #deals,
