@@ -1,5 +1,39 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- A 170,000-listing scan gate in the perf stage: 6,000 item books, the
+  real per-frame budget path, flow capture and series write. A companion
+  gate evaluates the 6,000-item market through the shared core.
+- Search accepts item ids (`4338`, `item:4338`), whitespace-separated name
+  tokens in any order, and ranks exact and prefix names above substrings.
+  The server browse fallback opens the closest matching name instead of
+  the cheapest row.
+
+### Changed
+
+- The scanner caches normalized owner names, keeps the distinct-seller
+  count and supply in one table, and encodes each (owner, price) flow pair
+  as one number instead of a nested table. The capture shape is now
+  `owner-price-packed`; the first scan after upgrading starts a fresh
+  disappearance baseline.
+- `Core.executableQtySorted` walks a ladder the caller already sorted; the
+  evaluator and allocator no longer copy and re-sort every book.
+- Series retention returns the series untouched while every point is
+  inside the per-scan window, instead of rebuilding five arrays per item.
+- The in-game radar and the terminal opportunity list omit rows the purse
+  cannot fund; a zero quantity is not an executable opportunity, and the
+  radar says the purse is the limit rather than the gates.
+
+### Fixed
+
+- The trader tooltip section and its chart no longer appear on talent,
+  character or other spell/unit tooltips. Only a hyperlink that is itself
+  an item may carry them; the shared tooltip can still report the previous
+  item through `GetItem()`, which is no longer trusted.
+
 ## v0.6.0 — 2026-11-05
 
 ### Added
