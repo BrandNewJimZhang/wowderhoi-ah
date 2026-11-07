@@ -40,6 +40,14 @@
 - The speculative `export type { Server }` re-export in `scripts/perf/host.ts`;
   no caller imported it.
 
+- The unused `C_AuctionHouse.GetItemKeyFromItem` client stub in the addon
+  test harness, which the addon never calls (it builds keys with
+  `MakeItemKey`).
+
+- Type exports that no other module imported: return and helper shapes such
+  as `FillPoint`, `TradeSummary` and `PositionValuation` are now module
+  internal. Types a test or another module imports remain exported.
+
 ### Changed
 
 - `execQty`, `netProfit`, `netPerUnit` and `ladderPrice` are now
@@ -103,6 +111,13 @@
 - The desktop "下一步行动" empty state reuses the reason-aware message from
   "可执行机会", so an unfunded purse or exposure cap is not reported as
   "nothing passed the gates".
+- The item page's fill curve aggregates ladder rows at one price before
+  walking the queue. A duplicated row no longer quotes a better fill than
+  the sell plan for the same book; a parity test compares every point to
+  `Core.fillWithin`.
+- Demand-band matching is exact and case-insensitive in both runtimes. The
+  terminal no longer trims category names the in-game core compares
+  verbatim, so a padded value misses on both sides.
 
 ## v0.6.0 — 2026-11-05
 
