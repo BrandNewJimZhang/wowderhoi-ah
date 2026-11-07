@@ -82,6 +82,28 @@ describe("forever replicate scan v4", () => {
     expect(afterSecond).toBe(afterFirst);
   });
 
+  it("counts the per-item client lookup as API time, not Lua work", () => {
+    const lua = auctionPage();
+    // Advance the clock only inside GetItemInfo: then apiMs is the whole
+    // elapsed time and anything attributed to Lua is a misclassification.
+    lua.exec(`
+      local fakeMs = 0
+      function debugprofilestop() return fakeMs end
+      local realGetItemInfo = C_Item.GetItemInfo
+      C_Item.GetItemInfo = function(itemId)
+        fakeMs = fakeMs + 7
+        return realGetItemInfo(itemId)
+      end
+    `);
+    lua.runScan([{ itemId: 2589, name: "Linen", count: 10, buyout: 10000 }]);
+    const apiMs = lua.number("WowTest.ns.lastScanStats.apiMs");
+    expect(apiMs).toBeGreaterThanOrEqual(7);
+    // The replicate calls and GetItemInfo are the only clock advances, so
+    // the aggregation time must be zero rather than absorbing the lookup.
+    expect(lua.number("WowTest.ns.lastScanStats.luaMs")).toBe(0);
+    expect(lua.number("WowTest.ns.lastScanStats.processMs")).toBe(apiMs);
+  });
+
   it("keeps the top of the price ladder so a multi-unit purchase can be priced", () => {
     const lua = auctionPage();
     lua.runScan([

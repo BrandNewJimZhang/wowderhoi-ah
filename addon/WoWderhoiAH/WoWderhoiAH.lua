@@ -352,9 +352,9 @@ local function recordAuction(index)
   -- highBidder, bidderFullName, owner, ownerFullName, saleStatus, itemID,
   -- hasAllInfo.
   --
-  -- Only these two client calls are counted as API time. Everything after
-  -- them is our own aggregation; /wahdiag subtracts apiMs from processMs to
-  -- report the two separately.
+  -- Every client lookup counts as API time, including the per-item
+  -- GetItemInfo below. Everything else is our own aggregation; /wahdiag
+  -- subtracts apiMs from processMs to report the two separately.
   local apiStart = debugprofilestop()
   local name, _, count, quality, _, _, _, _, _, buyoutPrice, bidAmount, _, _,
     owner, ownerFullName, _, itemId = C_AuctionHouse.GetReplicateItemInfo(index)
@@ -370,15 +370,20 @@ local function recordAuction(index)
     if not cached then
       -- GetItemInfo is the single most expensive call per new itemId. Read
       -- every field once, cache it for the session, and let repeat listings
-      -- and later scans reuse the result.
+      -- and later scans reuse the result. It is a client lookup, so its time
+      -- belongs to apiMs rather than the surrounding Lua aggregation.
+      local infoStart = debugprofilestop()
       local _, _, _, _, _, itemClass, itemSubClass, _, _, _, vendorPrice = WAH.getItemInfo(itemId)
+      scanState.apiMs = (scanState.apiMs or 0) + (debugprofilestop() - infoStart)
       cached = { class = itemClass, subClass = itemSubClass, vendorP = vendorPrice or 0 }
       if itemClass ~= nil then
         itemInfoCache[itemId] = cached
       elseif C_Item and C_Item.RequestLoadItemDataByID then
         -- The item database loads lazily on modern clients. Ask once so the
         -- next scan can price vendor arbitrage for this item.
+        local requestStart = debugprofilestop()
         C_Item.RequestLoadItemDataByID(itemId)
+        scanState.apiMs = (scanState.apiMs or 0) + (debugprofilestop() - requestStart)
       end
     end
     entry = newEntry(name, quality, cached)
