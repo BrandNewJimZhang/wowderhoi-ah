@@ -86,6 +86,15 @@ export function loadAddon(options?: { locale?: string }) {
     eval: evaluate,
     text: (expression: string) => String(evaluate(expression)),
     number: (expression: string) => Number(evaluate(expression)),
+    // Read a whole Lua table back as JS. The scalar evaluator cannot return
+    // SavedVariables payloads, and the perf gate asserts their real size.
+    value: (expression: string) => {
+      load(`return ${expression}`, "test");
+      if (lua.lua_pcall(state, 0, 1, 0) !== lua.LUA_OK) fail("lua error");
+      const result = fromLua(state, lua.lua_gettop(state));
+      lua.lua_pop(state, 1);
+      return result;
+    },
 
     // Run the shipped decision core inside the addon harness and read the
     // result back as JS. The terminal runs the same file through fengari in

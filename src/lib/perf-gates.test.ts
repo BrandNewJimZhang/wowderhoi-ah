@@ -38,7 +38,12 @@ const budgets = {
   // Full replicate scan: 170,000 listings into 6,000 item books, including
   // the flow capture and series write. Fengari is much slower than the
   // client's native Lua, so the gate catches order-of-magnitude regressions.
-  scan170kMs: 25_000
+  scan170kMs: 25_000,
+  // The three SavedVariables tables a 170k-listing market produces. The
+  // budget is deliberately above the current ~6.4MB so a deliberate field
+  // addition has room, while a per-row table regressions (the shape this
+  // project already removed once) fails the gate.
+  scanPayloadBytes: 8 * 1024 * 1024
 };
 
 function cpuMsSince(start: NodeJS.CpuUsage): number {
@@ -232,9 +237,22 @@ describe("system performance gates", () => {
     expect(lua.number("WowTest.scannedItems")).toBe(6000);
     expect(lua.number("WowTest.capturedItems")).toBe(6000);
     expect(elapsed).toBeLessThan(budgets.scan170kMs);
+    // The finish phase is sliced like the row loop; a single frame that
+    // aggregates every book is the stall this gate exists to catch.
+    const finishFrameMax = lua.number("WowTest.ns.lastScanStats.finishFrameMaxMs");
+    const finishFrames = lua.number("WowTest.ns.lastScanStats.finishFrames");
+    expect(finishFrames).toBeGreaterThan(1);
+    expect(finishFrameMax).toBeLessThan(20);
+    // The gate used to assert the journal and call it a scan payload. The
+    // three SavedVariables tables are the payload the client serialises and
+    // the terminal parses; their real JSON size is what the budget means.
+    const payload = lua.value("({ scan = WoWderhoiAH_ScanData, series = WoWDerhoiAH_Series, capture = WoWDerhoiAH_Capture })");
+    const payloadBytes = Buffer.byteLength(JSON.stringify(payload), "utf8");
+    expect(payloadBytes).toBeGreaterThan(0);
+    expect(payloadBytes).toBeLessThan(budgets.scanPayloadBytes);
   });
 
-  it("keeps a 5,000-event journal and a 9,000-item scan under the 4MB budget", () => {
+  it("keeps a 5,000-event journal under the 4MB budget", () => {
     const events: JournalEvent[] = Array.from({ length: 5000 }, (_, index) => ({
       k: "buy", t: index, itemId: 1 + (index % 100), qty: 1, cost: 100
     }));
