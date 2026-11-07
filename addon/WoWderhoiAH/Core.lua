@@ -1071,14 +1071,33 @@ end
 -- terminal table must open the same item for the same query. Each runtime
 -- implements these rules; data/search-parity.json pins them together.
 
+-- Every Unicode space the terminal's `\s` recognises. Lua's `%s` is
+-- ASCII-only, so without this a query typed with a full-width, thin or
+-- no-break space would stay one token in game while the terminal split it.
+local UNICODE_SPACES = {
+  "\194\160", -- U+00A0 no-break space
+  "\225\154\128", -- U+1680 ogham space mark
+  "\226\128\128", "\226\128\129", "\226\128\130", "\226\128\131",
+  "\226\128\132", "\226\128\133", "\226\128\134", "\226\128\135",
+  "\226\128\136", "\226\128\137", "\226\128\138", -- U+2000..U+200A
+  "\226\128\168", "\226\128\169", -- U+2028 line, U+2029 paragraph
+  "\226\128\175", -- U+202F narrow no-break space
+  "\226\129\159", -- U+205F medium mathematical space
+  "\227\128\128", -- U+3000 ideographic space
+  "\239\187\191" -- U+FEFF zero width no-break space
+}
+
 -- "4338" and "item:4338" address an item directly; anything else is a
 -- whitespace-tokenised name query.
 function Core.parseSearchQuery(raw)
   -- The terminal's parser treats Unicode spaces as separators. A Chinese
   -- IME emits U+3000 (full-width space) and pasted names carry U+00A0
-  -- (no-break space); Lua's `%s` is ASCII-only, so without this the same
-  -- query tokenised alone in game and matched in the terminal.
-  local text = (raw or ""):gsub("\227\128\128", " "):gsub("\194\160", " ")
+  -- (no-break space); Lua's `%s` is ASCII-only, so both runtimes normalise
+  -- the same set of spaces before tokenising.
+  local text = raw or ""
+  for _, space in ipairs(UNICODE_SPACES) do
+    text = text:gsub(space, " ")
+  end
   text = text:match("^%s*(.-)%s*$"):lower()
   if text == "" then return nil end
   -- Bare digits only. `tonumber` would also accept hex, exponents and

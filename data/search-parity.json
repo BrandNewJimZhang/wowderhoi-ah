@@ -35,6 +35,24 @@
     "expected": [2, 1]
   },
   {
+    "query": " 魔铁 矿 ",
+    "candidates": [
+      { "itemId": 1, "name": "魔铁矿", "booked": true, "quantity": 10 },
+      { "itemId": 2, "name": "魔铁矿石", "booked": true, "quantity": 50 },
+      { "itemId": 3, "name": "铁矿", "booked": true, "quantity": 100 }
+    ],
+    "expected": [2, 1]
+  },
+  {
+    "query": " 魔铁 矿﻿",
+    "candidates": [
+      { "itemId": 1, "name": "魔铁矿", "booked": true, "quantity": 10 },
+      { "itemId": 2, "name": "魔铁矿石", "booked": true, "quantity": 50 },
+      { "itemId": 3, "name": "铁矿", "booked": true, "quantity": 100 }
+    ],
+    "expected": [2, 1]
+  },
+  {
     "query": "4338",
     "candidates": [
       { "itemId": 4338, "name": "Mageweave Cloth", "booked": true, "quantity": 70 },

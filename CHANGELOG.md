@@ -77,7 +77,11 @@
   names instead of silently addressing item 16 in one of them.
 - Full-width (U+3000) and no-break (U+00A0) spaces separate search tokens
   in the addon too, so a query typed with a Chinese IME ranks the same
-  item in game and in the terminal.
+  item in game and in the terminal. The addon now normalises every Unicode
+  space the terminal's `\s` recognises (U+1680, U+2000–U+200A, U+2028,
+  U+2029, U+202F, U+205F, U+FEFF), not just those two. The search box also
+  asks the shared parser whether the query is empty, so a full-width-space-
+  only query is a no-op instead of a server browse.
 - An empty radar names the risk model when it refused every gate-passer,
   instead of reporting the refusals as an insufficient purse.
 - `/wahdiag` counts ScanData/Capture assembly in the finish time, and the

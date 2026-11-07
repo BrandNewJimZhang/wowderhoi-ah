@@ -688,8 +688,12 @@ runSearch = function()
     chatMessage(L.SCAN_WAIT)
     return
   end
-  local query = trade.searchBox:GetText():match("^%s*(.-)%s*$")
-  if query == "" then return end
+  -- The shared parser owns what counts as an empty query and which
+  -- characters separate name tokens. A `%s` trim here left a full-width
+  -- space looking non-empty and still sent the raw string to the server.
+  local parsed = WAH.Core.parseSearchQuery(trade.searchBox:GetText())
+  if not parsed then return end
+  local query = parsed.text
   if not auctionHouseOpen() then
     chatMessage(L.SEARCH_NEED_AH)
     return

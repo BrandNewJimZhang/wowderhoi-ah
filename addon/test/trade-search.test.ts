@@ -57,6 +57,18 @@ describe("search resolution", () => {
     lua.search("linen", [{ itemId: 2590, name: "Linen Cloth", count: 1, buyout: 100 }]);
     expect(targetItemId(lua)).toBe(2589);
   });
+
+  it("treats a Unicode-space-only query as empty", () => {
+    const lua = openPage();
+    lua.exec(`
+      WowTest.pendingBrowse = {}
+      local trade = WowTest.ns.tradeFrame()
+      trade.searchBox:SetText("\\227\\128\\128")
+      WowTest.clickButton(WowTest.ns.L.SEARCH)
+    `);
+    // No scan hit, no browse: an empty query is a no-op in both runtimes.
+    expect(lua.eval("WowTest.ah.browse")).toBeNull();
+  });
 });
 
 describe("browse fallback", () => {
