@@ -31,7 +31,8 @@ export function parseSearchQuery(raw: string): ParsedSearchQuery | null {
 }
 
 // 4 exact, 3 prefix, 2 every token present, 1 substring. A miss is 0.
-export function searchScore(name: string, query: ParsedSearchQuery): number {
+// Internal: rankSearch is the contract, and scoring alone has no consumer.
+function searchScore(name: string, query: ParsedSearchQuery): number {
   if (!name || !query.text) return 0;
   const lower = name.toLowerCase();
   if (lower === query.text) return 4;
