@@ -640,7 +640,7 @@ end
 --   positions        { [itemId] = { qty, cost } }
 --
 -- output:
---   { phase, rows, actions, diagnostics }
+--   { phase, rows, opportunities, actions, diagnostics }
 function Core.evaluate(input)
   -- Rules are compiled constants shared by both runtimes; the input carries
   -- the market state, never a second copy of the rules.
@@ -1081,7 +1081,8 @@ function Core.parseSearchQuery(raw)
 end
 
 -- 4 exact, 3 prefix, 2 every token present, 1 substring. A miss is 0.
-function Core.searchScore(name, query)
+-- Internal: rankSearch is the contract, matching the terminal's module.
+local function searchScore(name, query)
   if not name or name == "" or not query then return 0 end
   local lower = name:lower()
   if lower == query.text then return 4 end
@@ -1104,7 +1105,7 @@ function Core.rankSearch(candidates, raw)
     if query.id and tonumber(candidate.itemId) == query.id then
       score = 5
     else
-      score = Core.searchScore(candidate.name, query)
+      score = searchScore(candidate.name, query)
     end
     if score > 0 then
       scored[#scored + 1] = { candidate = candidate, score = score }

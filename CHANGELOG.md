@@ -26,6 +26,11 @@
   The server browse fallback opens the closest matching name instead of
   the cheapest row.
 
+### Removed
+
+- `Core.searchScore` is module-internal in both runtimes; `rankSearch` is
+  the only public search entry point.
+
 ### Changed
 
 - `execQty`, `netProfit`, `netPerUnit` and `ladderPrice` are now
