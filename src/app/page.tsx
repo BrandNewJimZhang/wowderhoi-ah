@@ -42,10 +42,22 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   // from an item that is no longer listed must not page the trader.
   const triggeredAlerts = evaluateAlertRules(alertRules, signals.filter((signal) => !signal.stale));
   // The opportunity list is Core.lua's evaluation, the same decision core
-  // the addon runs in game. It is not a second radar implementation.
-  // A row the allocator could not fund is not executable; the opportunity
-  // list shares the radar's promise, so a zero quantity never appears in it.
-  const deals = evaluation.rows.filter((row) => row.allocQty > 0).slice(0, 12);
+  // the addon runs in game. It is not a second radar implementation. The
+  // core publishes the funded layer; parsing `rows` for a zero quantity
+  // here was a second copy of that rule and could drift from the radar.
+  const deals = evaluation.opportunities.slice(0, 12);
+  const unfunded = evaluation.diagnostics.unfunded;
+  const sizingExcluded = evaluation.diagnostics.excluded.sizing ?? 0;
+  // An empty list has three different answers: no data, nothing passed the
+  // gates, or gate-passers the risk model refused. The core's diagnostics
+  // are the only source for the third.
+  const emptyDealsMessage = signals.length === 0
+    ? "暂无市场数据。进游戏 /wahscan 扫描。"
+    : evaluation.rows.length === 0 && sizingExcluded > 0
+      ? `本阶段门槛后有 ${sizingExcluded} 条机会被风险模型拒绝（成交率不足以覆盖价差），没有可执行交易。`
+      : evaluation.rows.length === 0
+        ? `当前没有满足${phaseLabels[phase]}门槛的可执行机会。`
+        : `通过门槛 ${evaluation.rows.length} 条，均未获资金：钱包不足 ${unfunded.purse} 条、风险仓位 ${unfunded.kelly} 条、单物品敞口 ${unfunded.exposure} 条、盘口 ${unfunded.depth} 条。`;
   const capitalBudget = resolveBudgetCopper();
   // The planning budget is a cap, not a purse: never allocate more than the
   // cash the latest scan reported. Core.lua applies the same bound to its
@@ -56,12 +68,14 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   // The shared core already allocated one purse across the ranked rows;
   // the terminal renders that result instead of running a second sizing
   // implementation.
-  const sizing = evaluation.rows
-    .filter((row) => !row.vendor && row.allocQty > 0)
+  const sizing = evaluation.opportunities
+    .filter((row) => !row.vendor)
+    .slice(0, 12)
     .map((row) => ({
       itemId: row.itemId,
       name: row.name,
       qty: row.allocQty,
+      unitPrice: row.allocUnitPrice,
       budget: row.allocCost,
       expectedNet: row.allocNet,
       fillProb: row.fillProb,
@@ -135,12 +149,10 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
             </div>
           </Panel>
           <Panel>
-            <PanelHeader title="可执行机会" action={<span className="font-mono text-xs text-terminal-green">NPC必赚 + 最低价 vs 建议卖价 · 盘口深度口径</span>} />
+            <PanelHeader title="可执行机会" action={<span className="font-mono text-xs text-terminal-green">NPC必赚 + 最低价 vs 建议卖价 · 分配后口径</span>} />
             <div className="space-y-2 p-3 font-mono text-xs">
               {deals.length === 0 && (
-                <div className="text-terminal-muted">
-                  {signals.length === 0 ? "暂无市场数据。进游戏 /wahscan 扫描。" : `当前没有满足${phaseLabels[phase]}门槛的可执行机会。`}
-                </div>
+                <div className="text-terminal-muted">{emptyDealsMessage}</div>
               )}
               {deals.map((deal) => (
                 <div key={deal.itemId} className="flex items-center justify-between gap-2">
@@ -148,16 +160,16 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                     <ItemIcon itemId={deal.itemId} size={16} />
                     {deal.name}
                     {deal.vendor
-                      ? <span className="text-terminal-amber">NPC必赚 +<Coins copper={deal.candidateNet} /></span>
+                      ? <span className="text-terminal-amber">NPC必赚</span>
                       : <>
                           <span className="text-[10px] text-terminal-muted">{deal.marketType === "commodity" ? "商品" : "物品"}</span>
                           <span className="text-terminal-green">+{deal.spreadPercent.toFixed(0)}%</span>
                         </>}
                   </Link>
                   <span className="flex items-center gap-3">
-                    <Coins copper={deal.minPrice} />
+                    <span className="text-terminal-muted">{deal.allocQty} 件 @ <Coins copper={deal.allocUnitPrice} /></span>
                     <span className="text-terminal-muted">{deal.vendor ? "NPC价" : "建议卖价"} <Coins copper={deal.sellP} /></span>
-                    <span className="text-terminal-muted">盘口净利 <Coins copper={deal.candidateNet} /></span>
+                    <span className="text-terminal-muted">净利 <Coins copper={deal.allocNet} /></span>
                   </span>
                 </div>
               ))}
@@ -181,12 +193,12 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           <Panel>
             <PanelHeader title="预算内分配" action={<span className="font-mono text-xs text-terminal-muted">共享核心 · 分数凯利 · 可动用 {deployableCapital / 10000}g</span>} />
             <div className="space-y-2 p-3 font-mono text-xs">
-              {sizing.length === 0 && <div className="text-terminal-muted">当前没有通过风险预算的机会。</div>}
+              {sizing.length === 0 && <div className="text-terminal-muted">当前没有获分配的机会。</div>}
               {sizing.map((row) => (
                 <div key={row.itemId} className="flex items-center justify-between gap-2">
                   <Link href={`/items/${row.itemId}`} className="text-slate-100 hover:text-terminal-amber">{row.name}</Link>
                   <span className="flex items-center gap-3 text-terminal-muted">
-                    <span>{row.qty} 件</span>
+                    <span>{row.qty} 件 @ <Coins copper={row.unitPrice} /></span>
                     <span>占用 <Coins copper={row.budget} /></span>
                     <span className={row.expectedNet >= 0 ? "text-terminal-green" : "text-terminal-red"}>净利 <Coins copper={row.expectedNet} /></span>
                     <span>成交率 {(row.fillProb * 100).toFixed(0)}%</span>

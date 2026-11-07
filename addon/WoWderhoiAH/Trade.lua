@@ -249,19 +249,31 @@ local function refreshRadar()
   end
   lastEvaluation = WAH.Core.evaluate(WAH.coreInput())
   local considered = #lastEvaluation.rows
-  for _, row in ipairs(lastEvaluation.rows) do
-    -- The radar promises an executable trade. A row the allocator could not
-    -- fund (another row took the purse, or this one exceeded its exposure
-    -- cap) has quantity 0 and would only be noise in a "buy this" column.
-    if (row.allocQty or 0) > 0 then deals[#deals + 1] = row end
+  -- The core already separated the funded layer: the radar promises an
+  -- executable trade, so it renders that list rather than re-filtering the
+  -- candidate rows with a second copy of `allocQty > 0`.
+  for _, row in ipairs(lastEvaluation.opportunities or {}) do
+    deals[#deals + 1] = row
   end
   rebuildActions()
   applySort()
   refreshStatus()
   if #deals == 0 then
-    -- "The gates passed but the purse is too small" is a different answer
-    -- from "nothing passed"; the player can act on the first one.
-    chatMessage(considered > 0 and L.RADAR_NO_PURSE or L.RADAR_NONE)
+    local excluded = lastEvaluation.diagnostics and lastEvaluation.diagnostics.excluded or {}
+    local sizing = excluded.sizing or 0
+    if considered == 0 and sizing == 0 then
+      chatMessage(L.RADAR_NONE)
+    elseif considered == 0 then
+      -- The risk model rejected every gate-passer before it became a row.
+      chatMessage(string.format(L.RADAR_SIZING, sizing))
+    else
+      -- Why the candidates got no copper is the core's answer, not a guess.
+      -- Kelly, exposure, the purse and the ladder are different problems.
+      local unfunded = lastEvaluation.diagnostics and lastEvaluation.diagnostics.unfunded or {}
+      chatMessage(string.format(L.RADAR_UNFUNDED, considered,
+        unfunded.purse or 0, unfunded.kelly or 0,
+        unfunded.exposure or 0, unfunded.depth or 0))
+    end
   else
     chatMessage(string.format(L.RADAR_FOUND, #deals,
       (L.PHASE_LABELS and L.PHASE_LABELS[lastEvaluation.phase]) or lastEvaluation.phase))

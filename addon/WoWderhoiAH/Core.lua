@@ -480,13 +480,14 @@ local FILL_BASIS_TEXT = {
 
 local function reasonFor(row)
   if row.vendor then
-    return string.format("NPC 收购价高于挂单价，盘口 %d 件净赚 %d 铜", row.candidateQty, row.candidateNet)
+    return string.format("NPC 收购价高于挂单价，全预算可执行 %d 件净赚 %d 铜", row.candidateQty, row.candidateNet)
   end
   local low = (row.fillProbLow or row.fillProb or 0) * 100
   local high = (row.fillProbHigh or row.fillProb or 0) * 100
-  -- "可买" is the allocated column; the reason quotes the book depth, so it
-  -- says 盘口 rather than using the same word for two different quantities.
-  local text = string.format("价差 %.0f%%，盘口 %d 件，每件净利 %d 铜，%d 小时成交率 %.0f%%（%.0f–%.0f%%，%s）",
+  -- "可买" is the allocated column; the reason quotes the full-budget
+  -- candidate, so it says so rather than using the same word for two
+  -- different quantities.
+  local text = string.format("价差 %.0f%%，全预算可执行 %d 件，每件净利 %d 铜，%d 小时成交率 %.0f%%（%.0f–%.0f%%，%s）",
     row.spreadPercent, row.candidateQty, row.candidateNetPerUnit or 0, fillHorizonHours(),
     (row.fillProb or 0) * 100, low, high,
     FILL_BASIS_TEXT[row.fillBasis or "prior"] or FILL_BASIS_TEXT.prior)

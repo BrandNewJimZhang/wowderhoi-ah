@@ -127,6 +127,31 @@ describe("executable-profit radar", () => {
     expect(lua.names()).toEqual(["Bag", "Armor"]);
   });
 
+  it("explains an unfunded candidate with the core's reason, not the purse", () => {
+    // Steady commodity, observability on, nothing disappeared: the gates
+    // pass but the fill posterior is far below the Kelly break-even. The
+    // radar must say so instead of calling every zero a small purse.
+    const lua = loadAddon();
+    lua.exec("WoWderhoiAH_Settings.phaseOverride = 'steady'");
+    lua.setScan([{
+      itemId: 1, name: "Quiet Book", minPrice: 1000, sellP: 1186,
+      numAuctions: 12, sellers: 6, quantity: 5000, itemClass: "Trade Goods",
+      tiers: [{ p: 1000, q: 5000 }]
+    }]);
+    lua.setPoints([{ itemId: 1, closes: Array.from({ length: 60 }, () => 1186) }]);
+    lua.exec(`
+      local entry = WoWderhoiAH_ScanData.items[1]
+      entry.ownerVisible = true
+      entry.flowObserved = true
+      entry.sellersInvisible = false
+    `);
+    lua.openTab();
+    expect(lua.names()).toEqual([]);
+    expect(lua.anyChat("风险模型拒绝")).toBe(true);
+    expect(lua.anyChat("1 条机会被风险模型拒绝")).toBe(true);
+    expect(lua.anyChat("钱包不足 1 条")).toBe(false);
+  });
+
   it("does not use a flat P10 series as a veto — the sell front is the anchor", () => {
     // The old radar refused a flat series because P10 was the reference.
     // Core prices the spread against the sell front; a flat history is
