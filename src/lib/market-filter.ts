@@ -62,17 +62,13 @@ export function filterSortSignals(
 ): MarketSignal[] {
   const raw = view.query ?? "";
   const query = parseSearchQuery(raw);
-  let rows = signals;
+  let rows = view.category ? signals.filter((signal) => signal.category === view.category) : signals;
   if (query) {
-    // A typed number or item link addresses the item id directly; otherwise
-    // every whitespace-separated token must appear anywhere in the name, so
-    // "魔铁 矿" finds "魔铁矿" regardless of spacing.
-    rows = rows.filter((signal) =>
-      (query.id !== null && signal.itemId === query.id)
-      || query.tokens.every((token) => signal.name.toLowerCase().includes(token))
-    );
+    // Matching is the shared ranker's job, not a second copy of the token
+    // rules: a bare id outranks a name that contains the same digits, and
+    // both stay in the result, exactly as the addon's search box ranks them.
+    rows = rankSearch(rows, raw);
   }
-  if (view.category) rows = rows.filter((signal) => signal.category === view.category);
   // Delisted items keep their last book in the monitor, but they must never
   // outrank a tradeable row: an old wide spread is not an opportunity.
   const freshFirst = (left: MarketSignal, right: MarketSignal) => Number(left.stale) - Number(right.stale);
@@ -81,7 +77,7 @@ export function filterSortSignals(
   // is asking for the column it named.
   const explicit = view.sortExplicit !== false;
   if (view.sortKey && (!query || explicit)) {
-    const relevance = query ? new Map(rankSearch(rows, raw).map((signal, index) => [signal.itemId, index])) : null;
+    const relevance = query ? new Map(rows.map((signal, index) => [signal.itemId, index])) : null;
     const key = view.sortKey;
     const direction = view.sortAsc ? 1 : -1;
     rows = [...rows].sort((left, right) =>
@@ -89,12 +85,10 @@ export function filterSortSignals(
       || (left[key] - right[key]) * direction
       || (relevance ? relevance.get(left.itemId)! - relevance.get(right.itemId)! : 0)
     );
-  } else if (query) {
-    // No explicit column: the player typed a query, so answer it in
-    // relevance order (exact, prefix, all tokens) rather than by a default
-    // column that has nothing to do with what they asked for.
-    rows = rankSearch(rows, raw).sort(freshFirst);
   } else {
+    // No explicit column and a query: rankSearch already answered it in
+    // relevance order (exact, prefix, all tokens). Either way, delisted
+    // rows sink below tradeable ones without disturbing that order.
     rows = [...rows].sort(freshFirst);
   }
   return rows;

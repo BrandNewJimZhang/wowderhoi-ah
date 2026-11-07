@@ -64,6 +64,17 @@ describe("filterSortSignals", () => {
     expect(filterSortSignals(named, { query: "2589" }).map((signal) => signal.itemId)).toEqual([5]);
   });
 
+  it("keeps a name match beside the bare id, in the shared ranker's order", () => {
+    // Core.rankSearch scores an id match 5 and a name that starts with the
+    // same digits 3, so both rows survive; the desktop table must not drop
+    // the name row that the in-game search still shows.
+    const rows = [
+      makeSignal({ itemId: 5, name: "2589号样本", quantity: 100 }),
+      makeSignal({ itemId: 2589, name: "Linen", quantity: 5 })
+    ];
+    expect(filterSortSignals(rows, { query: "2589" }).map((signal) => signal.itemId)).toEqual([2589, 5]);
+  });
+
   it("filters by category", () => {
     expect(filterSortSignals(signals, { category: "草药" }).map((signal) => signal.itemId)).toEqual([3]);
   });

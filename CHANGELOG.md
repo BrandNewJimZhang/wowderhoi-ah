@@ -36,7 +36,12 @@
   counted as `diagnostics.excluded.sizing`, so every surviving row is
   fundable and a zero allocation has an actionable cause.
 - The terminal table ranks a search by relevance unless the player clicked
-  a column; `item:4338` is accepted there too.
+  a column; `item:4338` is accepted there too. Filtering also goes through
+  the shared ranker, so a numeric query keeps both the item id and any name
+  containing those digits, in the same order the addon's search box uses.
+- The terminal writes the chosen sort column to the URL (including the
+  default column) and hides the header arrow while relevance ordering is
+  active, instead of showing a column the server did not apply.
 - The scanner caches normalized owner names, keeps the distinct-seller
   count and supply in one table, and encodes each (owner, price) flow pair
   as one number instead of a nested table. The capture shape is now
@@ -57,6 +62,8 @@
   response being scored against the new text.
 - A browse page where no row matches now reports a failed search instead of
   opening an arbitrary first row.
+- Bare numeric queries parse identically in both runtimes: `0x10` searches
+  names instead of silently addressing item 16 in one of them.
 - The fill model no longer overstates the chance of a listing on a book
   whose persisted ladder was truncated; unseen units count as queue.
 - The trader tooltip section and its chart no longer appear on talent,

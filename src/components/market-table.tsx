@@ -57,7 +57,7 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
   // A query with no clicked column is sorted by relevance, not by the
   // default key the view still names; marking that key would point at an
   // order the server did not apply.
-  const relevanceActive = view.query !== "" && !view.sortExplicit;
+  const relevanceActive = view.query.trim() !== "" && !view.sortExplicit;
   const toggleSort = (key: SignalSortKey) => {
     if (key === view.sortKey && view.sortExplicit) {
       apply({ sortAsc: !view.sortAsc });
