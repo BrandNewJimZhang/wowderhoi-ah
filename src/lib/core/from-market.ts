@@ -95,6 +95,7 @@ export function buildCoreInput(
       highestBid: signal.highestBid,
       demandPrior: demandFor(signal.category, history.subCategory),
       tiers: parseTiers(latest.topTiers, { p: signal.minPrice, q: Math.max(signal.quantity, 1) }),
+      tierTruncated: signal.tierTruncated,
       // The scan-time stamp is the history definition both runtimes share;
       // sellSamples is the terminal's own fallback for older rows.
       history: { samples: signal.historySamples ?? signal.sellSamples }

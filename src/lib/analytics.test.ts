@@ -105,6 +105,13 @@ describe("buildMarketSignal", () => {
     expect(buildMarketSignal(history([{ daysAgo: 0, sellPrice: 100 }]), now).historySamples).toBeNull();
   });
 
+  it("carries the truncated-ladder flag from the scan row", () => {
+    const item = history([{ daysAgo: 0, sellPrice: 100 }]);
+    item.snapshots[0].tierTruncated = true;
+    expect(buildMarketSignal(item, now).tierTruncated).toBe(true);
+    expect(buildMarketSignal(history([{ daysAgo: 0, sellPrice: 100 }]), now).tierTruncated).toBe(false);
+  });
+
   it("extends the reference window with daily closes beyond snapshot retention", () => {
     // The universe query only keeps the last 48 snapshots (about 12 hours
     // at the scan cadence), so a 7-day steady window could never be built

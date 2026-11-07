@@ -98,6 +98,9 @@ model AuctionSnapshot {
   // scanner. Null on rows imported before the column existed; the terminal
   // then falls back to its own sell-sample count.
   historySamples   Int?     @map("history_samples")
+  // True when the persisted ladder is only the top eight rungs of a deeper
+  // book. The fill model must count the unseen units as a queue.
+  tierTruncated    Boolean  @default(false) @map("tier_truncated")
   topTiers         Json?    @map("top_tiers")
   expiring         Json?    @map("expiring")
   item             Item     @relation(fields: [itemId], references: [itemId], onDelete: Cascade)

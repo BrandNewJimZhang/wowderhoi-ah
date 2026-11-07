@@ -147,6 +147,17 @@ describe("forever replicate scan v4", () => {
       .toBe(lua.number("WowTest.ns.history(2589).samples"));
   });
 
+  it("flags a ladder that was truncated to its top eight rungs", () => {
+    const lua = auctionPage();
+    const deep = Array.from({ length: 12 }, (_, index) => ({
+      itemId: 2589, name: "Deep Book", count: 1, buyout: 100 + index
+    }));
+    lua.runScan([...deep, { itemId: 2590, name: "Shallow Book", count: 1, buyout: 500 }]);
+    expect(lua.number("#WoWderhoiAH_ScanData.items[2589].tiers")).toBe(8);
+    expect(lua.eval("WoWderhoiAH_ScanData.items[2589].tierTruncated")).toBe(true);
+    expect(lua.eval("WoWderhoiAH_ScanData.items[2590].tierTruncated")).toBe(false);
+  });
+
   it("hands the stamped sample count to the core instead of recounting", () => {
     const lua = auctionPage();
     lua.runScan([{ itemId: 2589, name: "Linen", count: 10, buyout: 10000 }]);

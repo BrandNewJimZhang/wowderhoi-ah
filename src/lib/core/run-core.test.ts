@@ -166,6 +166,45 @@ describe("Core.evaluate through fengari", () => {
     expect(output.rows[0].candidateQty).toBe(65);
   });
 
+  it("counts the unseen book as a queue when the ladder was truncated", () => {
+    // The scan persists only the cheapest eight rungs. The visible book here
+    // is 160 units at 1000-1350 and the listing is at 1599, above every
+    // visible rung, so the rest of the 320-unit book may sit in front of it.
+    // Ignoring the truncation would treat the visible top as the whole queue
+    // and overstate the fill chance.
+    const visibleTiers = Array.from({ length: 8 }, (_, index) => ({ p: 1000 + index * 50, q: 20 }));
+    const book = {
+      name: "Deep Book",
+      itemClass: "Trade Goods",
+      marketType: "commodity" as const,
+      vendorP: 0,
+      minPrice: 1000,
+      sellP: 1600,
+      quantity: 320,
+      numAuctions: 10,
+      sellers: 4,
+      tiers: visibleTiers,
+      history: { samples: 8 },
+      ownerVisible: true,
+      flowObserved: true,
+      inferredSoldLow: 0,
+      inferredSoldHigh: 0,
+      elapsedHours: 0.25
+    };
+    const truncated = runCore(commodityInput({
+      phase: "wave",
+      items: { 1: { ...book, tierTruncated: true } }
+    }));
+    const complete = runCore(commodityInput({
+      phase: "wave",
+      items: { 1: { ...book, tierTruncated: false } }
+    }));
+    expect(truncated.rows).toHaveLength(1);
+    expect(complete.rows).toHaveLength(1);
+    expect(truncated.rows[0].candidateQty).toBe(complete.rows[0].candidateQty);
+    expect(truncated.rows[0].fillProb).toBeLessThan(complete.rows[0].fillProb);
+  });
+
   it("emits a conditional buy plan and a sell plan for a held position", () => {
     const input = commodityInput({ phase: "wave" });
     input.positions = { 2589: { qty: 40, cost: 32000 } };

@@ -51,6 +51,9 @@ export type MarketSignal = {
   // scanner. Null on rows imported before the column existed; the core
   // falls back to sellSamples for those.
   historySamples: number | null;
+  // The persisted ladder is a truncated top-of-book; the queue behind a
+  // listing above the last visible rung is larger than the rows shown.
+  tierTruncated: boolean;
   spreadPercent: number; // (sellPrice - minPrice) / sellPrice
   trendPercent: number; // (sellPrice - sellRef) / sellRef
   changePercent: number; // sellPrice vs the previous snapshot that priced this item
@@ -95,6 +98,7 @@ export function buildMarketSignal(
   // terminal's sellSamples counts the median's inputs from the snapshot
   // page. Both used to travel as `history.samples` under the same name.
   const historySamples = latest.historySamples ?? null;
+  const tierTruncated = latest.tierTruncated === true;
   const previousSell = previous ? sellPriceOf(previous) : 0;
   return {
     itemId: item.itemId,
@@ -127,6 +131,7 @@ export function buildMarketSignal(
     sellRef,
     sellSamples,
     historySamples,
+    tierTruncated,
     // The spread is the executable gap at today's sell front. sellRef is
     // the window reference for trend only; using it here would let a stale
     // median approve a trade that loses money at the current book.

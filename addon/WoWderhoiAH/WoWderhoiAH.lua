@@ -772,6 +772,9 @@ local function finishItem(itemId)
       bidOnly = entry.bidOnly,
       highestBid = math.floor((entry.bidAmount or 0) + 0.5),
       tiers = storedTiers,
+      -- Only the cheapest eight rungs are persisted. The core uses this to
+      -- treat the unseen deep book as a queue instead of an empty one.
+      tierTruncated = #tiers > #storedTiers,
       expiring = entry.expiring,
       inferredSoldLow = soldLow,
       inferredSoldHigh = soldHigh,
@@ -1422,6 +1425,7 @@ function WAH.coreInput()
         bidOnly = entry.bidOnly,
         highestBid = entry.highestBid,
         tiers = entry.tiers,
+        tierTruncated = entry.tierTruncated,
         inferredSoldLow = entry.inferredSoldLow,
         inferredSoldHigh = entry.inferredSoldHigh,
         -- False when this scan had no baseline for the item; the core treats

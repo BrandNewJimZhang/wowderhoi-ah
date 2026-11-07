@@ -38,6 +38,9 @@ export type CoreMarketItem = {
   topSellerShare?: number | null;
   bidOnly?: number;
   tiers?: Tier[];
+  // True when the persisted ladder is a truncated top-of-book; the core then
+  // cannot treat the last visible rung as the end of the queue.
+  tierTruncated?: boolean;
   inferredSoldLow?: number;
   inferredSoldHigh?: number;
   // False when the scan had no previous capture of the item; Core.isObservable

@@ -52,6 +52,9 @@ export type AddonScanItem = {
   historySamples: number | null;
   vendorPrice: number; // NPC sell price in copper; 0 = unsellable to vendors
   tiers: AddonTier[]; // top of the price ladder, ascending
+  // True when the book had more rungs than the persisted top eight. The
+  // core must then treat the unseen depth as a queue behind the visible top.
+  tierTruncated: boolean;
   expiring: { soon: number; mid: number; late: number };
 };
 
@@ -350,6 +353,7 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
         : null,
       vendorPrice: optionalNonNegative(entry.vendorP, "vendorP", key),
       tiers: priced ? normalizeTiers(entry.tiers, key, { p: minPrice, q: quantity }) : [],
+      tierTruncated: priced ? entry.tierTruncated === true : false,
       expiring: normalizeExpiring(entry.expiring, key)
     });
   }

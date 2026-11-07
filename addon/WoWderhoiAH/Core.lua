@@ -784,6 +784,21 @@ function Core.evaluate(input)
         elseif net < ((marketRules and marketRules.minNet) or 0) then
           excluded.net = excluded.net + 1
         else
+          -- The relist joins the queue behind everything at or below its
+          -- price that the purchase did not remove. Buying q units takes
+          -- them off the book before they are listed again, so the queue
+          -- is the depth at that price minus q, not the whole depth. (A
+          -- seller listing from the bag leaves the book untouched, so the
+          -- chart and the sell plan count the full depth instead.)
+          local ahead = math.max(0, quantityAtOrBelow(tiers, listP) - qty)
+          -- Only the cheapest eight rungs are persisted. When the listing
+          -- price sits above the last visible rung, the unseen deep book may
+          -- also be at or below it; counting every unseen unit as ahead is
+          -- the conservative reading and stops a truncated top-of-book from
+          -- looking like an empty queue.
+          if item.tierTruncated and tiers[#tiers] and listP > tiers[#tiers].p then
+            ahead = math.max(ahead, (item.quantity or 0) - qty)
+          end
           local low, high, point, fillBasis, fillHazard = Core.fillProbability({
             horizonHours = fillHorizonHours(),
             phase = phase,
@@ -795,13 +810,7 @@ function Core.evaluate(input)
             sold = item.inferredSoldLow or 0,
             supply = item.quantity or 0,
             elapsedHours = item.elapsedHours or scanFloor,
-            -- The relist joins the queue behind everything at or below its
-            -- price that the purchase did not remove. Buying q units takes
-            -- them off the book before they are listed again, so the queue
-            -- is the depth at that price minus q, not the whole depth. (A
-            -- seller listing from the bag leaves the book untouched, so
-            -- the chart and the sell plan count the full depth instead.)
-            ahead = math.max(0, quantityAtOrBelow(tiers, listP) - qty),
+            ahead = ahead,
             -- Observability decides between "nothing disappeared" and "we
             -- could not see": hidden owners make the proxy unobservable.
             observable = Core.isObservable(item)

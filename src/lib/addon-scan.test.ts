@@ -27,6 +27,7 @@ WoWderhoiAH_ScanData = {
 \t\t\t["sellers"] = 7,
 \t\t\t["ownerVisible"] = true,
 \t\t\t["historySamples"] = 12,
+\t\t\t["tierTruncated"] = true,
 \t\t\t["flowObserved"] = false,
 \t\t\t["sellerHHI"] = 0.4,
 \t\t\t["topSellerShare"] = 0.6,
@@ -119,6 +120,7 @@ describe("normalizeAddonScan", () => {
       topSellerShare: 0.6,
       bidOnlyCount: 0,
       historySamples: 12,
+      tierTruncated: true,
       vendorPrice: 25
     });
     expect(copperOre?.tiers).toEqual([{ p: 150, q: 100 }, { p: 200, q: 140 }]);
@@ -134,6 +136,7 @@ describe("normalizeAddonScan", () => {
     // A scan from before the field existed leaves the count unknown, so the
     // terminal falls back to its own sample definition instead of zero.
     expect(blackLotus?.historySamples).toBeNull();
+    expect(blackLotus?.tierTruncated).toBe(false);
   });
 
   it("distinguishes an omitted opening time from an explicit clear", () => {

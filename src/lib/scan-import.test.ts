@@ -27,6 +27,7 @@ function scanItem(partial: Partial<AddonScanItem> & Pick<AddonScanItem, "itemId"
     flowObserved: true,
     supplyGrowth: 0,
     historySamples: null,
+    tierTruncated: false,
     tiers: [{ p: 90, q: 5 }],
     expiring: { soon: 0, mid: 0, late: 0 },
     vendorPrice: 0,
