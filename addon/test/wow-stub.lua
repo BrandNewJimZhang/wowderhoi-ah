@@ -406,11 +406,6 @@ C_Container = {
   end
 }
 
-C_AuctionHouse.GetItemKeyFromItem = function(item)
-  local info = item and bed.bagContents[item.bag .. ":" .. item.slot]
-  return { itemID = info and info.itemID or 0, itemLevel = 0, itemSuffix = 0, battlePetSpeciesID = 0 }
-end
-
 C_AuctionHouse.GetItemCommodityStatus = function(item)
   local info = item and bed.bagContents[item.bag .. ":" .. item.slot]
   if info and bed.commodityItems[info.itemID] then return Enum.ItemCommodityStatus.Commodity end
