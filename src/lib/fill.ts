@@ -7,7 +7,7 @@
 // script measures -- so the units leaving per hour are hazard x supply. A
 // second rearrangement of this arithmetic is how the sell page and the radar
 // came to quote different probabilities for the same item; the parity test
-// in addon/test/sell-pricing.test.ts pins the two together.
+// in addon/test/fill-parity.test.ts pins the two together.
 //
 // This curve is the bag-seller view: the goods were not taken out of the
 // book, so everything at or below the listing price is ahead of it. The
@@ -17,8 +17,8 @@
 import type { FillBasis } from "@/lib/core/types";
 import { fillRules } from "@/lib/market-rules";
 
-export type FillTier = { p: number; q: number };
-export type FillPoint = { price: number; fill: number; band: [number, number] };
+type FillTier = { p: number; q: number };
+type FillPoint = { price: number; fill: number; band: [number, number] };
 
 // One label per evidence tier. The cockpit, the review table and the item
 // chart used to keep three copies; the cockpit called every non-own basis
@@ -70,26 +70,32 @@ export function fillCurve(
   const share = Math.max(hazardPerHour, 0);
   const book = Math.max(supply, 0);
   if (share <= 0) return [];
+  // One point per distinct price. Everything at or below this price is in
+  // front of the listing -- including every unit already sitting at the same
+  // price, which were listed earlier. Core.fillWithin and Core.sellPlan sum
+  // all tiers at or below the price; leaving a duplicated row unmerged let
+  // the first of them quote a shorter queue than the sell page on the same
+  // book. Real scans aggregate by price, but the curve must not depend on
+  // its input having been through that step.
+  const merged: FillTier[] = [];
+  for (const tier of [...tiers].sort((left, right) => left.p - right.p)) {
+    const last = merged[merged.length - 1];
+    if (last && last.p === tier.p) last.q += tier.q;
+    else merged.push({ p: tier.p, q: tier.q });
+  }
   let ahead = 0;
-  return [...tiers]
-    .sort((left, right) => left.p - right.p)
-    .map((tier) => {
-      // Everything at or below this price is in front of the listing: units
-      // already sitting at the same price were listed earlier. Core.fillWithin
-      // and Core.sellPlan count the queue the same way; treating the equal
-      // tier as empty made this curve quote several times the sell page's
-      // probability for one book.
-      ahead += tier.q;
-      const queue = ahead + qty;
-      // A book with no size has no queue: the share can only be applied to
-      // the listing itself, matching Core.fillWithin's degraded branch.
-      const fill = book > 0
-        ? 1 - Math.exp(-share * book * horizonHours / queue)
-        : 1 - Math.exp(-share * horizonHours);
-      return {
-        price: tier.p,
-        fill,
-        band: [Math.max(0, fill * (1 - band)), Math.min(1, fill * (1 + band))] as [number, number]
-      };
-    });
+  return merged.map((tier) => {
+    ahead += tier.q;
+    const queue = ahead + qty;
+    // A book with no size has no queue: the share can only be applied to
+    // the listing itself, matching Core.fillWithin's degraded branch.
+    const fill = book > 0
+      ? 1 - Math.exp(-share * book * horizonHours / queue)
+      : 1 - Math.exp(-share * horizonHours);
+    return {
+      price: tier.p,
+      fill,
+      band: [Math.max(0, fill * (1 - band)), Math.min(1, fill * (1 + band))] as [number, number]
+    };
+  });
 }

@@ -14,6 +14,16 @@ describe("fillCurve", () => {
     expect(points[0].fill).toBeCloseTo(1 - Math.exp((-0.001 * 100 * 24) / 60), 5);
   });
 
+  it("merges tiers at one price before counting the queue", () => {
+    // Real scans aggregate tiers by price, but a duplicated row must not
+    // earn a better fill: the listing queues behind every unit at its price.
+    // Core.sellPlan sums all tiers at or below the price, so the chart has
+    // to reach the same queue for the same ladder.
+    const points = fillCurve([{ p: 100, q: 50 }, { p: 100, q: 50 }], 0.001, 100, 24, 0.35, 10);
+    expect(points).toHaveLength(1);
+    expect(points[0].fill).toBeCloseTo(1 - Math.exp((-0.001 * 100 * 24) / 110), 5);
+  });
+
   it("anchors the front of the book and falls as supply sits ahead of the price", () => {
     const points = fillCurve([{ p: 100, q: 50 }, { p: 200, q: 50 }], 0.001, 100, 24, 0.35, 10);
     expect(points).toHaveLength(2);
