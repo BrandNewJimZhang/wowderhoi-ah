@@ -131,6 +131,29 @@ describe("shared capital allocation", () => {
     expect(lua.number("WowTest.allocUnfunded.depth")).toBe(1);
   });
 
+  it("names the purse when the remaining share cannot buy one unit", () => {
+    const lua = loadAddon();
+    const rows = [
+      // A vendor row has no per-item exposure cap, so it can spend the
+      // daily share down to less than one unit of the next row.
+      { vendor: true, candidateUnitPrice: 100, listP: 300, sellP: 300, vendorP: 300, candidateQty: 49, fillProb: 1 },
+      {
+        minPrice: 200, candidateUnitPrice: 200, listP: 400, sellP: 400,
+        candidateQty: 10, fillProb: 1, samples: 20, tiers: [{ p: 200, q: 10 }]
+      }
+    ];
+    // 10k purse x dailyBudget 0.5 = 5k. The vendor row takes 49 units at
+    // 100 (4,900), leaving 100 copper: less than the next row's 200-copper
+    // unit, while its 2.5k exposure cap could afford one. The book has
+    // depth; the shared purse is what ran out.
+    lua.exec(`WowTest.allocRows, WowTest.allocUnfunded = WowTest.ns.Core.allocate(${toLua(rows)}, 10000, WowTest.ns.RULES)`);
+    expect(lua.number("WowTest.allocRows[1].allocQty")).toBe(49);
+    expect(lua.number("WowTest.allocRows[2].allocQty")).toBe(0);
+    expect(lua.text("WowTest.allocRows[2].unfunded")).toBe("purse");
+    expect(lua.number("WowTest.allocUnfunded.purse")).toBe(1);
+    expect(lua.number("WowTest.allocUnfunded.depth")).toBe(0);
+  });
+
   it("publishes funded rows as opportunities that match the buy actions", () => {
     const output = evaluate({ 2589: item(2589), 2592: item(2592) }, 100000);
     expect(output.opportunities.length).toBeGreaterThan(0);

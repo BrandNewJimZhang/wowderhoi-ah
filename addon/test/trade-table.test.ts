@@ -216,6 +216,9 @@ describe("rainy-day radar", () => {
     lua.setPoints(POINTS);
     lua.openTab();
     expect(lua.rowCount()).toBe(0);
-    expect(lua.anyChat("钱包")).toBe(true);
+    // A share below one unit is a purse cause: the book has depth, the
+    // daily share just cannot reach it.
+    expect(lua.anyChat("钱包不足 1 条")).toBe(true);
+    expect(lua.anyChat("盘口 1 条")).toBe(false);
   });
 });

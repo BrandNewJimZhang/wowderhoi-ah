@@ -616,6 +616,13 @@ function Core.allocate(rows, deployable, rules)
         -- worth more than in four. Displayed by both cockpits.
         row.netPerMinute = round(row.allocNet / math.max(effortMinutes("buy"), 1))
         remaining = remaining - cost
+      -- Zero quantity after the ladder walk has two different causes: the
+      -- remaining share cannot reach one average unit (the purse ran out
+      -- mid-list), or the per-item exposure cap cannot. Only when both caps
+      -- clear the row's average yet no rung is affordable is the book itself
+      -- the limit.
+      elseif remaining < unit then
+        row.unfunded = "purse"
       elseif itemCap and itemCap < unit then
         row.unfunded = "exposure"
       else
@@ -895,49 +902,47 @@ function Core.evaluate(input)
   local planned = 0
   for _, row in ipairs(opportunities) do
     if planned >= 12 then break end
-    if (row.allocQty or 0) > 0 then
-      planned = planned + 1
-      if row.vendor then
-        actions[#actions + 1] = {
-          kind = "buy",
-          itemId = row.itemId,
-          name = row.name,
-          qty = row.allocQty,
-          maxUnitPrice = row.sellP,
-          unitPrice = row.allocUnitPrice,
-          expectedNet = row.allocNet,
-          netPerMinute = row.netPerMinute or 0,
-          fillProb = 1,
-          fillBasis = "vendor",
-          allocQty = row.allocQty,
-          allocUnitPrice = row.allocUnitPrice,
-          confidence = row.confidence,
-          exit = "vendor",
-          reason = row.reason
-        }
-      else
-        actions[#actions + 1] = {
-          kind = "buy",
-          itemId = row.itemId,
-          name = row.name,
-          qty = row.allocQty,
-          maxUnitPrice = round(row.listP * (1 - feeRate)),
-          unitPrice = row.allocUnitPrice,
-          expectedNet = row.allocNet,
-          netPerMinute = row.netPerMinute or 0,
-          fillProb = row.fillProb,
-          fillBasis = row.fillBasis,
-          allocQty = row.allocQty,
-          allocUnitPrice = row.allocUnitPrice,
-          confidence = row.confidence,
-          exit = "auction",
-          stop = {
-            kind = "abort",
-            ifPriceAbove = round(row.listP * (1 - feeRate))
-          },
-          reason = row.reason
-        }
-      end
+    planned = planned + 1
+    if row.vendor then
+      actions[#actions + 1] = {
+        kind = "buy",
+        itemId = row.itemId,
+        name = row.name,
+        qty = row.allocQty,
+        maxUnitPrice = row.sellP,
+        unitPrice = row.allocUnitPrice,
+        expectedNet = row.allocNet,
+        netPerMinute = row.netPerMinute or 0,
+        fillProb = 1,
+        fillBasis = "vendor",
+        allocQty = row.allocQty,
+        allocUnitPrice = row.allocUnitPrice,
+        confidence = row.confidence,
+        exit = "vendor",
+        reason = row.reason
+      }
+    else
+      actions[#actions + 1] = {
+        kind = "buy",
+        itemId = row.itemId,
+        name = row.name,
+        qty = row.allocQty,
+        maxUnitPrice = round(row.listP * (1 - feeRate)),
+        unitPrice = row.allocUnitPrice,
+        expectedNet = row.allocNet,
+        netPerMinute = row.netPerMinute or 0,
+        fillProb = row.fillProb,
+        fillBasis = row.fillBasis,
+        allocQty = row.allocQty,
+        allocUnitPrice = row.allocUnitPrice,
+        confidence = row.confidence,
+        exit = "auction",
+        stop = {
+          kind = "abort",
+          ifPriceAbove = round(row.listP * (1 - feeRate))
+        },
+        reason = row.reason
+      }
     end
   end
   for itemId, position in pairs(positions) do
