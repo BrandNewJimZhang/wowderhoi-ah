@@ -63,8 +63,9 @@ function emptyBundle(phase: MarketPhase, scope: MarketScope | null = null): Mark
     evaluation: {
       phase,
       rows: [],
+      opportunities: [],
       actions: [],
-      diagnostics: { excluded: {} }
+      diagnostics: { excluded: {}, unfunded: { kelly: 0, exposure: 0, purse: 0, depth: 0 } }
     }
   };
 }

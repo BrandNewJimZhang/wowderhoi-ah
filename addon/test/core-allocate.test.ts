@@ -41,8 +41,10 @@ function evaluate(
     positions
   };
   return lua.coreEval(input) as {
-    rows: Array<{ itemId: number; candidateQty: number; allocQty: number; allocNet: number; allocCost: number; allocUnitPrice: number; candidateUnitPrice: number; vendor: boolean; exploratory: boolean; samples: number; score: number; netPerMinute: number }>;
+    rows: Array<{ itemId: number; candidateQty: number; allocQty: number; allocNet: number; allocCost: number; allocUnitPrice: number; candidateUnitPrice: number; vendor: boolean; exploratory: boolean; samples: number; score: number; netPerMinute: number; unfunded?: string }>;
+    opportunities: Array<{ itemId: number; allocQty: number; candidateQty: number }>;
     actions: Array<{ kind: string; itemId: number; qty: number; expectedNet: number; netPerMinute: number }>;
+    diagnostics: { unfunded: Record<string, number>; excluded: Record<string, number> };
   };
 }
 
@@ -80,9 +82,64 @@ describe("shared capital allocation", () => {
   it("allocates nothing when Kelly says the bet is negative", () => {
     const lua = loadAddon();
     const rows = [{ candidateUnitPrice: 100, listP: 110, vendorP: 0, candidateQty: 100, fillProb: 0 }];
-    lua.exec(`WowTest.allocRows = WowTest.ns.Core.allocate(${toLua(rows)}, 100000, WowTest.ns.RULES)`);
+    lua.exec(`WowTest.allocRows, WowTest.allocUnfunded = WowTest.ns.Core.allocate(${toLua(rows)}, 100000, WowTest.ns.RULES)`);
     expect(lua.number("WowTest.allocRows[1].allocQty")).toBe(0);
     expect(lua.number("WowTest.allocRows[1].allocNet")).toBe(0);
+    // A zero allocation has a cause, and it is not always the purse.
+    expect(lua.text("WowTest.allocRows[1].unfunded")).toBe("kelly");
+    expect(lua.number("WowTest.allocUnfunded.kelly")).toBe(1);
+  });
+
+  it("names the purse once the daily share is spent", () => {
+    const lua = loadAddon();
+    const rows = [
+      { candidateUnitPrice: 100, listP: 300, sellP: 300, vendorP: 300, vendor: true, candidateQty: 400, fillProb: 1 },
+      { candidateUnitPrice: 100, listP: 300, sellP: 300, vendorP: 300, vendor: true, candidateQty: 400, fillProb: 1 }
+    ];
+    // 10k purse x dailyBudget 0.5 = 5k, exactly fifty units at 100.
+    lua.exec(`WowTest.allocRows, WowTest.allocUnfunded = WowTest.ns.Core.allocate(${toLua(rows)}, 10000, WowTest.ns.RULES)`);
+    expect(lua.number("WowTest.allocRows[1].allocQty")).toBe(50);
+    expect(lua.text("WowTest.allocRows[2].unfunded")).toBe("purse");
+    expect(lua.number("WowTest.allocUnfunded.purse")).toBe(1);
+  });
+
+  it("names the per-item exposure cap, not the purse", () => {
+    const lua = loadAddon();
+    lua.exec("WowTest.ns.RULES.portfolio.maxItemExposure = 0");
+    const rows = [{
+      minPrice: 100, candidateUnitPrice: 100, listP: 200, sellP: 200,
+      candidateQty: 100, fillProb: 1, samples: 20
+    }];
+    lua.exec(`WowTest.allocRows, WowTest.allocUnfunded = WowTest.ns.Core.allocate(${toLua(rows)}, 100000, WowTest.ns.RULES)`);
+    expect(lua.number("WowTest.allocRows[1].allocQty")).toBe(0);
+    expect(lua.text("WowTest.allocRows[1].unfunded")).toBe("exposure");
+    expect(lua.number("WowTest.allocUnfunded.exposure")).toBe(1);
+  });
+
+  it("names an unaffordable ladder as depth", () => {
+    const lua = loadAddon();
+    // The row's average says 100, but its only rung costs 100,000: the cap
+    // is above one unit of the average and below the rung it must buy.
+    const rows = [{
+      minPrice: 100, candidateUnitPrice: 100, listP: 200, sellP: 200,
+      candidateQty: 5, fillProb: 1, samples: 20,
+      tiers: [{ p: 100000, q: 5 }]
+    }];
+    lua.exec(`WowTest.allocRows, WowTest.allocUnfunded = WowTest.ns.Core.allocate(${toLua(rows)}, 100000, WowTest.ns.RULES)`);
+    expect(lua.number("WowTest.allocRows[1].allocQty")).toBe(0);
+    expect(lua.text("WowTest.allocRows[1].unfunded")).toBe("depth");
+    expect(lua.number("WowTest.allocUnfunded.depth")).toBe(1);
+  });
+
+  it("publishes funded rows as opportunities that match the buy actions", () => {
+    const output = evaluate({ 2589: item(2589), 2592: item(2592) }, 100000);
+    expect(output.opportunities.length).toBeGreaterThan(0);
+    expect(output.opportunities.every((row) => row.allocQty > 0 && row.allocQty <= row.candidateQty)).toBe(true);
+    const funded = new Set(output.opportunities.map((row) => row.itemId));
+    for (const action of output.actions) {
+      if (action.kind === "buy") expect(funded.has(action.itemId)).toBe(true);
+    }
+    expect(output.diagnostics.unfunded).toEqual({ kelly: 0, exposure: 0, purse: 0, depth: 0 });
   });
 
   it("prices the allocated quantity from the cheap end of the ladder", () => {

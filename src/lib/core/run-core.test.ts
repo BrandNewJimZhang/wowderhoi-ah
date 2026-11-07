@@ -78,6 +78,52 @@ describe("Core.evaluate through fengari", () => {
     expect(output.diagnostics.excluded.noHistory).toBe(1);
   });
 
+  it("excludes a gate-passing row the risk model refuses to fund", () => {
+    // Steady commodity: 16% spread, sixty history samples. The book is
+    // observable and nothing disappeared from it, so the posterior fill is
+    // ~7% while a 1000 -> 1186 trade needs ~60% to break even. The gates
+    // alone would call this a candidate and the allocator would hand it
+    // zero copper, which the old radar reported as "the purse is too small".
+    const quiet = commodityInput({
+      phase: "steady",
+      budget: 500_000,
+      items: {
+        1: {
+          name: "Quiet Book",
+          itemClass: "Trade Goods",
+          marketType: "commodity",
+          vendorP: 0,
+          minPrice: 1000,
+          sellP: 1186,
+          quantity: 5000,
+          numAuctions: 12,
+          sellers: 6,
+          tiers: [{ p: 1000, q: 5000 }],
+          history: { samples: 60 },
+          ownerVisible: true,
+          flowObserved: true,
+          inferredSoldLow: 0,
+          inferredSoldHigh: 0,
+          elapsedHours: 0.25
+        }
+      }
+    });
+    quiet.capital = { cash: 500_000, budget: 500_000 };
+    const quietOutput = runCore(quiet);
+    expect(quietOutput.rows).toHaveLength(0);
+    expect(quietOutput.diagnostics.excluded.sizing).toBe(1);
+    expect(quietOutput.diagnostics.unfunded).toEqual({ kelly: 0, exposure: 0, purse: 0, depth: 0 });
+
+    // The same book without the observed zero (owners hidden, so the phase
+    // prior applies) clears the same risk test and is funded.
+    const liquid = structuredClone(quiet);
+    liquid.market.items[1].ownerVisible = false;
+    const liquidOutput = runCore(liquid);
+    expect(liquidOutput.rows).toHaveLength(1);
+    expect(liquidOutput.opportunities).toHaveLength(1);
+    expect(liquidOutput.opportunities[0].allocQty).toBeGreaterThan(0);
+  });
+
   it("caps confidence at medium when the fill estimate is only a prior", () => {
     const input = commodityInput({ phase: "wave" });
     input.market.items[2589].history = { samples: 12 };

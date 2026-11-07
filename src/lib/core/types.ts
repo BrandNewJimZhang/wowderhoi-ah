@@ -6,6 +6,9 @@ import type { MarketPhase, MarketType } from "@/lib/market-rules";
 
 export type Confidence = "high" | "medium" | "low";
 export type FillBasis = "own" | "proxy" | "observed-zero" | "prior" | "vendor";
+// Why a candidate row received no copper. The core decides this; a UI must
+// not infer "the purse was too small" from a zero quantity.
+export type UnfundedReason = "kelly" | "exposure" | "purse" | "depth";
 
 // Clean fill labels per item: collected auction sales only, within a window.
 // `exposedHours` sums each listing's time on the book before its sale was
@@ -90,6 +93,8 @@ export type CoreRow = {
   // The allocator's own thin-evidence label (samples below the Kelly
   // floor). The cockpit renders it instead of comparing counts itself.
   exploratory: boolean;
+  // Set when the row passed every gate but the allocator granted no copper.
+  unfunded?: UnfundedReason;
   sellP: number;
   listP: number;
   vendorP: number;
@@ -156,10 +161,18 @@ export type CoreAction =
 
 export type CoreOutput = {
   phase: MarketPhase;
+  // Candidates that passed every gate, funded or not.
   rows: CoreRow[];
+  // The funded layer: rows the shared allocator actually gave copper. Every
+  // "buy this now" surface renders this list, so its quantity, price and
+  // net all describe the same trade.
+  opportunities: CoreRow[];
   actions: CoreAction[];
-  // Why rows fell out of the radar, keyed by gate. Read by the core's own
-  // tests; the UIs explain exclusions per row instead.
-  diagnostics: { excluded: Record<string, number> };
+  // Why rows fell out of the radar, keyed by gate, and why a candidate got
+  // no copper, keyed by cause.
+  diagnostics: {
+    excluded: Record<string, number>;
+    unfunded: Record<UnfundedReason, number>;
+  };
 };
 

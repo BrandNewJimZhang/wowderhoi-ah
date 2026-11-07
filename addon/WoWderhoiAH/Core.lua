@@ -545,6 +545,9 @@ function Core.sizePosition(row, deployable, rules)
   local budget = math.min(capital * fraction, itemCap)
   return {
     budget = budget,
+    -- A zero allocation is a sizing decision, not a purse decision; the
+    -- caller needs the fraction to say which one it hit.
+    fraction = fraction,
     exploratory = (row.samples or 0) < (portfolio.minKellySamples or 10)
   }
 end
@@ -557,11 +560,16 @@ function Core.allocate(rows, deployable, rules)
   local portfolio = (rules and rules.portfolio) or {}
   local feeRate = (rules and rules.feeRate) or 0.05
   local remaining = math.max(deployable or 0, 0) * (portfolio.dailyBudget or 0.5)
+  -- Why a candidate got no copper. "The purse ran out" is actionable and
+  -- the old radar guessed it for every zero; a Kelly rejection or an
+  -- exposure cap is a different message.
+  local unfunded = { kelly = 0, exposure = 0, purse = 0, depth = 0 }
   for _, row in ipairs(rows) do
     row.allocQty = 0
     row.allocNet = 0
     row.allocCost = 0
     row.netPerMinute = 0
+    row.unfunded = nil
     -- The row's buy price: the average actually paid for the allocated
     -- quantity. Before an allocation exists, the deep-ladder average still
     -- describes the book the row was ranked from.
@@ -569,14 +577,23 @@ function Core.allocate(rows, deployable, rules)
     -- The sample floor is a portfolio rule; the terminal must not re-derive
     -- the "exploratory" label from its own copy of the number.
     row.exploratory = false
+    local sized
     local itemCap
     if not row.vendor then
-      local sized = Core.sizePosition(row, deployable, rules)
+      sized = Core.sizePosition(row, deployable, rules)
       row.exploratory = sized.exploratory
       itemCap = sized.budget
     end
     local unit = row.candidateUnitPrice or 0
-    if unit > 0 and remaining > 0 then
+    if remaining <= 0 then
+      row.unfunded = "purse"
+    elseif sized and sized.fraction <= 0 then
+      row.unfunded = "kelly"
+    elseif itemCap and itemCap <= 0 then
+      row.unfunded = "exposure"
+    elseif unit <= 0 then
+      row.unfunded = "depth"
+    else
       local cap = remaining
       if itemCap then cap = math.min(cap, itemCap) end
       -- Quantity is what the copper cap actually reaches down the ladder,
@@ -603,10 +620,15 @@ function Core.allocate(rows, deployable, rules)
         -- worth more than in four. Displayed by both cockpits.
         row.netPerMinute = round(row.allocNet / math.max(effortMinutes("buy"), 1))
         remaining = remaining - cost
+      elseif itemCap and itemCap < unit then
+        row.unfunded = "exposure"
+      else
+        row.unfunded = "depth"
       end
     end
+    if row.unfunded then unfunded[row.unfunded] = unfunded[row.unfunded] + 1 end
   end
-  return rows
+  return rows, unfunded
 end
 
 -- Evaluate one market state.
@@ -663,7 +685,10 @@ function Core.evaluate(input)
   local budget = cash ~= nil and math.min(requested, cash) or requested
 
   local rows = {}
-  local excluded = { noBook = 0, thinBook = 0, noHistory = 0, spread = 0, net = 0, noDepth = 0 }
+  local excluded = {
+    noBook = 0, thinBook = 0, noHistory = 0, spread = 0, net = 0,
+    noDepth = 0, sizing = 0
+  }
 
   for itemId, item in pairs(items) do
     local minPrice = item.minPrice
@@ -784,41 +809,57 @@ function Core.evaluate(input)
           -- No fill evidence at all: history depth can still make the trade
           -- actionable, but it cannot make the fill estimate high-confidence.
           if fillBasis == "prior" and confidence == "high" then confidence = "medium" end
-          local row = {
-            itemId = itemId,
-            name = item.name,
-            quality = item.quality,
-            marketType = marketType,
-            vendor = false,
+          -- The gates and Kelly size the same marginal. A row Kelly refuses
+          -- to fund is not an opportunity: excluding it here keeps every
+          -- surviving candidate fundable and makes a zero allocation mean
+          -- the purse or an exposure cap, never "the risk model said no".
+          local sized = Core.sizePosition({
             minPrice = minPrice,
             candidateUnitPrice = average,
-            tiers = tiers,
-            candidateQty = qty,
-            sellP = sellP,
             listP = listP,
-            spreadPercent = spread * 100,
-            candidateNet = round(net),
-            candidateNetPerUnit = round(net / qty),
+            sellP = sellP,
             fillProb = point,
-            fillProbLow = low,
-            fillProbHigh = high,
-            fillHazard = fillHazard,
-            fillBasis = fillBasis,
-            confidence = confidence,
-            supplyGrowth = item.supplyGrowth or 0,
-            sellerHHI = item.sellerHHI,
-            topSellerShare = item.topSellerShare,
-            bidOnly = item.bidOnly or 0,
-            highestBid = item.highestBid or 0,
-            inferredSoldLow = item.inferredSoldLow or 0,
-            inferredSoldHigh = item.inferredSoldHigh or 0,
-            vendorP = vendorP,
-            samples = samples,
-            demandPrior = demandPrior
-          }
-          row.reason = reasonFor(row)
-          row.score = scoreFor(phase, row, item.supplyGrowth)
-          rows[#rows + 1] = row
+            samples = samples
+          }, budget, rules)
+          if sized.fraction > 0 then
+            local row = {
+              itemId = itemId,
+              name = item.name,
+              quality = item.quality,
+              marketType = marketType,
+              vendor = false,
+              minPrice = minPrice,
+              candidateUnitPrice = average,
+              tiers = tiers,
+              candidateQty = qty,
+              sellP = sellP,
+              listP = listP,
+              spreadPercent = spread * 100,
+              candidateNet = round(net),
+              candidateNetPerUnit = round(net / qty),
+              fillProb = point,
+              fillProbLow = low,
+              fillProbHigh = high,
+              fillHazard = fillHazard,
+              fillBasis = fillBasis,
+              confidence = confidence,
+              supplyGrowth = item.supplyGrowth or 0,
+              sellerHHI = item.sellerHHI,
+              topSellerShare = item.topSellerShare,
+              bidOnly = item.bidOnly or 0,
+              highestBid = item.highestBid or 0,
+              inferredSoldLow = item.inferredSoldLow or 0,
+              inferredSoldHigh = item.inferredSoldHigh or 0,
+              vendorP = vendorP,
+              samples = samples,
+              demandPrior = demandPrior
+            }
+            row.reason = reasonFor(row)
+            row.score = scoreFor(phase, row, item.supplyGrowth)
+            rows[#rows + 1] = row
+          else
+            excluded.sizing = excluded.sizing + 1
+          end
         end
       end
     end
@@ -830,7 +871,13 @@ function Core.evaluate(input)
     if left.candidateNet ~= right.candidateNet then return left.candidateNet > right.candidateNet end
     return left.itemId < right.itemId
   end)
-  Core.allocate(rows, budget, rules)
+  local _, unfunded = Core.allocate(rows, budget, rules)
+  -- The funded layer. Every "buy this now" surface reads this list instead
+  -- of re-filtering rows with its own copy of `allocQty > 0`.
+  local opportunities = {}
+  for _, row in ipairs(rows) do
+    if (row.allocQty or 0) > 0 then opportunities[#opportunities + 1] = row end
+  end
   -- The ladder was only ever the allocator's input: keeping it on every
   -- row would copy books the UIs already render from the scan.
   for _, row in ipairs(rows) do row.tiers = nil end
@@ -841,7 +888,7 @@ function Core.evaluate(input)
   -- one purse.
   local actions = {}
   local planned = 0
-  for _, row in ipairs(rows) do
+  for _, row in ipairs(opportunities) do
     if planned >= 12 then break end
     if (row.allocQty or 0) > 0 then
       planned = planned + 1
@@ -915,10 +962,12 @@ function Core.evaluate(input)
   return {
     phase = phase,
     rows = rows,
+    opportunities = opportunities,
     actions = actions,
-    -- Why rows fell out of the radar, keyed by gate. The UIs explain
-    -- exclusions per row; the core's own tests read this table.
-    diagnostics = { excluded = excluded }
+    -- Why rows fell out of the radar, keyed by gate, and why a candidate
+    -- received no copper, keyed by cause. The UIs explain exclusions per
+    -- row; the core's own tests read this table.
+    diagnostics = { excluded = excluded, unfunded = unfunded }
   }
 end
 
