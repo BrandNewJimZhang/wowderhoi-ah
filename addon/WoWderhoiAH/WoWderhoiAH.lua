@@ -203,11 +203,18 @@ WAH.freeBagSlots = freeBagSlots
 -- when the client hides owners, the owned-auction list is the fallback.
 
 local ownOwner -- false caches "no name available"
+-- Owner strings repeat on every listing of the same seller, so the strip
+-- and lower-case work is done once per distinct name, not once per row.
+local normalizedOwner = {}
 local function normalizeOwner(value)
   if type(value) ~= "string" then return nil end
+  local cached = normalizedOwner[value]
+  if cached then return cached end
   local name = value:match("^([^%-]+)") or value
   if name == "" then return nil end
-  return name:lower()
+  name = name:lower()
+  normalizedOwner[value] = name
+  return name
 end
 
 local function ownOwnerKey()
@@ -269,6 +276,27 @@ local function consumeOwnedMatch(itemId, buyoutPrice, count)
   return false
 end
 
+-- A flow key is (owner, unit price); its value is the remaining quantity and
+-- the shortest time left. At 170k listings the pair table was the scan's
+-- dominant allocation and dominated the SavedVariables file. One double
+-- carries both values exactly: the quantity in the high bits and a time-left
+-- code in the low 20 bits (48h is 172,800 seconds, so 2^20 has headroom).
+local FLOW_SCALE = 1048576
+local function packFlow(quantity, timeLeft)
+  -- Clamp a surprising client value instead of letting it carry into the
+  -- quantity field; the decoded time then reads as "longer than any window".
+  local code = timeLeft and math.min(timeLeft + 1, FLOW_SCALE - 1) or 0
+  return quantity * FLOW_SCALE + code
+end
+local function flowQuantity(packed)
+  return math.floor(packed / FLOW_SCALE)
+end
+local function flowTimeLeft(packed)
+  local code = packed % FLOW_SCALE
+  if code == 0 then return nil end
+  return code - 1
+end
+
 local function newEntry(name, quality, cached)
   return {
     name = name,
@@ -285,7 +313,9 @@ local function newEntry(name, quality, cached)
     bidAmount = 0,
     bidOnly = 0,
     hasBuyout = false,
-    sellers = {},
+    -- One table carries both the distinct-seller count and the supply the
+    -- concentration measure reads. Bid-only rows enter with 0 supply so a
+    -- seller who only bids still counts as present.
     sellerUnknown = false,
     -- True when at least one row named its owner. Partial visibility keeps
     -- sellerUnknown set, so the fill model treats the book as unobservable.
@@ -357,15 +387,16 @@ local function recordAuction(index)
     return
   end
 
+  local buyable = buyoutPrice and buyoutPrice > 0 and count and count > 0
   if seller then
-    entry.sellers[seller] = true
+    entry.ownerTotals[seller] = (entry.ownerTotals[seller] or 0) + (buyable and count or 0)
   end
   if bidAmount and bidAmount > (entry.bidAmount or 0) then entry.bidAmount = bidAmount end
 
   -- Bid-only listings carry no buyout and cannot be bought out. They are
   -- still the only direct demand signal the client publishes, so they are
   -- counted instead of silently dropped.
-  if not (buyoutPrice and buyoutPrice > 0 and count and count > 0) then
+  if not buyable then
     entry.bidOnly = entry.bidOnly + 1
     return
   end
@@ -387,13 +418,11 @@ local function recordAuction(index)
   end
   local flow = ownerFlow[unitPrice]
   if flow then
-    flow.q = flow.q + count
-    if timeLeft and (not flow.t or timeLeft < flow.t) then flow.t = timeLeft end
+    local shortest = flowTimeLeft(flow)
+    if timeLeft and (not shortest or timeLeft < shortest) then shortest = timeLeft end
+    ownerFlow[unitPrice] = packFlow(flowQuantity(flow) + count, shortest)
   else
-    ownerFlow[unitPrice] = { q = count, t = timeLeft }
-  end
-  if seller then
-    entry.ownerTotals[seller] = (entry.ownerTotals[seller] or 0) + count
+    ownerFlow[unitPrice] = packFlow(count, timeLeft)
   end
   local bucket = expiryBucket(timeLeft)
   entry.expiring[bucket] = entry.expiring[bucket] + 1
@@ -419,7 +448,7 @@ end
 
 local function countSellers(entry)
   local count = 0
-  for _ in pairs(entry.sellers) do count = count + 1 end
+  for _ in pairs(entry.ownerTotals) do count = count + 1 end
   return count
 end
 
@@ -475,6 +504,10 @@ end
 -- its close rather than its open. Event points (a 10% sell-front move or a
 -- 25% supply move) survive the fold in addition to the close.
 local function pruneSeries(series, nowTs)
+  -- Within the per-scan window the layered retention keeps every point
+  -- unchanged. Rebuilding five arrays per item per scan was pure garbage;
+  -- the common case returns the series it was given.
+  if series.t[1] and series.t[1] >= nowTs - DAY then return series end
   local cutoff24, cutoff7, cutoff30 = nowTs - DAY, nowTs - 7 * DAY, nowTs - 30 * DAY
   local kept = { t = {}, min = {}, sell = {}, q = {}, e = {} }
   local lastHour, lastDay
@@ -546,10 +579,10 @@ end
 local function previousCapture()
   local capture = WoWderhoiAH_Capture
   if type(capture) ~= "table" or capture.v ~= WAH.PIPELINE_VERSION then return nil end
-  -- Captures written before the owner-keyed shape carry flat "owner|price"
-  -- strings. They cannot be matched, so the first scan after the upgrade
-  -- starts a fresh baseline instead of crashing on a string.
-  if capture.shape ~= "owner-price" then return nil end
+  -- A capture written by another flow encoding cannot be matched. The first
+  -- scan after an upgrade starts a fresh baseline instead of reading an old
+  -- shape with the new meaning.
+  if capture.shape ~= "owner-price-packed" then return nil end
   if capture.market ~= marketKey() then return nil end
   return capture
 end
@@ -572,18 +605,20 @@ local function inferFlow(entry, previous, elapsedSeconds, ownBought)
   for owner, prices in pairs(previous.keys or {}) do
     local nowByPrice = entry.flow[owner]
     local liveQuantity = 0
-    for price, was in pairs(prices) do
+    for price, packed in pairs(prices) do
+      local wasQuantity = flowQuantity(packed)
+      local wasTime = flowTimeLeft(packed)
       local now = nowByPrice and nowByPrice[price]
-      local remaining = now and now.q or 0
+      local remaining = now and flowQuantity(now) or 0
       -- A listing cannot have sold if its previous remaining time was shorter
       -- than the gap between scans: that disappearance is an expiry.
-      local live = was.t and was.t > elapsedSeconds + 60
-      if was.q > remaining and (not was.t or live) then
-        high = high + (was.q - remaining)
+      local live = wasTime and wasTime > elapsedSeconds + 60
+      if wasQuantity > remaining and (not wasTime or live) then
+        high = high + (wasQuantity - remaining)
       end
       -- Only units that could not have expired contribute to the lower
       -- edge; an owner total that moved between prices stays unchanged.
-      if live then liveQuantity = liveQuantity + was.q end
+      if live then liveQuantity = liveQuantity + wasQuantity end
     end
     if liveQuantity > 0 and owner ~= "" then liveOwners[owner] = liveQuantity end
   end
@@ -783,7 +818,7 @@ local function finishScan(totalAuctions)
   }
   WoWderhoiAH_Capture = {
     v = WAH.PIPELINE_VERSION,
-    shape = "owner-price",
+    shape = "owner-price-packed",
     at = nowTs,
     market = marketKey(),
     items = captureItems

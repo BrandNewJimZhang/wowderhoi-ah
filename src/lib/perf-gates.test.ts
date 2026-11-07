@@ -15,6 +15,7 @@ import { replayJournal, type JournalEvent } from "@/lib/journal";
 import { loadRecipeDataset, recipeToLp } from "@/lib/recipes";
 import { normalizeAddonScan } from "@/lib/addon-scan";
 import { productionCapacity } from "@/lib/production-config";
+import { loadAddon } from "../../addon/test/wow-lua";
 
 const NOW = 1_800_000_000;
 
@@ -28,9 +29,16 @@ const NOW = 1_800_000_000;
 // descheduling says nothing about the code under test.
 const budgets = {
   core866Ms: 1000,
+  // A 170k-listing market collapses to roughly 6k item books; the whole
+  // cockpit evaluation runs once per scan generation at that size.
+  core6000Ms: 4000,
   buildInputMs: 100,
   lp120Ms: 200,
-  scan9000Ms: 1000
+  scan9000Ms: 1000,
+  // Full replicate scan: 170,000 listings into 6,000 item books, including
+  // the flow capture and series write. Fengari is much slower than the
+  // client's native Lua, so the gate catches order-of-magnitude regressions.
+  scan170kMs: 25_000
 };
 
 function cpuMsSince(start: NodeJS.CpuUsage): number {
@@ -76,6 +84,16 @@ describe("system performance gates", () => {
     const elapsed = cpuMsSince(start);
     expect(output.rows.length).toBeGreaterThan(0);
     expect(elapsed).toBeLessThan(budgets.core866Ms);
+  });
+
+  it("evaluates 6,000 items (a 170k-listing market) inside the gate (warm)", () => {
+    const input = coreInput(6000);
+    runCore(input); // warm the Lua state and template caches
+    const start = process.cpuUsage();
+    const output = runCore(input);
+    const elapsed = cpuMsSince(start);
+    expect(output.rows.length).toBeGreaterThan(0);
+    expect(elapsed).toBeLessThan(budgets.core6000Ms);
   });
 
   it("builds the core input for 866 items inside the gate", () => {
@@ -162,6 +180,58 @@ describe("system performance gates", () => {
     });
     expect(scan.items).toHaveLength(9000);
     expect(cpuMsSince(start)).toBeLessThan(budgets.scan9000Ms);
+  });
+
+  it("walks a 170,000-listing replicate scan inside the gate", () => {
+    const lua = loadAddon();
+    lua.exec(`
+      WowTest.fireEvent('AUCTION_HOUSE_SHOW')
+      -- Rows are generated in Lua: a 170k-element JS-to-Lua conversion
+      -- would measure the test bridge, not the scanner.
+      local ITEMS, LISTINGS = 6000, 170000
+      local replicate, itemInfo = WowTest.ah.replicate, WowTest.itemInfo
+      for i = 1, ITEMS do
+        itemInfo[10000 + i] = { name = "Item " .. i, class = "Trade Goods", subClass = "Other", vendorP = 10 }
+      end
+      for n = 1, LISTINGS do
+        local i = (n - 1) % ITEMS + 1
+        replicate[n] = {
+          itemId = 10000 + i,
+          name = "Item " .. i,
+          count = 1 + (n % 5),
+          buyout = (100 + (math.floor(n / ITEMS) % 8) * 25) * (1 + (n % 5)),
+          quality = 2,
+          owner = "Seller" .. ((n % 200) + 1),
+          timeLeft = 3600 * (1 + (n % 40))
+        }
+      end
+      -- Measure the real per-frame budget path instead of the stub's
+      -- never-trip clock: the scanner then slices work the way it does
+      -- in the client.
+      function debugprofilestop() return os.clock() * 1000 end
+      WowTest.scanStart = os.clock()
+      WowTest.ns.startScan()
+      WowTest.fireEvent('AUCTION_HOUSE_BROWSE_RESULTS_UPDATED')
+      local guard = 0
+      while WowTest.ns.scanRunning do
+        for _, frame in ipairs(WowTest.frames) do
+          local update = frame._scripts and frame._scripts.OnUpdate
+          if update then update(frame) end
+        end
+        guard = guard + 1
+        if guard > 100000 then error('scan did not finish') end
+      end
+      WowTest.scanElapsedMs = (os.clock() - WowTest.scanStart) * 1000
+      WowTest.scannedItems = 0
+      for _ in pairs(WoWderhoiAH_ScanData.items) do WowTest.scannedItems = WowTest.scannedItems + 1 end
+      WowTest.capturedItems = 0
+      for _ in pairs(WoWderhoiAH_Capture.items) do WowTest.capturedItems = WowTest.capturedItems + 1 end
+    `);
+    const elapsed = lua.number("WowTest.scanElapsedMs");
+    expect(lua.number("WowTest.ns.lastScanStats.rows")).toBe(170_000);
+    expect(lua.number("WowTest.scannedItems")).toBe(6000);
+    expect(lua.number("WowTest.capturedItems")).toBe(6000);
+    expect(elapsed).toBeLessThan(budgets.scan170kMs);
   });
 
   it("keeps a 5,000-event journal and a 9,000-item scan under the 4MB budget", () => {

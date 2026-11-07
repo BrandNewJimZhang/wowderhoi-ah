@@ -127,8 +127,13 @@ end
 -- budget and a quantity ceiling (bag space, or the row's executable depth
 -- when the allocator is splitting one purse). Returns quantity, total cost
 -- and average price.
-function Core.executableQty(tiers, priceCap, budget, quantityCap)
-  local sorted = Core.sortedTiers(tiers)
+--
+-- `sorted` must already be price-ascending. The evaluator walks thousands
+-- of books per scan and both callers (the scanner's aggregateTiers and the
+-- terminal's parseTiers) emit this order, so re-copying and re-sorting the
+-- ladder here cost more than the walk itself. Use executableQty for any
+-- ladder whose order is not guaranteed.
+function Core.executableQtySorted(sorted, priceCap, budget, quantityCap)
   local quantity, cost = 0, 0
   local remainingBudget = math.floor(budget or 0)
   for _, tier in ipairs(sorted) do
@@ -146,6 +151,10 @@ function Core.executableQty(tiers, priceCap, budget, quantityCap)
   end
   if quantity == 0 then return 0, 0, nil end
   return quantity, cost, cost / quantity
+end
+
+function Core.executableQty(tiers, priceCap, budget, quantityCap)
+  return Core.executableQtySorted(Core.sortedTiers(tiers), priceCap, budget, quantityCap)
 end
 
 -- Cost of buying exactly `quantity` units, cheapest offers first. Returns
@@ -577,7 +586,7 @@ function Core.allocate(rows, deployable, rules)
       -- ceiling because the row's price limits were already applied to it.
       local qty, cost
       if row.tiers then
-        qty, cost = Core.executableQty(row.tiers, nil, cap, row.execQty or 0)
+        qty, cost = Core.executableQtySorted(row.tiers, nil, cap, row.execQty or 0)
       else
         qty = math.min(row.execQty or 0, math.floor(cap / unit))
         cost = qty * unit
@@ -607,6 +616,7 @@ end
 --   phaseOverride    optional phase name
 --   rules            WAH.RULES (compiled constants)
 --   market           { firstScanAt, items = { [id] = item } }
+--                    item.tiers must be price-ascending (both builders sort)
 --   capital          { cash, budget } -- cash nil = unknown balance; 0 = empty
 --   capacity         { bagSlots, stackSize }
 --   positions        { [itemId] = { qty, cost } }
@@ -684,7 +694,7 @@ function Core.evaluate(input)
       -- no spread window and no profit floor apply. Budget and bag space
       -- are the only limits.
       if vendorP > minPrice then
-        local qty, cost = Core.executableQty(tiers, vendorP, budget, bagCapacity)
+        local qty, cost = Core.executableQtySorted(tiers, vendorP, budget, bagCapacity)
         if qty > 0 then
           local net = (vendorP - cost / qty) * qty
           local row = {
@@ -732,7 +742,7 @@ function Core.evaluate(input)
         -- the trend, never the reference a spread is measured against.
         local spread = sellP and sellP > 0 and (sellP - minPrice) / sellP or 0
         local priceCap = listP * (1 - feeRate) - (marketRules and marketRules.minUnitProfit or 0)
-        local qty, cost, average = Core.executableQty(tiers, priceCap, budget, bagCapacity)
+        local qty, cost, average = Core.executableQtySorted(tiers, priceCap, budget, bagCapacity)
         local net = qty > 0 and Core.netIfSold(listP, qty, cost / qty, feeRate) or 0
         if listings < ((marketRules and marketRules.minListings) or 1) then
           excluded.thinBook = excluded.thinBook + 1

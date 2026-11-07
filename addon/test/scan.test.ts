@@ -162,13 +162,17 @@ describe("forever replicate scan v4", () => {
     expect(lua.text("WowTest.ns.currentPhase()")).toBe("wave");
   });
 
-  it("stores flow identity by owner, not by a concatenated key", () => {
+  it("stores flow identity by owner and packs quantity and time left", () => {
     const lua = auctionPage();
     lua.runScan([
       { itemId: 2589, name: "Linen", count: 10, buyout: 10000, owner: "Alice", timeLeft: 7200 }
     ]);
-    expect(lua.number("WoWderhoiAH_Capture.items[2589].keys['Alice'][1000].q")).toBe(10);
-    expect(lua.number("WoWderhoiAH_Capture.items[2589].keys['Alice'][1000].t")).toBe(7200);
+    // One double carries the pair: quantity * 2^20 + (timeLeft + 1), with 0
+    // meaning "time left unknown". The packed value is what keeps 170k
+    // listings from becoming 170k nested tables in SavedVariables.
+    const packed = lua.number("WoWderhoiAH_Capture.items[2589].keys['Alice'][1000]");
+    expect(Math.floor(packed / 1048576)).toBe(10);
+    expect((packed % 1048576) - 1).toBe(7200);
   });
 
   it("ignores a capture written before the owner-keyed shape", () => {
