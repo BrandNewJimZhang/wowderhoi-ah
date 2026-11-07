@@ -148,7 +148,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                     <ItemIcon itemId={deal.itemId} size={16} />
                     {deal.name}
                     {deal.vendor
-                      ? <span className="text-terminal-amber">NPC必赚 +<Coins copper={deal.netProfit} /></span>
+                      ? <span className="text-terminal-amber">NPC必赚 +<Coins copper={deal.candidateNet} /></span>
                       : <>
                           <span className="text-[10px] text-terminal-muted">{deal.marketType === "commodity" ? "商品" : "物品"}</span>
                           <span className="text-terminal-green">+{deal.spreadPercent.toFixed(0)}%</span>
@@ -157,7 +157,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                   <span className="flex items-center gap-3">
                     <Coins copper={deal.minPrice} />
                     <span className="text-terminal-muted">{deal.vendor ? "NPC价" : "建议卖价"} <Coins copper={deal.sellP} /></span>
-                    <span className="text-terminal-muted">盘口净利 <Coins copper={deal.netProfit} /></span>
+                    <span className="text-terminal-muted">盘口净利 <Coins copper={deal.candidateNet} /></span>
                   </span>
                 </div>
               ))}

@@ -74,10 +74,10 @@ export type CoreRow = {
   marketType: MarketType;
   vendor: boolean;
   minPrice: number;
-  ladderPrice: number;
-  execQty: number;
+  candidateUnitPrice: number;
+  candidateQty: number;
   // Quantity the shared allocator grants after ranking every row against
-  // one purse. Actions and both UIs use this, never execQty.
+  // one purse. Actions and both UIs use this, never candidateQty.
   allocQty: number;
   allocNet: number;
   // Copper actually spent on the allocated quantity, priced from the cheap
@@ -96,8 +96,8 @@ export type CoreRow = {
   samples: number;
   highestBid: number;
   spreadPercent: number;
-  netProfit: number;
-  netPerUnit: number;
+  candidateNet: number;
+  candidateNetPerUnit: number;
   // Allocated net divided by the round-trip minutes the action costs.
   netPerMinute: number;
   sellerHHI?: number | null;

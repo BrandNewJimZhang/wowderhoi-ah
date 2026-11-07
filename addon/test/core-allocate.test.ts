@@ -41,7 +41,7 @@ function evaluate(
     positions
   };
   return lua.coreEval(input) as {
-    rows: Array<{ itemId: number; execQty: number; allocQty: number; allocNet: number; allocCost: number; allocUnitPrice: number; ladderPrice: number; vendor: boolean; exploratory: boolean; samples: number; score: number; netPerMinute: number }>;
+    rows: Array<{ itemId: number; candidateQty: number; allocQty: number; allocNet: number; allocCost: number; allocUnitPrice: number; candidateUnitPrice: number; vendor: boolean; exploratory: boolean; samples: number; score: number; netPerMinute: number }>;
     actions: Array<{ kind: string; itemId: number; qty: number; expectedNet: number; netPerMinute: number }>;
   };
 }
@@ -54,7 +54,7 @@ describe("shared capital allocation", () => {
     const spend = output.rows.reduce((sum, row) => sum + row.allocCost, 0);
     // dailyBudget 0.5 of a 100k purse: 50k total, regardless of row count.
     expect(spend).toBeLessThanOrEqual(50000);
-    expect(output.rows.every((row) => row.allocQty <= row.execQty)).toBe(true);
+    expect(output.rows.every((row) => row.allocQty <= row.candidateQty)).toBe(true);
     expect(output.rows.some((row) => row.allocQty > 0)).toBe(true);
   });
 
@@ -65,7 +65,7 @@ describe("shared capital allocation", () => {
     // most 35 units, well below the 120-unit book depth.
     expect(row.allocQty).toBeGreaterThan(0);
     expect(row.allocCost).toBeLessThanOrEqual(25000);
-    expect(row.allocQty).toBeLessThan(row.execQty);
+    expect(row.allocQty).toBeLessThan(row.candidateQty);
   });
 
   it("emits actions with the allocated quantity and its net", () => {
@@ -79,7 +79,7 @@ describe("shared capital allocation", () => {
 
   it("allocates nothing when Kelly says the bet is negative", () => {
     const lua = loadAddon();
-    const rows = [{ ladderPrice: 100, listP: 110, vendorP: 0, execQty: 100, fillProb: 0 }];
+    const rows = [{ candidateUnitPrice: 100, listP: 110, vendorP: 0, candidateQty: 100, fillProb: 0 }];
     lua.exec(`WowTest.allocRows = WowTest.ns.Core.allocate(${toLua(rows)}, 100000, WowTest.ns.RULES)`);
     expect(lua.number("WowTest.allocRows[1].allocQty")).toBe(0);
     expect(lua.number("WowTest.allocRows[1].allocNet")).toBe(0);
@@ -92,11 +92,11 @@ describe("shared capital allocation", () => {
     // tiers (100 + 24 * 1000 = 24,100). Charging the deep average would
     // understate both the profit and the cash the plan occupies.
     const rows = [{
-      ladderPrice: 991,
+      candidateUnitPrice: 991,
       listP: 2000,
       sellP: 2000,
       vendorP: 0,
-      execQty: 101,
+      candidateQty: 101,
       fillProb: 1,
       samples: 20,
       tiers: [{ p: 100, q: 1 }, { p: 1000, q: 100 }]
@@ -117,12 +117,12 @@ describe("shared capital allocation", () => {
     // but the same cap actually buys the ten cheap ones.
     const lua = loadAddon();
     const rows = [{
-      ladderPrice: 909.0909090909091,
+      candidateUnitPrice: 909.0909090909091,
       minPrice: 100,
       listP: 2000,
       sellP: 2000,
       vendorP: 0,
-      execQty: 110,
+      candidateQty: 110,
       fillProb: 1,
       samples: 20,
       tiers: [{ p: 100, q: 10 }, { p: 1000, q: 100 }]
@@ -169,8 +169,8 @@ describe("shared capital allocation", () => {
   it("shares the purse between guaranteed vendor trades", () => {
     const lua = loadAddon();
     const rows = [
-      { ladderPrice: 100, listP: 300, sellP: 300, vendorP: 300, vendor: true, execQty: 400, fillProb: 1 },
-      { ladderPrice: 100, listP: 300, sellP: 300, vendorP: 300, vendor: true, execQty: 400, fillProb: 1 }
+      { candidateUnitPrice: 100, listP: 300, sellP: 300, vendorP: 300, vendor: true, candidateQty: 400, fillProb: 1 },
+      { candidateUnitPrice: 100, listP: 300, sellP: 300, vendorP: 300, vendor: true, candidateQty: 400, fillProb: 1 }
     ];
     lua.exec(`WowTest.allocRows = WowTest.ns.Core.allocate(${toLua(rows)}, 100000, WowTest.ns.RULES)`);
     // 50k daily share: the first row takes all 400 units (40k), the second
@@ -210,7 +210,7 @@ describe("position sizing against a real book", () => {
     const row = output.rows[0];
     expect(row.allocQty).toBeGreaterThan(0);
     // The row still has to describe an executable trade, not the whole book.
-    expect(row.allocQty).toBeLessThanOrEqual(row.execQty);
+    expect(row.allocQty).toBeLessThanOrEqual(row.candidateQty);
     expect(row.allocCost).toBeLessThanOrEqual(250_000);
   });
 

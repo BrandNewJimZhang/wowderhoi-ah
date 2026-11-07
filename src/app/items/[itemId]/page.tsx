@@ -106,7 +106,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
             <PanelHeader title={`${fillRules.horizonHours} 小时成交概率`} />
             <div className="p-3">
               {hazardPerHour !== null && fillEstimate
-                ? <FillProbabilityChart tiers={bookTiers} hazardPerHour={hazardPerHour} supply={latest?.quantity ?? 0} basis={fillBasis} quantity={fillEstimate.execQty} band={fillBand} />
+                ? <FillProbabilityChart tiers={bookTiers} hazardPerHour={hazardPerHour} supply={latest?.quantity ?? 0} basis={fillBasis} quantity={fillEstimate.candidateQty} band={fillBand} />
                 : <div className="p-4 font-mono text-xs text-terminal-muted">
                     {fillRow?.vendor
                       ? "NPC 收购价高于挂单价：成交由商人保证，无需挂单成交估计。"

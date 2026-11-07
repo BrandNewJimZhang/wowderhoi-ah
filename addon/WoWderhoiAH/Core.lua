@@ -461,12 +461,12 @@ local function scoreFor(phase, row, supplyGrowth)
   if phase == "ignition" then
     -- No history: rank by absolute net times the prior fill chance and
     -- the structural demand prior.
-    base = row.netProfit * fill * (row.demandPrior or 1)
+    base = row.candidateNet * fill * (row.demandPrior or 1)
   elseif phase == "wave" then
     -- Supply is still arriving; a fast-decaying edge is not an edge.
-    base = row.netProfit * fill / math.max(supplyGrowth or 0.1, 0.1)
+    base = row.candidateNet * fill / math.max(supplyGrowth or 0.1, 0.1)
   else
-    base = row.netProfit * fill * confidence
+    base = row.candidateNet * fill * confidence
   end
   return base * concentration / math.max(effortMinutes("buy"), 1)
 end
@@ -480,14 +480,14 @@ local FILL_BASIS_TEXT = {
 
 local function reasonFor(row)
   if row.vendor then
-    return string.format("NPC 收购价高于挂单价，盘口 %d 件净赚 %d 铜", row.execQty, row.netProfit)
+    return string.format("NPC 收购价高于挂单价，盘口 %d 件净赚 %d 铜", row.candidateQty, row.candidateNet)
   end
   local low = (row.fillProbLow or row.fillProb or 0) * 100
   local high = (row.fillProbHigh or row.fillProb or 0) * 100
   -- "可买" is the allocated column; the reason quotes the book depth, so it
   -- says 盘口 rather than using the same word for two different quantities.
   local text = string.format("价差 %.0f%%，盘口 %d 件，每件净利 %d 铜，%d 小时成交率 %.0f%%（%.0f–%.0f%%，%s）",
-    row.spreadPercent, row.execQty, row.netPerUnit or 0, fillHorizonHours(),
+    row.spreadPercent, row.candidateQty, row.candidateNetPerUnit or 0, fillHorizonHours(),
     (row.fillProb or 0) * 100, low, high,
     FILL_BASIS_TEXT[row.fillBasis or "prior"] or FILL_BASIS_TEXT.prior)
   if row.bidOnly and row.bidOnly > 0 then
@@ -535,7 +535,7 @@ end
 function Core.sizePosition(row, deployable, rules)
   local portfolio = (rules and rules.portfolio) or {}
   local feeRate = (rules and rules.feeRate) or 0.05
-  local unitCost = row.minPrice or row.ladderPrice or 0
+  local unitCost = row.minPrice or row.candidateUnitPrice or 0
   local capital = math.max(deployable or 0, 0)
   local win = (row.listP or 0) * (1 - feeRate) - unitCost
   local loss = math.max((row.sellP or row.listP or unitCost) - unitCost, 1)
@@ -552,7 +552,7 @@ end
 -- Greedy allocation across the already-ranked rows. Every row used to see
 -- the whole budget on its own, so two 60k opportunities could both be
 -- recommended to a 100k purse. Allocation only ever reduces a row's
--- executable quantity; the market depth (execQty) stays as the ceiling.
+-- executable quantity; the market depth (candidateQty) stays as the ceiling.
 function Core.allocate(rows, deployable, rules)
   local portfolio = (rules and rules.portfolio) or {}
   local feeRate = (rules and rules.feeRate) or 0.05
@@ -565,7 +565,7 @@ function Core.allocate(rows, deployable, rules)
     -- The row's buy price: the average actually paid for the allocated
     -- quantity. Before an allocation exists, the deep-ladder average still
     -- describes the book the row was ranked from.
-    row.allocUnitPrice = row.ladderPrice or 0
+    row.allocUnitPrice = row.candidateUnitPrice or 0
     -- The sample floor is a portfolio rule; the terminal must not re-derive
     -- the "exploratory" label from its own copy of the number.
     row.exploratory = false
@@ -575,20 +575,20 @@ function Core.allocate(rows, deployable, rules)
       row.exploratory = sized.exploratory
       itemCap = sized.budget
     end
-    local unit = row.ladderPrice or 0
+    local unit = row.candidateUnitPrice or 0
     if unit > 0 and remaining > 0 then
       local cap = remaining
       if itemCap then cap = math.min(cap, itemCap) end
       -- Quantity is what the copper cap actually reaches down the ladder,
       -- not cap divided by the deep-ladder average: a front-loaded book
       -- (ten units at 100, a hundred at 1,000) can fund ten units with the
-      -- same cap that the average would turn into one. execQty stays the
+      -- same cap that the average would turn into one. candidateQty stays the
       -- ceiling because the row's price limits were already applied to it.
       local qty, cost
       if row.tiers then
-        qty, cost = Core.executableQtySorted(row.tiers, nil, cap, row.execQty or 0)
+        qty, cost = Core.executableQtySorted(row.tiers, nil, cap, row.candidateQty or 0)
       else
-        qty = math.min(row.execQty or 0, math.floor(cap / unit))
+        qty = math.min(row.candidateQty or 0, math.floor(cap / unit))
         cost = qty * unit
       end
       if qty > 0 then
@@ -704,16 +704,16 @@ function Core.evaluate(input)
             marketType = marketType,
             vendor = true,
             minPrice = minPrice,
-            ladderPrice = cost / qty,
+            candidateUnitPrice = cost / qty,
             -- Kept for the allocator: it reprices a reduced quantity from
             -- the cheap end of the same book.
             tiers = tiers,
-            execQty = qty,
+            candidateQty = qty,
             sellP = vendorP,
             listP = vendorP,
             spreadPercent = (1 - minPrice / vendorP) * 100,
-            netProfit = round(net),
-            netPerUnit = round(vendorP - cost / qty),
+            candidateNet = round(net),
+            candidateNetPerUnit = round(vendorP - cost / qty),
             fillProb = 1,
             fillProbLow = 1,
             fillProbHigh = 1,
@@ -791,14 +791,14 @@ function Core.evaluate(input)
             marketType = marketType,
             vendor = false,
             minPrice = minPrice,
-            ladderPrice = average,
+            candidateUnitPrice = average,
             tiers = tiers,
-            execQty = qty,
+            candidateQty = qty,
             sellP = sellP,
             listP = listP,
             spreadPercent = spread * 100,
-            netProfit = round(net),
-            netPerUnit = round(net / qty),
+            candidateNet = round(net),
+            candidateNetPerUnit = round(net / qty),
             fillProb = point,
             fillProbLow = low,
             fillProbHigh = high,
@@ -827,7 +827,7 @@ function Core.evaluate(input)
   table.sort(rows, function(left, right)
     if left.vendor ~= right.vendor then return left.vendor end
     if left.score ~= right.score then return left.score > right.score end
-    if left.netProfit ~= right.netProfit then return left.netProfit > right.netProfit end
+    if left.candidateNet ~= right.candidateNet then return left.candidateNet > right.candidateNet end
     return left.itemId < right.itemId
   end)
   Core.allocate(rows, budget, rules)

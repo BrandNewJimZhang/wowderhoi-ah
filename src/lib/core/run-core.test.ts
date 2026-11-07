@@ -9,11 +9,11 @@ describe("Core.evaluate through fengari", () => {
     expect(output.phase).toBe("wave");
     expect(output.rows).toHaveLength(1);
     const row = output.rows[0];
-    expect(row.execQty).toBe(120); // 20 @ 700 + 100 @ 800, both under the cap
-    expect(row.ladderPrice).toBeCloseTo(783.33, 1);
+    expect(row.candidateQty).toBe(120); // 20 @ 700 + 100 @ 800, both under the cap
+    expect(row.candidateUnitPrice).toBeCloseTo(783.33, 1);
     expect(row.listP).toBe(999);
     expect(row.spreadPercent).toBeCloseTo((1000 - 700) / 1000 * 100, 4);
-    expect(row.netProfit).toBe(19886); // 120 * 999 * 0.95 - 94000
+    expect(row.candidateNet).toBe(19886); // 120 * 999 * 0.95 - 94000
     expect(row.confidence).toBe("medium");
     expect(row.vendor).toBe(false);
   });
@@ -48,7 +48,7 @@ describe("Core.evaluate through fengari", () => {
     }));
     expect(output.rows.map((row) => row.itemId)).toEqual([2589, 2592]);
     expect(output.rows[0].vendor).toBe(true);
-    expect(output.rows[0].netProfit).toBe(5000);
+    expect(output.rows[0].candidateNet).toBe(5000);
     expect(output.rows[0].fillProb).toBe(1);
   });
 
@@ -92,9 +92,9 @@ describe("Core.evaluate through fengari", () => {
     const output = runCore(commodityInput({ phase: "wave", budget: 50000 }));
     const row = output.rows[0];
     // 20 @ 700 = 14000 leaves 36000; 45 @ 800 = 36000 fits, 46 would not.
-    expect(row.execQty).toBe(65);
-    expect(row.ladderPrice).toBeCloseTo((20 * 700 + 45 * 800) / 65, 4);
-    expect(row.netProfit).toBe(11688);
+    expect(row.candidateQty).toBe(65);
+    expect(row.candidateUnitPrice).toBeCloseTo((20 * 700 + 45 * 800) / 65, 4);
+    expect(row.candidateNet).toBe(11688);
   });
 
   it("spends nothing when the scan reported an empty purse", () => {
@@ -117,7 +117,7 @@ describe("Core.evaluate through fengari", () => {
     expect(output.rows).toHaveLength(1);
     // 20 @ 700 = 14000 leaves 36000; 45 @ 800 = 36000 fits, 46 would not.
     // The 500k planning budget is irrelevant: the scan saw 50k in the purse.
-    expect(output.rows[0].execQty).toBe(65);
+    expect(output.rows[0].candidateQty).toBe(65);
   });
 
   it("emits a conditional buy plan and a sell plan for a held position", () => {

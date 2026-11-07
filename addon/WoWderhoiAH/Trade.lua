@@ -86,7 +86,7 @@ local RADAR_COLUMNS = {
   -- Market depth stays in the tooltip.
   { key = "allocQty", label = "COL_QTY", cell = countCell },
   -- The allocated quantity's average price: the whole row describes one
-  -- trade, and the deep-ladder average stays in the tooltip via execQty.
+  -- trade, and the deep-ladder average stays in the tooltip via candidateQty.
   { key = "allocUnitPrice", label = "COL_BUY", cell = moneyCell, asc = true },
   { key = "sellP", label = "COL_SELL", cell = moneyCell },
   -- Net of the allocated quantity, so the row's numbers describe the same
@@ -531,7 +531,7 @@ renderRows = function()
           GameTooltip:SetHyperlink("item:" .. row.itemId)
           if row.reason then GameTooltip:AddLine(row.reason, 1, 0.82, 0) end
           if not row.vendor then
-            GameTooltip:AddLine(string.format(L.RADAR_ALLOC, row.execQty or 0, row.allocQty or 0), 1, 1, 1)
+            GameTooltip:AddLine(string.format(L.RADAR_ALLOC, row.candidateQty or 0, row.allocQty or 0), 1, 1, 1)
           end
         end
         rowFrame.name:SetText(row.vendor
