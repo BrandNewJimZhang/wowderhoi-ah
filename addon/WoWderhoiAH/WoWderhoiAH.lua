@@ -1394,7 +1394,10 @@ function WAH.coreInput()
   local ownSales = ledger and WAH.Ledger.salesSince(ownWindowDays * 24 * 3600, input.now) or {}
   for itemId, entry in pairs(scan.items or {}) do
     if entry.minPrice and entry.minPrice > 0 then
-      local samples = WAH.historySamples(itemId)
+      -- The scan stamped the window count while it held the series; a
+      -- refresh reads one number instead of walking every item's points.
+      -- Older scans in the same session fall back to the live count.
+      local samples = entry.historySamples or WAH.historySamples(itemId)
       local own = ownSales[itemId]
       -- The key is the item's identity: Core.evaluate iterates pairs(items)
       -- and never reads an id field from the record.

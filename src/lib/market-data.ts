@@ -27,6 +27,8 @@ export type MarketSnapshot = {
   // interval is missing data rather than an observed zero.
   flowObserved?: boolean;
   supplyGrowth?: number;
+  // Scan-time history sample count; null/undefined on older rows.
+  historySamples?: number | null;
   topTiers?: unknown;
 };
 

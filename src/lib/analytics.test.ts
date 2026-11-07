@@ -16,6 +16,7 @@ function history(
     numAuctions?: number;
     sellerCount?: number;
     bidOnly?: number;
+    historySamples?: number | null;
   }>,
   overrides?: { vendorPrice?: number; itemId?: number; name?: string }
 ): MarketHistory {
@@ -39,6 +40,7 @@ function history(
       soldProxyLow: 0,
       soldProxyHigh: 0,
       supplyGrowth: 0,
+      historySamples: snap.historySamples ?? null,
       topTiers: [{ p: Math.round(snap.sellPrice * 0.9), q: 100 }],
       expiring: { soon: 1, mid: 1, late: 1 }
     })),
@@ -88,6 +90,19 @@ describe("buildMarketSignal", () => {
     );
     expect(signal.sellSamples).toBe(2); // the zero-priced row is not evidence
     expect(signal.sellRef).toBe(100); // lower median of [100, 110]
+  });
+
+  it("carries the scanner's history stamp instead of recounting snapshots", () => {
+    // The scanner counted the points it retained; the terminal only sees
+    // the snapshot page. The stamp is the shared definition, and an older
+    // row without one stays null so the core can fall back.
+    const stamped = buildMarketSignal(
+      history([{ daysAgo: 0, sellPrice: 100, historySamples: 42 }]),
+      now
+    );
+    expect(stamped.historySamples).toBe(42);
+    expect(stamped.sellSamples).toBe(1);
+    expect(buildMarketSignal(history([{ daysAgo: 0, sellPrice: 100 }]), now).historySamples).toBeNull();
   });
 
   it("extends the reference window with daily closes beyond snapshot retention", () => {

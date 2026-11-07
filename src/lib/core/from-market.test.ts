@@ -68,6 +68,7 @@ function signal(itemId: number): MarketSignal {
     stale: false,
     sellRef: 1000,
     sellSamples: 2,
+    historySamples: null,
     spreadPercent: 30,
     trendPercent: 0,
     changePercent: 0,
@@ -148,6 +149,20 @@ describe("buildCoreInput", () => {
     expect(input.market.items[1].demandPrior).toBe(1.2);
     expect(input.market.items[1].ownerVisible).toBe(false);
     expect(input.market.items[1].sellerHHI).toBeNull();
+  });
+
+  it("prefers the scan-time history stamp over the terminal's sell samples", () => {
+    const stamped = pairs(1);
+    stamped[0].signal.historySamples = 42;
+    stamped[0].signal.sellSamples = 7;
+    expect(buildCoreInput(stamped, { now: LATEST, phase: "wave" }).market.items[1].history)
+      .toEqual({ samples: 42 });
+
+    const legacy = pairs(1);
+    legacy[0].signal.historySamples = null;
+    legacy[0].signal.sellSamples = 7;
+    expect(buildCoreInput(legacy, { now: LATEST, phase: "wave" }).market.items[1].history)
+      .toEqual({ samples: 7 });
   });
 
   it("prefers the store's first snapshot time when the caller knows it", () => {

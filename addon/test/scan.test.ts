@@ -147,6 +147,13 @@ describe("forever replicate scan v4", () => {
       .toBe(lua.number("WowTest.ns.history(2589).samples"));
   });
 
+  it("hands the stamped sample count to the core instead of recounting", () => {
+    const lua = auctionPage();
+    lua.runScan([{ itemId: 2589, name: "Linen", count: 10, buyout: 10000 }]);
+    lua.exec("WoWderhoiAH_ScanData.items[2589].historySamples = 99");
+    expect(lua.number("WowTest.ns.coreInput().market.items[2589].history.samples")).toBe(99);
+  });
+
   it("borrows the compiled steady window when the phase has none", () => {
     const lua = auctionPage();
     lua.runScan([{ itemId: 2589, name: "Linen", count: 10, buyout: 10000 }]);

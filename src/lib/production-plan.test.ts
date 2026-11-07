@@ -29,6 +29,7 @@ function signal(overrides: Partial<MarketSignal> & { itemId: number }): MarketSi
     stale: false,
     sellRef: 100,
     sellSamples: 10,
+    historySamples: null,
     spreadPercent: 10,
     trendPercent: 0,
     changePercent: 0,

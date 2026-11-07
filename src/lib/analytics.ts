@@ -47,6 +47,10 @@ export type MarketSignal = {
   stale: boolean;
   sellRef: number; // median sell front over the phase window
   sellSamples: number;
+  // History points inside the phase window at scan time, stamped by the
+  // scanner. Null on rows imported before the column existed; the core
+  // falls back to sellSamples for those.
+  historySamples: number | null;
   spreadPercent: number; // (sellPrice - minPrice) / sellPrice
   trendPercent: number; // (sellPrice - sellRef) / sellRef
   changePercent: number; // sellPrice vs the previous snapshot that priced this item
@@ -87,6 +91,10 @@ export function buildMarketSignal(
   // The sample count must describe the median's inputs, not every row in the
   // window: a legacy or demand-only row carries no usable sell price.
   const sellSamples = prices.length;
+  // The scanner counts the points it retained against the phase window; the
+  // terminal's sellSamples counts the median's inputs from the snapshot
+  // page. Both used to travel as `history.samples` under the same name.
+  const historySamples = latest.historySamples ?? null;
   const previousSell = previous ? sellPriceOf(previous) : 0;
   return {
     itemId: item.itemId,
@@ -118,6 +126,7 @@ export function buildMarketSignal(
     stale: latest.timestamp.getTime() < (options?.currentAt ?? latest.timestamp).getTime(),
     sellRef,
     sellSamples,
+    historySamples,
     // The spread is the executable gap at today's sell front. sellRef is
     // the window reference for trend only; using it here would let a stale
     // median approve a trade that loses money at the current book.

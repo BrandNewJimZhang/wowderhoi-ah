@@ -178,6 +178,7 @@ export async function POST(request: Request) {
         soldProxyHigh: item.inferredSoldHigh,
         flowObserved: item.flowObserved,
         supplyGrowth: item.supplyGrowth,
+        historySamples: item.historySamples,
         topTiers: item.tiers,
         expiring: item.expiring
       }))

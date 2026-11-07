@@ -46,6 +46,10 @@ export type AddonScanItem = {
   // imported under.
   flowObserved: boolean;
   supplyGrowth: number; // fraction per hour
+  // History points inside the phase window at scan time. The scanner owns
+  // the series, so it stamps this once instead of every radar refresh
+  // walking the points again; null on scans from before the field existed.
+  historySamples: number | null;
   vendorPrice: number; // NPC sell price in copper; 0 = unsellable to vendors
   tiers: AddonTier[]; // top of the price ladder, ascending
   expiring: { soon: number; mid: number; late: number };
@@ -341,6 +345,9 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
       inferredSoldHigh,
       flowObserved: priced ? entry.flowObserved !== false : false,
       supplyGrowth: optionalFinite(entry.supplyGrowth, "supplyGrowth", key),
+      historySamples: typeof entry.historySamples === "number"
+        ? Math.round(optionalNonNegative(entry.historySamples, "historySamples", key))
+        : null,
       vendorPrice: optionalNonNegative(entry.vendorP, "vendorP", key),
       tiers: priced ? normalizeTiers(entry.tiers, key, { p: minPrice, q: quantity }) : [],
       expiring: normalizeExpiring(entry.expiring, key)

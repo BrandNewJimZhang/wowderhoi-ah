@@ -27,6 +27,7 @@ function signal(partial: Partial<MarketSignal> & Pick<MarketSignal, "itemId" | "
     stale: false,
     sellRef: 100,
     sellSamples: 1,
+    historySamples: null,
     spreadPercent: 10,
     trendPercent: 0,
     changePercent: 0,

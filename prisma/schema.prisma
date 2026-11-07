@@ -94,6 +94,10 @@ model AuctionSnapshot {
   // column existed -- that is the behaviour they were imported under.
   flowObserved     Boolean  @default(true) @map("flow_observed")
   supplyGrowth     Float    @default(0) @map("supply_growth")
+  // History points inside the phase window at scan time, stamped by the
+  // scanner. Null on rows imported before the column existed; the terminal
+  // then falls back to its own sell-sample count.
+  historySamples   Int?     @map("history_samples")
   topTiers         Json?    @map("top_tiers")
   expiring         Json?    @map("expiring")
   item             Item     @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
