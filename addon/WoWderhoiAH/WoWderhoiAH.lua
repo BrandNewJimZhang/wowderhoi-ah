@@ -840,10 +840,23 @@ end
 -- still sees the scan within seconds, not at the next logout.
 local function flushFinishedScan()
   if not finish then return end
+  -- The last finish frame also builds ScanData/Capture and enforces the
+  -- series cap. Publishing the stats here attributes that work instead of
+  -- reporting the finish as if assembly were free.
+  WAH.lastScanStats = {
+    rows = finish.totalAuctions or 0,
+    waitMs = finish.waitMs,
+    apiMs = finish.apiMs,
+    luaMs = math.max(0, finish.processMs - finish.apiMs),
+    processMs = finish.processMs,
+    finishMs = finish.finishMs,
+    finishFrameMaxMs = finish.frameMaxMs,
+    finishFrames = finish.frames,
+    saveMs = 0
+  }
   local saveStart = debugprofilestop()
   WAH.flush()
-  finish.stats.saveMs = debugprofilestop() - saveStart
-  WAH.lastScanStats = finish.stats
+  WAH.lastScanStats.saveMs = debugprofilestop() - saveStart
   finish = nil
   scanState = nil
   WAH.scanRunning = false
@@ -882,20 +895,6 @@ local function finalizeFinish()
   }
   finalizeSeries(finish.market)
   scanFailures = 0
-  -- Where the time went. /wahdiag prints this; without it a "slow scan"
-  -- report cannot be told apart from a slow server response, a slow client
-  -- call or our own Lua work.
-  finish.stats = {
-    rows = finish.totalAuctions or 0,
-    waitMs = finish.waitMs,
-    apiMs = finish.apiMs,
-    luaMs = math.max(0, finish.processMs - finish.apiMs),
-    processMs = finish.processMs,
-    finishMs = finish.finishMs,
-    finishFrameMaxMs = finish.frameMaxMs,
-    finishFrames = finish.frames,
-    saveMs = 0
-  }
   chatMessage(string.format(
     L.SCAN_COMPLETE .. "%s",
     finish.totalAuctions or 0, finish.itemCount,
@@ -915,11 +914,13 @@ local function processFinishChunk()
     cursor = cursor + 1
   end
   finish.cursor = cursor
+  -- Assembly belongs to this frame's cost: it is real work the client
+  -- pauses for, and hiding it from finishMs would understate the stall.
+  if cursor > finish.count then finalizeFinish() end
   local frameMs = debugprofilestop() - frameStart
   finish.finishMs = finish.finishMs + frameMs
   finish.frames = finish.frames + 1
   if frameMs > finish.frameMaxMs then finish.frameMaxMs = frameMs end
-  if cursor > finish.count then finalizeFinish() end
 end
 
 local function beginFinish(totalAuctions)
