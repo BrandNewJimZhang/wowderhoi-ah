@@ -94,6 +94,14 @@
     "expected": [7]
   },
   {
+    "query": "0x10",
+    "candidates": [
+      { "itemId": 16, "name": "Hex Sample", "booked": true, "quantity": 100 },
+      { "itemId": 1, "name": "0x10", "booked": true, "quantity": 5 }
+    ],
+    "expected": [1]
+  },
+  {
     "query": "   ",
     "candidates": [
       { "itemId": 1, "name": "Linen", "booked": true, "quantity": 1 }

@@ -1071,7 +1071,10 @@ end
 function Core.parseSearchQuery(raw)
   local text = (raw or ""):match("^%s*(.-)%s*$"):lower()
   if text == "" then return nil end
-  local id = tonumber(text) or tonumber(text:match("^item:(%d+)$"))
+  -- Bare digits only. `tonumber` would also accept hex, exponents and
+  -- fractions, which the terminal's /^\d+$/ rejects; "0x10" must search
+  -- names in both runtimes, not address item 16 in one of them.
+  local id = text:match("^%d+$") and tonumber(text) or tonumber(text:match("^item:(%d+)$"))
   local tokens = {}
   for token in text:gmatch("%S+") do tokens[#tokens + 1] = token end
   return { text = text, id = id, tokens = tokens }
