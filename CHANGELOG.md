@@ -4,6 +4,20 @@
 
 ### Added
 
+- `/wahdiag` splits a scan into wait, client API, Lua, finish and save
+  milliseconds and prints their shares; the finish phase now runs across
+  frames and the SavedVariables write is deferred by one frame.
+- `Core.allocate` reports `row.unfunded` (`kelly`, `exposure`, `purse`,
+  `depth`) and `diagnostics.unfunded`, and publishes the funded rows as
+  `output.opportunities`. Both UIs render that list and explain an empty
+  one from the same diagnostics instead of guessing the purse.
+- A shared search fixture (`data/search-parity.json`) runs the same cases
+  through `Core.rankSearch` and `src/lib/search.ts`.
+- Scans stamp `historySamples` on each priced item, and the importer,
+  snapshot and core input carry it; older rows fall back to the terminal's
+  sell-sample count.
+- Scans mark `tierTruncated` when the book had more than the persisted top
+  eight rungs; the core then counts the unseen book as queue ahead.
 - A 170,000-listing scan gate in the perf stage: 6,000 item books, the
   real per-frame budget path, flow capture and series write. A companion
   gate evaluates the 6,000-item market through the shared core.
@@ -14,6 +28,15 @@
 
 ### Changed
 
+- `execQty`, `netProfit`, `netPerUnit` and `ladderPrice` are now
+  `candidateQty`, `candidateNet`, `candidateNetPerUnit` and
+  `candidateUnitPrice`; `allocQty`/`allocNet` remain the funded layer.
+  The names state which quantity and profit a view is showing.
+- Rows the risk model refuses to fund are excluded from candidates and
+  counted as `diagnostics.excluded.sizing`, so every surviving row is
+  fundable and a zero allocation has an actionable cause.
+- The terminal table ranks a search by relevance unless the player clicked
+  a column; `item:4338` is accepted there too.
 - The scanner caches normalized owner names, keeps the distinct-seller
   count and supply in one table, and encodes each (owner, price) flow pair
   as one number instead of a nested table. The capture shape is now
@@ -29,10 +52,19 @@
 
 ### Fixed
 
+- A second search typed while a browse is in flight is queued: the older
+  answer is discarded and the newest query is sent, instead of the first
+  response being scored against the new text.
+- A browse page where no row matches now reports a failed search instead of
+  opening an arbitrary first row.
+- The fill model no longer overstates the chance of a listing on a book
+  whose persisted ladder was truncated; unseen units count as queue.
 - The trader tooltip section and its chart no longer appear on talent,
   character or other spell/unit tooltips. Only a hyperlink that is itself
   an item may carry them; the shared tooltip can still report the previous
-  item through `GetItem()`, which is no longer trusted.
+  item through `GetItem()`, which is no longer trusted. Link parsing is
+  anchored, so a battle-pet link or a string merely containing `item:` is
+  rejected too.
 
 ## v0.6.0 — 2026-11-05
 
