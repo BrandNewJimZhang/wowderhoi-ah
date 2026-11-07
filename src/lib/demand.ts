@@ -5,7 +5,7 @@
 // probability carries the evidence.
 import bandsFile from "@/data/demand-bands.json";
 
-export type DemandBand = {
+type DemandBand = {
   classes: string[];
   subClasses: string[];
   weight: number;
@@ -16,11 +16,16 @@ export type DemandBand = {
 
 export const demandBands = bandsFile.bands as DemandBand[];
 
+// Exact, case-insensitive comparison -- the same rule Core.demandFor runs.
+// Trimming here (and not there) made a padded category match in the terminal
+// and miss in game. The bands are compiled verbatim into WAH.DEMAND, so the
+// two runtimes see one canonical string; a padded value is simply a miss on
+// both sides.
 function matches(names: string[], value: string | undefined): boolean {
   if (names.includes("*")) return true;
   if (!value) return false;
-  const needle = value.trim().toLowerCase();
-  return names.some((name) => name.trim().toLowerCase() === needle);
+  const needle = value.toLowerCase();
+  return names.some((name) => name.toLowerCase() === needle);
 }
 
 function demandBandFor(category?: string, subCategory?: string): DemandBand | null {

@@ -18,6 +18,14 @@ describe("demand priors", () => {
     expect(demandFor("container", "bag")).toBe(1.7);
   });
 
+  it("compares names exactly, like Core.demandFor", () => {
+    // The addon does not trim category strings either. A padded value must
+    // miss here as well, or the same scan would earn a demand prior in the
+    // terminal and none in game.
+    expect(demandFor("Container ", "Bag")).toBe(1);
+    expect(demandFor("Container", " Bag")).toBe(1);
+  });
+
   it("uses the wildcard band for an unknown category", () => {
     expect(demandFor("Miscellaneous", "Other")).toBe(1);
   });

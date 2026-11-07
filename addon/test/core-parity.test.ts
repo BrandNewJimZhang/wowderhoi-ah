@@ -4,8 +4,9 @@
 import { describe, expect, it } from "vitest";
 import { runCore } from "@/lib/core/run-core";
 import { commodityInput } from "@/lib/core/fixtures";
+import { demandFor } from "@/lib/demand";
 import { resolvePhase } from "@/lib/phase";
-import { loadAddon } from "./wow-lua";
+import { loadAddon, toLua } from "./wow-lua";
 
 describe("decision core parity", () => {
   it("addon harness and terminal runner return the same evaluation", () => {
@@ -35,6 +36,27 @@ describe("decision core parity", () => {
     for (const [ageHours, breadth] of cases) {
       expect(lua.text(`WowTest.ns.Core.phaseFor(${ageHours}, ${breadth})`), `${ageHours}h/${breadth}`)
         .toBe(resolvePhase(ageHours, breadth));
+    }
+  });
+
+  it("resolves the same demand prior from the same category strings", () => {
+    const lua = loadAddon();
+    const cases: Array<[string | undefined, string | undefined]> = [
+      ["Container", "Bag"],
+      ["容器", "背包"],
+      ["container", "bag"],
+      // Padded values must miss on both sides; the terminal used to trim
+      // them and apply a prior the in-game core never saw.
+      ["Container ", "Bag"],
+      ["Container", " Bag"],
+      ["Miscellaneous", "Other"],
+      [undefined, undefined]
+    ];
+    for (const [category, subCategory] of cases) {
+      const fromAddon = lua.number(
+        `WowTest.ns.Core.demandFor(${toLua(category)}, ${toLua(subCategory)})`
+      );
+      expect(fromAddon, `${category}/${subCategory}`).toBe(demandFor(category, subCategory));
     }
   });
 
