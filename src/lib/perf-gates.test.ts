@@ -43,7 +43,12 @@ const budgets = {
   // budget is deliberately above the current ~6.4MB so a deliberate field
   // addition has room, while a per-row table regressions (the shape this
   // project already removed once) fails the gate.
-  scanPayloadBytes: 8 * 1024 * 1024
+  scanPayloadBytes: 8 * 1024 * 1024,
+  // Per-frame finish ceiling. The client budget is 8ms; fengari is slower and
+  // its GC can land in a frame, so the gate is an order-of-magnitude guard:
+  // the unsliced finish took hundreds of milliseconds in one frame, while a
+  // sliced run stays around one GC pause.
+  scanFinishFrameMs: 100
 };
 
 function cpuMsSince(start: NodeJS.CpuUsage): number {
@@ -242,7 +247,7 @@ describe("system performance gates", () => {
     const finishFrameMax = lua.number("WowTest.ns.lastScanStats.finishFrameMaxMs");
     const finishFrames = lua.number("WowTest.ns.lastScanStats.finishFrames");
     expect(finishFrames).toBeGreaterThan(1);
-    expect(finishFrameMax).toBeLessThan(20);
+    expect(finishFrameMax).toBeLessThan(budgets.scanFinishFrameMs);
     // The gate used to assert the journal and call it a scan payload. The
     // three SavedVariables tables are the payload the client serialises and
     // the terminal parses; their real JSON size is what the budget means.
