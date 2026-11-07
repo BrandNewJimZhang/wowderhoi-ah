@@ -265,7 +265,7 @@ local function keyFor(itemId)
 end
 
 C_AuctionHouse = {
-  ReplicateItems = function() bed.replicateRequested = true end,
+  ReplicateItems = function() end,
   GetNumReplicateItems = function() return #ah.replicate end,
   GetReplicateItemInfo = function(index)
     local item = ah.replicate[index]
@@ -303,8 +303,7 @@ C_AuctionHouse = {
     end
     return info
   end,
-  SendBrowseQuery = function(query)
-    bed.browseQuery = query
+  SendBrowseQuery = function()
     ah.browse = bed.pendingBrowse
     bed.fireEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
   end,
@@ -336,13 +335,11 @@ C_AuctionHouse = {
   HasFullCommoditySearchResults = function() return true end,
   RequestMoreCommoditySearchResults = function() return true end,
   GetAuctionInfoByID = function(auctionID) return ah.auctions[auctionID] end,
-  PlaceBid = function(auctionID, amount) bed.bought = { auctionID = auctionID, amount = amount } end,
+  PlaceBid = function() end,
   StartCommoditiesPurchase = function(itemId, quantity)
     bed.commodityPurchase = { itemId = itemId, quantity = quantity }
   end,
-  ConfirmCommoditiesPurchase = function(itemId, quantity)
-    bed.commodityConfirmed = { itemId = itemId, quantity = quantity }
-  end,
+  ConfirmCommoditiesPurchase = function() end,
   IsThrottledMessageSystemReady = function() return true end
 }
 
@@ -477,7 +474,6 @@ C_AuctionHouse.GetOwnedAuctionInfo = function(index) return ownedList()[index] e
 C_AuctionHouse.CanCancelAuction = function(auctionID) return bed.ownedAuctions[auctionID] ~= nil end
 C_AuctionHouse.GetCancelCost = function(auctionID) return bed.cancelCost or 10 end
 C_AuctionHouse.CancelAuction = function(auctionID)
-  bed.cancelled = auctionID
   bed.ownedAuctions[auctionID] = nil
   bed.fireEvent("OWNED_AUCTIONS_UPDATED")
 end

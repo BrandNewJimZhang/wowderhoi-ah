@@ -323,8 +323,8 @@ local function newEntry(name, quality, cached)
     vendorP = cached.vendorP,
     minPrice = nil,
     tierQuantity = {}, -- unitPrice -> quantity, aggregated as rows arrive
-    -- owner ("" when hidden) -> unitPrice -> { q = quantity, t = shortest
-    -- remaining time }. Matched across scans to infer disappearances.
+    -- owner ("" when hidden) -> unitPrice -> packFlow(quantity, timeLeft).
+    -- Matched across scans to infer disappearances.
     flow = {},
     ownerTotals = {}, -- owner -> quantity across all prices, detects repricing
     bidAmount = 0,

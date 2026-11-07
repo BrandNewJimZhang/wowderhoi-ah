@@ -78,7 +78,7 @@ async function main() {
   const prisma = new PrismaClient({ datasourceUrl: databaseUrl });
   const newestScanMs = Date.now();
   // The core bounds every purchase by the scanned purse. A zero-cash market
-  // makes executableQty zero for every row, so the cockpit renders an empty
+  // makes candidateQty zero for every row, so the cockpit renders an empty
   // radar and the perf run measures a dead page; fund the fixture at the
   // planning budget so the decision path actually runs.
   const marketRow = await prisma.market.create({

@@ -129,10 +129,9 @@ end
 -- and average price.
 --
 -- `sorted` must already be price-ascending. The evaluator walks thousands
--- of books per scan and both callers (the scanner's aggregateTiers and the
+-- of books per scan and both builders (the scanner's aggregateTiers and the
 -- terminal's parseTiers) emit this order, so re-copying and re-sorting the
--- ladder here cost more than the walk itself. Use executableQty for any
--- ladder whose order is not guaranteed.
+-- ladder here would cost more than the walk itself.
 function Core.executableQtySorted(sorted, priceCap, budget, quantityCap)
   local quantity, cost = 0, 0
   local remainingBudget = math.floor(budget or 0)
@@ -151,10 +150,6 @@ function Core.executableQtySorted(sorted, priceCap, budget, quantityCap)
   end
   if quantity == 0 then return 0, 0, nil end
   return quantity, cost, cost / quantity
-end
-
-function Core.executableQty(tiers, priceCap, budget, quantityCap)
-  return Core.executableQtySorted(Core.sortedTiers(tiers), priceCap, budget, quantityCap)
 end
 
 -- Cost of buying exactly `quantity` units, cheapest offers first. Returns
