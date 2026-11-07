@@ -75,6 +75,9 @@
   opening an arbitrary first row.
 - Bare numeric queries parse identically in both runtimes: `0x10` searches
   names instead of silently addressing item 16 in one of them.
+- Full-width (U+3000) and no-break (U+00A0) spaces separate search tokens
+  in the addon too, so a query typed with a Chinese IME ranks the same
+  item in game and in the terminal.
 - An empty radar names the risk model when it refused every gate-passer,
   instead of reporting the refusals as an insufficient purse.
 - `/wahdiag` counts ScanData/Capture assembly in the finish time, and the
