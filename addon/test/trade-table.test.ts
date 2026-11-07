@@ -193,3 +193,29 @@ describe("locale", () => {
     expect(lua.header(4)).toBe("Net v");
   });
 });
+
+describe("rainy-day radar", () => {
+  it("omits an opportunity the purse cannot fund", () => {
+    const lua = loadAddon();
+    // 40k funds the vendor row and one Mageweave unit. Gold Ore clears the
+    // evaluator's gates but the allocator gives it zero units; a zero in the
+    // "buy" column is not an executable opportunity.
+    lua.exec("function GetMoney() return 40000 end");
+    lua.setScan(SCAN);
+    lua.setPoints(POINTS);
+    lua.openTab();
+    expect(lua.names()).toEqual(["Linen Cloth [NPC必赚]", "Mageweave Cloth"]);
+  });
+
+  it("names the purse, not the gates, when every row is unfunded", () => {
+    const lua = loadAddon();
+    // One unit at 800 clears the evaluator but the allocator hands out
+    // nothing once the daily share is applied.
+    lua.exec("function GetMoney() return 1000 end");
+    lua.setScan(SCAN);
+    lua.setPoints(POINTS);
+    lua.openTab();
+    expect(lua.rowCount()).toBe(0);
+    expect(lua.anyChat("钱包")).toBe(true);
+  });
+});

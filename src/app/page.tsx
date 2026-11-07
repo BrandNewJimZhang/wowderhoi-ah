@@ -43,7 +43,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   const triggeredAlerts = evaluateAlertRules(alertRules, signals.filter((signal) => !signal.stale));
   // The opportunity list is Core.lua's evaluation, the same decision core
   // the addon runs in game. It is not a second radar implementation.
-  const deals = evaluation.rows.slice(0, 12);
+  // A row the allocator could not fund is not executable; the opportunity
+  // list shares the radar's promise, so a zero quantity never appears in it.
+  const deals = evaluation.rows.filter((row) => row.allocQty > 0).slice(0, 12);
   const capitalBudget = resolveBudgetCopper();
   // The planning budget is a cap, not a purse: never allocate more than the
   // cash the latest scan reported. Core.lua applies the same bound to its

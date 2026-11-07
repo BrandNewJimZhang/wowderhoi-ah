@@ -244,12 +244,20 @@ local function refreshRadar()
     return
   end
   lastEvaluation = WAH.Core.evaluate(WAH.coreInput())
-  for _, row in ipairs(lastEvaluation.rows) do deals[#deals + 1] = row end
+  local considered = #lastEvaluation.rows
+  for _, row in ipairs(lastEvaluation.rows) do
+    -- The radar promises an executable trade. A row the allocator could not
+    -- fund (another row took the purse, or this one exceeded its exposure
+    -- cap) has quantity 0 and would only be noise in a "buy this" column.
+    if (row.allocQty or 0) > 0 then deals[#deals + 1] = row end
+  end
   rebuildActions()
   applySort()
   refreshStatus()
   if #deals == 0 then
-    chatMessage(L.RADAR_NONE)
+    -- "The gates passed but the purse is too small" is a different answer
+    -- from "nothing passed"; the player can act on the first one.
+    chatMessage(considered > 0 and L.RADAR_NO_PURSE or L.RADAR_NONE)
   else
     chatMessage(string.format(L.RADAR_FOUND, #deals,
       (L.PHASE_LABELS and L.PHASE_LABELS[lastEvaluation.phase]) or lastEvaluation.phase))

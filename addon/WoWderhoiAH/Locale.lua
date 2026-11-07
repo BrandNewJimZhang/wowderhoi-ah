@@ -89,6 +89,7 @@ local L = {
   COL_TOTAL = "Total",
   RADAR_FOUND = "%d executable opportunities (%s).",
   RADAR_NONE = "No opportunity clears this phase's gates right now.",
+  RADAR_NO_PURSE = "Every opportunity this phase clears needs more coin than the purse holds.",
   STATUS_LINE = "Scan %d min ago | %d items listed | %s | sellers visible %d%%",
   STATUS_LINE_NO_SCAN = "No scan yet | %s | run /wahscan",
   STATUS_SELF = " | own listings excluded: %d",
@@ -261,6 +262,7 @@ if GetLocale() == "zhCN" then
   L.COL_TOTAL = "总价"
   L.RADAR_FOUND = "可执行机会 %d 个（%s）。"
   L.RADAR_NONE = "当前没有满足本阶段门槛的可执行机会。"
+  L.RADAR_NO_PURSE = "满足本阶段门槛的机会都超出了当前的钱包。"
   L.STATUS_LINE = "扫描于 %d 分钟前 | 在售 %d 种 | %s | 卖家可见 %d%%"
   L.STATUS_LINE_NO_SCAN = "尚未扫描 | %s | 运行 /wahscan"
   L.STATUS_SELF = " | 自有挂单已排除 %d 笔"
