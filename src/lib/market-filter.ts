@@ -34,7 +34,17 @@ export function filterSortSignals(
 ): MarketSignal[] {
   const query = (view.query ?? "").trim().toLowerCase();
   let rows = signals;
-  if (query) rows = rows.filter((signal) => signal.name.toLowerCase().includes(query));
+  if (query) {
+    // A typed number addresses the item id directly; otherwise every
+    // whitespace-separated token must appear anywhere in the name, so
+    // "魔铁 矿" finds "魔铁矿" regardless of spacing.
+    const id = /^\d+$/.test(query) ? Number(query) : null;
+    const tokens = query.split(/\s+/);
+    rows = rows.filter((signal) =>
+      (id !== null && signal.itemId === id)
+      || tokens.every((token) => signal.name.toLowerCase().includes(token))
+    );
+  }
   if (view.category) rows = rows.filter((signal) => signal.category === view.category);
   // Delisted items keep their last book in the monitor, but they must never
   // outrank a tradeable row: an old wide spread is not an opportunity.

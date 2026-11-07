@@ -33,6 +33,10 @@ local lastEvaluation = nil
 local mode = "deals" -- "deals" | "actions" | "results"
 local searchState = nil
 local searching = nil -- "browse" | "list" | nil
+-- The last browse query, kept so the server's answer can be ranked by name
+-- instead of opening whichever row happened to be cheapest.
+local browseQuery = nil
+local browseTokens = {}
 local pendingPurchase = nil -- a purchase awaiting AUCTION_HOUSE_PURCHASE_COMPLETED
 
 local function chatMessage(text)
@@ -625,31 +629,71 @@ function WAH.searchItem(itemId, name)
     { { sortOrder = Enum.AuctionHouseSortOrder.Price, reverseSort = false } }, false)
 end
 
+-- A query is matched as whitespace-separated tokens, so "魔铁 矿" finds
+-- "魔铁矿" without the player reproducing the exact spacing. Higher scores
+-- mean a closer name: exact, prefix, every-token-present.
+local function searchTokens(query)
+  local tokens = {}
+  for token in query:gmatch("%S+") do tokens[#tokens + 1] = token end
+  return tokens
+end
+
+local function nameScore(name, query, tokens)
+  if not name or name == "" or not query or query == "" then return 0 end
+  local lower = name:lower()
+  if lower == query then return 4 end
+  if lower:sub(1, #query) == query then return 3 end
+  for _, token in ipairs(tokens) do
+    if not lower:find(token, 1, true) then return 0 end
+  end
+  return #tokens > 1 and 2 or 1
+end
+
 -- Typed names are resolved against the session scan first: it holds the
 -- realm's own names, including localized ones the client's search may not
 -- match, and it avoids spending a browse query on every keystroke.
 local function resolveFromScan(query)
   local scan = currentScan()
   if not scan then return nil end
-  local needle = query:lower()
-  local best, bestScore
+  local needle = query:match("^%s*(.-)%s*$"):lower()
+  if needle == "" then return nil end
+  -- "4338" and "item:4338" address the item directly.
+  local numericId = tonumber(needle) or tonumber(needle:match("^item:(%d+)$"))
+  local tokens = searchTokens(needle)
+  local best
   for itemId, entry in pairs(scan) do
-    local name = (entry.name or ""):lower()
-    local score
-    if name == needle then
-      score = 3
-    elseif name:find(needle, 1, true) == 1 then
-      score = 2
-    elseif name:find(needle, 1, true) then
-      score = 1
-    end
-    if score and (not bestScore or score > bestScore
-      or (score == bestScore and #name < #best.name)) then
-      best = { itemId = tonumber(itemId), name = entry.name }
-      bestScore = score
+    local id = tonumber(itemId)
+    local score = numericId and id == numericId and 5
+      or nameScore(entry.name, needle, tokens)
+    if score > 0 then
+      local candidate = {
+        itemId = id,
+        name = entry.name,
+        score = score,
+        -- A book the player can buy from outranks a bid-only observation at
+        -- the same name score; a bid-only item opens a search with no rows.
+        booked = entry.minPrice and entry.minPrice > 0 or false,
+        quantity = entry.quantity or 0,
+        nameLength = #(entry.name or "")
+      }
+      local better = not best or candidate.score > best.score
+      if best and candidate.score == best.score then
+        if candidate.booked ~= best.booked then
+          better = candidate.booked
+        elseif candidate.quantity ~= best.quantity then
+          better = candidate.quantity > best.quantity
+        elseif candidate.nameLength ~= best.nameLength then
+          better = candidate.nameLength < best.nameLength
+        else
+          -- Equal names differ only by id: keep the choice stable across
+          -- sessions instead of following pairs() order.
+          better = candidate.itemId < best.itemId
+        end
+      end
+      if better then best = candidate end
     end
   end
-  return best
+  return best and { itemId = best.itemId, name = best.name } or nil
 end
 
 runSearch = function()
@@ -658,7 +702,7 @@ runSearch = function()
     chatMessage(L.SCAN_WAIT)
     return
   end
-  local query = trade.searchBox:GetText()
+  local query = trade.searchBox:GetText():match("^%s*(.-)%s*$")
   if query == "" then return end
   if not auctionHouseOpen() then
     chatMessage(L.SEARCH_NEED_AH)
@@ -670,10 +714,12 @@ runSearch = function()
     return
   end
   -- Nothing in the scan matches: fall back to the server's own name search,
-  -- then open the first item it returns.
+  -- then open the result whose name is the closest match.
   searching = "browse"
   searchState = nil
   mode = "results"
+  browseQuery = query:lower()
+  browseTokens = searchTokens(browseQuery)
   C_AuctionHouse.SendBrowseQuery({
     searchString = query,
     sorts = { { sortOrder = Enum.AuctionHouseSortOrder.Price, reverseSort = false } }
@@ -979,20 +1025,29 @@ tradeEvents:SetScript("OnEvent", function(_, event, payload, extra)
   -- Browse resolution: the server answered a typed name search with a list
   -- of item keys; open the first one.
   if searching == "browse" and not searchState then
-    local first
+    local best, bestScore
     for _, result in pairs(C_AuctionHouse.GetBrowseResults() or {}) do
-      if result.itemKey and (not first
-        or (result.minPrice or math.huge) < (first.minPrice or math.huge)) then
-        first = result
+      local itemKey = result.itemKey
+      if itemKey then
+        local info = C_AuctionHouse.GetItemKeyInfo(itemKey)
+        local score = nameScore(info and info.itemName, browseQuery, browseTokens)
+        -- A server page can hold several similar names. Opening the one
+        -- whose name matches the typed query is what the player meant; the
+        -- cheapest row was an arbitrary pick.
+        if not best or score > bestScore
+          or (score == bestScore
+            and (result.minPrice or math.huge) < (best.minPrice or math.huge)) then
+          best, bestScore = result, score
+        end
       end
     end
-    if not first then
+    if not best then
       searching = nil
       chatMessage(L.SEARCH_FAILED)
       return
     end
     searching = nil
-    WAH.searchItem(first.itemKey.itemID)
+    WAH.searchItem(best.itemKey.itemID)
     return
   end
   -- Item search: results arrive in pages, and every page re-reads the full

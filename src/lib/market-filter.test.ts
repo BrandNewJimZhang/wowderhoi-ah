@@ -48,6 +48,20 @@ describe("filterSortSignals", () => {
     expect(filterSortSignals(signals, { query: "梦叶" })).toHaveLength(1);
   });
 
+  it("matches every whitespace-separated token, in any order", () => {
+    expect(filterSortSignals(signals, { query: "矿石 精" }).map((signal) => signal.itemId)).toEqual([2]);
+    expect(filterSortSignals(signals, { query: "  精  金  " }).map((signal) => signal.itemId)).toEqual([2]);
+    expect(filterSortSignals(signals, { query: "精 草" })).toHaveLength(0);
+  });
+
+  it("addresses an item by its numeric id", () => {
+    expect(filterSortSignals(signals, { query: "3" }).map((signal) => signal.itemId)).toEqual([3]);
+    expect(filterSortSignals(signals, { query: "0003" }).map((signal) => signal.itemId)).toEqual([3]);
+    // A numeric query that matches no id still searches names.
+    const named = [...signals, makeSignal({ itemId: 5, name: "2589号样本" })];
+    expect(filterSortSignals(named, { query: "2589" }).map((signal) => signal.itemId)).toEqual([5]);
+  });
+
   it("filters by category", () => {
     expect(filterSortSignals(signals, { category: "草药" }).map((signal) => signal.itemId)).toEqual([3]);
   });
