@@ -139,8 +139,11 @@ describe("forever replicate scan v4", () => {
     lua.exec("WowTest.advance(900)");
     scan(1050);
     // The radar asks for a count per item; the chart asks for points. Both
-    // must agree on which retained points belong to the phase window.
+    // must agree on which retained points belong to the phase window, and
+    // the scan stamps the same count for the next radar refresh to read.
     expect(lua.number("WowTest.ns.historySamples(2589)"))
+      .toBe(lua.number("WowTest.ns.history(2589).samples"));
+    expect(lua.number("WoWderhoiAH_ScanData.items[2589].historySamples"))
       .toBe(lua.number("WowTest.ns.history(2589).samples"));
   });
 

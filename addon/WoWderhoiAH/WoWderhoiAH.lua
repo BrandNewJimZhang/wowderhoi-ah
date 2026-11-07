@@ -47,6 +47,10 @@ local SCAN_FLOOR_HOURS = AUTO_SCAN_INTERVAL / HOUR
 
 local frame -- created below; scanner helpers close over it
 local scanState = nil -- { itemsById, cursor, total, processing, processMs, capture }
+-- The finish phase runs across frames like the row loop: a 170k scan
+-- collapses to thousands of books, and aggregating them all in one
+-- OnUpdate is the stall a player actually feels at the end of a scan.
+local finish = nil
 
 -- Item metadata resolved once per session, not once per scan. The client's
 -- item database loads lazily, so an unresolved lookup is retried next scan
@@ -557,23 +561,49 @@ local function enforceSeriesCap(market)
   end
 end
 
-local function recordSeries(items, nowTs)
-  local market = ensureSeries()
-  market.firstScanAt = math.min(market.firstScanAt or nowTs, nowTs)
-  for itemId, item in pairs(items) do
-    -- Demand-only rows carry no price; keeping their zeros in the series
-    -- would drag every sell-median and chart toward 0.
-    if item.minPrice and item.minPrice > 0 then
-      local series = market.items[itemId]
-      if not series then
-        series = { t = {}, min = {}, sell = {}, q = {}, e = {} }
-        market.items[itemId] = series
-      end
-      appendPoint(series, item, nowTs)
-      market.items[itemId] = pruneSeries(series, nowTs)
-    end
+-- Append one scan point for one item. Demand-only rows carry no price;
+-- keeping their zeros in the series would drag every sell-median and chart
+-- toward 0, so they return nil and are never stored.
+local function appendSeriesPoint(market, itemId, item, nowTs)
+  if not (item.minPrice and item.minPrice > 0) then return nil end
+  local series = market.items[itemId]
+  if not series then
+    series = { t = {}, min = {}, sell = {}, q = {}, e = {} }
+    market.items[itemId] = series
   end
-  -- Drop items whose series was pruned to nothing.
+  appendPoint(series, item, nowTs)
+  series = pruneSeries(series, nowTs)
+  market.items[itemId] = series
+  return series
+end
+
+-- The window every history sample is counted over. Ignition has no window
+-- of its own, so trend and chart statistics borrow the steady window from
+-- the same compiled table instead of restating the number.
+local function historyWindowForPhase(phase)
+  local rule = WAH.RULES.phaseHistory[phase]
+  local window = rule and rule.windowHours or 0
+  if window <= 0 then window = WAH.RULES.phaseHistory.steady.windowHours end
+  return window
+end
+
+-- Sample count within one window. The decision core reads only this
+-- number, so neither runtime builds chart points to count them.
+local function seriesSamples(series, nowTs, windowHours)
+  if not series or #series.t == 0 then return 0 end
+  local cutoff = nowTs - (windowHours or 0) * HOUR
+  local count = 0
+  for index = 1, #series.t do
+    if series.t[index] >= cutoff then count = count + 1 end
+  end
+  -- An item whose retained points all predate the window still has one
+  -- usable sample: its latest point, matching WAH.historySamples.
+  return count > 0 and count or 1
+end
+
+-- The per-item work is done; drop empty series and enforce the global cap
+-- once, rather than rebuilding every item's arrays on every scan.
+local function finalizeSeries(market)
   for itemId, series in pairs(market.items) do
     if #series.t == 0 then market.items[itemId] = nil end
   end
@@ -679,134 +709,138 @@ local function sellerConcentration(entry)
   return hhi, top
 end
 
-local function finishScan(totalAuctions)
-  local finishStart = debugprofilestop()
-  local processMs = scanState.processMs or 0
-  local apiMs = scanState.apiMs or 0
-  local waitMs = scanState.waitMs or 0
-  local nowTs = time()
-  local market = ensureSeries()
-  local phase = WAH.currentPhase and WAH.currentPhase() or "steady"
-  local items = {}
-  local itemCount = 0
-  local previous = scanState.capture
-  local elapsedSeconds = previous and (nowTs - (previous.at or nowTs)) or 0
-  local captureItems = {}
-  -- The journal is the only place a purchase is a fact. The flow inference
-  -- subtracts these units; see inferFlow.
-  local ownBuys = {}
-  if previous and previous.at and WAH.Ledger and WAH.Ledger.purchasesBetween then
-    ownBuys = WAH.Ledger.purchasesBetween(previous.at, nowTs)
-  end
+-- Aggregate one item's book. The finish phase calls this inside a frame
+-- budget, one book at a time, so a 6,000-book market cannot stall a frame.
+local function finishItem(itemId)
+  local entry = scanState.itemsById[itemId]
+  if not entry then return end
+  -- Release the row accumulator as soon as its book is aggregated; at 170k
+  -- listings the flow tables are the largest structure alive during finish.
+  scanState.itemsById[itemId] = nil
+  finish.itemCount = finish.itemCount + 1
 
-  for itemId, entry in pairs(scanState.itemsById) do
-    itemCount = itemCount + 1
-    if entry.hasBuyout then
-      local tiers = aggregateTiers(entry.tierQuantity)
-      local storedTiers = topTiers(tiers, 8)
-      local marketType = Core.marketTypeFor({
-        itemClass = entry.itemClass,
-        quantity = entry.quantity,
-        numAuctions = entry.numAuctions
-      })
-      local sellP = Core.sellFrontSorted(tiers, {
-        rules = WAH.RULES.sellFront,
-        byCount = marketType == "item",
-        early = phase == "ignition"
-      })
-      local sellers = countSellers(entry)
-      local sellersInvisible = entry.sellerUnknown
-      if sellersInvisible then sellers = entry.numAuctions end
-      -- A disappearance needs a baseline. Without a previous capture of this
-      -- item there was nothing to disappear from, so a zero interval is
-      -- missing data, not an observed zero: the core would otherwise shrink
-      -- the fill estimate toward zero for every first scan and every item
-      -- listed between scans, and the calibration would learn those zeros.
-      local previousItem = previous and previous.items[itemId]
-      local flowObserved = previousItem ~= nil and elapsedSeconds > 0
-      local soldLow, soldHigh, supplyGrowth = inferFlow(
-        entry, previousItem, elapsedSeconds, ownBuys[itemId])
-      local sellerHHI, topSellerShare = sellerConcentration(entry)
-      items[itemId] = {
-        name = entry.name,
-        quality = entry.quality,
-        itemClass = entry.itemClass,
-        itemSubClass = entry.itemSubClass,
-        marketType = marketType,
-        vendorP = entry.vendorP,
-        minPrice = math.floor((entry.minPrice or 0) + 0.5),
-        sellP = math.floor((sellP or entry.minPrice or 0) + 0.5),
-        p5 = math.floor((Core.percentileOfSorted(tiers, 0.05) or entry.minPrice or 0) + 0.5),
-        marketPrice = math.floor((Core.percentileOfSorted(tiers, 0.10) or entry.minPrice or 0) + 0.5),
-        quantity = entry.quantity,
-        numAuctions = entry.numAuctions,
-        sellers = sellers,
-        sellersInvisible = sellersInvisible,
-        -- Owner visibility and the exclusion channel. "none" means owners
-        -- were hidden and the owned list did not identify the listings, so
-        -- the book may still contain them; the calibration ignores it.
-        ownerVisible = entry.ownerVisible,
-        selfExclusion = entry.selfExclusion or (entry.sellerUnknown and "none" or "owner"),
-        selfQty = entry.selfQty,
-        selfListings = entry.selfListings,
-        sellerHHI = sellerHHI,
-        topSellerShare = topSellerShare,
-        bidOnly = entry.bidOnly,
-        highestBid = math.floor((entry.bidAmount or 0) + 0.5),
-        tiers = storedTiers,
-        expiring = entry.expiring,
-        inferredSoldLow = soldLow,
-        inferredSoldHigh = soldHigh,
-        flowObserved = flowObserved,
-        supplyGrowth = supplyGrowth,
-        elapsedHours = math.max(elapsedSeconds / HOUR, SCAN_FLOOR_HOURS)
-      }
-      captureItems[itemId] = {
-        keys = entry.flow,
-        total = entry.quantity
-      }
-    elseif entry.bidOnly > 0 then
-      items[itemId] = {
-        name = entry.name,
-        quality = entry.quality,
-        itemClass = entry.itemClass,
-        itemSubClass = entry.itemSubClass,
-        vendorP = entry.vendorP,
-        minPrice = 0,
-        sellP = 0,
-        quantity = 0,
-        numAuctions = 0,
-        sellers = 0,
-        sellersInvisible = entry.sellerUnknown,
-        ownerVisible = entry.ownerVisible,
-        selfExclusion = entry.selfExclusion or (entry.sellerUnknown and "none" or "owner"),
-        selfQty = entry.selfQty,
-        selfListings = entry.selfListings,
-        bidOnly = entry.bidOnly,
-        highestBid = math.floor((entry.bidAmount or 0) + 0.5),
-        tiers = {},
-        expiring = entry.expiring,
-        inferredSoldLow = 0,
-        inferredSoldHigh = 0,
-        supplyGrowth = 0
-      }
-    end
+  if entry.hasBuyout then
+    local tiers = aggregateTiers(entry.tierQuantity)
+    local storedTiers = topTiers(tiers, 8)
+    local marketType = Core.marketTypeFor({
+      itemClass = entry.itemClass,
+      quantity = entry.quantity,
+      numAuctions = entry.numAuctions
+    })
+    local sellP = Core.sellFrontSorted(tiers, {
+      rules = WAH.RULES.sellFront,
+      byCount = marketType == "item",
+      early = finish.phase == "ignition"
+    })
+    local sellers = countSellers(entry)
+    local sellersInvisible = entry.sellerUnknown
+    if sellersInvisible then sellers = entry.numAuctions end
+    -- A disappearance needs a baseline. Without a previous capture of this
+    -- item there was nothing to disappear from, so a zero interval is
+    -- missing data, not an observed zero: the core would otherwise shrink
+    -- the fill estimate toward zero for every first scan and every item
+    -- listed between scans, and the calibration would learn those zeros.
+    local previousItem = finish.previous and finish.previous.items[itemId]
+    local flowObserved = previousItem ~= nil and finish.elapsedSeconds > 0
+    local soldLow, soldHigh, supplyGrowth = inferFlow(
+      entry, previousItem, finish.elapsedSeconds, finish.ownBuys[itemId])
+    local sellerHHI, topSellerShare = sellerConcentration(entry)
+    local item = {
+      name = entry.name,
+      quality = entry.quality,
+      itemClass = entry.itemClass,
+      itemSubClass = entry.itemSubClass,
+      marketType = marketType,
+      vendorP = entry.vendorP,
+      minPrice = math.floor((entry.minPrice or 0) + 0.5),
+      sellP = math.floor((sellP or entry.minPrice or 0) + 0.5),
+      p5 = math.floor((Core.percentileOfSorted(tiers, 0.05) or entry.minPrice or 0) + 0.5),
+      marketPrice = math.floor((Core.percentileOfSorted(tiers, 0.10) or entry.minPrice or 0) + 0.5),
+      quantity = entry.quantity,
+      numAuctions = entry.numAuctions,
+      sellers = sellers,
+      sellersInvisible = sellersInvisible,
+      -- Owner visibility and the exclusion channel. "none" means owners
+      -- were hidden and the owned list did not identify the listings, so
+      -- the book may still contain them; the calibration ignores it.
+      ownerVisible = entry.ownerVisible,
+      selfExclusion = entry.selfExclusion or (entry.sellerUnknown and "none" or "owner"),
+      selfQty = entry.selfQty,
+      selfListings = entry.selfListings,
+      sellerHHI = sellerHHI,
+      topSellerShare = topSellerShare,
+      bidOnly = entry.bidOnly,
+      highestBid = math.floor((entry.bidAmount or 0) + 0.5),
+      tiers = storedTiers,
+      expiring = entry.expiring,
+      inferredSoldLow = soldLow,
+      inferredSoldHigh = soldHigh,
+      flowObserved = flowObserved,
+      supplyGrowth = supplyGrowth,
+      elapsedHours = math.max(finish.elapsedSeconds / HOUR, SCAN_FLOOR_HOURS)
+    }
+    -- The sample count is a property of the series at scan time. Stamping it
+    -- here means a radar refresh reads one number instead of walking every
+    -- retained point of every item.
+    local series = appendSeriesPoint(finish.market, itemId, item, finish.nowTs)
+    item.historySamples = series and seriesSamples(series, finish.nowTs, finish.seriesWindow) or 0
+    finish.items[itemId] = item
+    finish.captureItems[itemId] = {
+      keys = entry.flow,
+      total = entry.quantity
+    }
+  elseif entry.bidOnly > 0 then
+    local item = {
+      name = entry.name,
+      quality = entry.quality,
+      itemClass = entry.itemClass,
+      itemSubClass = entry.itemSubClass,
+      vendorP = entry.vendorP,
+      minPrice = 0,
+      sellP = 0,
+      quantity = 0,
+      numAuctions = 0,
+      sellers = 0,
+      sellersInvisible = entry.sellerUnknown,
+      ownerVisible = entry.ownerVisible,
+      selfExclusion = entry.selfExclusion or (entry.sellerUnknown and "none" or "owner"),
+      selfQty = entry.selfQty,
+      selfListings = entry.selfListings,
+      bidOnly = entry.bidOnly,
+      highestBid = math.floor((entry.bidAmount or 0) + 0.5),
+      tiers = {},
+      expiring = entry.expiring,
+      inferredSoldLow = 0,
+      inferredSoldHigh = 0,
+      supplyGrowth = 0,
+      historySamples = 0
+    }
+    finish.items[itemId] = item
   end
+end
 
-  -- A pipeline bump redefines every field, so old data is discarded rather
-  -- than reinterpreted. The first v4 scan is also the first series point.
-  local previousVersion = WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.dataVersion
-  if previousVersion and previousVersion ~= WAH.PIPELINE_VERSION then
-    WoWderhoiAH_Series = nil
-    WoWderhoiAH_Capture = nil
-  end
+-- Write SavedVariables one frame after the last aggregation frame, so the
+-- payload serialisation is not part of the finish stall. The desktop watcher
+-- still sees the scan within seconds, not at the next logout.
+local function flushFinishedScan()
+  if not finish then return end
+  local saveStart = debugprofilestop()
+  WAH.flush()
+  finish.stats.saveMs = debugprofilestop() - saveStart
+  WAH.lastScanStats = finish.stats
+  finish = nil
+  scanState = nil
+  WAH.scanRunning = false
+  frame:SetScript("OnUpdate", nil)
+end
 
+local function finalizeFinish()
   WoWderhoiAH_ScanData = {
     dataVersion = WAH.PIPELINE_VERSION,
     -- The inferred flow's hygiene level; the terminal labels every snapshot
     -- with it so a calibration never mixes pre-hygiene rows with clean ones.
     observationVersion = WAH.OBSERVATION_VERSION,
-    scannedAt = nowTs,
+    scannedAt = finish.nowTs,
     server = GetRealmName(),
     faction = UnitFactionGroup("player"),
     character = UnitName and UnitName("player") or nil,
@@ -820,42 +854,103 @@ local function finishScan(totalAuctions)
     -- but cannot see the player's bags; without this it sized every
     -- recommendation against a planning constant.
     bagSlots = freeBagSlots(),
-    total = totalAuctions or 0,
-    items = items
+    total = finish.totalAuctions or 0,
+    items = finish.items
   }
   WoWderhoiAH_Capture = {
     v = WAH.PIPELINE_VERSION,
     shape = "owner-price-packed",
-    at = nowTs,
+    at = finish.nowTs,
     market = marketKey(),
-    items = captureItems
+    items = finish.captureItems
   }
-  recordSeries(items, nowTs)
-  scanState = nil
-  WAH.scanRunning = false
+  finalizeSeries(finish.market)
   scanFailures = 0
-  local finishMs = debugprofilestop() - finishStart
-  -- Write SavedVariables immediately so the desktop watcher sees this scan
-  -- in seconds, not at the next logout. Fall back silently on clients that
-  -- do not expose the API.
-  local saveStart = debugprofilestop()
-  WAH.flush()
   -- Where the time went. /wahdiag prints this; without it a "slow scan"
   -- report cannot be told apart from a slow server response, a slow client
   -- call or our own Lua work.
-  WAH.lastScanStats = {
-    rows = totalAuctions or 0,
-    waitMs = waitMs,
-    apiMs = apiMs,
-    luaMs = math.max(0, processMs - apiMs),
-    processMs = processMs,
-    finishMs = finishMs,
-    saveMs = debugprofilestop() - saveStart
+  finish.stats = {
+    rows = finish.totalAuctions or 0,
+    waitMs = finish.waitMs,
+    apiMs = finish.apiMs,
+    luaMs = math.max(0, finish.processMs - finish.apiMs),
+    processMs = finish.processMs,
+    finishMs = finish.finishMs,
+    finishFrameMaxMs = finish.frameMaxMs,
+    finishFrames = finish.frames,
+    saveMs = 0
   }
   chatMessage(string.format(
     L.SCAN_COMPLETE .. "%s",
-    totalAuctions or 0, itemCount,
+    finish.totalAuctions or 0, finish.itemCount,
     autoScanOn() and string.format(L.SCAN_AUTO_ARMED, SCAN_MINUTES) or ""))
+  frame:SetScript("OnUpdate", flushFinishedScan)
+end
+
+local function processFinishChunk()
+  if not finish then return end
+  local frameStart = debugprofilestop()
+  local cursor = finish.cursor
+  -- The item count is fixed: consumed entries are cleared, so `#` on the
+  -- list would no longer be reliable.
+  while cursor <= finish.count and debugprofilestop() - frameStart < FRAME_BUDGET_MS do
+    finishItem(finish.itemIds[cursor])
+    finish.itemIds[cursor] = nil
+    cursor = cursor + 1
+  end
+  finish.cursor = cursor
+  local frameMs = debugprofilestop() - frameStart
+  finish.finishMs = finish.finishMs + frameMs
+  finish.frames = finish.frames + 1
+  if frameMs > finish.frameMaxMs then finish.frameMaxMs = frameMs end
+  if cursor > finish.count then finalizeFinish() end
+end
+
+local function beginFinish(totalAuctions)
+  -- A pipeline bump redefines every field, so old data is discarded rather
+  -- than reinterpreted. This reset must run before the new series is read.
+  local previousScan = WoWderhoiAH_ScanData
+  local previousVersion = previousScan and previousScan.dataVersion
+  if previousVersion and previousVersion ~= WAH.PIPELINE_VERSION then
+    WoWderhoiAH_Series = nil
+    WoWderhoiAH_Capture = nil
+  end
+  local nowTs = time()
+  local market = ensureSeries()
+  market.firstScanAt = math.min(market.firstScanAt or nowTs, nowTs)
+  local phase = WAH.currentPhase and WAH.currentPhase() or "steady"
+  local previous = scanState.capture
+  local elapsedSeconds = previous and (nowTs - (previous.at or nowTs)) or 0
+  -- The journal is the only place a purchase is a fact. The flow inference
+  -- subtracts these units; see inferFlow.
+  local ownBuys = {}
+  if previous and previous.at and WAH.Ledger and WAH.Ledger.purchasesBetween then
+    ownBuys = WAH.Ledger.purchasesBetween(previous.at, nowTs)
+  end
+  local itemIds = {}
+  for itemId in pairs(scanState.itemsById) do itemIds[#itemIds + 1] = itemId end
+  finish = {
+    totalAuctions = totalAuctions,
+    nowTs = nowTs,
+    market = market,
+    phase = phase,
+    previous = previous,
+    elapsedSeconds = elapsedSeconds,
+    ownBuys = ownBuys,
+    itemIds = itemIds,
+    count = #itemIds,
+    cursor = 1,
+    items = {},
+    captureItems = {},
+    itemCount = 0,
+    seriesWindow = historyWindowForPhase(phase),
+    waitMs = scanState.waitMs or 0,
+    processMs = scanState.processMs or 0,
+    apiMs = scanState.apiMs or 0,
+    finishMs = 0,
+    frameMaxMs = 0,
+    frames = 0
+  }
 end
 
 local function processReplicateChunk()
@@ -877,8 +972,9 @@ local function processReplicateChunk()
   scanState.cursor = index
   scanState.processMs = (scanState.processMs or 0) + (debugprofilestop() - frameStart)
   if index > total then
-    frame:SetScript("OnUpdate", nil)
-    finishScan(total)
+    -- Keep the OnUpdate alive: the finish phase slices its own work.
+    frame:SetScript("OnUpdate", processFinishChunk)
+    beginFinish(total)
   end
 end
 
@@ -926,7 +1022,9 @@ local function startScan()
   local generation = scanState
   C_AuctionHouse.ReplicateItems()
   C_Timer.After(SCAN_TIMEOUT_SECONDS, function()
-    if scanState ~= generation then return end
+    -- A finish in progress has the response in hand; only a scan still
+    -- waiting on the server can time out.
+    if scanState ~= generation or finish then return end
     frame:SetScript("OnUpdate", nil)
     scanState = nil
     WAH.scanRunning = false
@@ -972,6 +1070,7 @@ frame:SetScript("OnEvent", function(_, event, payload)
     if scanState then
       frame:SetScript("OnUpdate", nil)
       scanState = nil
+      finish = nil
       WAH.scanRunning = false
       chatMessage(L.SCAN_ABORTED)
     end
@@ -1061,27 +1160,16 @@ end
 -- of its own, so trend and chart statistics borrow the steady window from
 -- the same compiled table instead of restating the number.
 local function historyWindowHours()
-  local phase = WAH.currentPhase()
-  local phaseRule = WAH.RULES.phaseHistory[phase]
-  local window = phaseRule and phaseRule.windowHours or 0
-  if window <= 0 then window = WAH.RULES.phaseHistory.steady.windowHours end
-  return window
+  return historyWindowForPhase(WAH.currentPhase())
 end
 
 -- Sample count only. The decision core never reads point tables, so a
 -- radar refresh must not build one table per history point per item.
+-- New scans stamp the same count on the item record; this is the fallback
+-- for a scan written before the stamp existed.
 function WAH.historySamples(itemId)
   local market = WAH.seriesMarket()
-  local series = market and market.items[itemId]
-  if not series or #series.t == 0 then return 0 end
-  local cutoff = time() - historyWindowHours() * HOUR
-  local count = 0
-  for index = 1, #series.t do
-    if series.t[index] >= cutoff then count = count + 1 end
-  end
-  -- An item whose retained points all predate the window still has one
-  -- usable sample: its latest point, matching WAH.history.
-  return count > 0 and count or 1
+  return seriesSamples(market and market.items[itemId], time(), historyWindowHours())
 end
 
 -- Single history authority. The decision core reads samples; the tooltip
