@@ -1,0 +1,103 @@
+[
+  {
+    "query": "linen",
+    "candidates": [
+      { "itemId": 2590, "name": "Linen Cloth", "booked": true, "quantity": 40 },
+      { "itemId": 2589, "name": "Linen", "booked": true, "quantity": 10 }
+    ],
+    "expected": [2589, 2590]
+  },
+  {
+    "query": "魔铁 矿",
+    "candidates": [
+      { "itemId": 1, "name": "魔铁矿", "booked": true, "quantity": 10 },
+      { "itemId": 2, "name": "魔铁矿石", "booked": true, "quantity": 50 },
+      { "itemId": 3, "name": "铁矿", "booked": true, "quantity": 100 }
+    ],
+    "expected": [2, 1]
+  },
+  {
+    "query": "4338",
+    "candidates": [
+      { "itemId": 4338, "name": "Mageweave Cloth", "booked": true, "quantity": 70 },
+      { "itemId": 2589, "name": "Linen", "booked": true, "quantity": 5 }
+    ],
+    "expected": [4338]
+  },
+  {
+    "query": "item:4338",
+    "candidates": [
+      { "itemId": 4338, "name": "Mageweave Cloth", "booked": true, "quantity": 70 },
+      { "itemId": 2589, "name": "Linen", "booked": true, "quantity": 5 }
+    ],
+    "expected": [4338]
+  },
+  {
+    "query": "0003",
+    "candidates": [
+      { "itemId": 3, "name": "Sample", "booked": true, "quantity": 1 }
+    ],
+    "expected": [3]
+  },
+  {
+    "query": "mage",
+    "candidates": [
+      { "itemId": 4338, "name": "Mageweave Cloth", "booked": true, "quantity": 20 },
+      { "itemId": 1, "name": "Mageweave", "booked": true, "quantity": 20 }
+    ],
+    "expected": [1, 4338]
+  },
+  {
+    "query": "cloth",
+    "candidates": [
+      { "itemId": 1, "name": "Linen Cloth", "booked": true, "quantity": 10 },
+      { "itemId": 2, "name": "Cloth", "booked": true, "quantity": 10 }
+    ],
+    "expected": [2, 1]
+  },
+  {
+    "query": "精 草",
+    "candidates": [
+      { "itemId": 3, "name": "梦叶草", "booked": true, "quantity": 5 }
+    ],
+    "expected": []
+  },
+  {
+    "query": "ore",
+    "candidates": [
+      { "itemId": 20, "name": "Ore", "booked": true, "quantity": 10 },
+      { "itemId": 10, "name": "Ore", "booked": true, "quantity": 10 }
+    ],
+    "expected": [10, 20]
+  },
+  {
+    "query": "crystal shard",
+    "candidates": [
+      { "itemId": 1, "name": "Rough Crystal Shard", "booked": false, "quantity": 100 },
+      { "itemId": 2, "name": "Prime Crystal Shard", "booked": true, "quantity": 1 }
+    ],
+    "expected": [2, 1]
+  },
+  {
+    "query": "2589",
+    "candidates": [
+      { "itemId": 2589, "name": "Linen", "booked": true, "quantity": 5 },
+      { "itemId": 5, "name": "2589号样本", "booked": true, "quantity": 100 }
+    ],
+    "expected": [2589, 5]
+  },
+  {
+    "query": "MAGEWEAVE",
+    "candidates": [
+      { "itemId": 7, "name": "MAGEWEAVE CLOTH", "booked": true, "quantity": 10 }
+    ],
+    "expected": [7]
+  },
+  {
+    "query": "   ",
+    "candidates": [
+      { "itemId": 1, "name": "Linen", "booked": true, "quantity": 1 }
+    ],
+    "expected": []
+  }
+]

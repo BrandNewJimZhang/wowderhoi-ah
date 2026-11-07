@@ -83,11 +83,35 @@ describe("filterSortSignals", () => {
     expect(result.map((signal) => signal.itemId)).toEqual([1, 2]);
     expect(signals[0].itemId).toBe(1);
   });
+
+  it("answers a query in relevance order when no column was chosen", () => {
+    const rows = [
+      makeSignal({ itemId: 1, name: "Linen Cloth" }),
+      makeSignal({ itemId: 2, name: "Linen" })
+    ];
+    // The default view names spreadPercent but the flag says the player did
+    // not click a column; an exact name must outrank a prefix.
+    const view = parseMarketView({ q: "linen" });
+    expect(view.sortExplicit).toBe(false);
+    expect(filterSortSignals(rows, view).map((signal) => signal.itemId)).toEqual([2, 1]);
+  });
+
+  it("lets an explicit column sort win over relevance", () => {
+    const rows = [
+      makeSignal({ itemId: 1, name: "Linen Cloth", sellPrice: 50 }),
+      makeSignal({ itemId: 2, name: "Linen", sellPrice: 150 })
+    ];
+    const view = parseMarketView({ q: "linen", sort: "sellPrice", dir: "asc" });
+    expect(view.sortExplicit).toBe(true);
+    expect(filterSortSignals(rows, view).map((signal) => signal.itemId)).toEqual([1, 2]);
+  });
 });
 
 describe("parseMarketView", () => {
   it("returns defaults for empty params", () => {
-    expect(parseMarketView({})).toEqual({ query: "", category: "", sortKey: "spreadPercent", sortAsc: false, page: 1 });
+    expect(parseMarketView({})).toEqual({
+      query: "", category: "", sortKey: "spreadPercent", sortExplicit: false, sortAsc: false, page: 1
+    });
   });
 
   it("reads query, category, sort key, direction, and page", () => {
@@ -95,6 +119,7 @@ describe("parseMarketView", () => {
       query: "矿石",
       category: "矿石",
       sortKey: "sellPrice",
+      sortExplicit: true,
       sortAsc: true,
       page: 3
     });
@@ -103,6 +128,7 @@ describe("parseMarketView", () => {
   it("falls back to defaults on an unknown sort key or invalid page", () => {
     const view = parseMarketView({ sort: "evil'); DROP TABLE", page: "-4" });
     expect(view.sortKey).toBe("spreadPercent");
+    expect(view.sortExplicit).toBe(false);
     expect(view.page).toBe(1);
     expect(parseMarketView({ page: "abc" }).page).toBe(1);
   });

@@ -1056,4 +1056,67 @@ function Core.sellPlan(item, position, rules, opts)
   }
 end
 
+-- ============================== Search ===============================
+--
+-- Search is shared semantics, not a UI detail: the in-game box and the
+-- terminal table must open the same item for the same query. Each runtime
+-- implements these rules; data/search-parity.json pins them together.
+
+-- "4338" and "item:4338" address an item directly; anything else is a
+-- whitespace-tokenised name query.
+function Core.parseSearchQuery(raw)
+  local text = (raw or ""):match("^%s*(.-)%s*$"):lower()
+  if text == "" then return nil end
+  local id = tonumber(text) or tonumber(text:match("^item:(%d+)$"))
+  local tokens = {}
+  for token in text:gmatch("%S+") do tokens[#tokens + 1] = token end
+  return { text = text, id = id, tokens = tokens }
+end
+
+-- 4 exact, 3 prefix, 2 every token present, 1 substring. A miss is 0.
+function Core.searchScore(name, query)
+  if not name or name == "" or not query then return 0 end
+  local lower = name:lower()
+  if lower == query.text then return 4 end
+  if lower:sub(1, #query.text) == query.text then return 3 end
+  for _, token in ipairs(query.tokens) do
+    if not lower:find(token, 1, true) then return 0 end
+  end
+  return #query.tokens > 1 and 2 or 1
+end
+
+-- Rank candidates by relevance. A candidate is
+-- { itemId, name, booked, quantity }; `booked` means the item has a
+-- buyable book, and outranks a bid-only observation at the same score.
+function Core.rankSearch(candidates, raw)
+  local query = Core.parseSearchQuery(raw)
+  if not query then return {} end
+  local scored = {}
+  for _, candidate in ipairs(candidates or {}) do
+    local score
+    if query.id and tonumber(candidate.itemId) == query.id then
+      score = 5
+    else
+      score = Core.searchScore(candidate.name, query)
+    end
+    if score > 0 then
+      scored[#scored + 1] = { candidate = candidate, score = score }
+    end
+  end
+  table.sort(scored, function(left, right)
+    if left.score ~= right.score then return left.score > right.score end
+    local a, b = left.candidate, right.candidate
+    local aBooked, bBooked = a.booked and true or false, b.booked and true or false
+    if aBooked ~= bBooked then return aBooked end
+    local aQuantity, bQuantity = a.quantity or 0, b.quantity or 0
+    if aQuantity ~= bQuantity then return aQuantity > bQuantity end
+    local aLength, bLength = #(a.name or ""), #(b.name or "")
+    if aLength ~= bLength then return aLength < bLength end
+    return tonumber(a.itemId) < tonumber(b.itemId)
+  end)
+  local ranked = {}
+  for index, entry in ipairs(scored) do ranked[index] = entry.candidate end
+  return ranked
+end
+
 WAH.Core = Core

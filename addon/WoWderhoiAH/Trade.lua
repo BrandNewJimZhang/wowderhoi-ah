@@ -36,7 +36,6 @@ local searching = nil -- "browse" | "list" | nil
 -- The last browse query, kept so the server's answer can be ranked by name
 -- instead of opening whichever row happened to be cheapest.
 local browseQuery = nil
-local browseTokens = {}
 local pendingPurchase = nil -- a purchase awaiting AUCTION_HOUSE_PURCHASE_COMPLETED
 
 local function chatMessage(text)
@@ -641,70 +640,26 @@ function WAH.searchItem(itemId, name)
     { { sortOrder = Enum.AuctionHouseSortOrder.Price, reverseSort = false } }, false)
 end
 
--- A query is matched as whitespace-separated tokens, so "魔铁 矿" finds
--- "魔铁矿" without the player reproducing the exact spacing. Higher scores
--- mean a closer name: exact, prefix, every-token-present.
-local function searchTokens(query)
-  local tokens = {}
-  for token in query:gmatch("%S+") do tokens[#tokens + 1] = token end
-  return tokens
-end
-
-local function nameScore(name, query, tokens)
-  if not name or name == "" or not query or query == "" then return 0 end
-  local lower = name:lower()
-  if lower == query then return 4 end
-  if lower:sub(1, #query) == query then return 3 end
-  for _, token in ipairs(tokens) do
-    if not lower:find(token, 1, true) then return 0 end
-  end
-  return #tokens > 1 and 2 or 1
-end
-
 -- Typed names are resolved against the session scan first: it holds the
 -- realm's own names, including localized ones the client's search may not
--- match, and it avoids spending a browse query on every keystroke.
+-- match, and it avoids spending a browse query on every keystroke. The
+-- ranking itself lives in Core, so the terminal's table and this box agree
+-- on what "the closest name" means.
 local function resolveFromScan(query)
   local scan = currentScan()
   if not scan then return nil end
-  local needle = query:match("^%s*(.-)%s*$"):lower()
-  if needle == "" then return nil end
-  -- "4338" and "item:4338" address the item directly.
-  local numericId = tonumber(needle) or tonumber(needle:match("^item:(%d+)$"))
-  local tokens = searchTokens(needle)
-  local best
+  local candidates = {}
   for itemId, entry in pairs(scan) do
-    local id = tonumber(itemId)
-    local score = numericId and id == numericId and 5
-      or nameScore(entry.name, needle, tokens)
-    if score > 0 then
-      local candidate = {
-        itemId = id,
-        name = entry.name,
-        score = score,
-        -- A book the player can buy from outranks a bid-only observation at
-        -- the same name score; a bid-only item opens a search with no rows.
-        booked = entry.minPrice and entry.minPrice > 0 or false,
-        quantity = entry.quantity or 0,
-        nameLength = #(entry.name or "")
-      }
-      local better = not best or candidate.score > best.score
-      if best and candidate.score == best.score then
-        if candidate.booked ~= best.booked then
-          better = candidate.booked
-        elseif candidate.quantity ~= best.quantity then
-          better = candidate.quantity > best.quantity
-        elseif candidate.nameLength ~= best.nameLength then
-          better = candidate.nameLength < best.nameLength
-        else
-          -- Equal names differ only by id: keep the choice stable across
-          -- sessions instead of following pairs() order.
-          better = candidate.itemId < best.itemId
-        end
-      end
-      if better then best = candidate end
-    end
+    candidates[#candidates + 1] = {
+      itemId = tonumber(itemId),
+      name = entry.name,
+      -- A book the player can buy from outranks a bid-only observation at
+      -- the same name score; a bid-only item opens a search with no rows.
+      booked = entry.minPrice and entry.minPrice > 0 or false,
+      quantity = entry.quantity or 0
+    }
   end
+  local best = WAH.Core.rankSearch(candidates, query)[1]
   return best and { itemId = best.itemId, name = best.name } or nil
 end
 
@@ -730,8 +685,7 @@ runSearch = function()
   searching = "browse"
   searchState = nil
   mode = "results"
-  browseQuery = query:lower()
-  browseTokens = searchTokens(browseQuery)
+  browseQuery = query
   C_AuctionHouse.SendBrowseQuery({
     searchString = query,
     sorts = { { sortOrder = Enum.AuctionHouseSortOrder.Price, reverseSort = false } }
@@ -1035,24 +989,26 @@ tradeEvents:SetScript("OnEvent", function(_, event, payload, extra)
     return
   end
   -- Browse resolution: the server answered a typed name search with a list
-  -- of item keys; open the first one.
+  -- of item keys. A server page can hold several similar names; the shared
+  -- ranking opens the one the player meant, and a page where nothing
+  -- matches is a failure rather than an arbitrary first row.
   if searching == "browse" and not searchState then
-    local best, bestScore
+    local candidates = {}
     for _, result in pairs(C_AuctionHouse.GetBrowseResults() or {}) do
       local itemKey = result.itemKey
       if itemKey then
         local info = C_AuctionHouse.GetItemKeyInfo(itemKey)
-        local score = nameScore(info and info.itemName, browseQuery, browseTokens)
-        -- A server page can hold several similar names. Opening the one
-        -- whose name matches the typed query is what the player meant; the
-        -- cheapest row was an arbitrary pick.
-        if not best or score > bestScore
-          or (score == bestScore
-            and (result.minPrice or math.huge) < (best.minPrice or math.huge)) then
-          best, bestScore = result, score
-        end
+        local candidate = {
+          itemKey = itemKey,
+          itemId = itemKey.itemID,
+          name = info and info.itemName,
+          booked = (result.minPrice or 0) > 0,
+          quantity = result.totalQuantity or 0
+        }
+        candidates[#candidates + 1] = candidate
       end
     end
+    local best = WAH.Core.rankSearch(candidates, browseQuery)[1]
     if not best then
       searching = nil
       chatMessage(L.SEARCH_FAILED)
