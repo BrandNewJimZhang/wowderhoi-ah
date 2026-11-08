@@ -6,7 +6,7 @@ import { getMarketBundle } from "@/lib/market-read";
 import { prisma } from "@/lib/prisma";
 import { formatPercent } from "@/lib/utils";
 import { Coins } from "@/components/coins";
-import { qualityColorClass } from "@/lib/quality";
+import { qualityColorClass, qualityLabel } from "@/lib/quality";
 import { ItemIcon } from "@/components/item-icon";
 import { describeFreshness } from "@/lib/freshness";
 import { fillRules, SCAN_INTERVAL_MINUTES } from "@/lib/market-rules";
@@ -18,6 +18,7 @@ import { CandlestickChart, FillProbabilityChart, OrderBookChart, TimeSeriesChart
 import { AlertRulePanel } from "@/components/trader-panels";
 import { WatchStar } from "@/components/watch-star";
 import { Panel, PanelHeader } from "@/components/ui/panel";
+import { AppShell } from "@/components/app-shell";
 
 export default async function ItemDetail({ params }: { params: Promise<{ itemId: string }> }) {
   const { itemId } = await params;
@@ -95,7 +96,8 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
     : 0.35;
 
   return (
-    <main className="terminal-grid min-h-screen bg-terminal-bg p-3 text-slate-200">
+    <AppShell active="C:/Program Files/Git/market">
+      <main className="terminal-grid min-h-screen bg-terminal-bg p-3 text-slate-200">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border border-terminal-border bg-terminal-panel px-4 py-3">
         <div>
           <div className="font-mono text-xs uppercase text-terminal-muted">商品终端</div>
@@ -125,7 +127,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
             <PanelHeader title="目录事实" action={<span className="font-mono text-xs text-terminal-muted">来源 {item.catalogSource === "wuxianwow.com" ? "无限图鉴" : "扫描占位"}</span>} />
             <div className="grid grid-cols-2 gap-3 p-3 font-mono text-xs sm:grid-cols-4">
               <div><div className="text-terminal-muted">品类</div><div className="text-slate-200">{item.category}{item.subCategory !== item.category ? ` · ${item.subCategory}` : ""}</div></div>
-              <div><div className="text-terminal-muted">品质</div><div className={qualityColorClass(item.quality)}>{item.quality}</div></div>
+              <div><div className="text-terminal-muted">品质</div><div className={qualityColorClass(item.quality)}>{qualityLabel(item.quality)}</div></div>
               <div><div className="text-terminal-muted">装等</div><div className="text-slate-200">{item.itemLevel ?? "—"}</div></div>
               <div><div className="text-terminal-muted">需求等级</div><div className="text-slate-200">{item.requiredLevel ?? "—"}</div></div>
               <div><div className="text-terminal-muted">部位</div><div className="text-slate-200">{item.slot ?? "—"}</div></div>
@@ -252,5 +254,6 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
         </div>
       </div>
     </main>
+    </AppShell>
   );
 }

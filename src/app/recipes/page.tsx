@@ -8,6 +8,7 @@ import { recipeToLp } from "@/lib/recipes";
 import { getRecipes } from "@/lib/repositories";
 import { Coins } from "@/components/coins";
 import { Panel, PanelHeader } from "@/components/ui/panel";
+import { AppShell } from "@/components/app-shell";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,8 @@ export default async function RecipesPage() {
   const { solution, budget } = buildProductionPlan(signals, recipes, scope?.cash ?? null);
 
   return (
-    <main className="terminal-grid min-h-screen bg-terminal-bg p-3 text-slate-200">
+    <AppShell active="C:/Program Files/Git/recipes">
+      <main className="terminal-grid min-h-screen bg-terminal-bg p-3 text-slate-200">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border border-terminal-border bg-terminal-panel px-4 py-3">
         <div>
           <div className="font-mono text-xs uppercase text-terminal-muted">生产网络</div>
@@ -131,5 +133,6 @@ export default async function RecipesPage() {
         </div>
       )}
     </main>
+    </AppShell>
   );
 }

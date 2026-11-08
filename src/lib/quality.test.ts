@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { qualityColorClass } from "@/lib/quality";
+import { qualityColorClass, qualityLabel } from "@/lib/quality";
 
 describe("qualityColorClass", () => {
   it("maps WoW item qualities to their canonical colors", () => {
@@ -14,5 +14,13 @@ describe("qualityColorClass", () => {
   it("falls back to common white for unknown qualities", () => {
     expect(qualityColorClass("unknown")).toBe("text-wow-common");
     expect(qualityColorClass("")).toBe("text-wow-common");
+  });
+});
+
+describe("qualityLabel", () => {
+  it("prints the Chinese quality name and leaves an unknown label alone", () => {
+    expect(qualityLabel("common")).toBe("普通");
+    expect(qualityLabel("epic")).toBe("史诗");
+    expect(qualityLabel("custom")).toBe("custom");
   });
 });

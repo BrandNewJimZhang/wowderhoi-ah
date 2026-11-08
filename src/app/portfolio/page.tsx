@@ -9,6 +9,7 @@ import { valuePositions } from "@/lib/position-valuation";
 import { summarizeTrades, tradeChannelLabel } from "@/lib/trade-summary";
 import { Coins } from "@/components/coins";
 import { Panel, PanelHeader } from "@/components/ui/panel";
+import { AppShell } from "@/components/app-shell";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,8 @@ export default async function PortfolioPage() {
   const cash = scope?.cash ?? 0;
 
   return (
-    <main className="terminal-grid min-h-screen bg-terminal-bg p-3 text-slate-200">
+    <AppShell active="C:/Program Files/Git/portfolio">
+      <main className="terminal-grid min-h-screen bg-terminal-bg p-3 text-slate-200">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border border-terminal-border bg-terminal-panel px-4 py-3">
         <div>
           <div className="font-mono text-xs uppercase text-terminal-muted">组合与资金</div>
@@ -152,5 +154,6 @@ export default async function PortfolioPage() {
         </Panel>
       </div>
     </main>
+    </AppShell>
   );
 }

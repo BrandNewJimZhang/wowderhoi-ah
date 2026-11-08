@@ -1,4 +1,3 @@
-import type { MarketSignal } from "@/lib/analytics";
 import { parseSearchQuery, rankSearch } from "@/lib/search";
 
 // The runtime allow-list and the type come from one array: a new sortable
@@ -6,6 +5,16 @@ import { parseSearchQuery, rankSearch } from "@/lib/search";
 const SORT_KEYS = ["sellPrice", "minPrice", "sellRef", "spreadPercent", "trendPercent", "changePercent", "quantity", "numAuctions"] as const;
 
 export type SignalSortKey = (typeof SORT_KEYS)[number];
+
+// The table only needs the sortable numbers plus the search identity. The
+// market page sends this projection to the client so a row never carries
+// the whole signal.
+export type SortableSignal = {
+  itemId: number;
+  name: string;
+  category: string;
+  stale: boolean;
+} & Record<SignalSortKey, number>;
 
 export type MarketView = {
   query: string;
@@ -56,10 +65,10 @@ export function parseMarketView(params: Record<string, string | string[] | undef
 // Single filtering/sorting authority for the market table; the client
 // component holds only view state. Search semantics come from the shared
 // ranking (src/lib/search.ts), the same rules the addon's box runs.
-export function filterSortSignals(
-  signals: MarketSignal[],
+export function filterSortSignals<T extends SortableSignal>(
+  signals: T[],
   view: { query?: string; category?: string; sortKey?: SignalSortKey; sortExplicit?: boolean; sortAsc?: boolean }
-): MarketSignal[] {
+): T[] {
   const raw = view.query ?? "";
   const query = parseSearchQuery(raw);
   let rows = view.category ? signals.filter((signal) => signal.category === view.category) : signals;
@@ -71,7 +80,7 @@ export function filterSortSignals(
   }
   // Delisted items keep their last book in the monitor, but they must never
   // outrank a tradeable row: an old wide spread is not an opportunity.
-  const freshFirst = (left: MarketSignal, right: MarketSignal) => Number(left.stale) - Number(right.stale);
+  const freshFirst = (left: T, right: T) => Number(left.stale) - Number(right.stale);
   // A column the player clicked wins over relevance; relevance is then only
   // the tie-break inside equal values. A direct caller that omits the flag
   // is asking for the column it named.
