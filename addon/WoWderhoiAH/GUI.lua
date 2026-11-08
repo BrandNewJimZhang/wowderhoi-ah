@@ -340,6 +340,17 @@ local function hookTooltipFrame(frame)
       runTraderSection("OnTooltipSetItem", self)
     end)
   end
+  -- The tooltip data table carries its own hyperlink. This fires on the
+  -- render call itself, so it still names the item when the post-call
+  -- registration is present but does not fire on this client.
+  if frame.ProcessInfo then
+    hooksecurefunc(frame, "ProcessInfo", function(self, data)
+      local link = type(data) == "table" and data.hyperlink
+      if readableString(link) then
+        runTraderSection("ProcessInfo", self, link, true)
+      end
+    end)
+  end
   for method, linkFrom in pairs(SETTER_LINKS) do
     if frame[method] then
       local hookedMethod, resolve = method, linkFrom
