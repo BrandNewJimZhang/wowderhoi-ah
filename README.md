@@ -145,8 +145,9 @@ npm run dev
 
 In game, scan (`/wahscan`); the addon calls `C_AddOns.SaveAddOns()` after
 each scan, and falls back to log out / `/reload` on clients without it. Point
-`AQT_SAVEDVARS_PATH` at the SavedVariables file; the Next app starts the
-watcher itself, so `npm run dev` is the only long-running command. The
+`AQT_SAVEDVARS_PATH` at the SavedVariables file; the app starts the
+watcher on its first server render, so `npm run dev` is the only long-running
+command. The
 standalone `npm run addon:watch` remains for a terminal deployment.
 
 The watcher posts `{ scan, series, journal }` to `/api/import/addon-scan`.

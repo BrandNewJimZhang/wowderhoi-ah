@@ -20,7 +20,7 @@
 - `/market` is a client-filtered market browser with sparklines, P25–P75 bands
   and mobile cards; the dashboard is ledger-first and the shell adds a
   persistent rail with action/stale/position badges.
-- `src/instrumentation.ts` starts the SavedVariables watcher with the app;
+- The app starts the SavedVariables watcher on its first server render;
   `ImportRun` records every import and `/health` shows freshness, gaps, series
   coverage, catalogue/icon coverage and journal replay errors.
 - Recommendations have a stable `decisionId` shared with the addon.
