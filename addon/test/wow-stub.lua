@@ -169,7 +169,7 @@ UIParent = newFrame("UIParent")
 -- the client actually used.
 local function installTooltip(frame)
   frame._lines = {}
-  function frame:SetOwner(owner, anchor) self._owner, self._anchor = owner, anchor end
+  function frame:SetOwner() end
   function frame:GetItem() return self._itemName, self._link end
   function frame:AddLine(text) self._lines[#self._lines + 1] = bed.plain(text) end
   function frame:AddDoubleLine(left, right)

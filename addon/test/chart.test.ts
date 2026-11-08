@@ -62,6 +62,16 @@ describe("time-series chart", () => {
     expect(lua.number("WowTest.ns.chartState().segments")).toBeGreaterThan(0);
   });
 
+  it("keeps a state record when every point has no price", () => {
+    // A scan can record a series point without a sell front. The empty
+    // state still has to name its mode and point count: the renderer writes
+    // the item into that record after drawing.
+    const lua = chartPage([0, 0]);
+    expect(lua.text("WowTest.ns.chartState().mode")).toBe("time");
+    expect(lua.number("WowTest.ns.chartState().points")).toBe(2);
+    expect(lua.text("WoWderhoiAHChart.hilo:GetText()")).toBe("该时间窗内扫描次数不足");
+  });
+
   it("filters to the selected window and falls back to the empty state", () => {
     const lua = chartPage([9000, 10000, 11000]);
     lua.exec("WowTest.ns.setChartWindow(1)");
@@ -267,7 +277,9 @@ describe("phase window and retention", () => {
     const lua = chartPage([9000, 10000, 11000]);
     expect(lua.number("WowTest.ns.phaseWindowHours()")).toBe(168);
     expect(lua.number("WowTest.ns.chartState().window")).toBe(168);
-    const expected: Array<[string, number]> = [["wave", 6], ["settle", 24], ["steady", 168]];
+    const expected: Array<[string, number]> = [
+      ["ignition", 168], ["wave", 6], ["settle", 24], ["steady", 168]
+    ];
     for (const [phase, hours] of expected) {
       lua.exec(`WowTest.ns.settings.phaseOverride = '${phase}'; WoWderhoiAH_UpdateChart()`);
       expect(lua.number("WowTest.ns.phaseWindowHours()")).toBe(hours);

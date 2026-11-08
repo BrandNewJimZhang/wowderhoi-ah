@@ -75,6 +75,9 @@
   test harness, which the addon never calls (it builds keys with
   `MakeItemKey`).
 
+- Write-only chart state (`title`, `min`, `max`, `sellRef`, `bars`) and the
+  test stub's unused tooltip owner/anchor stores; no reader consumed them.
+
 - Type exports that no other module imported: return and helper shapes such
   as `FillPoint`, `TradeSummary` and `PositionValuation` are now module
   internal. Types a test or another module imports remain exported.

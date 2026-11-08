@@ -64,9 +64,10 @@ end
 -- reaching that processor. Presence of the modern API is therefore not
 -- evidence that it fires, and subscribing to only one pipeline is how the
 -- section disappeared from bag hovers. Every path is registered: the typed
--- post-call, OnTooltipSetItem and the item setters. The link is read from
--- the call's own arguments first -- the setter that named the item -- then
--- from TooltipUtil, GetItem and finally the rendered first line.
+-- post-call, ProcessInfo, OnTooltipSetItem and the item setters. The link
+-- is read from the call's own arguments first -- the setter that named the
+-- item -- then from TooltipUtil, GetItem and finally the rendered first
+-- line.
 --
 -- Hover is read-only. The chart is a panel that lives beside the auction
 -- house or the trader page, where its mode and window buttons stay put and
@@ -139,7 +140,12 @@ end
 
 -- The section is identified by its own header line, not by a boolean. A
 -- client re-render can wipe appended lines, and a stale boolean would then
--- hide the section for the rest of the session.
+-- hide the section for the rest of the session. Appending and detecting
+-- the block share the title, and detection ignores the color codes so it
+-- does not depend on how the client stores them.
+local SECTION_TITLE = "WoWderhoi AHelper"
+local SECTION_HEADER = "|cff33ff99" .. SECTION_TITLE .. "|r"
+
 local function traderSectionAlive(tooltip)
   local name = tooltip.GetName and tooltip:GetName()
   if type(name) ~= "string" then return true end
@@ -151,7 +157,7 @@ local function traderSectionAlive(tooltip)
   for index = 1, count do
     local line = _G[name .. "TextLeft" .. index]
     local text = line and line.GetText and line:GetText()
-    if readableString(text) and text:find("WoWderhoi AHelper", 1, true) then
+    if readableString(text) and text:find(SECTION_TITLE, 1, true) then
       return true
     end
   end
@@ -329,7 +335,8 @@ end
 -- observation; neither can short-circuit the other.
 local function observeItem(itemId)
   if observedItemId == itemId then return end
-  observedItemId = itemId
+  -- The refresh entry owns the selection write, so the observed item has
+  -- exactly one writer even when the chart is switched off or has no host.
   if WoWderhoiAH_UpdateChart then WoWderhoiAH_UpdateChart(itemId) end
 end
 
@@ -352,7 +359,7 @@ local function renderTraderSection(tooltip, itemId, source, resolvedFrom)
   end
   trackTooltip(tooltip)
   tooltip:AddLine(" ")
-  tooltip:AddLine("|cff33ff99WoWderhoi AHelper|r")
+  tooltip:AddLine(SECTION_HEADER)
   if staleScan then
     tooltip:AddLine("|cffff8800" .. L.TT_SCAN_STALE .. "|r")
   end
@@ -591,7 +598,7 @@ local function renderBook(entry)
     hideFrom(chart.segments, 1)
     hideBarsFrom(1)
     hideDotsFrom(1)
-    setState({ mode = "book", points = 0, title = chart.title:GetText() })
+    setState({ mode = "book", points = 0 })
     return
   end
   local total = 0
@@ -626,8 +633,7 @@ local function renderBook(entry)
   hideFrom(chart.segments, cursor + 1)
   hideBarsFrom(1)
 
-  local dotCount = 0
-  dotCount = dotCount + 1
+  local dotCount = 1
   local minDot = ensureDot(dotCount)
   minDot:ClearAllPoints()
   minDot:SetPoint("CENTER", chart, "BOTTOMLEFT", xFor(minP), yFor(0))
@@ -650,11 +656,8 @@ local function renderBook(entry)
   setState({
     mode = "book",
     points = #tiers,
-    min = minP,
-    max = maxP,
     sellP = entry.sellP,
-    supply = total,
-    title = chart.title:GetText()
+    supply = total
   })
 end
 
@@ -682,7 +685,7 @@ local function renderTime(entry, windowHours)
     hideFrom(chart.segments, 1)
     hideBarsFrom(1)
     hideDotsFrom(1)
-    setState({ mode = "time", window = windowHours, points = #points, title = chart.title:GetText() })
+    setState({ mode = "time", window = windowHours, points = #points })
     return
   end
   local minPrice, maxPrice = math.huge, 0
@@ -698,6 +701,9 @@ local function renderTime(entry, windowHours)
   end
   if minPrice == math.huge or maxPrice == 0 then
     chart.hilo:SetText(L.CHART_EMPTY)
+    -- The empty-state path still owns a state record: renderChart writes
+    -- the item into it, and the subtitle reads its point count.
+    setState({ mode = "time", window = windowHours, points = #points })
     return
   end
   local logScale = minPrice > 0 and maxPrice / minPrice > 4
@@ -771,13 +777,8 @@ local function renderTime(entry, windowHours)
     mode = "time",
     window = windowHours,
     points = #points,
-    min = minPrice,
-    max = maxPrice,
     logScale = logScale,
-    sellRef = entry.sellRef,
-    title = chart.title:GetText(),
-    segments = segmentCount,
-    bars = barCount
+    segments = segmentCount
   })
 end
 
@@ -794,9 +795,7 @@ local function registerChartHost(frame, priority)
   frame.wahChartHost = true
   chartHosts[#chartHosts + 1] = { frame = frame, priority = priority or 0 }
   frame:HookScript("OnShow", function() WoWderhoiAH_UpdateChart() end)
-  frame:HookScript("OnHide", function()
-    if chartAnchor() then WoWderhoiAH_UpdateChart() else hideChart() end
-  end)
+  frame:HookScript("OnHide", function() WoWderhoiAH_UpdateChart() end)
 end
 WAH.registerChartHost = registerChartHost
 
@@ -804,7 +803,7 @@ WAH.registerChartHost = registerChartHost
 -- when it is open, otherwise the auction house. With neither open there is
 -- no chart -- a 320px panel with buttons has no business riding a tooltip
 -- that disappears as soon as the pointer moves.
-function chartAnchor()
+chartAnchor = function()
   local best, bestPriority = nil, nil
   for _, host in ipairs(chartHosts) do
     if host.frame:IsShown() and (bestPriority == nil or host.priority > bestPriority) then
@@ -817,7 +816,8 @@ end
 -- The auction house frame is a client global that may load after this file.
 -- Register it when it exists; the SHOW handler retries for clients that
 -- create it lazily.
-if WAH.ahFrame() then registerChartHost(WAH.ahFrame(), 0) end
+local auctionHouseFrame = WAH.ahFrame()
+if auctionHouseFrame then registerChartHost(auctionHouseFrame, 0) end
 
 local function dockChart(anchor)
   chart:ClearAllPoints()
@@ -833,9 +833,7 @@ local function dockChart(anchor)
   end
 end
 
-local function renderChart(itemId)
-  local anchor = chartAnchor()
-  if not anchor then hideChart() return end
+local function renderChart(itemId, anchor)
   local entry = currentItem(itemId)
   -- Read the whole retained series and let the selected window filter what
   -- is drawn. Fetching the phase window here made the 24h/7d/all buttons
@@ -950,12 +948,13 @@ function WoWderhoiAH_UpdateChart(itemId)
     hideChart()
     return
   end
-  if not observedItemId or not chartAnchor() then
+  local anchor = chartAnchor()
+  if not observedItemId or not anchor then
     hideChart()
     return
   end
   if not chart then createChart() end
-  renderChart(observedItemId)
+  renderChart(observedItemId, anchor)
 end
 
 function WAH.setChartMode(mode)
