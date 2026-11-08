@@ -82,7 +82,11 @@ panel:SetScript("OnShow", function(self)
     checkbox.settingKey = option.key
     checkbox:SetChecked(WAH.settings and WAH.settings[option.key])
     checkbox:SetScript("OnClick", function(button)
-      WAH.settings[button.settingKey] = button:GetChecked() and true or false
+      local value = button:GetChecked() and true or false
+      WAH.settings[button.settingKey] = value
+      -- The setting's consumer lives in GUI.lua; tell it now instead of
+      -- leaving the effect until the next hover or reload.
+      if WAH.onSettingsChanged then WAH.onSettingsChanged(button.settingKey, value) end
     end)
     self.checkboxes[index] = checkbox
     anchor = checkbox

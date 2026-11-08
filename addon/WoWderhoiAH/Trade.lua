@@ -968,6 +968,10 @@ local function createTradeFrame()
     trade.rows[rowIndex] = rowFrame
   end
   trade:Hide()
+  -- The page is a chart host from the moment it exists. Registering here,
+  -- rather than when the chart next looks for an anchor, is what makes a
+  -- page created inside AUCTION_HOUSE_SHOW take the chart immediately.
+  WAH.registerChartHost(trade, 10)
 end
 
 local function ensureTradeFrame()

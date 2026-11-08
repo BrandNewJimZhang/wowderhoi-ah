@@ -150,6 +150,9 @@ function frameMeta:SetTextColor(red, green, blue) self._color = { red, green, bl
 function CreateFrame(kind, frameName, parent, template)
   local frame = newFrame(frameName, parent)
   frame._kind, frame._template = kind, template
+  -- InterfaceOptionsCheckButtonTemplate ships a Text font string; the
+  -- settings panel writes its label through it.
+  if kind == "CheckButton" then frame.Text = newFrame(nil, frame) end
   return frame
 end
 
@@ -1073,6 +1076,29 @@ function bed.wrappingCells()
 end
 
 function bed.lastStats() return WowTest.ns.lastScanStats end
+
+-- The options panel builds its checkboxes on first show. Driving the real
+-- click handler is the only way to prove a setting takes effect immediately
+-- rather than at the next /reload.
+function bed.showSettings()
+  for _, frame in ipairs(bed.frames) do
+    if frame.name == "WoWderhoi AHelper" then
+      if frame._scripts.OnShow then frame._scripts.OnShow(frame) end
+      return frame
+    end
+  end
+  error("settings panel not built")
+end
+
+function bed.clickSetting(key)
+  for _, frame in ipairs(bed.frames) do
+    if frame.settingKey == key and frame._scripts.OnClick then
+      frame._scripts.OnClick(frame)
+      return
+    end
+  end
+  error("no settings checkbox for " .. tostring(key))
+end
 
 function bed.lastChat() return bed.plain(bed.chat[#bed.chat] or "") end
 function bed.anyChat(text)

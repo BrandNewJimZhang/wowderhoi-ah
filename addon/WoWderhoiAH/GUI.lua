@@ -793,39 +793,43 @@ local function renderTime(entry, windowHours)
   })
 end
 
+local chartHosts = {}
 local chartAnchor
 
--- Opening or closing either panel decides which one owns the chart. The
--- OnHide path also covers the last panel closing: the chart then has no
--- home and must not linger over the world.
-local function trackChartPanel(panel)
-  if not panel or panel.wahChartTracked then return end
-  panel.wahChartTracked = true
-  panel:HookScript("OnShow", function()
-    if observedItemId then WoWderhoiAH_UpdateChart(observedItemId) end
-  end)
-  panel:HookScript("OnHide", function()
-    if chartAnchor() then
-      if observedItemId then WoWderhoiAH_UpdateChart(observedItemId) end
-    else
-      hideChart()
-    end
+-- Panels register themselves when they are created, not when the chart
+-- first asks where to dock. The trader page is built inside the client's
+-- AUCTION_HOUSE_SHOW dispatch, after this file's own handler has already
+-- run; a lazy lookup would leave the chart on the auction house until the
+-- next hover. Priority decides between hosts that are open together.
+local function registerChartHost(frame, priority)
+  if not frame or frame.wahChartHost then return end
+  frame.wahChartHost = true
+  chartHosts[#chartHosts + 1] = { frame = frame, priority = priority or 0 }
+  frame:HookScript("OnShow", function() WoWderhoiAH_UpdateChart() end)
+  frame:HookScript("OnHide", function()
+    if chartAnchor() then WoWderhoiAH_UpdateChart() else hideChart() end
   end)
 end
+WAH.registerChartHost = registerChartHost
 
 -- The chart has two possible homes, both persistent: the WAH trader page
 -- when it is open, otherwise the auction house. With neither open there is
 -- no chart -- a 320px panel with buttons has no business riding a tooltip
 -- that disappears as soon as the pointer moves.
 function chartAnchor()
-  local tradePage = WAH.tradeFrame and WAH.tradeFrame()
-  local auctionHouse = WAH.ahFrame and WAH.ahFrame()
-  trackChartPanel(tradePage)
-  trackChartPanel(auctionHouse)
-  if tradePage and tradePage:IsShown() then return tradePage end
-  if auctionHouse and auctionHouse:IsShown() then return auctionHouse end
-  return nil
+  local best, bestPriority = nil, nil
+  for _, host in ipairs(chartHosts) do
+    if host.frame:IsShown() and (bestPriority == nil or host.priority > bestPriority) then
+      best, bestPriority = host.frame, host.priority
+    end
+  end
+  return best
 end
+
+-- The auction house frame is a client global that may load after this file.
+-- Register it when it exists; the SHOW handler retries for clients that
+-- create it lazily.
+if WAH.ahFrame() then registerChartHost(WAH.ahFrame(), 0) end
 
 local function dockChart(anchor)
   chart:ClearAllPoints()
@@ -967,6 +971,20 @@ function WAH.setChartWindow(hours)
   WoWderhoiAH_UpdateChart()
 end
 
+-- The data layer publishes a finished scan; the chart redraws from the same
+-- observation it already holds.
+WAH.onScanFinished = function()
+  WoWderhoiAH_UpdateChart()
+end
+
+-- A display switch takes effect in the click that wrote it. The phase and
+-- the server anchor decide the default window, so they redraw too.
+WAH.onSettingsChanged = function(key)
+  if key == "chart" or key == "phaseOverride" or key == "serverOpenedAt" then
+    WoWderhoiAH_UpdateChart()
+  end
+end
+
 function WAH.chartState()
   return chart and chart._state or nil
 end
@@ -992,7 +1010,10 @@ guiFrame:SetScript("OnEvent", function(_, event)
     return
   end
   if event == "AUCTION_HOUSE_SHOW" then
-    if observedItemId then WoWderhoiAH_UpdateChart(observedItemId) end
+    registerChartHost(WAH.ahFrame(), 0)
+    -- The trader page is created later in this same event dispatch, so the
+    -- second look happens on the next frame; its own OnShow also re-docks.
+    C_Timer.After(0, function() WoWderhoiAH_UpdateChart() end)
   else
     hideChart()
   end

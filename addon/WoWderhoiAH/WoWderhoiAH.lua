@@ -1007,6 +1007,10 @@ local function flushFinishedScan()
   if WAH.refreshRadar then
     C_Timer.After(0.5, function() WAH.refreshRadar() end)
   end
+  -- The scan's data is published and the series point appended. A panel
+  -- watching that data must not wait for another hover; exactly one
+  -- notification fires per finished scan.
+  if WAH.onScanFinished then WAH.onScanFinished() end
 end
 
 local function finalizeFinish()
@@ -1607,6 +1611,7 @@ SlashCmdList["WOWDERHOIAHPHASE"] = function(input)
     return
   end
   WAH.settings.phaseOverride = choice
+  if WAH.onSettingsChanged then WAH.onSettingsChanged("phaseOverride", choice) end
   chatMessage(string.format(L.PHASE_SET, choice))
 end
 
@@ -1628,6 +1633,7 @@ local function setOpenedAt(input)
     return
   end
   WAH.settings.serverOpenedAt = openedAt
+  if WAH.onSettingsChanged then WAH.onSettingsChanged("serverOpenedAt", openedAt) end
   if openedAt > 0 then
     chatMessage(string.format(L.OPEN_SET, date("%Y-%m-%d %H:%M", openedAt)))
   else

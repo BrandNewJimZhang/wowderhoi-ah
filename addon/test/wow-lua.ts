@@ -127,6 +127,8 @@ export function loadAddon(options?: { locale?: string; legacyTooltips?: boolean;
     setPoints: (entries: unknown[]) => exec(`WowTest.setPoints(${toLua(entries)})`),
     runScan: (items: unknown[]) => exec(`WowTest.runScan(${toLua(items)})`),
     openTab: () => exec("WowTest.openTab()"),
+    showSettings: () => exec("WowTest.showSettings()"),
+    clickSetting: (key: string) => exec(`WowTest.clickSetting(${toLua(key)})`),
     findDeals: () => exec("WowTest.clickButton(WowTest.ns.L.FIND_DEALS)"),
     search: (query: string, listings: unknown[]) =>
       exec(`WowTest.search(${toLua(query)}, ${toLua(listings)})`),

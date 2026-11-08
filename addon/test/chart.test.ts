@@ -212,6 +212,53 @@ describe("chart consumer", () => {
   });
 });
 
+describe("chart lifecycle", () => {
+  // A finished scan publishes a new book and a new series point. The panel
+  // is already on screen; it must redraw from that event, not wait for the
+  // player to hover the item again.
+  it("refreshes on a finished scan without another hover", () => {
+    const lua = chartPage();
+    expect(lua.number("WowTest.ns.chartState().supply")).toBe(70);
+    lua.runScan([{ itemId: 4338, name: "Mageweave Cloth", count: 5, buyout: 5000, quality: 1 }]);
+    expect(lua.number("WowTest.ns.chartState().supply")).toBe(5);
+  });
+
+  // The trader page is created inside the same AUCTION_HOUSE_SHOW dispatch,
+  // after this file's handler. The page registers itself when created, so
+  // the chart ends up beside the page rather than staying on the AH frame.
+  it("docks to the trader page when that page is created later", () => {
+    const lua = loadAddon();
+    lua.setScan([{
+      itemId: 4338, name: "Mageweave Cloth", minPrice: 8000, sellP: 10000,
+      numAuctions: 6, sellers: 3, quantity: 70, itemClass: "Trade Goods",
+      tiers: [{ p: 8000, q: 20 }, { p: 9000, q: 50 }]
+    }]);
+    lua.setPoints([{ itemId: 4338, closes: [9000, 10000, 11000] }]);
+    lua.exec(`
+      WowTest.fireEvent("AUCTION_HOUSE_CLOSED")
+      WowTest.bagItems[1] = { itemId = 4338, name = "Mageweave Cloth" }
+      GameTooltip:SetBagItem(0, 1)
+    `);
+    expect(lua.eval("WoWderhoiAHChart == nil or not WoWderhoiAHChart:IsShown()")).toBe(true);
+    lua.openTab();
+    expect(lua.text("WoWderhoiAHChart:IsShown()")).toBe("true");
+    expect(lua.eval("WoWderhoiAHChart._points.TOPLEFT.to == WoWderhoiAHTrade")).toBe(true);
+  });
+
+  // The checkbox writes the setting and notifies the consumer in the same
+  // click; no /reload and no extra hover.
+  it("applies a settings toggle without waiting for a hover", () => {
+    const lua = chartPage([9000, 10000, 11000]);
+    lua.showSettings();
+    lua.exec("WoWderhoiAHOption3:SetChecked(false)");
+    lua.clickSetting("chart");
+    expect(lua.text("WoWderhoiAHChart:IsShown()")).toBe("false");
+    lua.exec("WoWderhoiAHOption3:SetChecked(true)");
+    lua.clickSetting("chart");
+    expect(lua.text("WoWderhoiAHChart:IsShown()")).toBe("true");
+  });
+});
+
 describe("chart placement", () => {
   // The chart is a panel, not a tooltip ornament. It docks beside the
   // auction house or the trader page and stays there, so its mode/window
