@@ -3,8 +3,8 @@
 import { useState } from "react";
 
 // Wowhead-style item icon served from public/icons/<itemId>.jpg —
-// populated once by `npm run icons:fetch` (self-hosted, no runtime
-// external requests). Hides itself when the icon is not cached yet.
+// populated by `npm run items:enrich` (self-hosted, no runtime external
+// requests). Hides itself when the icon is not cached yet.
 export function ItemIcon({ itemId, size = 20 }: { itemId: number; size?: number }) {
   // Track which item failed, not a boolean: a client-side navigation reuses
   // this component, and a cached failure would hide the next item's icon.

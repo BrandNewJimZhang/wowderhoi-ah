@@ -15,7 +15,6 @@
     "db:prune": "tsx scripts/prune-snapshots.ts",
     "addon:watch": "tsx scripts/watch-savedvars.ts",
     "gen:lua-rules": "tsx scripts/gen-lua-rules.ts",
-    "icons:fetch": "tsx scripts/fetch-icons.ts",
     "logo:render": "tsx scripts/render-logo.ts",
     "perf:seed": "tsx scripts/perf/seed.ts",
     "perf:run": "tsx scripts/perf/run.ts",
@@ -24,7 +23,8 @@
     "recipes:fetch": "tsx scripts/fetch-recipes.ts",
     "recipes:import": "tsx scripts/import-recipes.ts",
     "recipes:lua": "tsx scripts/gen-lua-recipes.ts",
-    "calibrate": "tsx scripts/calibrate-fill-priors.ts"
+    "calibrate": "tsx scripts/calibrate-fill-priors.ts",
+    "items:enrich": "tsx scripts/fetch-item-meta.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.10.0",

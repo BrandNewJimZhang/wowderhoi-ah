@@ -21,5 +21,5 @@ test.py
 data.json
 
 
-# self-hosted item icons, refetchable via npm run icons:fetch
+# self-hosted item icons, refetchable via npm run items:enrich
 public/icons/
