@@ -266,6 +266,16 @@ describe("forever replicate scan v4", () => {
       .toBe(lua.number("WowTest.ns.RULES.phaseHistory.steady.windowHours"));
   });
 
+  it("reads an explicit zero window as the whole retained series", () => {
+    const lua = auctionPage();
+    lua.setPoints([{ itemId: 2589, closes: [1000, 1100, 1200] }]);
+    // Nil means "the phase window". An explicit 0 means "everything
+    // retained", the same meaning the chart's "all" button has; borrowing
+    // the steady window here would give 0 a second, contradictory meaning.
+    expect(lua.number("WowTest.ns.history(2589, 0).windowHours")).toBe(0);
+    expect(lua.number("WowTest.ns.history(2589, 0).samples")).toBe(3);
+  });
+
   it("applies a phase override on the next call despite the phase cache", () => {
     const lua = auctionPage();
     lua.runScan([{ itemId: 2589, name: "Linen", count: 10, buyout: 10000 }]);

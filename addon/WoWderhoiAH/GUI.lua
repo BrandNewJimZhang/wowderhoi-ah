@@ -24,6 +24,16 @@ local function currentItem(itemId)
   return scan and scan.items and scan.items[itemId]
 end
 
+-- One count for every surface that reports how many items have history:
+-- the login line, /wah, /wahtip and /wahdiag must not disagree.
+local function historyItemCount()
+  local market = WAH.seriesMarket and WAH.seriesMarket()
+  if not market then return 0 end
+  local count = 0
+  for _ in pairs(market.items or {}) do count = count + 1 end
+  return count
+end
+
 local function phaseLabel(phase)
   return (L.PHASE_LABELS and L.PHASE_LABELS[phase]) or phase or "?"
 end
@@ -251,14 +261,9 @@ SLASH_WOWDERHOIAHTIP1 = "/wahtip"
 SlashCmdList["WOWDERHOIAHTIP"] = function()
   DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WoWderhoiAH|r " .. pipelineFacts())
   local scan = WAH.currentScan and WAH.currentScan()
-  local market = WAH.seriesMarket and WAH.seriesMarket()
-  local historyCount = 0
-  if market then
-    for _ in pairs(market.items or {}) do historyCount = historyCount + 1 end
-  end
   DEFAULT_CHAT_FRAME:AddMessage(string.format(
     "|cff33ff99WoWderhoiAH|r data: hasScan=%s hasHistory=%d scanAge=%s",
-    tostring(scan ~= nil), historyCount,
+    tostring(scan ~= nil), historyItemCount(),
     tostring(WAH.scanAgeMinutes and WAH.scanAgeMinutes() or "n/a")))
   if #hookFailures == 0 then
     DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WoWderhoiAH|r hooks: all registered")
@@ -783,7 +788,6 @@ local function renderTime(entry, windowHours)
 end
 
 local chartHosts = {}
-local chartAnchor
 
 -- Panels register themselves when they are created, not when the chart
 -- first asks where to dock. The trader page is built inside the client's
@@ -803,7 +807,7 @@ WAH.registerChartHost = registerChartHost
 -- when it is open, otherwise the auction house. With neither open there is
 -- no chart -- a 320px panel with buttons has no business riding a tooltip
 -- that disappears as soon as the pointer moves.
-chartAnchor = function()
+local function chartAnchor()
   local best, bestPriority = nil, nil
   for _, host in ipairs(chartHosts) do
     if host.frame:IsShown() and (bestPriority == nil or host.priority > bestPriority) then
@@ -858,7 +862,7 @@ local function renderChart(itemId, anchor)
     -- of the retained series.
     local shown = chart._state and chart._state.points or 0
     chart.subtitle:SetText(string.format(L.CHART_SUBTITLE,
-      shown, coinString(history.latest or 0), window > 0 and window or L.CHART_ALL_LABEL))
+      shown, coinString(history.latest or 0), window > 0 and window or L.CHART_WINDOW_ALL))
   end
   for _, button in ipairs(chart.modeButtons) do
     button:SetText(button.mode == mode and ("|cffffd100" .. button.label .. "|r") or button.label)
@@ -908,7 +912,6 @@ local function createChart()
     return button
   end
 
-  chart.modeButtons = {}
   local bookButton = tab(chart, nil, L.CHART_BOOK, 52, function() WAH.setChartMode("book") end)
   bookButton.mode, bookButton.label = "book", L.CHART_BOOK
   local timeButton = tab(chart, bookButton, L.CHART_TIME, 52, function() WAH.setChartMode("time") end)
@@ -994,13 +997,8 @@ guiFrame:RegisterEvent("AUCTION_HOUSE_SHOW")
 guiFrame:RegisterEvent("AUCTION_HOUSE_CLOSED")
 guiFrame:SetScript("OnEvent", function(_, event)
   if event == "PLAYER_LOGIN" then
-    local count = 0
-    local market = WAH.seriesMarket and WAH.seriesMarket()
-    if market then
-      for _ in pairs(market.items) do count = count + 1 end
-    end
     DEFAULT_CHAT_FRAME:AddMessage(string.format(
-      "|cff33ff99WoWderhoi AHelper|r " .. L.LOADED, count))
+      "|cff33ff99WoWderhoi AHelper|r " .. L.LOADED, historyItemCount()))
     -- One line proves which build is running and which pipelines it found.
     DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WoWderhoiAH|r tooltip pipeline: " .. pipelineFacts())
     if WAH.Ledger then WAH.Ledger.rebuild() end
@@ -1018,11 +1016,6 @@ end)
 
 SLASH_WOWDERHOIAHSTATUS1 = "/wah"
 SlashCmdList["WOWDERHOIAHSTATUS"] = function()
-  local market = WAH.seriesMarket and WAH.seriesMarket()
-  local historyCount = 0
-  if market then
-    for _ in pairs(market.items) do historyCount = historyCount + 1 end
-  end
   local scanInfo = L.STATUS_NO_SCAN
   if WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.scannedAt then
     local itemCount = 0
@@ -1035,7 +1028,7 @@ SlashCmdList["WOWDERHOIAHSTATUS"] = function()
   local ledger = WAH.Ledger and WAH.Ledger.current() or nil
   DEFAULT_CHAT_FRAME:AddMessage(string.format(
     "|cff33ff99WoWderhoi AHelper|r " .. L.STATUS_FMT,
-    historyCount, scanInfo,
+    historyItemCount(), scanInfo,
     WAH.currentPhase and WAH.currentPhase() or "?",
     ledger and coinString(ledger.capital.realized) or "0",
     ledger and coinString(ledger.capital.escrow) or "0"))
@@ -1150,7 +1143,7 @@ SlashCmdList["WOWDERHOIAHDIAG"] = function(input)
   diagLine(string.format("bags: %d free now | scan recorded %s",
     WAH.freeBagSlots(), tostring(WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.bagSlots or "none")))
   diagLine(string.format("series: %d points across %d items",
-    points, market and (function() local n = 0 for _ in pairs(market.items) do n = n + 1 end return n end)() or 0))
+    points, historyItemCount()))
   -- The global cap no longer trims; it only asserts that the per-item budget
   -- arithmetic held. A nonzero count means history was not folded correctly.
   if (WAH.seriesCapViolation or 0) > 0 then

@@ -77,6 +77,10 @@
 
 - Write-only chart state (`title`, `min`, `max`, `sellRef`, `bars`) and the
   test stub's unused tooltip owner/anchor stores; no reader consumed them.
+- The test stub's `_kind`/`_template`/`_color` stores and its write-only
+  `hooksecurefunc` registry; no assertion read them.
+- The duplicated `CHART_ALL_LABEL` locale key; the "all" window renders its
+  label from `CHART_WINDOW_ALL`.
 
 - Type exports that no other module imported: return and helper shapes such
   as `FillPoint`, `TradeSummary` and `PositionValuation` are now module
@@ -84,6 +88,9 @@
 
 ### Changed
 
+- `WAH.history(itemId, 0)` now returns the whole retained series, the same
+  meaning the chart's "all" window has; nil still asks for the phase window.
+  The phase fallback lives only in `historyWindowForPhase`.
 - The item-hover price chart no longer follows the tooltip. It docks beside
   the auction house or the WAH trader page, stays while that panel is open,
   and its mode/window buttons are always clickable. Hovering an item still

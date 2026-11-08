@@ -1558,9 +1558,11 @@ function WAH.history(itemId, windowHours)
   local market = WAH.seriesMarket()
   local series = market and market.items[itemId]
   if not series or #series.t == 0 then return nil end
+  -- Nil asks for the phase window. An explicit 0 means the whole retained
+  -- series, the same meaning the chart's "all" window has; the phase
+  -- fallback lives only in historyWindowForPhase.
   local window = windowHours or historyWindowHours()
-  if window <= 0 then window = WAH.RULES.phaseHistory.steady.windowHours end
-  local cutoff = time() - window * HOUR
+  local cutoff = window > 0 and (time() - window * HOUR) or 0
   local sells, pts = {}, {}
   for index = 1, #series.t do
     if series.t[index] >= cutoff then

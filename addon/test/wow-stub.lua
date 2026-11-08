@@ -20,7 +20,7 @@
 -- passing here passes there. Upgrade path if integer-sensitive code ever
 -- lands: run the same stub under a real 5.1 binary.
 
-local bed = { chat = {}, frames = {}, timers = {}, tickers = {}, hooks = {}, listings = {}, itemInfo = {}, ns = {} }
+local bed = { chat = {}, frames = {}, timers = {}, tickers = {}, listings = {}, itemInfo = {}, ns = {} }
 WowTest = bed
 
 local NOW = 1700000000 -- fixed clock; real time() would make history windows flaky
@@ -144,13 +144,11 @@ function frameMeta:CreateTexture() return newFrame(nil, self) end
 function frameMeta:CreateLine() return newFrame(nil, self) end
 function frameMeta:SetChecked(checked) self._checked = checked end
 function frameMeta:GetChecked() return self._checked end
-function frameMeta:SetTextColor(red, green, blue) self._color = { red, green, blue } end
 
 -- ============================== WoW globals ===========================
 
 function CreateFrame(kind, frameName, parent, template)
   local frame = newFrame(frameName, parent)
-  frame._kind, frame._template = kind, template
   -- InterfaceOptionsCheckButtonTemplate ships a Text font string; the
   -- settings panel writes its label through it.
   if kind == "CheckButton" then frame.Text = newFrame(nil, frame) end
@@ -269,11 +267,6 @@ DEFAULT_CHAT_FRAME = { AddMessage = function(_, text) bed.chat[#bed.chat + 1] = 
 SlashCmdList = {}
 
 function hooksecurefunc(target, name, handler)
-  if type(target) == "string" then
-    bed.hooks[target] = bed.hooks[target] or {}
-    table.insert(bed.hooks[target], name)
-    return
-  end
   local original = target[name]
   target[name] = function(...)
     local result
