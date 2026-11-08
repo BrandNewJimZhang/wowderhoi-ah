@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
+    "db:prune": "tsx scripts/prune-snapshots.ts",
     "addon:watch": "tsx scripts/watch-savedvars.ts",
     "gen:lua-rules": "tsx scripts/gen-lua-rules.ts",
     "icons:fetch": "tsx scripts/fetch-icons.ts",
