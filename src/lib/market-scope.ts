@@ -24,15 +24,22 @@ export type MarketScope = {
   bagSlots?: number | null;
 };
 
+// The pin parser is shared with `npm run calibrate`: a malformed pin must
+// fail in both entry points, not silently widen one of them to every market.
+export function parseMarketPin(value: string | undefined): { realm: string; faction: string } | null {
+  if (!value) return null;
+  const parts = value.split("|");
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    throw new Error(`AQT_MARKET must be "realm|faction", got ${JSON.stringify(value)}`);
+  }
+  return { realm: parts[0], faction: parts[1] };
+}
+
 export async function getMarketScope(): Promise<MarketScope | null> {
-  const override = process.env.AQT_MARKET;
-  if (override) {
-    const [realm, faction] = override.split("|");
-    if (!realm || !faction) {
-      throw new Error(`AQT_MARKET must be "realm|faction", got ${JSON.stringify(override)}`);
-    }
-    const market = await prisma.market.findUnique({ where: { realm_faction: { realm, faction } } });
-    if (!market) throw new Error(`AQT_MARKET points at ${realm}|${faction}, but no such market has been imported`);
+  const pin = parseMarketPin(process.env.AQT_MARKET);
+  if (pin) {
+    const market = await prisma.market.findUnique({ where: { realm_faction: pin } });
+    if (!market) throw new Error(`AQT_MARKET points at ${pin.realm}|${pin.faction}, but no such market has been imported`);
     return market;
   }
   // Every generation belongs to a market, so the newest one names the scope.

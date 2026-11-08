@@ -7,11 +7,12 @@
 import { prisma } from "@/lib/prisma";
 import { calibrationObservations, formatCalibration, summarizeCalibration } from "@/lib/calibrate";
 import { OBSERVATION_VERSION, SCAN_INTERVAL_MINUTES } from "@/lib/market-rules";
+import { parseMarketPin } from "@/lib/market-scope";
 
 async function main() {
-  const scope = process.env.AQT_MARKET?.split("|");
+  const scope = parseMarketPin(process.env.AQT_MARKET);
   const markets = await prisma.market.findMany({
-    where: scope ? { realm: scope[0], faction: scope[1] } : undefined,
+    where: scope ?? undefined,
     select: { id: true, realm: true, faction: true, openedAt: true, firstScanAt: true }
   });
   if (markets.length === 0) throw new Error("no imported market; run a scan import first");
