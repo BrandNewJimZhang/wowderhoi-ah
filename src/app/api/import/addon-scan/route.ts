@@ -3,7 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { normalizeAddonScan, type AddonScan } from "@/lib/addon-scan";
 import { mergeScanIntoDailySummaries } from "@/lib/daily-summary";
-import { diffScanItems } from "@/lib/scan-import";
+import { ensureScanItems } from "@/lib/scan-import";
 import { aggregateSeriesDays, parseAddonSeries, selectSeriesBackfill, type AddonSeries } from "@/lib/series-import";
 import { placeholderItemName } from "@/lib/item-name";
 import { bookForCharacter, parseJournal, replayJournal, type ReplayState } from "@/lib/journal";
@@ -83,7 +83,7 @@ async function buildBackfillStatements(
   // snapshot's foreign key, so every referenced id must exist before the
   // snapshot batch runs. `knownItemIds` includes the rows the caller is about
   // to create in the same transaction.
-  const itemCreates: Array<{ itemId: number; name: string; quality: string; category: string; subCategory: string; vendorPrice: number }> = [];
+  const itemCreates: Array<{ itemId: number; name: string; quality: string; category: string; subCategory: string; vendorPrice: number | null; catalogSource: string }> = [];
   const snapshots: Prisma.AuctionSnapshotCreateManyInput[] = [];
   for (const point of backfill.points) {
     if (!knownItemIds.has(point.itemId)) {
@@ -94,7 +94,10 @@ async function buildBackfillStatements(
         quality: "unknown",
         category: "unknown",
         subCategory: "unknown",
-        vendorPrice: 0
+        // A series-only id that the catalogue does not know has no static
+        // facts at all. Zero would claim it is unsellable.
+        vendorPrice: null,
+        catalogSource: "scan"
       });
     }
     snapshots.push({
@@ -302,9 +305,12 @@ export async function POST(request: Request) {
   // this keeps the statements clear of SQLite's bound-parameter limit even
   // at 100x-scale scans.
   const existingItems = await prisma.item.findMany({
-    select: { itemId: true, name: true, quality: true, category: true, subCategory: true, vendorPrice: true }
+    select: {
+      itemId: true, name: true, quality: true, category: true, subCategory: true,
+      vendorPrice: true, catalogSource: true
+    }
   });
-  const itemDiff = diffScanItems(scan.items, existingItems);
+  const itemDiff = ensureScanItems(scan.items, existingItems);
   // Daily OHLC is a price series: demand-only snapshots carry no price.
   const pricedItems = scan.items.filter((item) => item.priced);
   const dayProbe = mergeScanIntoDailySummaries(pricedItems, scan.scannedAt, market.id, []);
