@@ -154,8 +154,10 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
                     {stale && <div className="mt-2 font-mono text-[11px] text-terminal-amber">这是上次有货时的盘口。</div>}
                   </>
                 : demand
-                  ? <div className="p-4 font-mono text-xs text-terminal-muted">本次扫描只有竞价、没有买断挂单；价格是上次有货时的值。</div>
-                  : <div className="p-4 font-mono text-xs text-terminal-muted">尚无扫描数据</div>}
+                  ? <div className="p-4 font-mono text-xs text-terminal-muted">本次扫描只有竞价、没有买断挂单；没有可画的盘口。</div>
+                  : quote
+                    ? <div className="p-4 font-mono text-xs text-terminal-muted">最近一次扫描没有该物品的在售挂单；没有可画的盘口。</div>
+                    : <div className="p-4 font-mono text-xs text-terminal-muted">尚无扫描数据</div>}
               {expiring && ((expiring.soon ?? 0) + (expiring.mid ?? 0) + (expiring.late ?? 0) > 0) && (
                 <div className="mt-2 border-t border-terminal-border pt-2 font-mono text-[11px] text-terminal-muted">
                   到期分布：2 小时内 {expiring.soon ?? 0} 笔 · 2–12 小时 {expiring.mid ?? 0} 笔 · 12 小时以上 {expiring.late ?? 0} 笔
@@ -174,7 +176,9 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
                       : stale
                         ? "最近一次扫描中已无在售挂单，无法估计成交概率；价格是上次有货时的值。"
                         : quote && !quote.priced
-                          ? "本次扫描只有竞价、没有买断挂单，无法估计卖出的成交概率。"
+                          ? demand
+                            ? "本次扫描只有竞价、没有买断挂单，无法估计卖出的成交概率。"
+                            : "最近一次扫描没有该物品的在售挂单，无法估计卖出的成交概率。"
                           : quote
                             ? "该物品未通过当前阶段门槛或风险仓位检查，暂无成交概率估计；先看盘口与建议卖价。"
                             : "尚无扫描数据"}

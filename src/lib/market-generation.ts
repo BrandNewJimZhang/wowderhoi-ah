@@ -203,9 +203,14 @@ export function buildGenerationPlan(input: GenerationInput): GenerationPlan {
 
   // The addon series is global; the current scan contributes one more point
   // per priced item. Only a priced row replaces the item's current book: a
-  // demand-only row leaves the last priced book to be carried as stale.
+  // demand-only row leaves the last priced book to be carried as stale. A
+  // carried quote must itself be priced -- a bid-only row has no price to
+  // describe, and materialising it would print a zero sell front the market
+  // never observed.
   const currentIds = new Set(scan.items.filter((item) => item.priced).map((item) => item.itemId));
-  const staleCandidates = (input.previous?.quotes ?? []).filter((row) => !currentIds.has(row.item.itemId));
+  const staleCandidates = (input.previous?.quotes ?? []).filter(
+    (row) => row.quote.priced && !currentIds.has(row.item.itemId)
+  );
   const incomingPoints = [...(input.series?.points ?? []), ...scanSeriesPoints(scan)];
   const merged = mergeSeriesByItem(input.existingSeries, incomingPoints, scanSeconds);
 

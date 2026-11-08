@@ -251,6 +251,31 @@ describe("buildGenerationPlan", () => {
     expect(stale?.sellPrice).toBe(180);
   });
 
+  it("does not carry a bid-only quote forward as a price signal", () => {
+    // The previous generation saw this item as bids only: it has a quote but
+    // no price. Carrying it would print a zero sell front for an item whose
+    // last price was never observed.
+    const bidOnly = {
+      ...previousQuote(0),
+      priced: false,
+      minPrice: 0,
+      marketPrice: 0,
+      sellPrice: 0,
+      p5Price: 0,
+      quantity: 0,
+      numAuctions: 0,
+      topTiers: []
+    };
+    const plan = buildGenerationPlan(input({
+      previous: {
+        scannedAt: new Date((SCAN_SECONDS - 30 * 60) * 1000),
+        quotes: [{ item: ORE, quote: bidOnly }]
+      }
+    }));
+    expect(plan.signals.some((row) => row.itemId === 2)).toBe(false);
+    expect(plan.staleCount).toBe(0);
+  });
+
   it("re-projects the stored core rows after a journal-only recompute", () => {
     const plan = buildGenerationPlan(input());
     const fresh = plan.signals[0].data;
