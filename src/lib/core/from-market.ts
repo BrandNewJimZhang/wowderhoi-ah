@@ -10,8 +10,8 @@ import { SCAN_INTERVAL_MINUTES, type MarketPhase } from "@/lib/market-rules";
 type CoreBuildOptions = {
   now: Date;
   phase: MarketPhase;
-  // The first scan of the market. The signal source reads it from the store;
-  // without it the builder falls back to the oldest snapshot in the bundle.
+  // The market's first observation. The import resolves it once from the
+  // store and the series; the core never re-derives it from a display window.
   firstScanAt?: Date;
   positions?: Record<number, { qty: number; cost: number }>;
   ownSales?: OwnSales;
@@ -89,10 +89,8 @@ export function buildCoreInput(
       demandPrior: demandFor(signal.category, signal.subCategory),
       tiers: parseTiers(quote.topTiers, { p: signal.minPrice, q: Math.max(signal.quantity, 1) }),
       tierTruncated: signal.tierTruncated,
-      // The scanner owns the history series and stamps the count; the
-      // terminal's 48-snapshot page is a display window, not a sample
-      // authority. Falling back to it let the two runtimes judge the same
-      // scan on different sample counts.
+      // The scanner stamps the count and the terminal's series answers
+      // when it did not; a display page is not a sample authority.
       history: {
         samples: signal.historySamples ?? 0,
         // Null means the row predates the span stamp; the core then applies
@@ -103,9 +101,9 @@ export function buildCoreInput(
   }
   return {
     now: options.now.getTime() / 1000,
-    // The caller resolves the phase once from the store's true scan history
-    // and breadth; the core must not re-derive it from whatever subset of
-    // snapshots this bundle happens to carry.
+    // The caller resolves the phase once from the generation's stored
+    // breadth and the market's true first observation; the core must not
+    // re-derive it from whatever quotes this read happens to carry.
     phaseOverride: options.phase,
     market: {
       firstScanAt: firstScanAt ?? undefined,
