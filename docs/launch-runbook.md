@@ -69,7 +69,7 @@ AQT_BUDGET_COPPER="500000"          # 终端计划预算；与扫描里的现金
 | `owner` 不可见 | 卖家数退化为挂单数，界面标“卖家不可见” |
 | `SaveAddOns` 缺失 | 依赖小退/`/reload`；终端显示数据龄 |
 | `PostItem` 缺失 | 卖出页降级为价格助手 |
-| `throttle ready` 为 false | 自动扫描退避；手动降低扫描频率 |
+| `throttle ready` 为 false | 客户端的拍卖行操作消息仍在节流；全量复制请求不走这个门，扫描准入看 `lastReplicateAt` 与 `retryAfter` |
 | 扫描无应答 | 请求发出 180 秒仍无复制数据；插件只报告“无应答”并给出重试窗口，处理阶段不再按墙钟中止。等提示的秒数后再 `/wahscan` |
 | mail 发票字段为空 | 该客户端不暴露发票；`/wahcapture mail off` 关闭采集，系统退回推断成交 |
 | 邮箱成交显示 unattributed | 物品不在扫描名表且无唯一开仓挂单；下次扫描后自动重试，不写错账 |

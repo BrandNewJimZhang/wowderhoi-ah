@@ -149,9 +149,11 @@ each scan, and falls back to log out / `/reload` on clients without it. Point
 npm run addon:watch
 ```
 
-The watcher posts `{ scan, journal }` to `/api/import/addon-scan`. The
-import is transactional: the snapshot, daily OHLC (built from the sell
-front), positions and trades land all-or-nothing. A duplicate scan
+The watcher posts `{ scan, series, journal }` to `/api/import/addon-scan`.
+The import is transactional: the snapshot, daily OHLC (built from the sell
+front), positions and trades land all-or-nothing. `series` is the addon's
+append-only history; any scans it holds that the terminal never imported are
+backfilled as price/listing observations, up to 16 per import. A duplicate scan
 timestamp carrying a journal still replays the ledger, so a sale the
 mailbox flushed between scans reaches the terminal immediately; only a
 journal-less duplicate is skipped. `WoWderhoiAH_Capture` is the previous

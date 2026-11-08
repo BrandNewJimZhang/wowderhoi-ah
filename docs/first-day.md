@@ -50,14 +50,14 @@ npm run dev
    第一次也先确认文件真的落盘。
 
 AH 开着时可以 `/wahauto` 开启自动重扫（间隔来自编译规则，默认 15 分钟）；玩家主动搜索时
-自动扫描会暂停，扫描超时会指数退避。
+自动扫描会暂停。请求失败后插件给出重试窗口，不会把已收到的数据按墙钟中止。
 
 ## 第 4 步：接通数据管道（约 3 分钟）
 
 找到 SavedVariables 文件，路径形如：
 
 ```text
-<游戏数据目录>\WTF\Account\<你的账号ID>\SavedVariables\WoWDerhoiAH.lua
+<游戏数据目录>\WTF\Account\<你的账号ID>\SavedVariables\WoWderhoiAH.lua
 ```
 
 写进 `.env`：
@@ -117,7 +117,7 @@ Journal 都已入库。刷新 `http://localhost:3000`。
 |---|---|
 | 插件列表里没有 WoWDerhoiAH | `.toc` 不在文件夹第一层，或客户端版本不是 1.60.1（`## Interface: 16001`） |
 | `/wahscan` 提示先开拍卖行 | 必须站在拍卖师面前且拍卖行窗口开着 |
-| 扫描超时 | 服务器没有返回全量副本；确认 AH 已打开后重试，或等退避结束 |
+| 扫描无应答 | 180 秒内客户端没有交付复制数据；确认 AH 已打开，等聊天框给出的重试秒数后再试。处理已收到的数据不设时限 |
 | watcher 报 `AQT_SAVEDVARS_PATH is not set` | `.env` 里没配路径，或路径带引号错误 |
 | watcher 一直没反应 | 先看 `/wahdiag` 的 `SaveAddOns` 与数据龄；客户端不支持即时落盘时，小退或 `/reload` 一次 |
 | 导入报 409 | 同一次扫描已导入过且没有附带 Journal；邮箱成交后的账本重放会返回 200，不报 409 |
