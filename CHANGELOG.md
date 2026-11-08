@@ -170,6 +170,13 @@
   accepted the `GameTooltip` global. It now appends to the frame the client
   names and resolves the item through `TooltipUtil.GetDisplayedItem`, so
   bags, clicked chat links and the auction house all carry the block.
+- Generation retention no longer hides the history `npm run calibrate`
+  reads. The newest two generations keep their signal rows and core, but
+  quotes and scan metadata stay for the last 96 generations (a day at the
+  compiled cadence), and older cores are replaced with an empty evaluation
+  instead of keeping their JSON. Replaying a scan older than the read
+  window merges its series and ledger without overwriting the stripped
+  generation.
 - The persistent rail marks the current section on the market, portfolio,
   review, recipes and health pages. Their `active` prop carried a shell path
   expansion instead of the route, so no link ever matched.

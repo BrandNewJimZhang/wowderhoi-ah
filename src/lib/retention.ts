@@ -1,32 +1,91 @@
-// Retention for the read model. A generation is an immutable evaluation;
-// the terminal reads the newest one, and keeps the previous one for the
-// "what changed" comparison. Older generations cascade their quotes and
-// signal rows. Decisions live longer because the review page learns from
-// them; import runs are diagnostics with a short life.
+// Retention for the read model. A generation is an immutable evaluation.
+// Pages read the newest one and the previous one supplies the "what
+// changed" comparison, so only those keep their materialised signal rows
+// and core output. The quotes and scan metadata of older generations stay
+// for a day because `npm run calibrate` derives fill priors from the
+// disappearance between adjacent scans; keeping only two would leave one
+// interval per item. Older generations cascade their quotes, and their core
+// is replaced with an empty evaluation so the JSON does not accumulate.
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import type { CoreOutput } from "@/lib/core/types";
+import type { MarketPhase } from "@/lib/market-rules";
 
-const GENERATIONS_KEPT = 2;
+export const GENERATIONS_KEPT = 2;
+// One day at the compiled 15-minute cadence. Calibration rejects gaps over
+// two hours, so this bounds the sample window rather than promising depth.
+export const CALIBRATION_GENERATIONS_KEPT = 96;
 const DECISION_RETENTION_DAYS = 90;
 const IMPORT_RUN_RETENTION_DAYS = 30;
 
-// Keeps the newest `keep` generations for one market and returns how many
-// metadata rows were removed. Quotes and signals follow by cascade.
-export async function pruneGenerations(marketId: string, keep = GENERATIONS_KEPT): Promise<number> {
-  if (!Number.isInteger(keep) || keep <= 0) {
-    throw new Error(`pruneGenerations: keep must be a positive integer, got ${keep}`);
-  }
-  const boundary = await prisma.marketGeneration.findFirst({
+const EMPTY_DIAGNOSTICS: CoreOutput["diagnostics"] = {
+  excluded: {},
+  unfunded: { kelly: 0, exposure: 0, purse: 0, depth: 0 }
+};
+
+function emptyCore(phase: MarketPhase): CoreOutput {
+  return { phase, rows: [], opportunities: [], actions: [], diagnostics: EMPTY_DIAGNOSTICS };
+}
+
+async function boundaryAfter(
+  marketId: string,
+  keep: number
+): Promise<{ scannedAt: Date; phase: string } | null> {
+  return prisma.marketGeneration.findFirst({
     where: { marketId },
     orderBy: { scannedAt: "desc" },
     skip: keep,
     take: 1,
-    select: { scannedAt: true }
+    select: { scannedAt: true, phase: true }
   });
-  if (!boundary) return 0;
-  // The boundary row is the first one past `keep`; it is deleted too, or
-  // the table would silently keep one more generation than asked for.
+}
+
+// Keeps the newest `keep` generations readable (signals + core) and the
+// newest `calibrationKeep` generations' quotes. Returns how many generation
+// rows were removed; their quotes follow by cascade.
+export async function pruneGenerations(
+  marketId: string,
+  keep = GENERATIONS_KEPT,
+  calibrationKeep = CALIBRATION_GENERATIONS_KEPT
+): Promise<number> {
+  if (!Number.isInteger(keep) || keep <= 0) {
+    throw new Error(`pruneGenerations: keep must be a positive integer, got ${keep}`);
+  }
+  if (!Number.isInteger(calibrationKeep) || calibrationKeep < keep) {
+    throw new Error(`pruneGenerations: calibrationKeep must be an integer >= ${keep}, got ${calibrationKeep}`);
+  }
+
+  // Everything past the read window loses the materialised view. The
+  // boundary row itself is past `keep`, so it is stripped too.
+  const readBoundary = await boundaryAfter(marketId, keep);
+  if (readBoundary) {
+    const stale = await prisma.marketGeneration.findMany({
+      where: { marketId, scannedAt: { lte: readBoundary.scannedAt } },
+      select: { id: true, phase: true }
+    });
+    if (stale.length > 0) {
+      await prisma.marketSignalRow.deleteMany({
+        where: { generationId: { in: stale.map((row) => row.id) } }
+      });
+      const idsByPhase = new Map<string, string[]>();
+      for (const row of stale) {
+        const ids = idsByPhase.get(row.phase) ?? [];
+        ids.push(row.id);
+        idsByPhase.set(row.phase, ids);
+      }
+      for (const [phase, ids] of idsByPhase) {
+        await prisma.marketGeneration.updateMany({
+          where: { id: { in: ids } },
+          data: { core: emptyCore(phase as MarketPhase) as unknown as Prisma.InputJsonValue }
+        });
+      }
+    }
+  }
+
+  const calibrationBoundary = await boundaryAfter(marketId, calibrationKeep);
+  if (!calibrationBoundary) return 0;
   const deleted = await prisma.marketGeneration.deleteMany({
-    where: { marketId, scannedAt: { lte: boundary.scannedAt } }
+    where: { marketId, scannedAt: { lte: calibrationBoundary.scannedAt } }
   });
   return deleted.count;
 }

@@ -286,16 +286,23 @@ export async function POST(request: Request) {
         };
       });
     const ownSales = ownSalesOf(replay);
-    const core = runCore(buildCoreInput(pairs, {
-      now: duplicate.scannedAt,
-      phase: duplicate.phase as MarketPhase,
-      firstScanAt: duplicate.firstScanAt ?? market.firstScanAt ?? undefined,
-      positions: replay.positions,
-      ownSales,
-      budgetCopper: resolveBudgetCopper(),
-      cashCopper: market.cash,
-      bagSlots: market.bagSlots ?? undefined
-    }));
+    // Only the newest generations keep materialised signals. A replayed
+    // scan older than that window has no rows left; recomputing its core
+    // would overwrite the generation with an empty evaluation and delete
+    // the decisions the review still reads. Merge the series and ledger,
+    // and leave a stripped generation alone.
+    const core = storedRows.length > 0
+      ? runCore(buildCoreInput(pairs, {
+          now: duplicate.scannedAt,
+          phase: duplicate.phase as MarketPhase,
+          firstScanAt: duplicate.firstScanAt ?? market.firstScanAt ?? undefined,
+          positions: replay.positions,
+          ownSales,
+          budgetCopper: resolveBudgetCopper(),
+          cashCopper: market.cash,
+          bagSlots: market.bagSlots ?? undefined
+        }))
+      : null;
     const adoptions = adoptionTimes(book?.events ?? []);
     const existingDecisions = await prisma.decision.findMany({
       where: { generationId: duplicate.id },
@@ -304,21 +311,25 @@ export async function POST(request: Request) {
     const previousAdoption = new Map(
       existingDecisions.filter((row) => row.decisionId).map((row) => [row.decisionId as string, row.adoptedAt])
     );
-    const rows = decisionRows(core, scan, adoptions).map((row) => ({
-      ...row,
-      adoptedAt: row.adoptedAt ?? previousAdoption.get(row.decisionId) ?? null
-    }));
-    const adopted = await adoptedDecisionsFor(market.id, book?.events ?? [], rows, scan.scannedAt);
+    const rows = core
+      ? decisionRows(core, scan, adoptions).map((row) => ({
+          ...row,
+          adoptedAt: row.adoptedAt ?? previousAdoption.get(row.decisionId) ?? null
+        }))
+      : [];
+    const adopted = core ? await adoptedDecisionsFor(market.id, book?.events ?? [], rows, scan.scannedAt) : [];
     const ledgerRevision = replayLedgerRevision(replay);
     await prisma.$transaction(async (tx) => {
-      await tx.marketGeneration.update({
-        where: { id: duplicate.id },
-        data: {
-          core: core as unknown as Prisma.InputJsonValue,
-          ledgerRevision
-        }
-      });
-      await replaceDecisions(tx, duplicate.id, market.id, scan.scannedAt, duplicate.phase, rows);
+      if (core) {
+        await tx.marketGeneration.update({
+          where: { id: duplicate.id },
+          data: {
+            core: core as unknown as Prisma.InputJsonValue,
+            ledgerRevision
+          }
+        });
+        await replaceDecisions(tx, duplicate.id, market.id, scan.scannedAt, duplicate.phase, rows);
+      }
       if (seriesItemCreates.length > 0) await tx.item.createMany({ data: seriesItemCreates });
       await replaceSeries(tx, market.id, seriesRows);
       const seriesFirst = series?.firstScanAt ? new Date(series.firstScanAt * 1000) : null;

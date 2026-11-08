@@ -10,6 +10,7 @@ import {
 } from "@/lib/repositories";
 import { describeFreshness } from "@/lib/freshness";
 import { phaseLabels } from "@/lib/phase";
+import { CALIBRATION_GENERATIONS_KEPT, GENERATIONS_KEPT } from "@/lib/retention";
 import { SCAN_INTERVAL_MINUTES } from "@/lib/market-rules";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { AppShell } from "@/components/app-shell";
@@ -143,7 +144,7 @@ export default async function HealthPage() {
             <div className="space-y-2 p-3 font-mono text-[11px] text-terminal-muted">
               <p>打开任意页面时，如果 <span className="text-terminal-amber">AQT_SAVEDVARS_PATH</span> 指向插件存档，会自动开始监听并导入；无需另开进程。</p>
               <p>独立运行入口：<span className="text-terminal-amber">npm run addon:watch</span>。</p>
-              <p>每次扫描生成一代不可变读模型；保留最近 2 代，决策保留 90 天，导入记录保留 30 天。</p>
+              <p>每次扫描生成一代不可变读模型；页面读取保留最近 {GENERATIONS_KEPT} 代，盘口保留最近 {CALIBRATION_GENERATIONS_KEPT} 代供校准，决策保留 90 天，导入记录保留 30 天。</p>
             </div>
           </Panel>
           <Panel>

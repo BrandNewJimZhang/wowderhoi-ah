@@ -16,15 +16,29 @@ let prisma: typeof import("@/lib/prisma").prisma;
 let pruneGenerations: typeof import("@/lib/retention").pruneGenerations;
 let pruneAgedRows: typeof import("@/lib/retention").pruneAgedRows;
 
+async function generationIds(marketId: string): Promise<string[]> {
+  const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+    `SELECT "id" FROM "MarketGeneration" WHERE "market_id" = ? ORDER BY "scanned_at"`,
+    marketId
+  );
+  return rows.map((row) => row.id);
+}
+
 beforeAll(async () => {
   ({ prisma } = await import("@/lib/prisma"));
   ({ pruneGenerations, pruneAgedRows } = await import("@/lib/retention"));
   await prisma.$executeRawUnsafe(`PRAGMA foreign_keys = ON`);
   await prisma.$executeRawUnsafe(
-    `CREATE TABLE "MarketGeneration" ("id" TEXT PRIMARY KEY, "market_id" TEXT, "scanned_at" DATETIME)`
+    `CREATE TABLE "MarketGeneration" ("id" TEXT PRIMARY KEY, "market_id" TEXT, "scanned_at" DATETIME,
+      "phase" TEXT DEFAULT 'settle', "core" TEXT)`
   );
   await prisma.$executeRawUnsafe(
     `CREATE TABLE "MarketQuote" ("generation_id" TEXT, "item_id" INTEGER,
+      PRIMARY KEY ("generation_id", "item_id"),
+      FOREIGN KEY ("generation_id") REFERENCES "MarketGeneration"("id") ON DELETE CASCADE)`
+  );
+  await prisma.$executeRawUnsafe(
+    `CREATE TABLE "MarketSignalRow" ("generation_id" TEXT, "item_id" INTEGER, "data" TEXT,
       PRIMARY KEY ("generation_id", "item_id"),
       FOREIGN KEY ("generation_id") REFERENCES "MarketGeneration"("id") ON DELETE CASCADE)`
   );
@@ -37,12 +51,20 @@ beforeAll(async () => {
   for (let day = 1; day <= 5; day += 1) {
     const id = `g${day}`;
     await prisma.$executeRawUnsafe(
-      `INSERT INTO "MarketGeneration" VALUES ('${id}', 'm1', ${NOW - (5 - day) * DAY})`
+      `INSERT INTO "MarketGeneration" ("id", "market_id", "scanned_at", "core") VALUES (?, 'm1', ?, ?)`,
+      id,
+      NOW - (5 - day) * DAY,
+      JSON.stringify({ phase: "settle", rows: [{ itemId: 1 }], opportunities: [], actions: [] })
     );
-    await prisma.$executeRawUnsafe(`INSERT INTO "MarketQuote" VALUES ('${id}', 1)`);
+    await prisma.$executeRawUnsafe(`INSERT INTO "MarketQuote" VALUES (?, 1)`, id);
+    await prisma.$executeRawUnsafe(`INSERT INTO "MarketSignalRow" VALUES (?, 1, '{}')`, id);
   }
-  await prisma.$executeRawUnsafe(`INSERT INTO "MarketGeneration" VALUES ('other', 'm2', ${NOW - DAY})`);
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "MarketGeneration" ("id", "market_id", "scanned_at", "core") VALUES ('other', 'm2', ?, '{}')`,
+    NOW - DAY
+  );
   await prisma.$executeRawUnsafe(`INSERT INTO "MarketQuote" VALUES ('other', 1)`);
+  await prisma.$executeRawUnsafe(`INSERT INTO "MarketSignalRow" VALUES ('other', 1, '{}')`);
 });
 
 afterAll(async () => {
@@ -51,25 +73,44 @@ afterAll(async () => {
 });
 
 describe("pruneGenerations", () => {
-  it("keeps the newest generations for one market and cascades their quotes", async () => {
-    expect(await pruneGenerations("m1", 2)).toBe(3);
-    const remaining = await prisma.$queryRawUnsafe<Array<{ id: string; count: bigint }>>(
-      `SELECT g.id AS id, COUNT(q.item_id) AS count
-       FROM "MarketGeneration" g LEFT JOIN "MarketQuote" q ON q.generation_id = g.id
-       WHERE g.market_id = 'm1' GROUP BY g.id ORDER BY g.scanned_at`
+  it("keeps quotes for calibration while only the newest generations stay readable", async () => {
+    expect(await pruneGenerations("m1", 2, 5)).toBe(0);
+    expect(await generationIds("m1")).toEqual(["g1", "g2", "g3", "g4", "g5"]);
+
+    const signals = await prisma.$queryRawUnsafe<Array<{ generation_id: string }>>(
+      `SELECT "generation_id" FROM "MarketSignalRow" WHERE "generation_id" LIKE 'g%' ORDER BY "generation_id"`
     );
-    expect(remaining.map((row) => row.id)).toEqual(["g4", "g5"]);
-    expect(remaining.every((row) => Number(row.count) === 1)).toBe(true);
-    // Another market's generation is not a pruning candidate.
-    const other = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
-      `SELECT COUNT(*) AS count FROM "MarketGeneration" WHERE market_id = 'm2'`
+    expect(signals.map((row) => row.generation_id)).toEqual(["g4", "g5"]);
+
+    const quotes = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
+      `SELECT COUNT(*) AS count FROM "MarketQuote" WHERE "generation_id" LIKE 'g%'`
     );
-    expect(Number(other[0].count)).toBe(1);
+    expect(Number(quotes[0].count)).toBe(5);
+
+    const stripped = await prisma.$queryRawUnsafe<Array<{ core: string }>>(
+      `SELECT "core" FROM "MarketGeneration" WHERE "id" = 'g1'`
+    );
+    const core = JSON.parse(stripped[0].core) as { phase: string; rows: unknown[] };
+    expect(core.phase).toBe("settle");
+    expect(core.rows).toEqual([]);
+
+    // Another market's generations are not pruning candidates.
+    expect(await generationIds("m2")).toEqual(["other"]);
   });
 
-  it("is idempotent and rejects a nonsensical keep", async () => {
-    expect(await pruneGenerations("m1", 2)).toBe(0);
-    await expect(pruneGenerations("m1", 0)).rejects.toThrow(/positive integer/);
+  it("drops generations past the calibration window with their quotes", async () => {
+    expect(await pruneGenerations("m1", 2, 3)).toBe(2);
+    expect(await generationIds("m1")).toEqual(["g3", "g4", "g5"]);
+    const quotes = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
+      `SELECT COUNT(*) AS count FROM "MarketQuote" WHERE "generation_id" IN ('g1', 'g2')`
+    );
+    expect(Number(quotes[0].count)).toBe(0);
+  });
+
+  it("is idempotent and rejects a nonsensical policy", async () => {
+    expect(await pruneGenerations("m1", 2, 3)).toBe(0);
+    await expect(pruneGenerations("m1", 0, 3)).rejects.toThrow(/positive integer/);
+    await expect(pruneGenerations("m1", 2, 1)).rejects.toThrow(/calibrationKeep/);
   });
 });
 
