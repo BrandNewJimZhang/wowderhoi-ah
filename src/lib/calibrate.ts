@@ -9,7 +9,7 @@
 // of itself. A book with hidden owners is excluded for the same reason: its
 // lower edge is zero by construction, which is missing data, not evidence
 // that nothing sold.
-import { median } from "@/lib/median";
+import { median, quantile } from "@/lib/median";
 import { ageHours, resolvePhase } from "@/lib/phase";
 import { OBSERVATION_VERSION, type MarketPhase, type MarketType } from "@/lib/market-rules";
 
@@ -96,11 +96,6 @@ export function calibrationObservations(
     }
   }
   return observations;
-}
-
-function quantile(sorted: number[], fraction: number): number {
-  if (sorted.length === 0) return 0;
-  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * fraction) - 1))];
 }
 
 export function summarizeCalibration(observations: CalibrationObservation[]): CalibrationBucket[] {
