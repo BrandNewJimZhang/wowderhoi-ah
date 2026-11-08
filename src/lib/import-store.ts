@@ -117,6 +117,44 @@ export async function replaceSeries(
   }
 }
 
+// A replayed scan can re-create a generation that pruning removed while the
+// decisions it wrote are still inside the log. The decision id is unique and
+// names the same recommendation, so the rebuilt row supersedes the surviving
+// one: deleting first keeps a replay from failing the import, and an adoption
+// is a player fact that must survive the rebuild.
+async function replaceDecisionsByIdentity(
+  tx: Prisma.TransactionClient,
+  marketId: string,
+  generationId: string,
+  scannedAt: Date,
+  phase: string,
+  decisions: StoredDecision[]
+): Promise<void> {
+  const adoptedBefore = new Map<string, Date | null>();
+  for (const batch of chunks(decisions.map((row) => row.decisionId), DECISION_BATCH)) {
+    const existing = await tx.decision.findMany({
+      where: { decisionId: { in: batch } },
+      select: { decisionId: true, adoptedAt: true }
+    });
+    for (const row of existing) {
+      if (row.decisionId) adoptedBefore.set(row.decisionId, row.adoptedAt);
+    }
+    await tx.decision.deleteMany({ where: { decisionId: { in: batch } } });
+  }
+  for (const batch of chunks(decisions, DECISION_BATCH)) {
+    await tx.decision.createMany({
+      data: batch.map((row) => ({
+        ...row,
+        adoptedAt: row.adoptedAt ?? adoptedBefore.get(row.decisionId) ?? null,
+        marketId,
+        generationId,
+        at: scannedAt,
+        phase
+      }))
+    });
+  }
+}
+
 export async function writeGeneration(
   tx: Prisma.TransactionClient,
   marketId: string,
@@ -141,17 +179,7 @@ export async function writeGeneration(
   }
   await insertSignals(tx, generation.id, plan.signals);
   await replaceSeries(tx, marketId, plan.series);
-  for (const batch of chunks(decisions, DECISION_BATCH)) {
-    await tx.decision.createMany({
-      data: batch.map((row) => ({
-        ...row,
-        marketId,
-        generationId: generation.id,
-        at: plan.scannedAt,
-        phase: plan.phase
-      }))
-    });
-  }
+  await replaceDecisionsByIdentity(tx, marketId, generation.id, plan.scannedAt, plan.phase, decisions);
   return generation.id;
 }
 
