@@ -20,7 +20,7 @@ import { getMarketScope, type MarketScope } from "@/lib/market-scope";
 // Everything a page needs to describe the market, without its rows. The
 // item and health pages used to load the whole bundle for these fields,
 // which meant reading thousands of signal documents to render one item.
-export type MarketContext = {
+type MarketContext = {
   scope: MarketScope | null;
   latestScanAt: Date | null;
   // The phase right now, from wall-clock age and breadth.
