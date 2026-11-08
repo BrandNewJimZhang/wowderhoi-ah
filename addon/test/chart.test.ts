@@ -259,6 +259,30 @@ describe("chart lifecycle", () => {
   });
 });
 
+describe("phase window and retention", () => {
+  // The default window is the compiled rule the tooltip and the decision
+  // core already read. Ignition has no window of its own and borrows
+  // steady's, exactly as the data layer does.
+  it("sources the default window from the compiled phase rules", () => {
+    const lua = chartPage([9000, 10000, 11000]);
+    expect(lua.number("WowTest.ns.phaseWindowHours()")).toBe(168);
+    expect(lua.number("WowTest.ns.chartState().window")).toBe(168);
+    const expected: Array<[string, number]> = [["wave", 6], ["settle", 24], ["steady", 168]];
+    for (const [phase, hours] of expected) {
+      lua.exec(`WowTest.ns.settings.phaseOverride = '${phase}'; WoWderhoiAH_UpdateChart()`);
+      expect(lua.number("WowTest.ns.phaseWindowHours()")).toBe(hours);
+      expect(lua.number("WowTest.ns.chartState().window")).toBe(hours);
+    }
+  });
+
+  it("sources the all-window span from the series retention", () => {
+    const lua = chartPage([9000, 10000, 11000]);
+    expect(lua.number("WowTest.ns.seriesRetentionHours()")).toBe(720);
+    lua.exec("WowTest.ns.setChartWindow(0)");
+    expect(lua.number("WowTest.ns.chartState().points")).toBe(3);
+  });
+});
+
 describe("chart placement", () => {
   // The chart is a panel, not a tooltip ornament. It docks beside the
   // auction house or the trader page and stays there, so its mode/window

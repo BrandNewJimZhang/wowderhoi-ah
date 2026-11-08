@@ -518,20 +518,8 @@ local WINDOWS = {
   { key = "all", hours = 0, label = "CHART_WINDOW_ALL" }
 }
 
--- "All" means the whole retained series, not the phase window. The series
--- keeps a month (WoWderhoiAH.lua's pruneSeries), so ask for a month and let
--- WAH.history return every point it still holds.
-local ALL_HOURS = 30 * 24
-
 local chartMode = nil -- nil = automatic: book with <2 points, time otherwise
 local chartWindow = nil -- nil = phase default
-
-local function phaseWindow()
-  local phase = WAH.currentPhase and WAH.currentPhase() or "steady"
-  if phase == "ignition" then return 0 end
-  if phase == "wave" then return 6 end
-  return 24
-end
 
 local function coinLabel(amount)
   if amount >= 100 * 10000 then
@@ -843,8 +831,8 @@ local function renderChart(itemId)
   -- Read the whole retained series and let the selected window filter what
   -- is drawn. Fetching the phase window here made the 24h/7d/all buttons
   -- redraw the same handful of points in wave and settle.
-  local window = chartWindow or phaseWindow()
-  local history = historyFor(itemId, ALL_HOURS)
+  local window = chartWindow or WAH.phaseWindowHours()
+  local history = historyFor(itemId, WAH.seriesRetentionHours())
   if not entry and not history then hideChart() return end
   dockChart(anchor)
   local name = getItemInfo(itemId) or ("item:" .. itemId)

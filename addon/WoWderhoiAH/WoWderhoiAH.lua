@@ -48,6 +48,9 @@ local AUTO_SCAN_INTERVAL = SCAN_MINUTES * 60
 local SEARCH_QUIET_SECONDS = 60
 local SERIES_CAP = 60000
 local HOUR, DAY = 3600, 86400
+-- The layered retention keeps a month. The chart's "all" window asks for
+-- exactly this span instead of restating 30 days.
+local SERIES_RETENTION_DAYS = 30
 -- A gap shorter than one scan interval is a manual rescan: the flow model
 -- must not extrapolate a sale rate from it. The terminal importer and the
 -- shared core floor at the same compiled value.
@@ -628,7 +631,8 @@ local function pruneSeries(series, nowTs, budget)
   -- fits its budget, so nothing needs rebuilding.
   local insideFullResolution = series.t[1] and series.t[1] >= nowTs - DAY
   if insideFullResolution and (not budget or #series.t <= budget) then return series end
-  local cutoff24, cutoff7, cutoff30 = nowTs - DAY, nowTs - 7 * DAY, nowTs - 30 * DAY
+  local cutoff24, cutoff7, cutoff30 = nowTs - DAY, nowTs - 7 * DAY,
+    nowTs - SERIES_RETENTION_DAYS * DAY
   local kept = { t = {}, min = {}, sell = {}, q = {}, n = {}, e = {} }
   local lastHour, lastDay
   local lastIsEvent = false -- event points are never replaced by a later close
@@ -1521,6 +1525,14 @@ end
 -- the same compiled table instead of restating the number.
 local function historyWindowHours()
   return historyWindowForPhase(WAH.currentPhase())
+end
+
+function WAH.phaseWindowHours()
+  return historyWindowHours()
+end
+
+function WAH.seriesRetentionHours()
+  return SERIES_RETENTION_DAYS * 24
 end
 
 -- Sample count only. The decision core never reads point tables, so a
