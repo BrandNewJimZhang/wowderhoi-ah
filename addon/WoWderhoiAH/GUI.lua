@@ -814,12 +814,20 @@ SlashCmdList["WOWDERHOIAHDIAG"] = function(input)
   diagLine(string.format("series: %d points across %d items",
     points, market and (function() local n = 0 for _ in pairs(market.items) do n = n + 1 end return n end)() or 0))
   local stats = WAH.lastScanStats
+  -- The outcome line answers where the scan stopped and why. Without the
+  -- phase and reason, "slow" and "unanswered" and "cleared copy" all looked
+  -- like one failure that only a stopwatch could tell apart.
   diagLine(string.format(
-    "last scan: %d rows | wait %.0f ms | api %.0f ms | lua %.0f ms | finish %.0f ms (max frame %.0f ms, %d frames) | save %.0f ms",
-    stats and stats.rows or 0, stats and stats.waitMs or 0,
-    stats and stats.apiMs or 0, stats and stats.luaMs or 0,
-    stats and stats.finishMs or 0, stats and stats.finishFrameMaxMs or 0,
-    stats and stats.finishFrames or 0, stats and stats.saveMs or 0))
+    "last scan: %s | %s %d/%d rows | via %s | missing %d | bad %d | wait %.0f ms | api %.0f ms | lua %.0f ms | finish %.0f ms (max frame %.0f ms, %d frames) | save %.0f ms",
+    stats and (stats.reason or "ok") or "none",
+    stats and stats.phase or "idle",
+    stats and stats.rows or 0, stats and stats.total or 0,
+    stats and (stats.responseVia or "n/a") or "n/a",
+    stats and stats.itemsMissingInfo or 0, stats and stats.badRows or 0,
+    stats and stats.waitMs or 0, stats and stats.apiMs or 0,
+    stats and stats.luaMs or 0, stats and stats.finishMs or 0,
+    stats and stats.finishFrameMaxMs or 0, stats and stats.finishFrames or 0,
+    stats and stats.saveMs or 0))
   -- A single "process" number could not answer whether the scan was slow in
   -- the client's replicate calls or in our own aggregation. The split does;
   -- the shares make the answer readable without arithmetic in the head.
