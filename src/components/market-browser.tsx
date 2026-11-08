@@ -127,7 +127,7 @@ export function MarketBrowser({ rows, watchedItemIds, initialView }: {
           <input
             value={query}
             onChange={(event) => { setQuery(event.target.value); setPage(1); }}
-            placeholder="搜索物品、ID 或拼音首字母..."
+            placeholder="搜索物品名、ID 或 item:<id>..."
             className={`${inputClass} col-span-2 w-full placeholder:text-terminal-muted lg:w-52`}
           />
           <select value={category} onChange={(event) => { setCategory(event.target.value); setPage(1); }} className={inputClass}>
