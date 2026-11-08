@@ -130,4 +130,27 @@ describe("modern tooltip pipeline", () => {
     `);
     expect(lua.tooltipText()).toContain("WoWderhoi AHelper");
   });
+
+  it("reads a native bag tooltip from the setter arguments", () => {
+    // The client can render the lines natively: the post-call still fires
+    // (or a setter hook does), but the frame itself exposes no displayed
+    // item. The bag/slot arguments are the only authoritative source.
+    const lua = auctionPage();
+    lua.exec(`
+      TooltipUtil.GetDisplayedItem = function() return nil end
+      WowTest.bagItems[1] = { itemId = 4338, name = "Mageweave Cloth" }
+      GameTooltip:SetBagItem(0, 1)
+    `);
+    expect(lua.tooltipText()).toContain("WoWderhoi AHelper");
+    expect(lua.tooltipText()).toContain("建议卖价");
+  });
+
+  it("does not raise when the client marks the link secret", () => {
+    const lua = auctionPage();
+    lua.exec(`
+      issecretvalue = function() return true end
+      GameTooltip:SetHyperlink("item:4338:0:0:0")
+    `);
+    expect(lua.tooltipText()).not.toContain("WoWderhoi AHelper");
+  });
 });

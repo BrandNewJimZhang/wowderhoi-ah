@@ -54,16 +54,19 @@ local function ladderText(entry)
 end
 
 -- Trader tooltip section: everywhere an item tooltip renders -- bags, bank,
--- equipped slots, merchants, the auction house and chat item links. Spell,
--- unit and battle-pet links never carry it: the link gate rejects anything
--- that is not itself an item, so a shared tooltip cannot carry the last
--- item's panel onto a talent or character button.
+-- equipped slots, merchants, the auction house, mail and chat item links.
+-- Spell, unit and battle-pet links never carry it: the link gate rejects
+-- anything that is not itself an item, so a shared tooltip cannot carry the
+-- last item's panel onto a talent or character button.
 --
--- The client renders item tooltips through more than the GameTooltip global:
--- on 1.60 the lines live in the embedded GameTooltipTooltip and the item is
--- reported through TooltipDataProcessor. Append to the frame the client
--- names and read its displayed item through TooltipUtil, the client's own
--- accessor; frame identity is an implementation detail, the link is not.
+-- The 1.60 client is a mixed pipeline: it exposes TooltipDataProcessor and
+-- TooltipUtil, yet a native tooltip can be rendered by a setter without ever
+-- reaching that processor. Presence of the modern API is therefore not
+-- evidence that it fires, and subscribing to only one pipeline is how the
+-- section disappeared from bag hovers. Every path is registered: the typed
+-- post-call, OnTooltipSetItem and the item setters. The link is read from
+-- the call's own arguments first -- the setter that named the item -- then
+-- from TooltipUtil, GetItem and finally the rendered first line.
 --
 -- Hover is read-only. The chart is a panel that lives beside the auction
 -- house or the trader page, where its mode and window buttons stay put and
@@ -75,48 +78,162 @@ local function hideChart()
   if chart then chart:Hide() end
 end
 
--- The typed tooltip data names the getter that produced the lines. A
--- GetHyperlink tooltip is the one case where the getter argument is the
--- link itself, and the authoritative one -- TooltipUtil can resolve a
--- recipe's crafted item instead of the recipe. Everything else goes
--- through TooltipUtil; GetItem is the pre-10.0.2 fallback.
-local function displayedItemLink(tooltip)
-  local info = tooltip.processingInfo or tooltip.info
-  if info and info.getterName == "GetHyperlink" and info.getterArgs then
-    local link = info.getterArgs[1]
-    if WAH.itemIdFromLink(link) then return link end
+-- Restricted tooltip data is secret on this client; reading it through a
+-- pattern or a comparison raises. A secret value is unreadable, never an
+-- item match.
+local function isSecret(value)
+  return issecretvalue ~= nil and issecretvalue(value)
+end
+
+local function readableString(value)
+  return type(value) == "string" and not isSecret(value)
+end
+
+local function containerItemLink(bag, slot)
+  if C_Container and C_Container.GetContainerItemLink then
+    return C_Container.GetContainerItemLink(bag, slot)
   end
-  if TooltipUtil and TooltipUtil.GetDisplayedItem then
-    local _, link = TooltipUtil.GetDisplayedItem(tooltip)
-    if link then return link end
+  if GetContainerItemLink then return GetContainerItemLink(bag, slot) end
+  return nil
+end
+
+-- The typed tooltip data names the getter that produced the lines. Reading
+-- the link from that getter's arguments is authoritative on a native
+-- tooltip even when TooltipUtil has nothing to say about it.
+local function getterItemLink(info)
+  if type(info) ~= "table" or isSecret(info) then return nil end
+  local getter, args = info.getterName, info.getterArgs
+  if not readableString(getter) or type(args) ~= "table" then return nil end
+  local arg1 = args[1]
+  if getter == "GetHyperlink" then return arg1 end
+  if getter == "GetBagItem" then return containerItemLink(arg1, args[2]) end
+  if getter == "GetInventoryItem" then
+    return GetInventoryItemLink and GetInventoryItemLink(arg1, args[2])
   end
-  if tooltip.GetItem then
-    local _, link = tooltip:GetItem()
-    return link
+  if getter == "GetMerchantItem" then
+    return GetMerchantItemLink and GetMerchantItemLink(arg1)
+  end
+  if getter == "GetGuildBankItem" then
+    return GetGuildBankItemLink and GetGuildBankItemLink(arg1, args[2])
+  end
+  if getter == "GetAuctionItem" then
+    return GetAuctionItemLink and GetAuctionItemLink(arg1, args[2])
+  end
+  if (getter == "GetItemKey" or getter == "GetItemByID") and not isSecret(arg1) then
+    return C_Item and C_Item.GetItemInfo and select(2, C_Item.GetItemInfo(arg1))
   end
   return nil
 end
 
--- The appended flag belongs to the frame that carries the lines. Clear it
--- through that frame's own scripts; some tooltip frames ship without
+-- The rendered first line still carries the root hyperlink on native
+-- tooltips: the pre-TooltipUtil accessor, and the last resort for a frame
+-- that reports neither typed data nor a remembered item.
+local function lineItemLink(tooltip)
+  local name = tooltip.GetName and tooltip:GetName()
+  if type(name) ~= "string" then return nil end
+  local line = _G[name .. "TextLeft1"]
+  local text = line and line.GetText and line:GetText()
+  if not readableString(text) then return nil end
+  return text:match("|H(item:[%d:%-]+)|h")
+end
+
+local function displayedItemLink(tooltip)
+  local link = getterItemLink(tooltip.processingInfo or tooltip.info)
+  if readableString(link) then return link end
+  if TooltipUtil and TooltipUtil.GetDisplayedItem then
+    local _, displayed = TooltipUtil.GetDisplayedItem(tooltip)
+    if readableString(displayed) then return displayed end
+  end
+  if tooltip.GetItem then
+    local _, remembered = tooltip:GetItem()
+    if readableString(remembered) then return remembered end
+  end
+  return lineItemLink(tooltip)
+end
+
+-- The section is identified by its own header line, not by a boolean. A
+-- client re-render can wipe appended lines, and a stale boolean would then
+-- hide the section for the rest of the session.
+local function traderSectionAlive(tooltip)
+  local name = tooltip.GetName and tooltip:GetName()
+  if type(name) ~= "string" then return true end
+  -- Frames without readable line globals cannot prove a wipe; trust the
+  -- mark instead of appending the section again on every repost.
+  local first = _G[name .. "TextLeft1"]
+  if not first then return true end
+  local count = tooltip.NumLines and tooltip:NumLines() or 0
+  for index = 1, count do
+    local line = _G[name .. "TextLeft" .. index]
+    local text = line and line.GetText and line:GetText()
+    if readableString(text) and text:find("WoWderhoi AHelper", 1, true) then
+      return true
+    end
+  end
+  return false
+end
+
+local function frameName(tooltip)
+  local name = tooltip.GetName and tooltip:GetName()
+  return type(name) == "string" and name or "?"
+end
+
+local function clearTraderMark(tooltip)
+  tooltip.wahSectionLink = nil
+end
+
+-- The mark belongs to the frame that carries the lines. Clear it through
+-- that frame's own scripts; some tooltip frames ship without
 -- OnTooltipCleared, so ask before hooking instead of masking the error.
 local function trackTooltip(tooltip)
   if tooltip.wahTracked then return end
   tooltip.wahTracked = true
   if tooltip.HasScript and tooltip:HasScript("OnTooltipCleared") then
-    tooltip:HookScript("OnTooltipCleared", function(self) self.wahAppended = nil end)
+    tooltip:HookScript("OnTooltipCleared", clearTraderMark)
   end
-  tooltip:HookScript("OnHide", function(self) self.wahAppended = nil end)
+  tooltip:HookScript("OnHide", clearTraderMark)
 end
 
-local function appendTraderSection(tooltip, hyperlink)
-  if tooltip.wahAppended then return end
+-- Which entry point fired, and what it resolved. The 1.60 client uses more
+-- than one tooltip pipeline, so a missing block needs to name the path that
+-- missed. Records stay in memory and /wahtip prints them; a failed hover is
+-- also reported to chat at most three times per session, because script
+-- errors are commonly disabled.
+local tipEvents = {}
+local tipReported = 0
+
+local function recordTip(text)
+  tipEvents[#tipEvents + 1] = text
+  if #tipEvents > 8 then table.remove(tipEvents, 1) end
+end
+
+local function reportTip(text)
+  recordTip(text)
+  if tipReported >= 3 then return end
+  tipReported = tipReported + 1
+  DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WoWderhoiAH|r tip: " .. text)
+end
+
+-- explicit: the call named its item through arguments. A nil link on such a
+-- call is an empty slot, never permission to reuse the tooltip's remembered
+-- item -- that is how the previous item's panel leaked onto other hovers.
+local function appendTraderSection(tooltip, source, hyperlink, explicit)
   if tooltip.IsForbidden and tooltip:IsForbidden() then return end
   if WAH.settings and not WAH.settings.tooltip then return end
   local link = hyperlink
-  if link == nil then link = displayedItemLink(tooltip) end
+  if not readableString(link) and not explicit then link = displayedItemLink(tooltip) end
   local itemId = WAH.itemIdFromLink(link)
-  if not itemId then return end
+  if not itemId then
+    -- A spell/unit hyperlink is a normal rejection: the link is present but
+    -- not an item. An entry point that produces no link at all has failed.
+    if link == nil then
+      reportTip(string.format("%s: no item link (frame=%s)", source, frameName(tooltip)))
+    end
+    return
+  end
+  -- Another entry point reposted the same item and the rendered lines still
+  -- carry the section: nothing to add. A wipe drops the header line, and
+  -- the scan below then lets the section back in.
+  if tooltip.wahSectionLink == itemId and traderSectionAlive(tooltip) then return end
   lastTooltipItemId = itemId
   local scanned = currentItem(itemId)
   -- Inspect the raw global on purpose: this is the one place that must tell
@@ -125,9 +242,11 @@ local function appendTraderSection(tooltip, hyperlink)
   local staleScan = not scanned and type(raw) == "table"
     and raw.dataVersion ~= WAH.PIPELINE_VERSION and raw.items ~= nil
   local entry = historyFor(itemId)
-  if not scanned and not entry and not staleScan then return end
+  if not scanned and not entry and not staleScan then
+    recordTip(string.format("%s: item=%d has no scan or history", source, itemId))
+    return
+  end
   trackTooltip(tooltip)
-  tooltip.wahAppended = true
   tooltip:AddLine(" ")
   tooltip:AddLine("|cff33ff99WoWderhoi AHelper|r")
   if staleScan then
@@ -169,37 +288,102 @@ local function appendTraderSection(tooltip, hyperlink)
     if range then tooltip:AddDoubleLine("  " .. string.format(L.TT_RANGE, window), range) end
   end
   tooltip:AddLine(" ")
+  -- Native tooltips lay out before the setter returns; a line appended
+  -- outside that pass needs a Show to grow the frame, or it stays clipped.
+  if tooltip == GameTooltip or tooltip == ItemRefTooltip
+    or (GameTooltipTooltip and tooltip == GameTooltipTooltip) then
+    tooltip:Show()
+  end
+  tooltip.wahSectionLink = itemId
+  recordTip(string.format("%s: item=%d appended (frame=%s)", source, itemId, frameName(tooltip)))
   if WoWderhoiAH_UpdateChart then WoWderhoiAH_UpdateChart(itemId) end
 end
 
-if TooltipDataProcessor and Enum and Enum.TooltipDataType then
-  -- Item tooltips are typed data on the modern client. The post-call names
-  -- the frame that actually renders the lines, which may be GameTooltip, its
-  -- embedded GameTooltipTooltip, or ItemRefTooltip; appending there covers
-  -- all of them with one registration and no setter to keep in step.
-  TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip)
-    appendTraderSection(tooltip)
-  end)
-else
-  -- Pre-10.0.2 clients share GameTooltip across every hover and report the
-  -- item through scripts and setters instead. A SetHyperlink carries its own
-  -- type, so it hands the link to the gate rather than trusting whatever
-  -- item the shared tooltip still remembers.
-  if GameTooltip:HasScript("OnTooltipSetItem") then
-    GameTooltip:HookScript("OnTooltipSetItem", function(tooltip) appendTraderSection(tooltip) end)
+-- Every entry point this client can use to render an item tooltip. The
+-- setter's own arguments name the item authoritatively; when a setter has no
+-- link API the append falls back to the frame's displayed item.
+local SETTER_LINKS = {
+  SetHyperlink = function(_, link) return link end,
+  SetBagItem = function(_, bag, slot) return containerItemLink(bag, slot) end,
+  SetInventoryItem = function(_, unit, slot)
+    return GetInventoryItemLink and GetInventoryItemLink(unit, slot)
+  end,
+  SetMerchantItem = function(_, index)
+    return GetMerchantItemLink and GetMerchantItemLink(index)
+  end,
+  SetAuctionItem = function(_, itemType, index)
+    return GetAuctionItemLink and GetAuctionItemLink(itemType, index)
+  end,
+  SetAuctionSellItem = function() return nil end,
+  SetGuildBankItem = function(_, tab, slot)
+    return GetGuildBankItemLink and GetGuildBankItemLink(tab, slot)
+  end,
+  SetItemByGUID = function(_, guid)
+    return C_Item and C_Item.GetItemLinkByGUID and C_Item.GetItemLinkByGUID(guid)
   end
-  for _, method in ipairs({
-    "SetBagItem", "SetAuctionItem", "SetAuctionSellItem",
-    "SetInventoryItem", "SetMerchantItem", "SetGuildBankItem"
-  }) do
-    if GameTooltip[method] then
-      hooksecurefunc(GameTooltip, method, function(tooltip) appendTraderSection(tooltip) end)
+}
+
+-- Setters with no link accessor: the tooltip is still a valid item hover,
+-- so these alone may fall back to the frame's displayed item.
+local LINKLESS_SETTER = { SetAuctionSellItem = true }
+
+local function runTraderSection(source, tooltip, hyperlink, explicit)
+  local ok, err = pcall(appendTraderSection, tooltip, source, hyperlink, explicit)
+  if ok then return end
+  reportTip(source .. ": error: " .. (isSecret(err) and "secret value" or tostring(err)))
+end
+
+local function hookTooltipFrame(frame)
+  if not frame then return end
+  if frame.HasScript and frame:HasScript("OnTooltipSetItem") then
+    frame:HookScript("OnTooltipSetItem", function(self)
+      runTraderSection("OnTooltipSetItem", self)
+    end)
+  end
+  for method, linkFrom in pairs(SETTER_LINKS) do
+    if frame[method] then
+      local hookedMethod, resolve = method, linkFrom
+      hooksecurefunc(frame, hookedMethod, function(self, ...)
+        runTraderSection(hookedMethod, self, resolve(self, ...),
+          not LINKLESS_SETTER[hookedMethod])
+      end)
     end
   end
-  if GameTooltip.SetHyperlink then
-    hooksecurefunc(GameTooltip, "SetHyperlink", function(tooltip, link)
-      appendTraderSection(tooltip, link)
-    end)
+end
+
+-- The processor registration is one path among several, never a substitute
+-- for the others: on this client it can exist without firing for a native
+-- setter-rendered tooltip.
+if TooltipDataProcessor and Enum and Enum.TooltipDataType
+  and TooltipDataProcessor.AddTooltipPostCall then
+  TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip)
+    runTraderSection("postcall", tooltip)
+  end)
+end
+
+hookTooltipFrame(GameTooltip)
+hookTooltipFrame(ItemRefTooltip)
+if GameTooltipTooltip and GameTooltipTooltip ~= GameTooltip then
+  hookTooltipFrame(GameTooltipTooltip)
+end
+
+-- /wahtip prints the pipeline facts and the last eight tooltip events, so a
+-- hover that still shows no block names the entry point that missed.
+SLASH_WOWDERHOIAHTIP1 = "/wahtip"
+SlashCmdList["WOWDERHOIAHTIP"] = function()
+  local facts = string.format(
+    "processor=%s postcall=%s util=%s primary=%s setItem=%s bag=%s hyperlink=%s",
+    tostring(TooltipDataProcessor ~= nil),
+    tostring(TooltipDataProcessor ~= nil
+      and type(TooltipDataProcessor.AddTooltipPostCall) == "function"),
+    tostring(TooltipUtil ~= nil and type(TooltipUtil.GetDisplayedItem) == "function"),
+    tostring(type(GameTooltip.GetPrimaryTooltipData) == "function"),
+    tostring(GameTooltip.HasScript and GameTooltip:HasScript("OnTooltipSetItem")),
+    tostring(GameTooltip.SetBagItem ~= nil),
+    tostring(GameTooltip.SetHyperlink ~= nil))
+  DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WoWderhoiAH|r " .. facts)
+  for _, event in ipairs(tipEvents) do
+    DEFAULT_CHAT_FRAME:AddMessage("  " .. event)
   end
 end
 

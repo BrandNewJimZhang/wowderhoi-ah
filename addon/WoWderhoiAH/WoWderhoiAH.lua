@@ -142,6 +142,9 @@ end
 -- carry a color prefix before |H, which the third form accepts.
 function WAH.itemIdFromLink(link)
   if type(link) ~= "string" then return nil end
+  -- Restricted tooltip data is secret on the 1.60 client and pattern
+  -- matching it raises. A secret link is unreadable, not an item match.
+  if issecretvalue ~= nil and issecretvalue(link) then return nil end
   local id = link:match("^item:(%d+)")
     or link:match("^|Hitem:(%d+)")
     or link:match("^|c%x%x%x%x%x%x%x%x|Hitem:(%d+)")

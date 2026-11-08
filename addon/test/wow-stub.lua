@@ -525,6 +525,19 @@ end
 C_Container = {
   GetContainerNumSlots = function(bag) return bed.bagSlots[bag] or 0 end,
   GetContainerItemInfo = function(bag, slot) return bed.bagContents[bag .. ":" .. slot] end,
+  -- The setter-argument accessor the addon uses to name a hovered bag item
+  -- without trusting the tooltip's remembered item. Tooltip tests seed the
+  -- slot fixture; scan tests seed the bag/slot fixture.
+  GetContainerItemLink = function(bag, slot)
+    local item = bed.bagItems[slot]
+    local itemId, name = item and item.itemId, item and item.name
+    if not itemId then
+      local info = bed.bagContents[bag .. ":" .. slot]
+      itemId, name = info and info.itemID, info and info.name
+    end
+    if not itemId then return nil end
+    return "|Hitem:" .. tostring(itemId) .. ":0:0:0|h[" .. tostring(name or "item") .. "]|h"
+  end,
   -- Free slots are a separate fixture. Without one the stub reports a
   -- single 20-slot backpack, the same planning capacity the old hardcoded
   -- constant used; `bed.freeBagSlots = {}` is an explicitly full client.
