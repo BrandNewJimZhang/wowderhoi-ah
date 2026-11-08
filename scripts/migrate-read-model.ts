@@ -228,12 +228,12 @@ async function main() {
     const latestAt = snapshots.at(-1)?.timestamp ?? market.firstScanAt ?? new Date();
     const latestSeconds = Math.round(latestAt.getTime() / 1000);
     const snapshotDays = new Set<string>();
-    const legacy = new Map<number, SeriesPoint[]>();
+    const legacyPoints = new Map<number, SeriesPoint[]>();
     for (const row of snapshots) {
       if (!row.priced || row.sellPrice <= 0) continue;
       const t = Math.round(row.timestamp.getTime() / 1000);
       snapshotDays.add(`${row.itemId}|${utcDay(t)}`);
-      const points = legacy.get(row.itemId) ?? [];
+      const points = legacyPoints.get(row.itemId) ?? [];
       points.push({
         t,
         minPrice: row.minPrice > 0 ? row.minPrice : row.sellPrice,
@@ -242,13 +242,13 @@ async function main() {
         numAuctions: row.numAuctions,
         event: false
       });
-      legacy.set(row.itemId, points);
+      legacyPoints.set(row.itemId, points);
     }
     for (const row of dailies) {
       if (row.closePrice <= 0) continue;
       const t = Math.round(row.date.getTime() / 1000);
       if (snapshotDays.has(`${row.itemId}|${utcDay(t)}`)) continue;
-      const points = legacy.get(row.itemId) ?? [];
+      const points = legacyPoints.get(row.itemId) ?? [];
       points.push({
         t,
         minPrice: row.lowPrice > 0 ? row.lowPrice : row.closePrice,
@@ -257,7 +257,7 @@ async function main() {
         numAuctions: 0,
         event: false
       });
-      legacy.set(row.itemId, points);
+      legacyPoints.set(row.itemId, points);
     }
 
     const incoming = addonSeries.get(`${market.realm}|${market.faction}`);
@@ -274,7 +274,7 @@ async function main() {
     }
     const base = new Map<number, SeriesPoint[]>();
     for (const row of existingRows) base.set(row.itemId, arraysToSeries(row.points));
-    for (const [itemId, points] of legacy) {
+    for (const [itemId, points] of legacyPoints) {
       base.set(itemId, mergeSeries(base.get(itemId) ?? [], points, latestSeconds));
     }
     const merged = mergeSeriesByItem(
