@@ -82,9 +82,28 @@ beforeAll(async () => {
     "fill_prob" REAL, "fill_basis" TEXT, "alloc_qty" INTEGER, "alloc_unit_price" REAL)`);
 });
 
+// SQLite releases its Windows file handle asynchronously after disconnect,
+// so removing the throwaway database immediately intermittently fails with
+// EPERM. Retry for a short while; a leftover temp directory after that is
+// not a test failure.
+async function removeDirectory(dir: string, attempts = 10): Promise<void> {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (attempt === attempts) {
+        console.warn(`Could not remove the temporary database at ${dir}: ${String(error)}`);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, attempt * 100));
+    }
+  }
+}
+
 afterAll(async () => {
   await prisma.$disconnect();
-  rmSync(directory, { recursive: true, force: true });
+  await removeDirectory(directory);
 });
 
 describe("writeGeneration", () => {
