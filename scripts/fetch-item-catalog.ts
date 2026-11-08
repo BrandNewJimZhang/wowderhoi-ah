@@ -14,6 +14,9 @@ const ENDPOINT = "https://wuxianwow.com/data/items.json";
 const OUTPUT = fileURLToPath(new URL("../data/items.forever.json", import.meta.url));
 const RAW_CACHE = fileURLToPath(new URL("../.tmp/items.raw.json", import.meta.url));
 const BUILD = process.env.AQT_CATALOG_BUILD ?? "1.60.1.70862";
+// The host is slow from some networks; AQT_PROXY is the same knob the icon
+// downloader uses.
+const PROXY = process.env.AQT_PROXY;
 const MAX_ATTEMPTS = 12;
 
 function readCompleteJson(path: string): unknown | null {
@@ -34,11 +37,10 @@ function download(): unknown {
     const parsed = readCompleteJson(RAW_CACHE);
     if (parsed !== null) return parsed;
     const before = existsSync(RAW_CACHE) ? statSync(RAW_CACHE).size : 0;
-    execFileSync(
-      "curl",
-      ["-s", "-C", "-", "--max-time", "120", "-o", RAW_CACHE, ENDPOINT],
-      { stdio: ["ignore", "inherit", "inherit"] }
-    );
+    const args = ["-s", "-C", "-", "--max-time", "120", "-o", RAW_CACHE];
+    if (PROXY) args.push("-x", PROXY);
+    args.push(ENDPOINT);
+    execFileSync("curl", args, { stdio: ["ignore", "inherit", "inherit"] });
     const after = existsSync(RAW_CACHE) ? statSync(RAW_CACHE).size : 0;
     console.log(`Download attempt ${attempt}: ${after} bytes`);
     stalled = after === before || after === lastSize ? stalled + 1 : 0;
