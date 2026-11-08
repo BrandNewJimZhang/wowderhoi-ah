@@ -45,7 +45,7 @@ export default async function HealthPage() {
         getImportRuns(scope.id, 20)
       ])
     : [{ items: 0, points: 0, firstAt: null, lastAt: null }, { total: 0, catalogue: 0, scanOwned: 0, placeholders: 0, withIcon: 0, build: null }, 0, []];
-  const freshness = describeFreshness(bundle.latestSnapshotAt, new Date());
+  const freshness = describeFreshness(bundle.latestScanAt, new Date());
   const latestRun = runs[0];
   const seriesDays = series.firstAt && series.lastAt
     ? Math.max(1, Math.round((series.lastAt.getTime() - series.firstAt.getTime()) / (24 * 60 * 60 * 1000)))

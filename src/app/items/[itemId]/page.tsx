@@ -37,8 +37,8 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
   ]);
   const now = new Date();
   const stale = quote !== null
-    && bundle.latestSnapshotAt !== null
-    && quote.timestamp.getTime() < bundle.latestSnapshotAt.getTime();
+    && bundle.latestScanAt !== null
+    && quote.timestamp.getTime() < bundle.latestScanAt.getTime();
   const signal = storedSignal?.signal
     ?? (quote?.priced
       ? buildMarketSignal(
@@ -56,7 +56,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
             series
           },
           now,
-          { phase: bundle.phase, index: bundle.priceIndex, currentAt: bundle.latestSnapshotAt ?? quote.timestamp }
+          { phase: bundle.phase, index: bundle.priceIndex, currentAt: bundle.latestScanAt ?? quote.timestamp }
         )
       : null);
   const dailyBars = seriesToDailyBars(series);
@@ -64,7 +64,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
   const weekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
   // Bids only describe the book they were captured with: a demand row from
   // an older scan must not be shown beside the current prices.
-  const demand = currentScanDemand(demandQuote, bundle.latestSnapshotAt);
+  const demand = currentScanDemand(demandQuote, bundle.latestScanAt);
   const expiring = quote?.expiring && typeof quote.expiring === "object"
     ? quote.expiring as { soon?: number; mid?: number; late?: number }
     : null;

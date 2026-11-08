@@ -36,7 +36,7 @@ const qualityName = (value: number | string | undefined) =>
 
 export default async function Home() {
   const bundle = await getMarketBundle();
-  const { scope, signals, latestSnapshotAt, phase, evaluation } = bundle;
+  const { scope, signals, latestScanAt, phase, evaluation } = bundle;
   const scopeId = scope?.id;
   const now = new Date();
   const [watchedIds, alertRules, recipeRows, positions, seriesStats, recentTrades, decisionCount] = await Promise.all([
@@ -52,7 +52,7 @@ export default async function Home() {
     prisma.decision.count({ where: scopeId ? { marketId: scopeId } : {} })
   ]);
   const upcomingEvents = upcomingDemandEvents(loadDemandEvents(), Math.floor(now.getTime() / 1000));
-  const freshness = describeFreshness(latestSnapshotAt, now);
+  const freshness = describeFreshness(latestScanAt, now);
   const gapWarning = bundle.gapMinutes !== null && bundle.gapMinutes > 2 * SCAN_INTERVAL_MINUTES;
   // Actions were sized under the generation's gates. Once the display phase
   // moves past them, applying the old plan would describe a different

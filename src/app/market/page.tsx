@@ -12,8 +12,8 @@ export const dynamic = "force-dynamic";
 export default async function MarketPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const initialView = parseMarketView(await searchParams);
   const [bundle, watchedIds] = await Promise.all([getMarketBundle(), getWatchedItemIds()]);
-  const { signals, phase, latestSnapshotAt } = bundle;
-  const freshness = describeFreshness(latestSnapshotAt, new Date());
+  const { signals, phase, latestScanAt } = bundle;
+  const freshness = describeFreshness(latestScanAt, new Date());
   // Only the columns the table draws cross the client boundary. The full
   // signal stays on the server; a row that needs more opens its item page.
   const rows: MarketRow[] = signals.map((signal) => ({

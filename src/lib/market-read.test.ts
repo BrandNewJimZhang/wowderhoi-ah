@@ -74,7 +74,7 @@ describe("getMarketBundle", () => {
   it("returns an empty ignition bundle before the first generation", async () => {
     const bundle = await reader({ record: null }).getMarketBundle();
     expect(bundle.signals).toEqual([]);
-    expect(bundle.latestSnapshotAt).toBeNull();
+    expect(bundle.latestScanAt).toBeNull();
     expect(bundle.phase).toBe("ignition");
     expect(bundle.phaseMismatch).toBe(false);
   });
@@ -83,7 +83,7 @@ describe("getMarketBundle", () => {
     const bundle: MarketBundle = await reader({ signals: [row(signal(1, 200)), row(signal(2, 300, true))] }).getMarketBundle();
     expect(bundle.signals.map((entry) => entry.itemId)).toEqual([1, 2]);
     expect(bundle.signals[1].stale).toBe(true);
-    expect(bundle.latestSnapshotAt?.toISOString()).toBe(LATEST.toISOString());
+    expect(bundle.latestScanAt?.toISOString()).toBe(LATEST.toISOString());
     expect(bundle.staleCount).toBe(1);
     expect(bundle.gapMinutes).toBe(15);
   });

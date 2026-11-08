@@ -19,7 +19,7 @@ import { getMarketScope, type MarketScope } from "@/lib/market-scope";
 export type MarketBundle = {
   scope: MarketScope | null;
   signals: MarketSignal[];
-  latestSnapshotAt: Date | null;
+  latestScanAt: Date | null;
   // The phase right now, from wall-clock age and breadth.
   phase: MarketPhase;
   // The phase the core actually evaluated under.
@@ -45,7 +45,7 @@ function emptyBundle(phase: MarketPhase, scope: MarketScope | null = null): Mark
   return {
     scope,
     signals: [],
-    latestSnapshotAt: null,
+    latestScanAt: null,
     phase,
     generationPhase: phase,
     priceIndex: { dates: [], values: [], baseDate: "" },
@@ -85,7 +85,7 @@ export function createMarketReader(fetchers: ReaderFetchers) {
       return {
         scope,
         signals: rows.map((row) => row.signal),
-        latestSnapshotAt: generation.scannedAt,
+        latestScanAt: generation.scannedAt,
         phase,
         generationPhase: generation.phase,
         priceIndex: generation.priceIndex,
