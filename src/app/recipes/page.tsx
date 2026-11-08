@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { Hammer } from "lucide-react";
-import { getMarketSignals } from "@/lib/market-signals";
+import { getMarketBundle } from "@/lib/market-read";
 import { phaseLabels } from "@/lib/phase";
 import { buildProductionPlan } from "@/lib/production-plan";
 import { recipeToLp } from "@/lib/recipes";
@@ -12,7 +12,7 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 export const dynamic = "force-dynamic";
 
 export default async function RecipesPage() {
-  const [{ signals, phase, scope }, recipeRows] = await Promise.all([getMarketSignals(), getRecipes()]);
+  const [{ signals, phase, scope }, recipeRows] = await Promise.all([getMarketBundle(), getRecipes()]);
   const recipes = recipeRows.map(recipeToLp);
   const { solution, budget } = buildProductionPlan(signals, recipes, scope?.cash ?? null);
 

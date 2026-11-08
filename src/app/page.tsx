@@ -8,7 +8,7 @@ import {
 import { loadDemandEvents, upcomingDemandEvents } from "@/lib/events-calendar";
 import { buildProductionPlan } from "@/lib/production-plan";
 import { recipeToLp } from "@/lib/recipes";
-import { getMarketSignals } from "@/lib/market-signals";
+import { getMarketBundle } from "@/lib/market-read";
 import { describeFreshness } from "@/lib/freshness";
 import { fillBasisLabels } from "@/lib/fill";
 import { phaseDescription, phaseLabels } from "@/lib/phase";
@@ -30,7 +30,7 @@ const qualityName = (value: number | string | undefined) =>
 export default async function Home({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const view = parseMarketView(await searchParams);
   const [{ scope, signals, latestSnapshotAt, phase, evaluation }, watchedIds, alertRules, recipeRows] = await Promise.all([
-    getMarketSignals(),
+    getMarketBundle(),
     getWatchedItemIds(),
     getAlertRules(),
     getRecipes()

@@ -83,6 +83,24 @@ describe("parseSavedVariables", () => {
 describe("normalizeAddonScan", () => {
   const rawScan = () => parseSavedVariables(savedVariablesFixture).WoWderhoiAH_ScanData;
 
+  it("skips the scanner's unattributed item key 0 and reports it", () => {
+    const scan = normalizeAddonScan({
+      dataVersion: 4,
+      scannedAt: 1721700000,
+      server: "Anniversary",
+      faction: "Alliance",
+      items: {
+        "0": { name: "", quality: -1, bidOnly: 1, minPrice: 0, highestBid: 0 },
+        "2770": {
+          name: "铜矿石", quality: 1, minPrice: 100, sellP: 120, marketPrice: 110,
+          quantity: 5, numAuctions: 1, tiers: { "1": { p: 100, q: 5 } }
+        }
+      }
+    });
+    expect(scan.skippedItems).toBe(1);
+    expect(scan.items.map((item) => item.itemId)).toEqual([2770]);
+  });
+
   it("normalizes a parsed scan into snapshot-ready rows", () => {
     const scan = normalizeAddonScan(rawScan());
     expect(scan.scannedAt).toEqual(new Date(1721700000 * 1000));

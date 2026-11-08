@@ -78,6 +78,11 @@ export type AddonScan = {
   // listings and purchases; null on scans from older builds, which the
   // calibration must not mix with clean rows.
   observationVersion: number | null;
+  // Rows the scanner emitted with key 0. The addon uses that key for a
+  // bid-only observation it could not attribute to an item (empty name, no
+  // price, no quantity). It carries no market evidence and no valid id, so
+  // it is counted and skipped instead of rejecting the whole scan.
+  skippedItems: number;
   items: AddonScanItem[];
 };
 
@@ -297,8 +302,15 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
   }
 
   const items: AddonScanItem[] = [];
+  let skippedItems = 0;
   for (const [key, value] of Object.entries(scan.items as Record<string, unknown>)) {
     const itemId = Number(key);
+    // Key 0 is the scanner's unattributed bid-only row: no item, no price.
+    // Skipping it is the only reading that does not invent an item id.
+    if (itemId === 0) {
+      skippedItems += 1;
+      continue;
+    }
     if (!Number.isInteger(itemId) || itemId <= 0) {
       throw new Error(`Addon scan item key must be a positive itemId, got ${JSON.stringify(key)}`);
     }
@@ -389,6 +401,7 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
     observationVersion: typeof scan.observationVersion === "number"
       ? Math.round(optionalNonNegative(scan.observationVersion, "observationVersion", "scan"))
       : null,
+    skippedItems,
     items
   };
 }

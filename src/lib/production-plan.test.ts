@@ -2,42 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { MarketSignal } from "@/lib/analytics";
 import type { LpRecipe } from "@/lib/craft-lp";
 import { buildProductionPlan } from "@/lib/production-plan";
+import { signalFixture } from "@/lib/signal-fixture";
 
 function signal(overrides: Partial<MarketSignal> & { itemId: number }): MarketSignal {
-  return {
-    name: `Item ${overrides.itemId}`,
-    category: "Trade Goods",
-    quality: "common",
-    sellPrice: 100,
-    minPrice: 90,
-    price: 95,
-    quantity: 500,
-    numAuctions: 10,
-    sellerCount: 4,
-    sellersInvisible: false,
-    ownerVisible: false,
-    sellerHHI: null,
-    topSellerShare: null,
-    marketType: "commodity",
-    bidOnlyCount: 0,
-    highestBid: 0,
-    inferredSoldLow: 0,
-    inferredSoldHigh: 0,
-    flowObserved: true,
-    supplyGrowth: 0,
-    vendorPrice: 0,
-    stale: false,
-    sellRef: 100,
-    sellSamples: 10,
-    historySamples: null,
-    historySpanHours: null,
-    tierTruncated: false,
-    spreadPercent: 10,
-    trendPercent: 0,
-    changePercent: 0,
-    realSellPrice: null,
-    ...overrides
-  };
+  return signalFixture({ category: "Trade Goods", quantity: 500, numAuctions: 10, sellerCount: 4, sellSamples: 10, ...overrides });
 }
 
 const RECIPE: LpRecipe = {

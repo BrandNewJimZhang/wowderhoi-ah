@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { ClipboardCheck } from "lucide-react";
 import { prisma } from "@/lib/prisma";
-import { getMarketSignals } from "@/lib/market-signals";
+import { getMarketBundle } from "@/lib/market-read";
 import { getPositions } from "@/lib/repositories";
 import { alphaDecay, evaluatePolicy } from "@/lib/off-policy";
 import { designExperiment, experimentResults } from "@/lib/experiments";
@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 
 
 export default async function ReviewPage() {
-  const bundle = await getMarketSignals();
+  const bundle = await getMarketBundle();
   const scope = bundle.scope;
   const marketWhere = scope ? { marketId: scope.id } : {};
   // The prediction table compares every decision made in the calibration

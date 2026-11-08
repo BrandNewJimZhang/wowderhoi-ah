@@ -1,41 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { MarketSignal } from "@/lib/analytics";
+import { signalFixture } from "@/lib/signal-fixture";
 import { buildMarketQuery, filterSortSignals, paginate, parseMarketView } from "@/lib/market-filter";
 
 function makeSignal(partial: Partial<MarketSignal> & Pick<MarketSignal, "itemId" | "name">): MarketSignal {
-  return {
-    sellPrice: 100,
-    minPrice: 90,
-    price: 100,
-    category: "unknown",
-    quality: "common",
-    quantity: 0,
-    numAuctions: 0,
-    sellerCount: 0,
-    sellersInvisible: false,
-    ownerVisible: false,
-    sellerHHI: null,
-    topSellerShare: null,
-    marketType: null,
-    bidOnlyCount: 0,
-    highestBid: 0,
-    inferredSoldLow: 0,
-    inferredSoldHigh: 0,
-    flowObserved: true,
-    supplyGrowth: 0,
-    vendorPrice: 0,
-    stale: false,
-    sellRef: 100,
-    sellSamples: 1,
-    historySamples: null,
-    historySpanHours: null,
-    tierTruncated: false,
-    spreadPercent: 10,
-    trendPercent: 0,
-    changePercent: 0,
-    realSellPrice: null,
-    ...partial
-  };
+  return signalFixture(partial);
 }
 
 const signals = [

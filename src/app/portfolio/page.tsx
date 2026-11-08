@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { Wallet } from "lucide-react";
 import { prisma } from "@/lib/prisma";
-import { getMarketSignals } from "@/lib/market-signals";
+import { getMarketBundle } from "@/lib/market-read";
 import { getPositions } from "@/lib/repositories";
 import { phaseLabels } from "@/lib/phase";
 import { valuePositions } from "@/lib/position-valuation";
@@ -13,7 +13,7 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 export const dynamic = "force-dynamic";
 
 export default async function PortfolioPage() {
-  const bundle = await getMarketSignals();
+  const bundle = await getMarketBundle();
   const scope = bundle.scope;
   const [positions, allTrades] = await Promise.all([
     getPositions(scope),
