@@ -6,6 +6,7 @@
 // a matched average, which is why this module reports coverage and
 // effective sample size next to the estimate. It never dresses a
 // descriptive average up as a causal effect.
+import { ATTRIBUTION_WINDOW_DAYS } from "@/lib/decision-linking";
 
 export type LoggedDecision = {
   id: string;
@@ -45,7 +46,7 @@ export function evaluatePolicy(
   policy: TargetPolicy,
   options?: { windowDays?: number; maxWeight?: number }
 ): PolicyEstimate {
-  const windowMs = (options?.windowDays ?? 7) * 24 * 60 * 60 * 1000;
+  const windowMs = (options?.windowDays ?? ATTRIBUTION_WINDOW_DAYS) * 24 * 60 * 60 * 1000;
   const maxWeight = options?.maxWeight ?? 10;
   const sortedTrades = [...trades].sort((left, right) => left.realizedAt.getTime() - right.realizedAt.getTime());
   const used = new Set<number>();

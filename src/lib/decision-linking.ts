@@ -19,7 +19,8 @@ type LinkableTrade = {
 // A buy recommendation's goods are sold later; a sell recommendation is
 // the sale itself. Both use the same attribution window, which is wider
 // than the fill horizon because the goods must first be bought and listed.
-const ATTRIBUTION_WINDOW_DAYS = 7;
+// Off-policy evaluation attributes P&L over the same window.
+export const ATTRIBUTION_WINDOW_DAYS = 7;
 
 export function linkTrades<T extends LinkableTrade>(
   trades: T[],
