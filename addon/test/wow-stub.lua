@@ -716,11 +716,17 @@ function bed.runScan(items)
     end
   end
   local count = #items
+  -- A fixture scan starts from a clean admission slate; admission itself is
+  -- tested by driving requestScan directly.
+  if WowTest.ns.settings then
+    WowTest.ns.settings.lastReplicateAt = 0
+    WowTest.ns.settings.retryAfter = 0
+  end
   WowTest.ns.startScan()
   if not WowTest.ns.scanRunning then
     error("scan refused to start: " .. bed.lastChat())
   end
-  bed.fireEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+  bed.fireReplicate()
   local guard = 0
   while WowTest.ns.scanRunning and guard < 1000 do
     local ran = false

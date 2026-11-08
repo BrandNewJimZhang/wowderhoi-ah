@@ -16,6 +16,7 @@ local L = {
   SCAN_BROWSE_FAILURE = "Scan failed: the auction house reported a browse failure.",
   SCAN_REPLICATE_CLEARED = "Scan aborted: the replicate copy was cleared while reading (%d unreadable rows). No snapshot was saved.",
   SCAN_EMPTY_RESPONSE = "The auction house returned an empty copy; no snapshot was saved.",
+  SCAN_PROGRESS = "Processing %d / %d auctions...",
   AUTO_ON = "Auto-rescan ON: rescans every ~%d min while the AH is open. (persisted)",
   AUTO_OFF = "Auto-rescan OFF. (persisted)",
   AUTO_TRIGGER = "Auto-rescan: %d minutes since the last scan.",
@@ -197,6 +198,7 @@ if GetLocale() == "zhCN" then
   L.SCAN_BROWSE_FAILURE = "扫描失败：拍卖行报告了 browse failure。"
   L.SCAN_REPLICATE_CLEARED = "扫描中止：复制数据在读取过程中被清空（%d 行无法读取），本次快照未保存。"
   L.SCAN_EMPTY_RESPONSE = "拍卖行返回了空副本，本次快照未保存。"
+  L.SCAN_PROGRESS = "已处理 %d / %d 条拍卖..."
   L.AUTO_ON = "自动重扫已开启：拍卖行开着时每约 %d 分钟重扫一次。（已保存）"
   L.AUTO_OFF = "自动重扫已关闭。（已保存）"
   L.AUTO_TRIGGER = "自动重扫：距上次扫描已 %d 分钟。"

@@ -29,14 +29,14 @@ local Core = WAH.Core
 -- several times longer than the work actually needs.
 local PROCESS_PER_FRAME = 1000
 local FRAME_BUDGET_MS = 8
--- A replicate scan is one server response; if it has not arrived by then,
--- the request was refused or lost. Abort loudly instead of leaving the
--- auto-rescan ticker blocked behind a scan that never finishes.
-local SCAN_TIMEOUT_SECONDS = 120
--- How long the request may wait for its answer. The response has no upper
--- bound of its own in the client; the watchdog only reports "no answer", it
--- never aborts a scan whose rows are already arriving.
+-- How long the request may wait for its answer. The client has no upper
+-- bound of its own; the watchdog only reports "no answer", and it stops
+-- existing the moment rows start arriving. Processing time is never a
+-- failure: the copy is already in Lua memory.
 local REPLICATE_WAIT_SECONDS = 180
+-- Progress is announced every tenth of the book, so a slow scan under a low
+-- frame rate reads as slow rather than hung.
+local PROGRESS_STEP = 0.1
 -- Compiled from src/lib/market-rules.ts; the terminal's elapsed-time floor
 -- reads the same constant, so the ticker and the fill model stay aligned.
 local SCAN_MINUTES = WAH.RULES.scanIntervalMinutes or 15
@@ -1047,6 +1047,12 @@ local function processReplicateChunk()
   scan.cursor = index
   scan.processMs = (scan.processMs or 0) + (debugprofilestop() - frameStart)
   scan.frames = (scan.frames or 0) + 1
+  if index <= total and scan.nextProgress and index > scan.nextProgress then
+    chatMessage(string.format(L.SCAN_PROGRESS, index - 1, total))
+    repeat
+      scan.nextProgress = scan.nextProgress + scan.progressStep
+    until scan.nextProgress > index - 1
+  end
   if index > total then
     -- A row the client could not return means the copy was cleared under
     -- us. Publishing the remainder would be a snapshot with silent holes.
@@ -1068,6 +1074,10 @@ local function startRows()
   -- Time spent waiting for the server, kept apart from the time spent
   -- processing it: only one of the two is ours.
   scan.waitMs = debugprofilestop() - (scan.requestProfile or debugprofilestop())
+  -- Progress is per tenth of the book, with at least one row per step so a
+  -- tiny scan neither divides by zero nor spams the chat frame.
+  scan.progressStep = math.max(1, math.floor((scan.total or 0) * PROGRESS_STEP))
+  scan.nextProgress = scan.progressStep
   chatMessage(string.format(L.SCAN_RECEIVED, scan.total))
   frame:SetScript("OnUpdate", processReplicateChunk)
 end
@@ -1112,7 +1122,7 @@ abortScan = function(reason)
     chatMessage(L.SCAN_ABORTED)
   end
   if reason == "no_response" or reason == "browse_failure" then
-    backoffUntil = time() + SCAN_TIMEOUT_SECONDS
+    backoffUntil = time() + REPLICATE_WAIT_SECONDS
   end
 end
 
@@ -1158,10 +1168,12 @@ local function startScan()
   chatMessage(L.SCAN_GETALL_START)
   local attempt = scan.attemptId
   C_AuctionHouse.ReplicateItems()
-  C_Timer.After(SCAN_TIMEOUT_SECONDS, function()
-    -- Only a scan still waiting on the server can time out; once rows are
-    -- arriving the success is already determined.
+  -- A cancelable waiting watchdog, not a scan deadline. startRows cancels
+  -- it, so a response that takes two minutes and a row phase that takes
+  -- twenty are both successful outcomes.
+  scan.watchdog = C_Timer.NewTimer(REPLICATE_WAIT_SECONDS, function()
     if scan and scan.attemptId == attempt and scan.phase == "waiting" then
+      scan.watchdog = nil
       abortScan("no_response")
     end
   end)

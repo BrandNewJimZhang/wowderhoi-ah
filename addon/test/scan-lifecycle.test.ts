@@ -106,6 +106,62 @@ describe("scan lifecycle", () => {
     expect(lua.eval("WoWderhoiAH_ScanData == nil")).toBe(true);
   });
 
+  it("keeps waiting even when the answer takes almost three minutes", () => {
+    const lua = page();
+    setRows(lua, [{ itemId: 2589, name: "Linen", count: 10, buyout: 10000 }]);
+    requestScan(lua);
+    lua.advance(179);
+    expect(lua.eval("WowTest.ns.scanRunning")).toBe(true);
+    lua.exec("WowTest.fireReplicate()");
+    drive(lua);
+    expect(lua.number("WoWderhoiAH_ScanData.items[2589].minPrice")).toBe(1000);
+  });
+
+  it("reports no response when the waiting watchdog expires", () => {
+    const lua = page();
+    requestScan(lua);
+    lua.advance(180);
+    expect(lua.eval("WowTest.ns.scanRunning")).toBe(false);
+    expect(lua.text("WowTest.lastStats().reason")).toBe("no_response");
+    expect(lua.text("WowTest.lastStats().phase")).toBe("waiting");
+    expect(lua.eval("WoWderhoiAH_ScanData == nil")).toBe(true);
+  });
+
+  it("finishes a slow row phase whose frames cross the watchdog window", () => {
+    const lua = page();
+    // Each client call costs 0.1 ms and each simulated frame spends six
+    // wall-clock seconds; the book needs about 40 frames, i.e. four minutes.
+    // That is slower than the waiting watchdog and must still complete.
+    const items = Array.from({ length: 3000 }, (_, index) => ({
+      itemId: 10000 + index,
+      name: `Item ${index}`,
+      count: 1,
+      buyout: 100 + index
+    }));
+    lua.exec("WowTest.setFrameCost(0.1)");
+    setRows(lua, items);
+    requestScan(lua);
+    lua.exec("WowTest.fireReplicate()");
+    for (let frame = 0; frame < 500 && lua.eval("WowTest.ns.scanRunning"); frame += 1) {
+      lua.exec("WowTest.tickFrames(1, 6000)");
+    }
+    expect(lua.eval("WowTest.ns.scanRunning")).toBe(false);
+    expect(lua.number("WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.total or -1")).toBe(3000);
+    expect(lua.number("WowTest.lastStats().cursor")).toBe(3000);
+    expect(lua.eval("WowTest.lastStats().reason")).toBeNull();
+  });
+
+  it("announces progress while the rows are processed", () => {
+    const lua = page();
+    setRows(lua, Array.from({ length: 3000 }, (_, index) => ({
+      itemId: 10000 + index, name: `Item ${index}`, count: 1, buyout: 100 + index
+    })));
+    requestScan(lua);
+    lua.exec("WowTest.fireReplicate()");
+    drive(lua);
+    expect(lua.anyChat("已处理 ")).toBe(true);
+  });
+
   it("ignores a response that arrives after the scan was aborted", () => {
     const lua = page();
     setRows(lua, [{ itemId: 2589, name: "Linen", count: 10, buyout: 10000 }]);
