@@ -8,8 +8,13 @@
 // The anchor is the sell front. P10 remains a statistic; it is not a
 // reference price and must not drive a recommendation.
 import { sellPriceOf, type MarketQuote, type SignalItem } from "@/lib/market-data";
-import type { SeriesPoint } from "@/lib/item-series";
-import { seriesSamples, seriesSpanHours, seriesWindow, sparkSeries } from "@/lib/item-series";
+import {
+  seriesSamples,
+  seriesSpanHours,
+  seriesWindow,
+  sparkSeries,
+  type SeriesPoint
+} from "@/lib/item-series";
 import { median, quantile } from "@/lib/median";
 import { historyWindowHours } from "@/lib/phase";
 import type { MarketPhase } from "@/lib/market-rules";

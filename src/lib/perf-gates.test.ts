@@ -13,12 +13,11 @@ import type { CoreInput } from "@/lib/core/types";
 import type { MarketQuote, SignalItem } from "@/lib/market-data";
 import { buildGenerationPlan } from "@/lib/market-generation";
 import { filterSortSignals } from "@/lib/market-filter";
-import type { AddonScan, AddonScanItem } from "@/lib/addon-scan";
 import type { SeriesPoint } from "@/lib/item-series";
 import { solveProduction, type LpRecipe } from "@/lib/craft-lp";
 import { replayJournal, type JournalEvent } from "@/lib/journal";
 import { loadRecipeDataset, recipeToLp } from "@/lib/recipes";
-import { normalizeAddonScan } from "@/lib/addon-scan";
+import { normalizeAddonScan, type AddonScan, type AddonScanItem } from "@/lib/addon-scan";
 import { productionCapacity } from "@/lib/production-config";
 import { loadAddon } from "../../addon/test/wow-lua";
 

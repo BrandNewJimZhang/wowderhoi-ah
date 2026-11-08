@@ -6,8 +6,7 @@
 // One-off data refresh. Nothing at runtime calls the network: the committed
 // dataset is the authority.
 import { execFileSync } from "node:child_process";
-import { existsSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { normalizeCatalogDataset } from "@/lib/item-catalog";
 

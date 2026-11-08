@@ -4,8 +4,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { prisma } from "@/lib/prisma";
-import { diffCatalog, parseCatalogDataset } from "@/lib/item-catalog";
-import { CATALOG_SOURCE } from "@/lib/item-catalog";
+import { CATALOG_SOURCE, diffCatalog, parseCatalogDataset } from "@/lib/item-catalog";
 
 process.loadEnvFile();
 
