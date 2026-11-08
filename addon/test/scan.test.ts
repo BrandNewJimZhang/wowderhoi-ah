@@ -348,6 +348,9 @@ describe("forever replicate scan v4", () => {
     const lua = auctionPage();
     lua.exec("WowTest.ns.startScan()");
     lua.exec("WowTest.runTimers()");
-    expect(lua.lastChat()).toContain("超时");
+    // The request was not answered; that is not the same failure as a slow
+    // copy, and the message must not send the player into a retry loop.
+    expect(lua.lastChat()).toContain("无应答");
+    expect(lua.lastChat()).not.toContain("没有返回完整副本");
   });
 });

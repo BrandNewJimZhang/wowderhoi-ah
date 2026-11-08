@@ -33,6 +33,10 @@ local FRAME_BUDGET_MS = 8
 -- the request was refused or lost. Abort loudly instead of leaving the
 -- auto-rescan ticker blocked behind a scan that never finishes.
 local SCAN_TIMEOUT_SECONDS = 120
+-- How long the request may wait for its answer. The response has no upper
+-- bound of its own in the client; the watchdog only reports "no answer", it
+-- never aborts a scan whose rows are already arriving.
+local REPLICATE_WAIT_SECONDS = 180
 -- Compiled from src/lib/market-rules.ts; the terminal's elapsed-time floor
 -- reads the same constant, so the ticker and the fill model stay aligned.
 local SCAN_MINUTES = WAH.RULES.scanIntervalMinutes or 15
@@ -46,18 +50,24 @@ local HOUR, DAY = 3600, 86400
 local SCAN_FLOOR_HOURS = AUTO_SCAN_INTERVAL / HOUR
 
 local frame -- created below; scanner helpers close over it
-local scanState = nil -- { itemsById, cursor, total, processing, processMs, capture }
+-- One scan, one owner. The phase is explicit rather than inferred from
+-- booleans: waiting -> rows -> finish -> saved, with abort as the only other
+-- exit. `attemptId` makes every delayed callback check that it still owns
+-- the scan it was scheduled for.
+local scan = nil
 -- The finish phase runs across frames like the row loop: a 170k scan
 -- collapses to thousands of books, and aggregating them all in one
 -- OnUpdate is the stall a player actually feels at the end of a scan.
 local finish = nil
+local scanAttempt = 0
 
 -- Item metadata resolved once per session, not once per scan. The client's
 -- item database loads lazily, so an unresolved lookup is retried next scan
 -- instead of caching a nil class and a zero vendor price forever.
 local itemInfoCache = {}
+-- Admission state moves into SavedVariables in a later step; these two keep
+-- the ticker and the retry hint working until then.
 local lastScanStartedAt = 0
-local scanFailures = 0
 local backoffUntil = 0
 local searchQuietUntil = 0
 
@@ -360,11 +370,18 @@ local function recordAuction(index)
     owner, ownerFullName, _, itemId = C_AuctionHouse.GetReplicateItemInfo(index)
   local timeLeft = C_AuctionHouse.GetReplicateItemTimeLeft
     and timeLeftSeconds(C_AuctionHouse.GetReplicateItemTimeLeft(index)) or nil
-  scanState.apiMs = (scanState.apiMs or 0) + (debugprofilestop() - apiStart)
-  if not (itemId and name) then return end
+  scan.apiMs = (scan.apiMs or 0) + (debugprofilestop() - apiStart)
+  -- A row the client cannot return means the copy was cleared under the
+  -- scan. Counting it is what lets the row phase refuse to publish a book
+  -- with silent holes instead of treating it as a complete observation.
+  if not itemId then
+    scan.badRows = (scan.badRows or 0) + 1
+    return
+  end
+  if not name then return end
   local seller = owner or ownerFullName
 
-  local entry = scanState.itemsById[itemId]
+  local entry = scan.itemsById[itemId]
   if not entry then
     local cached = itemInfoCache[itemId]
     if not cached then
@@ -374,7 +391,7 @@ local function recordAuction(index)
       -- belongs to apiMs rather than the surrounding Lua aggregation.
       local infoStart = debugprofilestop()
       local _, _, _, _, _, itemClass, itemSubClass, _, _, _, vendorPrice = WAH.getItemInfo(itemId)
-      scanState.apiMs = (scanState.apiMs or 0) + (debugprofilestop() - infoStart)
+      scan.apiMs = (scan.apiMs or 0) + (debugprofilestop() - infoStart)
       cached = { class = itemClass, subClass = itemSubClass, vendorP = vendorPrice or 0 }
       if itemClass ~= nil then
         itemInfoCache[itemId] = cached
@@ -383,11 +400,11 @@ local function recordAuction(index)
         -- next scan can price vendor arbitrage for this item.
         local requestStart = debugprofilestop()
         C_Item.RequestLoadItemDataByID(itemId)
-        scanState.apiMs = (scanState.apiMs or 0) + (debugprofilestop() - requestStart)
+        scan.apiMs = (scan.apiMs or 0) + (debugprofilestop() - requestStart)
       end
     end
     entry = newEntry(name, quality, cached)
-    scanState.itemsById[itemId] = entry
+    scan.itemsById[itemId] = entry
   end
 
   -- Own listings are not market supply. Identify by owner name first; when
@@ -730,11 +747,11 @@ end
 -- Aggregate one item's book. The finish phase calls this inside a frame
 -- budget, one book at a time, so a 6,000-book market cannot stall a frame.
 local function finishItem(itemId)
-  local entry = scanState.itemsById[itemId]
+  local entry = scan.itemsById[itemId]
   if not entry then return end
   -- Release the row accumulator as soon as its book is aggregated; at 170k
   -- listings the flow tables are the largest structure alive during finish.
-  scanState.itemsById[itemId] = nil
+  scan.itemsById[itemId] = nil
   finish.itemCount = finish.itemCount + 1
 
   if entry.hasBuyout then
@@ -840,6 +857,38 @@ local function finishItem(itemId)
   end
 end
 
+-- Every exit writes the same record: success, no response, browse failure,
+-- a closed auction house or a cleared replicate. /wahdiag can then answer
+-- which phase the scan actually reached instead of only naming the last
+-- symptom. A reason of nil means the scan saved.
+local function buildScanStats(reason)
+  local s, f = scan, finish
+  local apiMs = s and s.apiMs or 0
+  local processMs = s and s.processMs or 0
+  WAH.lastScanStats = {
+    attemptId = s and s.attemptId or 0,
+    phase = s and s.phase or "idle",
+    reason = reason,
+    rows = s and math.max(0, (s.cursor or 1) - 1) or 0,
+    cursor = s and math.max(0, (s.cursor or 1) - 1) or 0,
+    total = s and s.total or 0,
+    waitMs = s and s.waitMs or 0,
+    apiMs = apiMs,
+    processMs = processMs,
+    luaMs = math.max(0, processMs - apiMs),
+    finishMs = f and f.finishMs or 0,
+    finishFrameMaxMs = f and f.frameMaxMs or 0,
+    finishFrames = f and f.frames or 0,
+    frames = s and s.frames or 0,
+    responseVia = s and s.responseVia,
+    itemsMissingInfo = s and s.itemsMissingInfo or 0,
+    badRows = s and s.badRows or 0,
+    seriesBudget = f and f.seriesBudget or (s and s.seriesBudget),
+    saveMs = 0
+  }
+  return WAH.lastScanStats
+end
+
 -- Write SavedVariables one frame after the last aggregation frame, so the
 -- payload serialisation is not part of the finish stall. The desktop watcher
 -- still sees the scan within seconds, not at the next logout.
@@ -848,22 +897,13 @@ local function flushFinishedScan()
   -- The last finish frame also builds ScanData/Capture and enforces the
   -- series cap. Publishing the stats here attributes that work instead of
   -- reporting the finish as if assembly were free.
-  WAH.lastScanStats = {
-    rows = finish.totalAuctions or 0,
-    waitMs = finish.waitMs,
-    apiMs = finish.apiMs,
-    luaMs = math.max(0, finish.processMs - finish.apiMs),
-    processMs = finish.processMs,
-    finishMs = finish.finishMs,
-    finishFrameMaxMs = finish.frameMaxMs,
-    finishFrames = finish.frames,
-    saveMs = 0
-  }
+  local stats = buildScanStats(nil)
+  stats.phase = "saved"
   local saveStart = debugprofilestop()
   WAH.flush()
-  WAH.lastScanStats.saveMs = debugprofilestop() - saveStart
+  stats.saveMs = debugprofilestop() - saveStart
   finish = nil
-  scanState = nil
+  scan = nil
   WAH.scanRunning = false
   frame:SetScript("OnUpdate", nil)
 end
@@ -899,7 +939,7 @@ local function finalizeFinish()
     items = finish.captureItems
   }
   finalizeSeries(finish.market)
-  scanFailures = 0
+  scan.phase = "saved"
   chatMessage(string.format(
     L.SCAN_COMPLETE .. "%s",
     finish.totalAuctions or 0, finish.itemCount,
@@ -929,6 +969,7 @@ local function processFinishChunk()
 end
 
 local function beginFinish(totalAuctions)
+  scan.phase = "finish"
   -- A pipeline bump redefines every field, so old data is discarded rather
   -- than reinterpreted. This reset must run before the new series is read.
   local previousScan = WoWderhoiAH_ScanData
@@ -941,7 +982,7 @@ local function beginFinish(totalAuctions)
   local market = ensureSeries()
   market.firstScanAt = math.min(market.firstScanAt or nowTs, nowTs)
   local phase = WAH.currentPhase and WAH.currentPhase() or "steady"
-  local previous = scanState.capture
+  local previous = scan.capture
   local elapsedSeconds = previous and (nowTs - (previous.at or nowTs)) or 0
   -- The journal is the only place a purchase is a fact. The flow inference
   -- subtracts these units; see inferFlow.
@@ -950,9 +991,14 @@ local function beginFinish(totalAuctions)
     ownBuys = WAH.Ledger.purchasesBetween(previous.at, nowTs)
   end
   local itemIds = {}
-  for itemId in pairs(scanState.itemsById) do itemIds[#itemIds + 1] = itemId end
+  for itemId in pairs(scan.itemsById) do itemIds[#itemIds + 1] = itemId end
+  -- The per-item history budget follows the market's breadth: a fixed cap
+  -- divided by a growing item count silently shrinks every item's window.
+  local seriesBudget = math.max(8, math.floor(SERIES_CAP / math.max(1, #itemIds)))
+  scan.seriesBudget = seriesBudget
   finish = {
     totalAuctions = totalAuctions,
+    seriesBudget = seriesBudget,
     nowTs = nowTs,
     market = market,
     phase = phase,
@@ -966,19 +1012,26 @@ local function beginFinish(totalAuctions)
     captureItems = {},
     itemCount = 0,
     seriesWindow = historyWindowForPhase(phase),
-    waitMs = scanState.waitMs or 0,
-    processMs = scanState.processMs or 0,
-    apiMs = scanState.apiMs or 0,
+    waitMs = scan.waitMs or 0,
+    processMs = scan.processMs or 0,
+    apiMs = scan.apiMs or 0,
     finishMs = 0,
     frameMaxMs = 0,
     frames = 0
   }
 end
 
+local abortScan -- forward declaration: the row loop can detect a cleared copy
+
+local function stopScanTimers(s)
+  if s.watchdog then s.watchdog:Cancel(); s.watchdog = nil end
+  if s.hydrateTimer then s.hydrateTimer:Cancel(); s.hydrateTimer = nil end
+end
+
 local function processReplicateChunk()
-  if not scanState then return end
-  local total = scanState.total or 0
-  local index = scanState.cursor or 1
+  if not scan or scan.phase ~= "rows" then return end
+  local total = scan.total or 0
+  local index = scan.cursor or 1
   local frameStart = debugprofilestop()
   local processed = 0
   -- The cursor always points at the next unprocessed row. Advancing before
@@ -991,24 +1044,76 @@ local function processReplicateChunk()
     processed = processed + 1
     if debugprofilestop() - frameStart >= FRAME_BUDGET_MS then break end
   end
-  scanState.cursor = index
-  scanState.processMs = (scanState.processMs or 0) + (debugprofilestop() - frameStart)
+  scan.cursor = index
+  scan.processMs = (scan.processMs or 0) + (debugprofilestop() - frameStart)
+  scan.frames = (scan.frames or 0) + 1
   if index > total then
+    -- A row the client could not return means the copy was cleared under
+    -- us. Publishing the remainder would be a snapshot with silent holes.
+    if (scan.badRows or 0) > 0 then
+      abortScan("replicate_cleared")
+      return
+    end
     -- Keep the OnUpdate alive: the finish phase slices its own work.
     frame:SetScript("OnUpdate", processFinishChunk)
     beginFinish(total)
   end
 end
 
-local function startProcessing()
-  if scanState.processing then return end
-  scanState.processing = true
-  scanState.cursor = 1
+local function startRows()
+  if not scan or scan.phase ~= "waiting" then return end
+  scan.phase = "rows"
+  scan.cursor = 1
+  if scan.watchdog then scan.watchdog:Cancel(); scan.watchdog = nil end
   -- Time spent waiting for the server, kept apart from the time spent
   -- processing it: only one of the two is ours.
-  scanState.waitMs = debugprofilestop() - (scanState.requestAt or debugprofilestop())
-  chatMessage(string.format(L.SCAN_RECEIVED, scanState.total))
+  scan.waitMs = debugprofilestop() - (scan.requestProfile or debugprofilestop())
+  chatMessage(string.format(L.SCAN_RECEIVED, scan.total))
   frame:SetScript("OnUpdate", processReplicateChunk)
+end
+
+-- The dedicated replicate event is the acknowledgement. The browse signals
+-- stay as a fallback for client builds that publish the copy there, but a
+-- browse event alone cannot prove the copy answers THIS request: an old
+-- replicate still in memory would be consumed as a fresh scan. The fallback
+-- therefore requires a non-zero copy and no player search in flight.
+local function acceptReplicate(via)
+  if not scan or scan.phase ~= "waiting" then return end
+  local total = C_AuctionHouse.GetNumReplicateItems() or 0
+  if total == 0 then
+    if via == "replicate" then abortScan("empty") end
+    return
+  end
+  scan.total = total
+  scan.responseVia = via
+  startRows()
+end
+
+abortScan = function(reason)
+  local s = scan
+  if not s then return end
+  stopScanTimers(s)
+  frame:SetScript("OnUpdate", nil)
+  -- Stats read the scan and the finish table, so they must be built before
+  -- either is released.
+  buildScanStats(reason)
+  scan = nil
+  finish = nil
+  WAH.scanRunning = false
+  if reason == "no_response" then
+    chatMessage(string.format(L.SCAN_NO_RESPONSE, REPLICATE_WAIT_SECONDS))
+  elseif reason == "browse_failure" then
+    chatMessage(L.SCAN_BROWSE_FAILURE)
+  elseif reason == "replicate_cleared" then
+    chatMessage(string.format(L.SCAN_REPLICATE_CLEARED, s.badRows or 0))
+  elseif reason == "empty" then
+    chatMessage(L.SCAN_EMPTY_RESPONSE)
+  else
+    chatMessage(L.SCAN_ABORTED)
+  end
+  if reason == "no_response" or reason == "browse_failure" then
+    backoffUntil = time() + SCAN_TIMEOUT_SECONDS
+  end
 end
 
 local function ahIsOpen()
@@ -1020,52 +1125,59 @@ end
 local function startScan()
   if not ahIsOpen() then
     chatMessage(L.SCAN_OPEN_AH_FIRST)
-    return
+    return false
   end
-  if scanState then
+  if scan then
     chatMessage(L.SCAN_ALREADY_RUNNING)
-    return
+    return false
   end
   -- The owned list is the fallback for hidden owners, and it must reflect
   -- the book as it is at scan start; a listing bought since the last query
   -- would otherwise be matched against a stale list.
   refreshOwnedSnapshot()
-  scanState = {
+  scanAttempt = scanAttempt + 1
+  scan = {
+    attemptId = scanAttempt,
+    phase = "waiting",
+    cursor = 1,
     itemsById = {},
-    processing = false,
     processMs = 0,
     apiMs = 0,
-    requestAt = debugprofilestop(),
+    frames = 0,
+    waitMs = 0,
+    badRows = 0,
+    missingInfo = {},
+    resolvedInfo = {},
+    itemsMissingInfo = 0,
+    requestAt = time(),
+    requestProfile = debugprofilestop(),
     capture = previousCapture()
   }
   WAH.scanRunning = true
   lastScanStartedAt = time()
   chatMessage(L.SCAN_GETALL_START)
-  local generation = scanState
+  local attempt = scan.attemptId
   C_AuctionHouse.ReplicateItems()
   C_Timer.After(SCAN_TIMEOUT_SECONDS, function()
-    -- A finish in progress has the response in hand; only a scan still
-    -- waiting on the server can time out.
-    if scanState ~= generation or finish then return end
-    frame:SetScript("OnUpdate", nil)
-    scanState = nil
-    WAH.scanRunning = false
-    scanFailures = scanFailures + 1
-    -- Exponential backoff: a refused or lost replicate should not be
-    -- retried on the same 15-minute cadence that caused it.
-    backoffUntil = time() + math.min(120 * scanFailures, 600)
-    chatMessage(L.SCAN_TIMEOUT)
+    -- Only a scan still waiting on the server can time out; once rows are
+    -- arriving the success is already determined.
+    if scan and scan.attemptId == attempt and scan.phase == "waiting" then
+      abortScan("no_response")
+    end
   end)
+  return true
 end
 
 frame = CreateFrame("Frame")
--- ReplicateItems publishes through the browse-result signals; item searches
--- publish through NEW_RESULTS_RECEIVED. Both are registered because the
--- client's exact signal depends on which query populated the results.
+-- The 1.60 client publishes the replicate copy through its own event. The
+-- browse signals stay registered as fallbacks and as the player-search
+-- signal; item searches publish NEW_RESULTS_RECEIVED with an itemKey.
 frame:RegisterEvent("AUCTION_HOUSE_SHOW")
+frame:RegisterEvent("REPLICATE_ITEM_LIST_UPDATE")
 frame:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
 frame:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_ADDED")
 frame:RegisterEvent("AUCTION_HOUSE_NEW_RESULTS_RECEIVED")
+frame:RegisterEvent("AUCTION_HOUSE_BROWSE_FAILURE")
 frame:RegisterEvent("AUCTION_HOUSE_CLOSED")
 -- The owned-auction response is asynchronous; keep the fallback snapshot
 -- fresh whenever the client publishes one.
@@ -1073,6 +1185,7 @@ frame:RegisterEvent("OWNED_AUCTIONS_UPDATED")
 
 local function markPlayerSearch()
   searchQuietUntil = time() + SEARCH_QUIET_SECONDS
+  if scan then scan.searchSeen = true end
 end
 
 frame:SetScript("OnEvent", function(_, event, payload)
@@ -1084,18 +1197,25 @@ frame:SetScript("OnEvent", function(_, event, payload)
   if event == "OWNED_AUCTIONS_UPDATED" then
     -- A scan in flight must keep the snapshot it started with; rebuilding
     -- mid-scan would attribute rows against a list that moved underneath.
-    if not scanState then captureOwnedSnapshot() end
+    if not scan then captureOwnedSnapshot() end
     return
   end
   if event == "AUCTION_HOUSE_CLOSED" then
     WAH.ahOpen = false
-    if scanState then
-      frame:SetScript("OnUpdate", nil)
-      scanState = nil
-      finish = nil
-      WAH.scanRunning = false
-      chatMessage(L.SCAN_ABORTED)
+    -- The row phase still reads the client's copy, which a closed house may
+    -- clear; the finish phase works on tables this addon owns, so it must
+    -- run to completion rather than discard a response already in hand.
+    if scan and (scan.phase == "waiting" or scan.phase == "rows") then
+      abortScan("ah_closed")
     end
+    return
+  end
+  if event == "AUCTION_HOUSE_BROWSE_FAILURE" then
+    if scan and scan.phase == "waiting" then abortScan("browse_failure") end
+    return
+  end
+  if event == "REPLICATE_ITEM_LIST_UPDATE" then
+    if scan and scan.phase == "waiting" then acceptReplicate("replicate") end
     return
   end
   -- A NEW_RESULTS_RECEIVED with an itemKey belongs to an item search. Let
@@ -1105,15 +1225,8 @@ frame:SetScript("OnEvent", function(_, event, payload)
     markPlayerSearch()
     return
   end
-  if not scanState or scanState.processing then return end
-  -- A browse signal can fire before the replicate response arrives, and an
-  -- unrelated browse can fire it later. Only a non-zero replicate count
-  -- proves the response we are waiting for landed.
-  if not scanState.total then
-    local total = C_AuctionHouse.GetNumReplicateItems()
-    if not total or total == 0 then return end
-    scanState.total = total
-    startProcessing()
+  if scan and scan.phase == "waiting" and not scan.searchSeen then
+    acceptReplicate("fallback")
   end
 end)
 
@@ -1121,7 +1234,7 @@ end)
 -- interval elapses. Player searches pause the ticker so an automatic copy
 -- never overwrites the results the player is reading.
 C_Timer.NewTicker(20, function()
-  if not autoScanOn() or scanState then return end
+  if not autoScanOn() or scan then return end
   if not ahIsOpen() then return end
   if time() < backoffUntil then return end
   if time() < searchQuietUntil then return end
