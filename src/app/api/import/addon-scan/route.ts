@@ -187,9 +187,18 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-  const book = journalPresent
-    ? bookForCharacter(parseJournal(payload.journal), scan.character ? [scan.server, scan.faction, scan.character].join("|") : null)
-    : null;
+  const bookKey = scan.character ? [scan.server, scan.faction, scan.character].join("|") : null;
+  const book = journalPresent ? bookForCharacter(parseJournal(payload.journal), bookKey) : null;
+  // A journal-bearing scan is the authoritative ledger for its character:
+  // the import replaces every position and trade with the replay. A book
+  // key that does not match the scan is a data mismatch, not an empty
+  // ledger, and replaying it as empty would erase the real one.
+  if (journalPresent && !book) {
+    return NextResponse.json(
+      { error: `Journal carries no book for ${bookKey}; refusing to replace the ledger` },
+      { status: 400 }
+    );
+  }
   const replay = journalPresent ? replayJournal(book?.events ?? []) : null;
   const journalEvents = book?.events.length ?? 0;
 
