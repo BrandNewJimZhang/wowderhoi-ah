@@ -4,9 +4,11 @@
 // SavedVariables file is available, and materialises one generation from
 // each market's newest snapshot.
 //
-// The legacy tables are read through raw SQL: they no longer exist in the
-// Prisma schema, but an old database still needs this path once. A database
-// that never had them is simply the no-op case.
+// The legacy tables are read through raw SQL and held in memory before the
+// Prisma schema is pushed: `db push` drops every table the schema no longer
+// declares, so pushing first would erase the very history this script
+// exists to import. A database that never had them is the no-op case.
+import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { prisma } from "@/lib/prisma";
 import { parseSavedVariables, type AddonScan, type AddonScanItem } from "@/lib/addon-scan";
@@ -22,6 +24,7 @@ import type { MarketScope } from "@/lib/market-scope";
 process.loadEnvFile();
 
 type LegacySnapshot = {
+  marketId: string;
   itemId: number;
   timestamp: Date;
   priced: boolean;
@@ -52,6 +55,7 @@ type LegacySnapshot = {
 };
 
 type LegacyDaily = {
+  marketId: string;
   itemId: number;
   date: Date;
   closePrice: number;
@@ -90,62 +94,78 @@ async function tableExists(name: string): Promise<boolean> {
   return rows.length > 0;
 }
 
-async function loadSnapshots(marketId: string): Promise<LegacySnapshot[]> {
-  if (!(await tableExists("AuctionSnapshot"))) return [];
-  const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT item_id, timestamp, priced, min_price, market_price, sell_price, p5_price, quantity,
-            num_auctions, seller_count, sellers_invisible, owner_visible, observation_version,
-            seller_hhi, top_seller_share, market_type, bid_only_count, highest_bid, sold_proxy_low,
-            sold_proxy_high, flow_observed, supply_growth, history_samples, history_span_hours,
-            tier_truncated, top_tiers, expiring
-     FROM "AuctionSnapshot" WHERE market_id = ? ORDER BY timestamp ASC`,
-    marketId
-  );
-  return rows.map((row) => ({
-    itemId: Number(row.item_id),
-    timestamp: new Date(numberOr(row.timestamp)),
-    priced: booleanOf(row.priced),
-    minPrice: numberOr(row.min_price),
-    marketPrice: numberOr(row.market_price),
-    sellPrice: numberOr(row.sell_price),
-    p5Price: numberOr(row.p5_price),
-    quantity: numberOr(row.quantity),
-    numAuctions: numberOr(row.num_auctions),
-    sellerCount: numberOr(row.seller_count),
-    sellersInvisible: booleanOf(row.sellers_invisible),
-    ownerVisible: booleanOf(row.owner_visible),
-    observationVersion: row.observation_version === null ? null : numberOr(row.observation_version),
-    sellerHHI: row.seller_hhi === null ? null : numberOr(row.seller_hhi),
-    topSellerShare: row.top_seller_share === null ? null : numberOr(row.top_seller_share),
-    marketType: typeof row.market_type === "string" ? row.market_type : null,
-    bidOnlyCount: numberOr(row.bid_only_count),
-    highestBid: numberOr(row.highest_bid),
-    soldProxyLow: numberOr(row.sold_proxy_low),
-    soldProxyHigh: numberOr(row.sold_proxy_high),
-    flowObserved: booleanOf(row.flow_observed),
-    supplyGrowth: numberOr(row.supply_growth),
-    historySamples: row.history_samples === null ? null : numberOr(row.history_samples),
-    historySpanHours: row.history_span_hours === null ? null : numberOr(row.history_span_hours),
-    tierTruncated: booleanOf(row.tier_truncated),
-    topTiers: jsonOf(row.top_tiers),
-    expiring: jsonOf(row.expiring)
-  }));
+// Raw SQL does not validate against the Prisma schema, so the legacy tables
+// load before the new models exist. Everything is read up front because
+// `db push` destroys these tables.
+async function loadLegacyRows(): Promise<{ snapshots: LegacySnapshot[]; dailies: LegacyDaily[] }> {
+  const snapshots: LegacySnapshot[] = [];
+  if (await tableExists("AuctionSnapshot")) {
+    const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+      `SELECT market_id, item_id, timestamp, priced, min_price, market_price, sell_price, p5_price, quantity,
+              num_auctions, seller_count, sellers_invisible, owner_visible, observation_version,
+              seller_hhi, top_seller_share, market_type, bid_only_count, highest_bid, sold_proxy_low,
+              sold_proxy_high, flow_observed, supply_growth, history_samples, history_span_hours,
+              tier_truncated, top_tiers, expiring
+       FROM "AuctionSnapshot" ORDER BY timestamp ASC`
+    );
+    snapshots.push(...rows.map((row) => ({
+      marketId: String(row.market_id),
+      itemId: Number(row.item_id),
+      timestamp: new Date(numberOr(row.timestamp)),
+      priced: booleanOf(row.priced),
+      minPrice: numberOr(row.min_price),
+      marketPrice: numberOr(row.market_price),
+      sellPrice: numberOr(row.sell_price),
+      p5Price: numberOr(row.p5_price),
+      quantity: numberOr(row.quantity),
+      numAuctions: numberOr(row.num_auctions),
+      sellerCount: numberOr(row.seller_count),
+      sellersInvisible: booleanOf(row.sellers_invisible),
+      ownerVisible: booleanOf(row.owner_visible),
+      observationVersion: row.observation_version === null ? null : numberOr(row.observation_version),
+      sellerHHI: row.seller_hhi === null ? null : numberOr(row.seller_hhi),
+      topSellerShare: row.top_seller_share === null ? null : numberOr(row.top_seller_share),
+      marketType: typeof row.market_type === "string" ? row.market_type : null,
+      bidOnlyCount: numberOr(row.bid_only_count),
+      highestBid: numberOr(row.highest_bid),
+      soldProxyLow: numberOr(row.sold_proxy_low),
+      soldProxyHigh: numberOr(row.sold_proxy_high),
+      flowObserved: booleanOf(row.flow_observed),
+      supplyGrowth: numberOr(row.supply_growth),
+      historySamples: row.history_samples === null ? null : numberOr(row.history_samples),
+      historySpanHours: row.history_span_hours === null ? null : numberOr(row.history_span_hours),
+      tierTruncated: booleanOf(row.tier_truncated),
+      topTiers: jsonOf(row.top_tiers),
+      expiring: jsonOf(row.expiring)
+    })));
+  }
+
+  const dailies: LegacyDaily[] = [];
+  if (await tableExists("DailySummary")) {
+    const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+      `SELECT market_id, item_id, date, close_price, low_price, volume
+       FROM "DailySummary" ORDER BY date ASC`
+    );
+    dailies.push(...rows.map((row) => ({
+      marketId: String(row.market_id),
+      itemId: Number(row.item_id),
+      date: new Date(numberOr(row.date)),
+      closePrice: numberOr(row.close_price),
+      lowPrice: numberOr(row.low_price),
+      volume: numberOr(row.volume)
+    })));
+  }
+  return { snapshots, dailies };
 }
 
-async function loadDailies(marketId: string): Promise<LegacyDaily[]> {
-  if (!(await tableExists("DailySummary"))) return [];
-  const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT item_id, date, close_price, low_price, volume
-     FROM "DailySummary" WHERE market_id = ? ORDER BY date ASC`,
-    marketId
-  );
-  return rows.map((row) => ({
-    itemId: Number(row.item_id),
-    date: new Date(numberOr(row.date)),
-    closePrice: numberOr(row.close_price),
-    lowPrice: numberOr(row.low_price),
-    volume: numberOr(row.volume)
-  }));
+function groupByMarket<T extends { marketId: string }>(rows: readonly T[]): Map<string, T[]> {
+  const out = new Map<string, T[]>();
+  for (const row of rows) {
+    const list = out.get(row.marketId) ?? [];
+    list.push(row);
+    out.set(row.marketId, list);
+  }
+  return out;
 }
 
 function tiersOf(raw: unknown): AddonScanItem["tiers"] {
@@ -185,15 +205,23 @@ function addonSeriesFor(path: string | undefined): Map<string, AddonSeries> {
 }
 
 async function main() {
+  const legacy = await loadLegacyRows();
+  // Push the schema only after the legacy rows are in memory. `db push`
+  // drops tables the schema no longer declares, so pushing first would
+  // erase the history. --skip-generate because a running dev server holds
+  // the query engine DLL on Windows.
+  execSync("npx prisma db push --accept-data-loss --skip-generate", { stdio: "inherit" });
   const addonSeries = addonSeriesFor(process.env.AQT_SAVEDVARS_PATH);
   const markets = await prisma.market.findMany();
   const knownItemIds = new Set((await prisma.item.findMany({ select: { itemId: true } })).map((row) => row.itemId));
+  const snapshotsByMarket = groupByMarket(legacy.snapshots);
+  const dailiesByMarket = groupByMarket(legacy.dailies);
   let generations = 0;
   let seriesRows = 0;
 
   for (const market of markets) {
-    const snapshots = await loadSnapshots(market.id);
-    const dailies = await loadDailies(market.id);
+    const snapshots = snapshotsByMarket.get(market.id) ?? [];
+    const dailies = dailiesByMarket.get(market.id) ?? [];
     const existingRows = await prisma.itemSeries.findMany({ where: { marketId: market.id } });
     if (snapshots.length === 0 && dailies.length === 0 && existingRows.length === 0) continue;
 
@@ -385,22 +413,10 @@ async function main() {
     UPDATE "Item" SET vendor_price = NULL
     WHERE catalog_source = ${SCAN_SOURCE} AND category = 'unknown' AND vendor_price = 0
   `;
-  const dropped = await dropLegacyTables();
   console.log(
     `Wrote ${generations} generations and ${seriesRows} item series; `
-    + `relabelled ${Number(relabelled)} unknown vendor prices; dropped ${dropped} legacy tables.`
+    + `relabelled ${Number(relabelled)} unknown vendor prices; the schema push dropped the legacy tables.`
   );
-}
-
-async function dropLegacyTables(): Promise<number> {
-  let dropped = 0;
-  for (const table of ["AuctionSnapshot", "DailySummary"]) {
-    if (await tableExists(table)) {
-      await prisma.$executeRawUnsafe(`DROP TABLE "${table}"`);
-      dropped += 1;
-    }
-  }
-  return dropped;
 }
 
 void main()

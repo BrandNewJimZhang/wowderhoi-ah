@@ -175,14 +175,13 @@ with no events shows an empty ledger rather than an alt's holdings; a
 scan-only import that carries no journal leaves the recorded character
 and ledger untouched.
 
-Upgrading an existing `prisma/dev.db` from the snapshot read model: run
-`npm run read-model:backfill` once. It rebuilds `ItemSeries` from the legacy
-snapshots and daily summaries, merges the addon series when the
-SavedVariables file is configured, materialises one generation per market
-and drops the two legacy tables. It is idempotent. A new database does not
-need it. When the schema has dropped a column since your last pull, push it
-first with `npm run db:push -- --accept-data-loss`; Prisma refuses a
-destructive push without the flag, and the backfill needs the new shape.
+Upgrading an existing `prisma/dev.db` from the snapshot read model: back it
+up, then run `npm run read-model:backfill` once. The script reads the legacy
+snapshot and daily-summary rows into memory before pushing the current
+schema (the push drops those tables, so it must not run first), rebuilds
+`ItemSeries` from them, merges the addon series when the SavedVariables file
+is configured and materialises one generation per market. It is idempotent
+and pushes the schema itself, so a new database does not need it.
 
 ### Recipe data
 

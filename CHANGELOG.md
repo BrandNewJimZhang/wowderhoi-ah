@@ -173,6 +173,11 @@
   accepted the `GameTooltip` global. It now appends to the frame the client
   names and resolves the item through `TooltipUtil.GetDisplayedItem`, so
   bags, clicked chat links and the auction house all carry the block.
+- The read-model migration exports the legacy snapshot and daily-summary
+  rows before pushing the schema. `db push` drops tables the schema no
+  longer declares, so the documented push-first order would have erased
+  the history the backfill exists to import; the script now pushes itself
+  and reads the rows through raw SQL first.
 - Replaying a scan no longer erases trade attribution. A duplicate import
   rebuilds every trade from the journal; it now loads stored adoptions
   regardless of scan age, and the decision prune keeps rows a permanent
