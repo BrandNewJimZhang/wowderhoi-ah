@@ -20,13 +20,59 @@
 -- passing here passes there. Upgrade path if integer-sensitive code ever
 -- lands: run the same stub under a real 5.1 binary.
 
-local bed = { chat = {}, frames = {}, timers = {}, hooks = {}, listings = {}, itemInfo = {}, ns = {} }
+local bed = { chat = {}, frames = {}, timers = {}, tickers = {}, hooks = {}, listings = {}, itemInfo = {}, ns = {} }
 WowTest = bed
 
 local NOW = 1700000000 -- fixed clock; real time() would make history windows flaky
 local clockOffset = 0
--- Tests that need two adjacent scans advance this instead of sleeping.
-function bed.advance(seconds) clockOffset = clockOffset + (seconds or 0) end
+-- Work the scanner does per client call, in milliseconds. Zero by default so
+-- the per-frame budget never trips; a test that needs a long scan turns it on
+-- and simulates the client spending real time on rows.
+local stepCostMs = 0
+local profilerMs = 0
+
+function debugprofilestop()
+  local value = profilerMs
+  profilerMs = profilerMs + stepCostMs
+  return value
+end
+
+function bed.setFrameCost(ms) stepCostMs = ms end
+function bed.resetProfiler() profilerMs = 0 end
+
+-- Advance the wall clock and run everything that became due: timers first,
+-- then ticker intervals. Callbacks may schedule more work, so the loop runs
+-- until nothing else is due.
+function bed.advance(seconds)
+  clockOffset = clockOffset + (seconds or 0)
+  local target = NOW + clockOffset
+  local guard = 0
+  while guard < 10000 do
+    guard = guard + 1
+    local earliest, earliestIndex
+    for index, entry in ipairs(bed.timers) do
+      if not entry.cancelled and (not earliest or entry.due < earliest.due) then
+        earliest, earliestIndex = entry, index
+      end
+    end
+    local tickerDue
+    for _, ticker in ipairs(bed.tickers) do
+      if not ticker.cancelled and ticker.nextAt <= target
+        and (not tickerDue or ticker.nextAt < tickerDue.nextAt) then
+        tickerDue = ticker
+      end
+    end
+    local timerDue = earliest and earliest.due <= target and earliest or nil
+    if not timerDue and not tickerDue then break end
+    if timerDue and (not tickerDue or timerDue.due <= tickerDue.nextAt) then
+      table.remove(bed.timers, earliestIndex)
+      if not timerDue.cancelled then timerDue.callback() end
+    else
+      tickerDue.nextAt = tickerDue.nextAt + tickerDue.interval
+      tickerDue.callback()
+    end
+  end
+end
 
 local function noop() end
 
@@ -171,12 +217,21 @@ function hooksecurefunc(target, name, handler)
   end
 end
 
+-- C_Timer is called with a dot in this client (no implicit self): the first
+-- argument is the delay or interval.
 C_Timer = {
-  After = function(_, callback) bed.timers[#bed.timers + 1] = callback end,
-  NewTicker = function(_, callback)
-    bed.tickers = bed.tickers or {}
-    table.insert(bed.tickers, callback)
-    return { Cancel = noop }
+  After = function(delay, callback)
+    bed.timers[#bed.timers + 1] = { due = time() + (delay or 0), callback = callback }
+  end,
+  NewTimer = function(delay, callback)
+    local entry = { due = time() + (delay or 0), callback = callback }
+    bed.timers[#bed.timers + 1] = entry
+    return { Cancel = function() entry.cancelled = true end }
+  end,
+  NewTicker = function(interval, callback)
+    local ticker = { interval = interval, nextAt = time() + interval, callback = callback }
+    bed.tickers[#bed.tickers + 1] = ticker
+    return { Cancel = function() ticker.cancelled = true end }
   end
 }
 
@@ -188,7 +243,6 @@ end
 function GetLocale() return bed.locale or "zhCN" end
 function time() return NOW + clockOffset end
 function date(format, when) return os.date(format, when or NOW) end
-function debugprofilestop() return 0 end -- never trip the per-frame yield budget
 function GetRealmName() return "TestRealm" end
 function UnitFactionGroup() return "Alliance" end
 function UnitName() return "Tester" end
@@ -224,8 +278,18 @@ C_Item = {
       nil, nil, nil, info.vendorP or 0
   end,
   GetItemIconByID = function(itemId) return "icon:" .. tostring(itemId) end,
-  RequestLoadItemDataByID = function() end
+  RequestLoadItemDataByID = function(itemId)
+    bed.requestedItemData = bed.requestedItemData or {}
+    bed.requestedItemData[itemId] = true
+  end
 }
+
+-- The client answers a lazy item-record request with ITEM_DATA_LOAD_RESULT.
+-- Tests drive that event explicitly; the fixture may update bed.itemInfo
+-- first so a successful answer also changes what GetItemInfo returns.
+function bed.sendItemDataLoaded(itemId, success)
+  bed.fireEvent("ITEM_DATA_LOAD_RESULT", itemId, success ~= false)
+end
 
 C_CurrencyInfo = {
   GetCoinTextureString = function(copper)
@@ -278,7 +342,7 @@ C_AuctionHouse = {
     return item.name, "texture", item.count, item.quality or 1, true, 1, "Item",
       item.minBid or 0, 0, item.buyout, item.bid or 0, item.highBidder, nil,
       owner, owner and (owner .. "-Realm") or nil, item.saleStatus or 0,
-      item.itemId, true
+      item.itemId, item.hasAllInfo ~= false
   end,
   GetReplicateItemTimeLeft = function(index)
     local item = ah.replicate[index]
@@ -549,10 +613,34 @@ function bed.fireEvent(event, ...)
   end
 end
 
+-- Fire every pending timer now, regardless of its due time. The old stub
+-- promised exactly this; tests that model a timer firing use advance()
+-- instead, and tests that only need "the callback runs" keep this helper.
 function bed.runTimers()
   local pending = bed.timers
   bed.timers = {}
-  for _, callback in ipairs(pending) do callback() end
+  for _, entry in ipairs(pending) do
+    if not entry.cancelled then entry.callback() end
+  end
+end
+
+-- The replicate response has its own event in the 1.60 client. Browse
+-- events are a fallback signal, not the acknowledgement itself.
+function bed.fireReplicate()
+  bed.fireEvent("REPLICATE_ITEM_LIST_UPDATE")
+end
+
+-- Wall-clock milliseconds a simulated frame takes. Non-zero values let a
+-- test model a slow client: the scan keeps its OnUpdate loop but the world
+-- clock moves as if frames were far apart.
+function bed.tickFrames(count, frameMs)
+  for _ = 1, count do
+    for _, frame in ipairs(bed.frames) do
+      local update = frame._scripts and frame._scripts.OnUpdate
+      if update then update(frame) end
+    end
+    if frameMs and frameMs > 0 then bed.advance(frameMs / 1000) end
+  end
 end
 
 function bed.clickButton(text)
@@ -895,6 +983,13 @@ function bed.wrappingCells()
     for _, cell in ipairs(row.cells) do check(cell) end
   end
   return wrapping
+end
+
+function bed.lastStats() return WowTest.ns.lastScanStats end
+
+function bed.requestScan(origin)
+  if WowTest.ns.requestScan then return WowTest.ns.requestScan(origin or "manual") end
+  return WowTest.ns.startScan()
 end
 
 function bed.lastChat() return bed.plain(bed.chat[#bed.chat] or "") end
