@@ -1,11 +1,12 @@
 import { splitCopper } from "@/lib/wow-money";
 
-// Wowhead-style money: numeric parts followed by the classic coin
-// icons (public zamimg sprites, same source Wowhead pages use).
+// Wowhead-style money: numeric parts followed by the classic coin icons.
+// The three sprites are self-hosted: zamimg is region-blocked here, and a
+// broken external image would stall every money cell on the page.
 const COIN_ICONS = {
-  gold: "https://wow.zamimg.com/images/icons/money-gold.gif",
-  silver: "https://wow.zamimg.com/images/icons/money-silver.gif",
-  copper: "https://wow.zamimg.com/images/icons/money-copper.gif"
+  gold: "/ui/money-gold.gif",
+  silver: "/ui/money-silver.gif",
+  copper: "/ui/money-copper.gif"
 } as const;
 
 function CoinPart({ value, kind }: { value: number; kind: keyof typeof COIN_ICONS }) {
