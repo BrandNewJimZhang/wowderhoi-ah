@@ -99,7 +99,11 @@ export default async function Home() {
   const weekRealized = confirmedWeek.reduce((sum, trade) => sum + trade.pnl, 0);
   const inferredWeek = recentTrades.length - confirmedWeek.length;
 
-  const movers = signals.filter((signal) => !signal.stale && Number.isFinite(signal.changePercent));
+  // A move on a 4-copper junk item is noise in a dashboard: keep the
+  // movers to books with a real price and enough listings to trade.
+  const movers = signals.filter((signal) =>
+    !signal.stale && signal.sellPrice >= 1000 && signal.quantity >= 20 && Number.isFinite(signal.changePercent)
+  );
   const gainers = [...movers].sort((left, right) => right.changePercent - left.changePercent).slice(0, 5);
   const losers = [...movers].sort((left, right) => left.changePercent - right.changePercent).slice(0, 5);
   const seriesDays = seriesStats.firstAt && seriesStats.lastAt
@@ -195,6 +199,7 @@ export default async function Home() {
             <Panel>
               <PanelHeader title="可执行机会" action={<span className="font-mono text-xs text-terminal-green">NPC必赚 + 最低价 vs 建议卖价 · 分配后口径</span>} />
               <div className="space-y-2 p-3 font-mono text-xs">
+                {actionsBlocked && <div className="text-terminal-muted">数据过期或阶段已推移，等下一次扫描后再给出机会。</div>}
                 {!actionsBlocked && deals.length === 0 && <div className="text-terminal-muted">{emptyDealsMessage}</div>}
                 {!actionsBlocked && deals.map((deal) => (
                   <div key={deal.itemId} className="flex flex-wrap items-center justify-between gap-2">
