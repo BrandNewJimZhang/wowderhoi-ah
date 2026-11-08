@@ -13,11 +13,15 @@ type OwnSaleRow = {
 
 export function ownSalesFromRows(rows: readonly OwnSaleRow[], now: Date = new Date()): OwnSales {
   const since = now.getTime() - fillRules.ownSalesWindowDays * 24 * 60 * 60 * 1000;
+  // The window ends at the reference time. An import replays old scans, and
+  // a sale booked after that scan is not evidence the core had when it made
+  // the recommendation.
+  const until = now.getTime();
   const floorMs = SCAN_INTERVAL_MINUTES * 60 * 1000;
   const byItem = new Map<number, { qty: number; samples: number; exposureMs: number }>();
   for (const row of rows) {
     const observedAt = row.realizedAt.getTime();
-    if (observedAt < since) continue;
+    if (observedAt < since || observedAt > until) continue;
     // Exposure is per sale: how long that listing waited on the book. The
     // span between the first and last sale understates it when several
     // listings sold close together. A missing posting time uses the scan

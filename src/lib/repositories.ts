@@ -169,18 +169,18 @@ export async function getPositions(scope: MarketScope | null): Promise<Record<nu
 // Clean fill labels for the shared decision core: collected auction sales
 // only. Inferred journal rows are excluded because they are disappearances,
 // not sales, and vendor/decompose channels are not market evidence.
-export async function getOwnSales(scope: MarketScope | null): Promise<OwnSales> {
-  const since = new Date(Date.now() - fillRules.ownSalesWindowDays * 24 * 60 * 60 * 1000);
+export async function getOwnSales(scope: MarketScope | null, at: Date = new Date()): Promise<OwnSales> {
+  const since = new Date(at.getTime() - fillRules.ownSalesWindowDays * 24 * 60 * 60 * 1000);
   const rows = await prisma.trade.findMany({
     where: {
       ...(scope ? { marketId: scope.id } : {}),
       channel: "auction",
       inferred: false,
-      realizedAt: { gte: since }
+      realizedAt: { gte: since, lte: at }
     },
     select: { itemId: true, qty: true, realizedAt: true, listedAt: true }
   });
-  return ownSalesFromRows(rows);
+  return ownSalesFromRows(rows, at);
 }
 
 export async function getSeriesStats(marketId: string) {

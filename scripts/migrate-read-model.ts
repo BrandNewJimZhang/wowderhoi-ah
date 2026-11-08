@@ -380,7 +380,7 @@ async function main() {
         openedAt: market.openedAt,
         firstScanAt: firstScanAt ?? snapshots[0].timestamp,
         positions: await getPositions(scope),
-        ownSales: await getOwnSales(scope),
+        ownSales: await getOwnSales(scope, latestAt),
         budgetCopper: resolveBudgetCopper(),
         phaseOverride: null
       });

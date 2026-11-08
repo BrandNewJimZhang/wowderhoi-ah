@@ -67,8 +67,9 @@ function collectSeriesItemIds(scan: AddonScan, series: AddonSeries | null, extra
 }
 
 // Confirmed auction sales from the replay, the same projection the database
-// path uses in getOwnSales.
-function ownSalesOf(replay: ReplayState) {
+// path uses in getOwnSales. The window ends at the scan under evaluation:
+// the replay carries the whole ledger, including sales booked after it.
+function ownSalesOf(replay: ReplayState, at: Date) {
   return ownSalesFromRows(
     replay.trades
       .filter((trade) => trade.channel === "auction" && !trade.inferred && trade.itemId !== null)
@@ -77,7 +78,8 @@ function ownSalesOf(replay: ReplayState) {
         qty: trade.qty,
         realizedAt: new Date(trade.t * 1000),
         listedAt: trade.listedAt ? new Date(trade.listedAt * 1000) : null
-      }))
+      })),
+    at
   );
 }
 
@@ -274,7 +276,7 @@ export async function POST(request: Request) {
           previousAt: row.previousAt === null ? null : new Date(row.previousAt * 1000)
         };
       });
-    const ownSales = ownSalesOf(replay);
+    const ownSales = ownSalesOf(replay, duplicate.scannedAt);
     // Only the newest generations keep materialised signals. A replayed
     // scan older than that window has no rows left; recomputing its core
     // would overwrite the generation with an empty evaluation and delete
@@ -421,7 +423,7 @@ export async function POST(request: Request) {
 
     const scope = scopeOf(market);
     const positions = replay ? replay.positions : await getPositions(scope);
-    const ownSales = replay ? ownSalesOf(replay) : await getOwnSales(scope);
+    const ownSales = replay ? ownSalesOf(replay, scan.scannedAt) : await getOwnSales(scope, scan.scannedAt);
 
     const plan = buildGenerationPlan({
       scan,
