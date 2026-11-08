@@ -103,7 +103,12 @@ export default async function ReviewPage() {
   // plan. Recovery still runs: it reads booked sales, not today's prices.
   const currentSignals = signals.filter((signal) => !signal.stale);
   const focusItemId = focusPosition ? Number(focusPosition[0]) : currentSignals[0]?.itemId ?? null;
-  const experimentSignal = focusItemId !== null ? currentSignals.find((signal) => signal.itemId === focusItemId) : undefined;
+  // An experiment level is a price to post at. A stale book no longer has a
+  // current price, so the plan is withheld like every other price-sized
+  // plan; the recovery table reads booked sales and stays available.
+  const experimentSignal = !freshness.stale && focusItemId !== null
+    ? currentSignals.find((signal) => signal.itemId === focusItemId)
+    : undefined;
   const experiment = experimentSignal
     ? designExperiment({
         itemId: experimentSignal.itemId,
@@ -111,6 +116,11 @@ export default async function ReviewPage() {
         inventory: Math.max(3, focusPosition ? focusPosition[1].qty : 3)
       })
     : null;
+  const experimentHint = signals.length === 0
+    ? "先扫描并导入一个市场，才能设计实验。"
+    : freshness.stale
+      ? "行情已过期，等下一次扫描后再设计实验。"
+      : "持仓物品未出现在最近一次扫描中，没有可用的当前卖价来设计实验。";
   const experimentRecovery = focusItemId !== null ? experimentResults(trades, focusItemId) : [];
   const nameById = new Map(signals.map((signal) => [signal.itemId, signal.name]));
   const byChannel = new Map<string, { count: number; pnl: number }>();
@@ -255,11 +265,7 @@ export default async function ReviewPage() {
               <div className="text-[11px] text-terminal-muted">{experiment.note}</div>
             </div>
           ) : (
-            <div className="p-3 font-mono text-xs text-terminal-muted">
-              {signals.length > 0
-                ? "持仓物品未出现在最近一次扫描中，没有可用的当前卖价来设计实验。"
-                : "先扫描并导入一个市场，才能设计实验。"}
-            </div>
+            <div className="p-3 font-mono text-xs text-terminal-muted">{experimentHint}</div>
           )}
         </Panel>
       </div>
