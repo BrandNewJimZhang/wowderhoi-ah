@@ -670,8 +670,10 @@ local function medianInterval(points)
   if #points < 3 then return nil end
   local gaps = {}
   for index = 2, #points do gaps[#gaps + 1] = points[index].t - points[index - 1].t end
-  -- Same lower-median rule as the terminal's gap detector (median.ts), so
-  -- a scan outage breaks the line at the same place in both charts.
+  -- Local median spacing: an outage breaks the line at any fold level without
+  -- the chart needing to know which retention layer produced each point. The
+  -- terminal applies resolution-aware limits instead (chart-series.ts), so
+  -- the two charts agree on raw scans and may break a folded gap differently.
   return WAH.Core.median(gaps)
 end
 
