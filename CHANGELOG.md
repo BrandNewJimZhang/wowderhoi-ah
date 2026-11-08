@@ -170,6 +170,10 @@
   accepted the `GameTooltip` global. It now appends to the frame the client
   names and resolves the item through `TooltipUtil.GetDisplayedItem`, so
   bags, clicked chat links and the auction house all carry the block.
+- Fill calibration applies the prediction horizon to identity matches too.
+  An adopted decision's sale four days later still carries the id, but it
+  is not evidence about a 24-hour fill probability; only the same-item
+  window path had enforced the horizon.
 - Generation retention no longer hides the history `npm run calibrate`
   reads. The newest two generations keep their signal rows and core, but
   quotes and scan metadata stay for the last 96 generations (a day at the

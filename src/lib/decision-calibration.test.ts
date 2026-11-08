@@ -71,7 +71,7 @@ describe("decision calibration", () => {
   it("attributes an adopted sale by identity and a legacy one by window", () => {
     const adopted = bucketPredictions(
       [{ ...buy({ at: at(0), fillProb: 0.3 }), decisionId: "d1" }],
-      [{ ...sale({ at: at(100) }), decisionId: "d1" }]
+      [{ ...sale({ at: at(10) }), decisionId: "d1" }]
     ).find((entry) => entry.label === "20–40%")!;
     expect(adopted.filled).toBe(1);
     expect(adopted.linked).toBe(1);
@@ -84,6 +84,16 @@ describe("decision calibration", () => {
     expect(legacy.filled).toBe(1);
     expect(legacy.linked).toBe(0);
     expect(legacy.window).toBe(1);
+  });
+
+  it("does not let an identity match outlive the prediction horizon", () => {
+    const late = bucketPredictions(
+      [{ ...buy({ at: at(0), fillProb: 0.3 }), decisionId: "d1" }],
+      [{ ...sale({ at: at(fillRules.horizonHours + 1) }), decisionId: "d1" }]
+    ).find((entry) => entry.label === "20–40%")!;
+    expect(late.filled).toBe(0);
+    expect(late.linked).toBe(0);
+    expect(late.window).toBe(0);
   });
 
   it("marks buckets below the sample floor as insufficient", () => {

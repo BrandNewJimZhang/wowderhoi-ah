@@ -87,8 +87,16 @@ export function bucketPredictions(
     const start = decision.at.getTime();
     // An adopted decision owns a sale through its id; the window is only
     // the fallback for the decisions written before adoption existed.
+    // Identity says which decision the sale belongs to, not that it landed
+    // inside the horizon the fill probability predicted: a sale four days
+    // after a 24-hour prediction is still attribution, not evidence about
+    // that prediction.
     const linked = decision.decisionId
-      ? confirmed.some((trade) => trade.decisionId === decision.decisionId)
+      ? confirmed.some((trade) =>
+          trade.decisionId === decision.decisionId
+          && trade.realizedAt.getTime() >= start
+          && trade.realizedAt.getTime() <= start + windowMs
+        )
       : false;
     const windowMatch = !linked && confirmed.some((trade) =>
       trade.itemId === decision.itemId
