@@ -1,7 +1,7 @@
-// One market per terminal view. Snapshots, daily summaries, positions and
-// trades are scoped to a Market row (realm + faction); without this, two
+// One market per terminal view. Generations, series, positions and trades
+// are scoped to a Market row (realm + faction); without this, two
 // characters or two realms mix their books into one signal. The scope is
-// the market of the newest snapshot unless AQT_MARKET=realm|faction pins it.
+// the market of the newest generation unless AQT_MARKET=realm|faction pins it.
 import { prisma } from "@/lib/prisma";
 
 export type MarketScope = {
@@ -16,7 +16,7 @@ export type MarketScope = {
   // Optional only for test fixtures; the market row always carries it.
   openedAt?: Date | null;
   // Earliest observation ever imported for this market. Persisted so pruning
-  // old snapshot rows cannot make the market look younger (and its gates
+  // old generations cannot make the market look younger (and its gates
   // looser). openedAt still takes precedence when configured.
   firstScanAt?: Date | null;
   // Free bag slots at the latest scan. Null/absent means the import never

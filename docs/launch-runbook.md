@@ -9,6 +9,8 @@ cd <项目目录>
 Copy-Item .env.example .env
 npm install
 npm run db:push
+npm run items:catalog:import   # 物品静态事实（名字、品质、卖价、图标 id）
+npm run icons:fetch            # 下载共享图标到 public/icons（已被 gitignore）
 npm run recipes:import
 npm run dev
 ```

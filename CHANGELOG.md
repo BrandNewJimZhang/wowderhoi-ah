@@ -42,9 +42,9 @@
 - A shared search fixture (`data/search-parity.json`) runs the same cases
   through `Core.rankSearch` and `src/lib/search.ts`.
 - Scans stamp `historySamples` and `historySpanHours` on each priced item,
-  and the importer, snapshot and core input carry both. The stamp is the
-  only sample authority: the terminal's 48-row page is a display window, and
-  a row without a stamp applies the sample floor alone.
+  and the importer and core input carry both. The stamp is the only sample
+  authority; a row without a stamp falls back to the series window, and one
+  without any series coverage applies the sample floor alone.
 - Phase history gates require coverage (samples and span): wave 2/1.5h,
   settle 4/12h, steady 12/96h, so the default 1-3 manual scans a day can
   satisfy them.
@@ -60,15 +60,14 @@
 - Rows whose item record has not loaded are kept: `hasAllInfo` is read,
   `GetItemInfo` names are cached, and a bounded 3-second hydrate phase fills
   names via `ITEM_DATA_LOAD_RESULT`.
-- The addon series records each point's listing count, the watcher sends it,
-  and the importer backfills up to 16 missed scans per import.
-- Series retention is budget-aware: each item keeps a breadth-derived point
-  budget, the layered fold downsamples evenly instead of truncating the
-  window, and the global cap is an assertion rather than a trimming pass.
+- The addon series records each point's listing count and the watcher sends
+  it; every import merges the whole series, so scans the terminal never saw
+  land as history without a per-scan backfill limit.
+- Series retention is layered by age (all points for a week, hourly for a
+  month, daily for a quarter, weekly beyond), event points always survive,
+  and a per-item cap folds evenly instead of truncating the oldest window.
 - `Market.firstScanAt` persists the earliest observation so pruning cannot
   move the phase anchor forward.
-- `npm run db:prune` keeps the newest 96 snapshot rows per item; daily OHLC
-  is untouched.
 - The radar refreshes when a scan lands while the page is open, and the buy
   plan's `ifPriceAbove` is enforced before PlaceBid or a commodity purchase
   (the average price of the requested quantity, not the first rung).
@@ -116,6 +115,9 @@
 - Type exports that no other module imported: return and helper shapes such
   as `FillPoint`, `TradeSummary` and `PositionValuation` are now module
   internal. Types a test or another module imports remain exported.
+- The second addon-series parser (`series-import.ts`) whose only consumer
+  was its own test, plus two repository exports no module called. The live
+  parser in `item-series.ts` is the single implementation.
 
 ### Changed
 
@@ -128,6 +130,9 @@
   updates which item the chart shows, and the text block still appears on
   bag, bank, equipped, merchant, auction and chat item tooltips; spell,
   unit and battle-pet links stay clean.
+- Item quality names come from one index table in `quality.ts`. The scan
+  parser's old six-entry copy read quality index 6 as `unknown` while the
+  catalogue read it as `artifact`; both now share the same answer.
 - `execQty`, `netProfit`, `netPerUnit` and `ladderPrice` are now
   `candidateQty`, `candidateNet`, `candidateNetPerUnit` and
   `candidateUnitPrice`; `allocQty`/`allocNet` remain the funded layer.
@@ -163,6 +168,12 @@
   accepted the `GameTooltip` global. It now appends to the frame the client
   names and resolves the item through `TooltipUtil.GetDisplayedItem`, so
   bags, clicked chat links and the auction house all carry the block.
+- The persistent rail marks the current section on the market, portfolio,
+  review, recipes and health pages. Their `active` prop carried a shell path
+  expansion instead of the route, so no link ever matched.
+- The item page reads a signal only from the generation that produced its
+  quote. A latest scan that saw the item bid-only no longer renders the
+  previous generation's prices under the current book.
 - A buy action's displayed `maxUnitPrice` and `stop.ifPriceAbove` are the
   gate's own unit-price cap (`listP · (1 − fee) − minUnitProfit`), not the
   break-even price. The old value let a conditional plan accept a price the

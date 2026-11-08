@@ -1,6 +1,7 @@
 // Standalone SavedVariables watcher for a terminal run without Next.
-// `npm run addon:watch`. The Next app starts the same watcher through
-// src/instrumentation.ts, so the two entries share one state machine.
+// `npm run addon:watch`. The Next app starts the same watcher from the
+// first server render through src/lib/watcher/autostart.ts, so the two
+// entries share one state machine.
 import { startSavedvarsWatcher } from "@/lib/watcher/savedvars-watcher";
 
 process.loadEnvFile();

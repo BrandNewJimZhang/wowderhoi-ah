@@ -1,4 +1,4 @@
-// Snapshot-based market signals. Every statistic here follows the same
+// Quote-based market signals, read against the addon series. Every statistic here follows the same
 // philosophy as the in-game scanner: medians and percentiles over raw
 // series points, never means over daily aggregates — means inherit every
 // bait listing, and daily averages erase the hourly structure of the AH.
