@@ -122,43 +122,41 @@ export function MarketBrowser({ rows, watchedItemIds, initialView }: {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-2 border-b border-terminal-border px-3 py-2 font-mono text-xs">
-        <input
-          value={query}
-          onChange={(event) => { setQuery(event.target.value); setPage(1); }}
-          placeholder="搜索物品、ID 或拼音首字母..."
-          className={`${inputClass} w-52 placeholder:text-terminal-muted`}
-        />
-        <select value={category} onChange={(event) => { setCategory(event.target.value); setPage(1); }} className={inputClass}>
-          <option value="">全部品类</option>
-          {categories.map((value) => <option key={value} value={value}>{value}</option>)}
-        </select>
-        <select
-          value={sortKey}
-          onChange={(event) => { setSortKey(event.target.value as SignalSortKey); setSortExplicit(true); setPage(1); }}
-          className={`${inputClass} md:hidden`}
-        >
-          {SORTS.map((sort) => <option key={sort.key} value={sort.key}>{sort.label}</option>)}
-        </select>
-        <button
-          onClick={() => setSortAsc((value) => !value)}
-          className={`${inputClass} md:hidden`}
-          aria-label="切换排序方向"
-        >
-          {sortAsc ? "升序" : "降序"}
-        </button>
-        <button onClick={() => setDense((value) => !value)} className={`${inputClass} hidden md:block`}>
-          {dense ? "舒适" : "紧凑"}
-        </button>
-        <span className="text-terminal-muted">{filtered.length} / {rows.length} 项</span>
-        <span className="ml-auto flex items-center gap-2">
-          <button onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={visible.page <= 1} className={`${inputClass} disabled:opacity-40`}>上一页</button>
-          <span className="text-terminal-muted">{visible.page} / {visible.pageCount}</span>
-          <button onClick={() => setPage((value) => Math.min(visible.pageCount, value + 1))} disabled={visible.page >= visible.pageCount} className={`${inputClass} disabled:opacity-40`}>下一页</button>
-        </span>
+      <div className="border-b border-terminal-border px-3 py-2 font-mono text-xs">
+        <div className="grid grid-cols-2 gap-2 lg:flex lg:flex-wrap lg:items-center">
+          <input
+            value={query}
+            onChange={(event) => { setQuery(event.target.value); setPage(1); }}
+            placeholder="搜索物品、ID 或拼音首字母..."
+            className={`${inputClass} col-span-2 w-full placeholder:text-terminal-muted lg:w-52`}
+          />
+          <select value={category} onChange={(event) => { setCategory(event.target.value); setPage(1); }} className={inputClass}>
+            <option value="">全部品类</option>
+            {categories.map((value) => <option key={value} value={value}>{value}</option>)}
+          </select>
+          <select
+            value={sortKey}
+            onChange={(event) => { setSortKey(event.target.value as SignalSortKey); setSortExplicit(true); setPage(1); }}
+            className={`${inputClass} lg:hidden`}
+          >
+            {SORTS.map((sort) => <option key={sort.key} value={sort.key}>{sort.label}</option>)}
+          </select>
+          <button onClick={() => setSortAsc((value) => !value)} className={`${inputClass} lg:hidden`} aria-label="切换排序方向">
+            {sortAsc ? "升序" : "降序"}
+          </button>
+          <button onClick={() => setDense((value) => !value)} className={`${inputClass} hidden lg:block`}>
+            {dense ? "舒适" : "紧凑"}
+          </button>
+          <span className="col-span-2 text-terminal-muted lg:col-span-1">{filtered.length} / {rows.length} 项</span>
+          <span className="col-span-2 flex items-center justify-between gap-2 lg:ml-auto lg:justify-end">
+            <button onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={visible.page <= 1} className={`${inputClass} disabled:opacity-40`}>上一页</button>
+            <span className="text-terminal-muted">{visible.page} / {visible.pageCount}</span>
+            <button onClick={() => setPage((value) => Math.min(visible.pageCount, value + 1))} disabled={visible.page >= visible.pageCount} className={`${inputClass} disabled:opacity-40`}>下一页</button>
+          </span>
+        </div>
       </div>
 
-      <div className="hidden overflow-x-auto md:block">
+      <div className="hidden overflow-x-auto lg:block">
         <table className="w-full border-collapse font-mono text-xs tabular-nums">
           <thead className="bg-terminal-panel2 text-[10px] uppercase text-terminal-muted">
             <tr>
@@ -205,24 +203,23 @@ export function MarketBrowser({ rows, watchedItemIds, initialView }: {
         </table>
       </div>
 
-      <div className="divide-y divide-terminal-border/70 md:hidden">
+      <div className="divide-y divide-terminal-border/70 lg:hidden">
         {visible.rows.map((row) => (
           <div key={row.itemId} className="flex items-center gap-3 px-3 py-2 font-mono text-xs">
             <WatchStar itemId={row.itemId} watched={watched.has(row.itemId)} />
             <ItemIcon iconId={row.iconId} size={28} />
             <div className="min-w-0 flex-1">
               <Link href={`/items/${row.itemId}`} className={`block truncate text-sm ${qualityColorClass(row.quality)}`}>{row.name}</Link>
-              <div className="flex items-center gap-2 text-[10px] text-terminal-muted">
-                <span>{row.category}</span>
-                <span>在售 {row.quantity.toLocaleString()}</span>
-                {row.stale && <span>已下架</span>}
+              <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-terminal-muted">
+                <span className="truncate">
+                  {row.category} · 在售 {row.quantity.toLocaleString()}{row.stale ? " · 已下架" : ""}
+                </span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <Coins copper={row.sellPrice} />
+                  <span className={changeClass(row.changePercent)}>{formatPercent(row.changePercent)}</span>
+                </span>
               </div>
             </div>
-            <div className="text-right">
-              <div><Coins copper={row.sellPrice} /></div>
-              <div className={`text-[10px] ${changeClass(row.changePercent)}`}>{formatPercent(row.changePercent)}</div>
-            </div>
-            <Sparkline values={row.spark} />
           </div>
         ))}
       </div>
