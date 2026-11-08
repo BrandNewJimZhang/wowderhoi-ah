@@ -348,6 +348,14 @@ export function seriesWindow(points: readonly SeriesPoint[], nowSeconds: number,
   return points.filter((point) => point.t >= cutoff && point.t <= upper);
 }
 
+// Calendar days a retained series reaches into. Rounded up: a 25-hour span
+// already produces a second daily bar, so the readiness meters on the
+// dashboard and the health page must read the same number.
+export function seriesSpanDays(firstAt: Date | null, lastAt: Date | null): number {
+  if (!firstAt || !lastAt) return 0;
+  return Math.max(1, Math.ceil((lastAt.getTime() - firstAt.getTime()) / (DAY * 1000)));
+}
+
 export function seriesSamples(points: readonly SeriesPoint[], nowSeconds: number, windowHours: number): number {
   if (points.length === 0) return 0;
   const count = seriesWindow(points, nowSeconds, windowHours).length;

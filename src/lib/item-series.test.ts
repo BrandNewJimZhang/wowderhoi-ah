@@ -6,6 +6,7 @@ import {
   retainSeries,
   scanSeriesPoints,
   seriesSamples,
+  seriesSpanDays,
   seriesToArrays,
   seriesToDailyBars,
   sparkSeries,
@@ -189,6 +190,16 @@ describe("series statistics", () => {
     expect(bars).toHaveLength(2);
     expect(bars[0]).toMatchObject({ openPrice: 100, closePrice: 90, highPrice: 130, lowPrice: 90 });
     expect(bars[1].closePrice).toBe(95);
+  });
+
+  it("counts the calendar days a retained series reaches into", () => {
+    expect(seriesSpanDays(null, null)).toBe(0);
+    const first = new Date(NOW * 1000 - 25 * HOUR * 1000);
+    const last = new Date(NOW * 1000);
+    // A partial second day already produces its own daily bar, so the
+    // readiness meter must see two days here, not one.
+    expect(seriesSpanDays(first, last)).toBe(2);
+    expect(seriesSpanDays(last, last)).toBe(1);
   });
 
   it("downsamples a sparkline evenly instead of taking the last window", () => {
