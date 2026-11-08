@@ -17,21 +17,31 @@ import type { StoredSignalRow } from "@/lib/signal-row";
 import { getGenerationSignals, getLatestGeneration, getPositions } from "@/lib/repositories";
 import { getMarketScope, type MarketScope } from "@/lib/market-scope";
 
-export type MarketBundle = {
+// Everything a page needs to describe the market, without its rows. The
+// item and health pages used to load the whole bundle for these fields,
+// which meant reading thousands of signal documents to render one item.
+export type MarketContext = {
   scope: MarketScope | null;
-  signals: MarketSignal[];
   latestScanAt: Date | null;
   // The phase right now, from wall-clock age and breadth.
   phase: MarketPhase;
   // The phase the core actually evaluated under.
   generationPhase: MarketPhase;
   priceIndex: PriceIndex;
-  evaluation: CoreOutput;
   gapMinutes: number | null;
   staleCount: number;
+  // Materialised signal rows: priced books from the scan plus carried
+  // stale books. A generation stores both counts, so the total needs no
+  // row read.
+  signalCount: number;
   // True when the display phase moved since the scan; the dashboard must
   // hide actions that were sized under the old gates.
   phaseMismatch: boolean;
+};
+
+export type MarketBundle = MarketContext & {
+  signals: MarketSignal[];
+  evaluation: CoreOutput;
 };
 
 type ReaderFetchers = {
@@ -42,24 +52,27 @@ type ReaderFetchers = {
   now?: () => Date;
 };
 
-function emptyBundle(phase: MarketPhase, scope: MarketScope | null = null): MarketBundle {
+function emptyContext(phase: MarketPhase, scope: MarketScope | null = null): MarketContext {
   return {
     scope,
-    signals: [],
     latestScanAt: null,
     phase,
     generationPhase: phase,
     priceIndex: { dates: [], values: [], baseDate: "" },
-    evaluation: {
-      phase,
-      rows: [],
-      opportunities: [],
-      actions: [],
-      diagnostics: { excluded: {}, unfunded: { kelly: 0, exposure: 0, purse: 0, depth: 0 } }
-    },
     gapMinutes: null,
     staleCount: 0,
+    signalCount: 0,
     phaseMismatch: false
+  };
+}
+
+function emptyEvaluation(phase: MarketPhase): CoreOutput {
+  return {
+    phase,
+    rows: [],
+    opportunities: [],
+    actions: [],
+    diagnostics: { excluded: {}, unfunded: { kelly: 0, exposure: 0, purse: 0, depth: 0 } }
   };
 }
 
@@ -81,26 +94,45 @@ function displayPhaseOf(
 
 export function createMarketReader(fetchers: ReaderFetchers) {
   const nowOf = fetchers.now ?? (() => new Date());
+  // One generation per request: the scope resolution and the newest
+  // generation are the same two reads for both views, and reading them
+  // twice could straddle an import that lands between the calls.
+  const readGeneration = async () => {
+    const scope = await fetchers.getMarketScope();
+    const generation = await fetchers.getLatestGeneration(scope);
+    return { scope, generation };
+  };
+  const contextOf = (scope: MarketScope | null, generation: GenerationRecord, now: Date): MarketContext => {
+    const phase = displayPhaseOf(scope, generation, now);
+    return {
+      scope,
+      latestScanAt: generation.scannedAt,
+      phase,
+      generationPhase: generation.phase,
+      priceIndex: generation.priceIndex,
+      gapMinutes: generation.gapMinutes,
+      staleCount: generation.staleCount,
+      signalCount: generation.breadth + generation.staleCount,
+      phaseMismatch: phase !== generation.phase
+    };
+  };
   return {
+    async getMarketContext(): Promise<MarketContext> {
+      const { scope, generation } = await readGeneration();
+      if (!generation) return emptyContext(resolvePhaseOverride() ?? "ignition", scope);
+      return contextOf(scope, generation, nowOf());
+    },
     async getMarketBundle(): Promise<MarketBundle> {
-      const scope = await fetchers.getMarketScope();
-      const generation = await fetchers.getLatestGeneration(scope);
+      const { scope, generation } = await readGeneration();
       if (!generation) {
-        return emptyBundle(resolvePhaseOverride() ?? "ignition", scope);
+        const phase = resolvePhaseOverride() ?? "ignition";
+        return { ...emptyContext(phase, scope), signals: [], evaluation: emptyEvaluation(phase) };
       }
       const rows = await fetchers.getSignals(generation.id);
-      const phase = displayPhaseOf(scope, generation, nowOf());
       return {
-        scope,
+        ...contextOf(scope, generation, nowOf()),
         signals: rows.map((row) => row.signal),
-        latestScanAt: generation.scannedAt,
-        phase,
-        generationPhase: generation.phase,
-        priceIndex: generation.priceIndex,
-        evaluation: generation.core,
-        gapMinutes: generation.gapMinutes,
-        staleCount: generation.staleCount,
-        phaseMismatch: phase !== generation.phase
+        evaluation: generation.core
       };
     }
   };
@@ -113,6 +145,7 @@ const defaultReader = createMarketReader({
 });
 
 export const getMarketBundle = defaultReader.getMarketBundle;
+export const getMarketContext = defaultReader.getMarketContext;
 
 type NavBadges = { actions: number; stale: number; positions: number };
 

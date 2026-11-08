@@ -90,6 +90,36 @@ describe("badgeCounts", () => {
   });
 });
 
+describe("getMarketContext", () => {
+  it("serves the generation's metadata without loading its signal rows", async () => {
+    let signalCalls = 0;
+    const source = createMarketReader({
+      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0, character: "Tester" }),
+      getLatestGeneration: async () => generation(),
+      getSignals: async () => {
+        signalCalls += 1;
+        return [];
+      },
+      now: () => LATEST
+    });
+    const context = await source.getMarketContext();
+    expect(context.scope?.id).toBe("m1");
+    expect(context.latestScanAt?.toISOString()).toBe(LATEST.toISOString());
+    // The health page prints the row count; it must come from the stored
+    // breadth and stale count, not from a 4,000-row read.
+    expect(context.signalCount).toBe(2);
+    expect(signalCalls).toBe(0);
+  });
+
+  it("returns an empty context before the first generation", async () => {
+    const context = await reader({ record: null }).getMarketContext();
+    expect(context.scope?.id).toBe("m1");
+    expect(context.latestScanAt).toBeNull();
+    expect(context.signalCount).toBe(0);
+    expect(context.phase).toBe("ignition");
+  });
+});
+
 describe("getMarketBundle", () => {
   it("returns an empty ignition bundle before the first generation", async () => {
     const bundle = await reader({ record: null }).getMarketBundle();

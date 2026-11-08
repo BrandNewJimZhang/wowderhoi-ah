@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { buildMarketSignal, buildWeekdaySeasonality } from "@/lib/analytics";
 import { getItemDetail, getWatchedItemIds } from "@/lib/repositories";
-import { getMarketBundle } from "@/lib/market-read";
+import { getMarketContext } from "@/lib/market-read";
 import { prisma } from "@/lib/prisma";
 import { formatPercent } from "@/lib/utils";
 import { Coins } from "@/components/coins";
@@ -26,9 +26,10 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
   const numericItemId = Number(itemId);
   // Resolve the market once through the read model: the item page and the
   // market table must read the same generation even if a new scan lands
-  // mid-request.
-  const bundle = await getMarketBundle();
-  const detail = await getItemDetail(numericItemId, bundle.scope);
+  // mid-request. The page renders one item, so it takes the context and its
+  // own stored signal row instead of loading every signal in the market.
+  const context = await getMarketContext();
+  const detail = await getItemDetail(numericItemId, context.scope);
   if (!detail) notFound();
   const { item, quote, demandQuote, series, signal: storedSignal } = detail;
   const [watchedIds, alertRules] = await Promise.all([
@@ -38,10 +39,10 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
   const now = new Date();
   // The price's age comes from the last series point, not from the quote:
   // a bid-only scan in the newest generation writes a quote and no price.
-  const priceAt = priceObservationAt(series, quote?.priced ? quote : null, bundle.latestScanAt);
+  const priceAt = priceObservationAt(series, quote?.priced ? quote : null, context.latestScanAt);
   const stale = priceAt !== null
-    && bundle.latestScanAt !== null
-    && priceAt.getTime() < bundle.latestScanAt.getTime();
+    && context.latestScanAt !== null
+    && priceAt.getTime() < context.latestScanAt.getTime();
   const signal = storedSignal?.signal
     ?? (quote?.priced
       ? buildMarketSignal(
@@ -64,7 +65,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
           priceAt ?? now,
           // Match the stored signal rows: the window is the one the core
           // evaluated under, not a display phase recomputed later.
-          { phase: bundle.generationPhase, index: bundle.priceIndex, currentAt: bundle.latestScanAt ?? priceAt ?? now }
+          { phase: context.generationPhase, index: context.priceIndex, currentAt: context.latestScanAt ?? priceAt ?? now }
         )
       : null);
   const dailyBars = seriesToDailyBars(series);
@@ -72,7 +73,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
   const weekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
   // Bids only describe the book they were captured with: a demand row from
   // an older scan must not be shown beside the current prices.
-  const demand = currentScanDemand(demandQuote, bundle.latestScanAt);
+  const demand = currentScanDemand(demandQuote, context.latestScanAt);
   const expiring = quote?.expiring && typeof quote.expiring === "object"
     ? quote.expiring as { soon?: number; mid?: number; late?: number }
     : null;
@@ -89,7 +90,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
   // already reaches from per-scan points to weekly closes, so the window
   // buttons never redraw the same half-day.
   const intradayData = buildTimeSeries(series);
-  const defaultChartWindow = bundle.phase === "ignition" ? "全部" : bundle.phase === "wave" ? "6h" : "24h";
+  const defaultChartWindow = context.phase === "ignition" ? "全部" : context.phase === "wave" ? "6h" : "24h";
   const tiers = (Array.isArray(quote?.topTiers) ? quote.topTiers : []) as BookTier[];
   const bookTiers = tiers.length > 0 ? tiers : quote ? [{ p: quote.minPrice, q: quote.quantity }] : [];
   // The fill curve is derived from the shared core's 24-hour fill

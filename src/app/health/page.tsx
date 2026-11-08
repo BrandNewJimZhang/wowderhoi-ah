@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { statSync } from "node:fs";
 import { join } from "node:path";
-import { getMarketBundle } from "@/lib/market-read";
+import { getMarketContext } from "@/lib/market-read";
 import {
   getCatalogueStats,
   getGenerationCount,
@@ -35,8 +35,8 @@ function databaseSize(): string | null {
 }
 
 export default async function HealthPage() {
-  const bundle = await getMarketBundle();
-  const scope = bundle.scope;
+  const context = await getMarketContext();
+  const scope = context.scope;
   const [series, catalogue, generationCount, runs] = scope
     ? await Promise.all([
         getSeriesStats(scope.id),
@@ -45,10 +45,10 @@ export default async function HealthPage() {
         getImportRuns(scope.id, 20)
       ])
     : [{ items: 0, points: 0, firstAt: null, lastAt: null }, { total: 0, catalogue: 0, scanOwned: 0, placeholders: 0, withIcon: 0, build: null }, 0, []];
-  const freshness = describeFreshness(bundle.latestScanAt, new Date());
+  const freshness = describeFreshness(context.latestScanAt, new Date());
   const latestRun = runs[0];
   const seriesDays = seriesSpanDays(series.firstAt, series.lastAt);
-  const gapHint = scanGapHint(bundle.gapMinutes);
+  const gapHint = scanGapHint(context.gapMinutes);
   const database = databaseSize();
 
   return (
@@ -60,7 +60,7 @@ export default async function HealthPage() {
           <h1 className="font-mono text-lg font-semibold text-terminal-amber">数据健康</h1>
           <p className="font-mono text-xs text-terminal-muted">
             {scope ? `${scope.realm} · ${scope.faction} · ${scope.character || "未知角色"}` : "未导入市场"}
-            {" · "}{phaseLabels[bundle.phase]} · 数据更新于 {freshness.label}
+            {" · "}{phaseLabels[context.phase]} · 数据更新于 {freshness.label}
             {database ? ` · 数据库 ${database}` : ""}
           </p>
         </div>
@@ -82,7 +82,7 @@ export default async function HealthPage() {
       <div className="mb-3 grid gap-3 font-mono text-xs sm:grid-cols-2 xl:grid-cols-4">
         <div className="border border-terminal-border bg-terminal-panel p-3">
           <div className="text-terminal-muted">物品种类 / 生成代际</div>
-          <div className="mt-1 text-lg text-slate-100">{bundle.signals.length} / {generationCount}</div>
+          <div className="mt-1 text-lg text-slate-100">{context.signalCount} / {generationCount}</div>
         </div>
         <div className="border border-terminal-border bg-terminal-panel p-3">
           <div className="text-terminal-muted">序列覆盖</div>
