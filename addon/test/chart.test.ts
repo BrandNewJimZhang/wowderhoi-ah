@@ -163,6 +163,55 @@ describe("time-series chart", () => {
   });
 });
 
+describe("chart consumer", () => {
+  // A hover with no scan or history must clear the panel, not leave the
+  // previous item's picture standing under the new item's tooltip.
+  it("hides on a no-data hover and returns on the next item", () => {
+    const lua = chartPage([9000, 10000, 11000]);
+    lua.exec(`GameTooltip:SetHyperlink("item:9999:0:0:0")`);
+    expect(lua.text("WoWderhoiAHChart:IsShown()")).toBe("false");
+    lua.exec(`GameTooltip:SetHyperlink("item:4338:0:0:0")`);
+    expect(lua.text("WoWderhoiAHChart:IsShown()")).toBe("true");
+    expect(lua.number("WowTest.ns.chartState().itemId")).toBe(4338);
+  });
+
+  // The buttons share the one refresh entry. With the chart switched off
+  // they must not paint the panel back into existence.
+  it("keeps the window buttons inert while the chart is switched off", () => {
+    const lua = chartPage([9000, 10000, 11000]);
+    lua.exec("WowTest.ns.settings.chart = false; WowTest.ns.setChartWindow(6)");
+    expect(lua.text("WoWderhoiAHChart:IsShown()")).toBe("false");
+    lua.exec("WowTest.ns.setChartMode('book')");
+    expect(lua.text("WoWderhoiAHChart:IsShown()")).toBe("false");
+  });
+
+  it("returns as soon as the chart switch is on again", () => {
+    const lua = chartPage([9000, 10000, 11000]);
+    lua.exec("WowTest.ns.settings.chart = false; WoWderhoiAH_UpdateChart()");
+    expect(lua.text("WoWderhoiAHChart:IsShown()")).toBe("false");
+    lua.exec("WowTest.ns.settings.chart = true; WoWderhoiAH_UpdateChart()");
+    expect(lua.text("WoWderhoiAHChart:IsShown()")).toBe("true");
+  });
+
+  it("updates the chart on hover while the tooltip block is off", () => {
+    const lua = loadAddon();
+    lua.setScan([{
+      itemId: 4338, name: "Mageweave Cloth", minPrice: 8000, sellP: 10000,
+      numAuctions: 6, sellers: 3, quantity: 70, itemClass: "Trade Goods",
+      tiers: [{ p: 8000, q: 20 }, { p: 9000, q: 50 }]
+    }]);
+    lua.setPoints([{ itemId: 4338, closes: [9000, 10000, 11000] }]);
+    lua.openTab();
+    lua.exec(`
+      WowTest.ns.settings.tooltip = false
+      WowTest.bagItems[1] = { itemId = 4338, name = "Mageweave Cloth" }
+      GameTooltip:SetBagItem(0, 1)
+    `);
+    expect(lua.text("WoWderhoiAHChart:IsShown()")).toBe("true");
+    expect(lua.number("WowTest.ns.chartState().itemId")).toBe(4338);
+  });
+});
+
 describe("chart placement", () => {
   // The chart is a panel, not a tooltip ornament. It docks beside the
   // auction house or the trader page and stays there, so its mode/window

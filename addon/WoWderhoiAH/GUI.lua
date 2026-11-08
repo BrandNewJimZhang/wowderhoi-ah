@@ -939,29 +939,32 @@ local function createChart()
   chart:Hide()
 end
 
+-- The only refresh entry. Every trigger -- a hover, a panel showing, a
+-- settings change, a scan finishing, a window button -- goes through here,
+-- so the switch, the host and the selected item are judged in one place.
 function WoWderhoiAH_UpdateChart(itemId)
+  if itemId then observedItemId = itemId end
   if WAH.settings and not WAH.settings.chart then
     hideChart()
     return
   end
-  observedItemId = itemId
-  if not chartAnchor() then
+  if not observedItemId or not chartAnchor() then
     hideChart()
     return
   end
   if not chart then createChart() end
-  renderChart(itemId)
+  renderChart(observedItemId)
 end
 
 function WAH.setChartMode(mode)
   chartMode = mode
-  if observedItemId and chart then renderChart(observedItemId) end
+  WoWderhoiAH_UpdateChart()
 end
 
 function WAH.setChartWindow(hours)
   chartWindow = hours
   chartMode = "time"
-  if observedItemId and chart then renderChart(observedItemId) end
+  WoWderhoiAH_UpdateChart()
 end
 
 function WAH.chartState()
