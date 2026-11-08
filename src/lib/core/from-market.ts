@@ -4,7 +4,7 @@
 import type { MarketSignal } from "@/lib/analytics";
 import { demandFor } from "@/lib/demand";
 import type { CoreInput, CoreMarketItem, OwnSales, Tier } from "@/lib/core/types";
-import type { MarketHistory } from "@/lib/market-data";
+import type { MarketQuote } from "@/lib/market-data";
 import { SCAN_INTERVAL_MINUTES, type MarketPhase } from "@/lib/market-rules";
 
 type CoreBuildOptions = {
@@ -40,28 +40,19 @@ function parseTiers(value: unknown, fallback: Tier): Tier[] {
 }
 
 export function buildCoreInput(
-  pairs: Array<{ history: MarketHistory; signal: MarketSignal }>,
+  pairs: Array<{ signal: MarketSignal; quote: MarketQuote; previousAt: Date | null }>,
   options: CoreBuildOptions
 ): CoreInput {
   const items: Record<number, CoreMarketItem> = {};
   // seconds since epoch, not milliseconds: Core.lua compares it with `now`.
-  let firstScanAt = options.firstScanAt ? options.firstScanAt.getTime() / 1000 : null;
-  for (const { history, signal } of pairs) {
-    const ordered = [...history.snapshots].sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
-    const latest = ordered.at(-1);
-    if (!latest) continue;
-    const previous = ordered.at(-2);
+  const firstScanAt = options.firstScanAt ? options.firstScanAt.getTime() / 1000 : null;
+  for (const { signal, quote, previousAt } of pairs) {
     // Same definition as the in-game scan: the gap between the two newest
-    // snapshots, floored at the compiled scan interval.
+    // series points, floored at the compiled scan interval.
     const scanFloor = SCAN_INTERVAL_MINUTES / 60;
-    const elapsedHours = previous
-      ? Math.max((latest.timestamp.getTime() - previous.timestamp.getTime()) / (60 * 60 * 1000), scanFloor)
+    const elapsedHours = previousAt
+      ? Math.max((quote.timestamp.getTime() - previousAt.getTime()) / (60 * 60 * 1000), scanFloor)
       : scanFloor;
-    // The first scan is the OLDEST snapshot, not the newest one: taking the
-    // latest would make a live market look freshly opened and pin the core
-    // to the ignition rules forever.
-    const earliest = ordered[0].timestamp.getTime() / 1000;
-    if (firstScanAt === null || earliest < firstScanAt) firstScanAt = earliest;
     const own = options.ownSales?.[signal.itemId];
     items[signal.itemId] = {
       name: signal.name,
@@ -69,7 +60,7 @@ export function buildCoreInput(
       // the item row's quality so CoreRow quality is populated on both sides.
       quality: signal.quality,
       itemClass: signal.category,
-      itemSubClass: history.subCategory,
+      itemSubClass: signal.subCategory,
       // The scan classified the book; only rows without a captured
       // classification fall back to the core's own derivation.
       marketType: signal.marketType ?? undefined,
@@ -95,8 +86,8 @@ export function buildCoreInput(
       ownSamples: own?.samples ?? 0,
       ownExposedHours: own?.exposedHours ?? 0,
       highestBid: signal.highestBid,
-      demandPrior: demandFor(signal.category, history.subCategory),
-      tiers: parseTiers(latest.topTiers, { p: signal.minPrice, q: Math.max(signal.quantity, 1) }),
+      demandPrior: demandFor(signal.category, signal.subCategory),
+      tiers: parseTiers(quote.topTiers, { p: signal.minPrice, q: Math.max(signal.quantity, 1) }),
       tierTruncated: signal.tierTruncated,
       // The scanner owns the history series and stamps the count; the
       // terminal's 48-snapshot page is a display window, not a sample

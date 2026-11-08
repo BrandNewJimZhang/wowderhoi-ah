@@ -10,6 +10,7 @@ import { buildMarketSignal } from "@/lib/analytics";
 import { buildCoreInput } from "@/lib/core/from-market";
 import { runCore } from "@/lib/core/run-core";
 import type { CoreInput } from "@/lib/core/types";
+import type { MarketQuote } from "@/lib/market-data";
 import { solveProduction, type LpRecipe } from "@/lib/craft-lp";
 import { replayJournal, type JournalEvent } from "@/lib/journal";
 import { loadRecipeDataset, recipeToLp } from "@/lib/recipes";
@@ -109,24 +110,34 @@ describe("system performance gates", () => {
   });
 
   it("builds the core input for 866 items inside the gate", () => {
-    const histories = Array.from({ length: 866 }, (_, index) => ({
-      itemId: 10_000 + index,
-      name: `Item ${index}`,
-      quality: "common",
-      category: "Trade Goods",
-      subCategory: "Herb",
-      vendorPrice: 0,
-      snapshots: [{
-        timestamp: new Date(NOW * 1000),
-        minPrice: 100 + index, marketPrice: 110 + index, sellPrice: 120 + index,
-        quantity: 200, numAuctions: 10
-      }],
-      dailySummaries: []
-    })) as unknown as Parameters<typeof buildMarketSignal>[0][];
-    const signals = histories.map((history) => buildMarketSignal(history, new Date(NOW * 1000), { phase: "wave" }));
-    const pairs = histories.map((history, index) => ({ history, signal: signals[index] }));
+    const timestamp = new Date(NOW * 1000);
+    const pairs = Array.from({ length: 866 }, (_, index) => {
+      const quote: MarketQuote = {
+        timestamp, priced: true, minPrice: 100 + index, marketPrice: 110 + index, sellPrice: 120 + index,
+        p5Price: 105 + index, quantity: 200, numAuctions: 10, sellerCount: 4, sellersInvisible: false,
+        ownerVisible: true, observationVersion: 2, sellerHHI: null, topSellerShare: null,
+        marketType: "commodity", bidOnlyCount: 0, highestBid: 0, soldProxyLow: 0, soldProxyHigh: 0,
+        flowObserved: true, supplyGrowth: 0, historySamples: 2, historySpanHours: 1,
+        tierTruncated: false, topTiers: [{ p: 100 + index, q: 100 }, { p: 120 + index, q: 100 }],
+        expiring: null
+      };
+      const series = [{
+        t: NOW, minPrice: 100 + index, sellPrice: 120 + index, quantity: 200, numAuctions: 10, event: false
+      }, {
+        t: NOW - 900, minPrice: 100 + index, sellPrice: 118 + index, quantity: 190, numAuctions: 9, event: false
+      }];
+      const signal = buildMarketSignal({
+        item: {
+          itemId: 10_000 + index, name: `Item ${index}`, quality: "common", category: "Trade Goods",
+          subCategory: "Herb", vendorPrice: 0, iconId: null
+        },
+        quote,
+        series
+      }, timestamp, { phase: "wave" });
+      return { signal, quote, previousAt: new Date((NOW - 900) * 1000) };
+    });
     const start = process.cpuUsage();
-    const input = buildCoreInput(pairs, { now: new Date(NOW * 1000), phase: "wave", budgetCopper: 1_000_000 });
+    const input = buildCoreInput(pairs, { now: timestamp, phase: "wave", budgetCopper: 1_000_000 });
     expect(Object.keys(input.market.items)).toHaveLength(866);
     expect(cpuMsSince(start)).toBeLessThan(budgets.buildInputMs);
   });

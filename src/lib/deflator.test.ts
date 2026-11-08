@@ -1,24 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { buildPriceIndex, indexFor, realPrice, utcDateKey } from "@/lib/deflator";
-import type { MarketHistory } from "@/lib/market-data";
+import type { SeriesPoint } from "@/lib/item-series";
 
-function item(itemId: number, snaps: Array<{ day: string; sell: number }>): MarketHistory {
+function item(itemId: number, prices: Array<{ day: string; sell: number }>) {
   return {
     itemId,
-    name: `Item ${itemId}`,
-    quality: "common",
-    category: "Trade Goods",
-    subCategory: "Herb",
-    vendorPrice: 0,
-    snapshots: snaps.map((snap) => ({
-      timestamp: new Date(`${snap.day}T12:00:00Z`),
-      minPrice: snap.sell - 10,
-      marketPrice: snap.sell,
-      sellPrice: snap.sell,
+    points: prices.map((entry, index): SeriesPoint => ({
+      t: Math.floor(new Date(`${entry.day}T12:00:00Z`).getTime() / 1000) + index,
+      minPrice: entry.sell - 10,
+      sellPrice: entry.sell,
       quantity: 10,
-      numAuctions: 2
-    })),
-    dailySummaries: []
+      numAuctions: 2,
+      event: false
+    }))
   };
 }
 
@@ -30,50 +24,34 @@ describe("buildPriceIndex", () => {
     ]);
     expect(index.baseDate).toBe("2026-07-01");
     expect(index.dates).toEqual(["2026-07-01", "2026-07-02"]);
-    // Lower median of [100, 300] is 100 -> index 100. Lower median of
-    // [200, 400] is 200 -> index 200.
     expect(index.values).toEqual([100, 200]);
   });
 
-  it("keeps one observation per item per day", () => {
+  it("keeps one observation per item per day, the day's last point", () => {
     const index = buildPriceIndex([
       item(1, [
         { day: "2026-07-01", sell: 100 },
         { day: "2026-07-01", sell: 1000 }
       ])
     ]);
-    // The last scan of the day wins: 1000 / 1000 * 100.
-    expect(index.values).toEqual([100]);
-  });
-
-  it("falls back to P10 for legacy rows without a sell front", () => {
-    const legacy = item(1, [{ day: "2026-07-01", sell: 100 }]);
-    legacy.snapshots[0].sellPrice = 0;
-    legacy.snapshots[0].marketPrice = 250;
-    const index = buildPriceIndex([legacy]);
-    expect(index.dates).toEqual(["2026-07-01"]);
     expect(index.values).toEqual([100]);
   });
 
   it("returns an empty index when no positive price exists", () => {
     expect(buildPriceIndex([])).toEqual({ dates: [], values: [], baseDate: "" });
+    expect(buildPriceIndex([{ itemId: 1, points: [] }])).toEqual({ dates: [], values: [], baseDate: "" });
   });
 
-  it("uses daily closes so the index spans more than the snapshot window", () => {
-    // The universe query keeps only the last 48 snapshots, so a snapshot-only
-    // index can never cover two days at the 15-minute cadence. Daily closes
-    // are the multi-day record, and the latest snapshot refines today.
-    const history = item(1, [{ day: "2026-07-03", sell: 300 }]);
-    history.dailySummaries = [
-      { date: new Date("2026-07-01T00:00:00Z"), openPrice: 100, closePrice: 100, highPrice: 100, lowPrice: 100, volume: 10 },
-      { date: new Date("2026-07-02T00:00:00Z"), openPrice: 100, closePrice: 200, highPrice: 200, lowPrice: 100, volume: 10 },
-      { date: new Date("2026-07-03T00:00:00Z"), openPrice: 200, closePrice: 500, highPrice: 500, lowPrice: 200, volume: 10 }
-    ];
-    const index = buildPriceIndex([history]);
+  it("spans every day the series covers", () => {
+    const index = buildPriceIndex([
+      item(1, [
+        { day: "2026-07-01", sell: 100 },
+        { day: "2026-07-02", sell: 200 },
+        { day: "2026-07-03", sell: 500 }
+      ])
+    ]);
     expect(index.dates).toEqual(["2026-07-01", "2026-07-02", "2026-07-03"]);
-    // 2026-07-03 closes at 500 in the summary but the day's last snapshot is
-    // 300, which wins as the most recent observation.
-    expect(index.values).toEqual([100, 200, 300]);
+    expect(index.values).toEqual([100, 200, 500]);
   });
 });
 

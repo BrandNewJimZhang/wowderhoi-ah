@@ -1,80 +1,98 @@
 import { describe, expect, it } from "vitest";
-import { buildMarketSignal, buildWeekdaySeasonality } from "@/lib/analytics";
-import type { MarketHistory } from "@/lib/market-data";
+import { buildMarketSignal, buildWeekdaySeasonality, type SignalInput } from "@/lib/analytics";
 import { buildPriceIndex } from "@/lib/deflator";
+import type { MarketQuote } from "@/lib/market-data";
+import type { SeriesPoint } from "@/lib/item-series";
 
 const DAY = 24 * 60 * 60 * 1000;
 const now = new Date("2026-07-24T12:00:00Z");
 
-function history(
-  snapshots: Array<{
-    daysAgo: number;
-    sellPrice: number;
-    marketPrice?: number;
-    minPrice?: number;
-    quantity?: number;
-    numAuctions?: number;
-    sellerCount?: number;
-    bidOnly?: number;
-    historySamples?: number | null;
-    historySpanHours?: number | null;
-  }>,
-  overrides?: { vendorPrice?: number; itemId?: number; name?: string }
-): MarketHistory {
+function quote(partial: Partial<MarketQuote> = {}): MarketQuote {
+  const sellPrice = partial.sellPrice ?? 100;
   return {
-    itemId: overrides?.itemId ?? 2770,
-    name: overrides?.name ?? "铜矿石",
-    quality: "common",
-    category: "Trade Goods",
-    subCategory: "采矿",
-    vendorPrice: overrides?.vendorPrice ?? 0,
-    snapshots: snapshots.map((snap) => ({
-      timestamp: new Date(now.getTime() - snap.daysAgo * DAY),
-      minPrice: snap.minPrice ?? Math.round(snap.sellPrice * 0.9),
-      marketPrice: snap.marketPrice ?? snap.sellPrice,
-      sellPrice: snap.sellPrice,
-      p5Price: Math.round(snap.sellPrice * 0.92),
-      quantity: snap.quantity ?? 100,
-      numAuctions: snap.numAuctions ?? 10,
-      sellerCount: snap.sellerCount ?? 3,
-      bidOnlyCount: snap.bidOnly ?? 0,
-      soldProxyLow: 0,
-      soldProxyHigh: 0,
-      supplyGrowth: 0,
-      historySamples: snap.historySamples ?? null,
-      historySpanHours: snap.historySpanHours ?? null,
-      topTiers: [{ p: Math.round(snap.sellPrice * 0.9), q: 100 }],
-      expiring: { soon: 1, mid: 1, late: 1 }
-    })),
-    dailySummaries: []
+    timestamp: now,
+    priced: true,
+    minPrice: partial.minPrice ?? Math.round(sellPrice * 0.9),
+    marketPrice: partial.marketPrice ?? sellPrice,
+    sellPrice,
+    p5Price: Math.round(sellPrice * 0.92),
+    quantity: 100,
+    numAuctions: 10,
+    sellerCount: 3,
+    sellersInvisible: false,
+    ownerVisible: true,
+    observationVersion: 2,
+    sellerHHI: null,
+    topSellerShare: null,
+    marketType: "commodity",
+    bidOnlyCount: 0,
+    highestBid: 0,
+    soldProxyLow: 0,
+    soldProxyHigh: 0,
+    flowObserved: true,
+    supplyGrowth: 0,
+    historySamples: null,
+    historySpanHours: null,
+    tierTruncated: false,
+    topTiers: [{ p: Math.round(sellPrice * 0.9), q: 100 }],
+    expiring: { soon: 1, mid: 1, late: 1 },
+    ...partial
+  };
+}
+
+function points(entries: Array<{ daysAgo: number; sellPrice: number; quantity?: number }>): SeriesPoint[] {
+  return entries
+    .map((entry) => ({
+      t: Math.round((now.getTime() - entry.daysAgo * DAY) / 1000),
+      minPrice: Math.round(entry.sellPrice * 0.9),
+      sellPrice: entry.sellPrice,
+      quantity: entry.quantity ?? 100,
+      numAuctions: 10,
+      event: false
+    }))
+    .sort((left, right) => left.t - right.t);
+}
+
+function input(seriesPoints: SeriesPoint[], quoteOverrides: Partial<MarketQuote> = {}, itemOverrides: Record<string, unknown> = {}): SignalInput {
+  return {
+    item: {
+      itemId: 2770,
+      name: "铜矿石",
+      quality: "common",
+      category: "商品",
+      subCategory: "金属和矿石",
+      vendorPrice: 0,
+      iconId: 101,
+      ...itemOverrides
+    },
+    quote: quote(quoteOverrides),
+    series: seriesPoints
   };
 }
 
 describe("buildMarketSignal", () => {
-  it("derives the sell front, spread, trend and supply from snapshots", () => {
+  it("derives the sell front, spread, trend and supply from the series", () => {
     const signal = buildMarketSignal(
-      history([
+      input(points([
         { daysAgo: 2, sellPrice: 100 },
         { daysAgo: 1, sellPrice: 120 },
-        { daysAgo: 0, sellPrice: 110, minPrice: 80, quantity: 240, numAuctions: 12, sellerCount: 5 }
-      ]),
+        { daysAgo: 0, sellPrice: 110 }
+      ]), { sellPrice: 110, minPrice: 80, quantity: 240, sellerCount: 5 }),
       now
     );
     expect(signal.sellPrice).toBe(110);
     expect(signal.minPrice).toBe(80);
     expect(signal.quantity).toBe(240);
     expect(signal.sellerCount).toBe(5);
-    expect(signal.sellRef).toBe(110); // median of [100, 110, 120]
+    expect(signal.sellRef).toBe(110); // lower median of [100, 110, 120]
     expect(signal.spreadPercent).toBeCloseTo((1 - 80 / 110) * 100, 5);
     expect(signal.trendPercent).toBeCloseTo(0, 5);
     expect(signal.changePercent).toBeCloseTo(((110 - 120) / 120) * 100, 5);
   });
 
   it("falls back to P10 when a legacy row has no sell front", () => {
-    // Rows imported before the sell-front column existed store 0, not null.
-    // Treating that zero as a price would erase the item from every window.
     const signal = buildMarketSignal(
-      history([{ daysAgo: 0, sellPrice: 0, marketPrice: 900, minPrice: 700 }]),
+      input(points([{ daysAgo: 0, sellPrice: 900 }]), { sellPrice: 0, marketPrice: 900, minPrice: 700 }),
       now
     );
     expect(signal.sellPrice).toBe(900);
@@ -83,127 +101,123 @@ describe("buildMarketSignal", () => {
 
   it("counts only priced observations in the window sample size", () => {
     const signal = buildMarketSignal(
-      history([
-        { daysAgo: 3, sellPrice: 100 },
-        { daysAgo: 2, sellPrice: 0 },
-        { daysAgo: 0, sellPrice: 110 }
-      ]),
+      input(
+        [
+          { t: Math.round((now.getTime() - 3 * DAY) / 1000), minPrice: 90, sellPrice: 100, quantity: 100, numAuctions: 10, event: false },
+          { t: Math.round((now.getTime() - 2 * DAY) / 1000), minPrice: 0, sellPrice: 0, quantity: 0, numAuctions: 0, event: false },
+          { t: Math.round((now.getTime() - DAY) / 1000), minPrice: 99, sellPrice: 110, quantity: 100, numAuctions: 10, event: false }
+        ],
+        { sellPrice: 110 }
+      ),
       now
     );
-    expect(signal.sellSamples).toBe(2); // the zero-priced row is not evidence
-    expect(signal.sellRef).toBe(100); // lower median of [100, 110]
+    expect(signal.sellSamples).toBe(2);
+    expect(signal.sellRef).toBe(100);
   });
 
-  it("carries the scanner's history stamp instead of recounting snapshots", () => {
-    // The scanner counted the points it retained; the terminal only sees
-    // the snapshot page. The stamp is the shared definition, and an older
-    // row without one stays null so the core can fall back.
+  it("trusts the scanner's history stamp over the terminal's recount", () => {
     const stamped = buildMarketSignal(
-      history([{ daysAgo: 0, sellPrice: 100, historySamples: 42 }]),
+      input(points([{ daysAgo: 0, sellPrice: 100 }]), { historySamples: 42, historySpanHours: 20 }),
       now
     );
     expect(stamped.historySamples).toBe(42);
+    expect(stamped.historySpanHours).toBe(20);
     expect(stamped.sellSamples).toBe(1);
-    expect(buildMarketSignal(history([{ daysAgo: 0, sellPrice: 100 }]), now).historySamples).toBeNull();
+    // Without a stamp the series answers the same question.
+    const unstamped = buildMarketSignal(input(points([{ daysAgo: 1, sellPrice: 90 }, { daysAgo: 0, sellPrice: 100 }])), now);
+    expect(unstamped.historySamples).toBe(2);
   });
 
-  it("carries the truncated-ladder flag from the scan row", () => {
-    const item = history([{ daysAgo: 0, sellPrice: 100 }]);
-    item.snapshots[0].tierTruncated = true;
-    expect(buildMarketSignal(item, now).tierTruncated).toBe(true);
-    expect(buildMarketSignal(history([{ daysAgo: 0, sellPrice: 100 }]), now).tierTruncated).toBe(false);
+  it("carries the truncated-ladder flag from the quote", () => {
+    expect(buildMarketSignal(input(points([{ daysAgo: 0, sellPrice: 100 }]), { tierTruncated: true }), now).tierTruncated).toBe(true);
+    expect(buildMarketSignal(input(points([{ daysAgo: 0, sellPrice: 100 }])), now).tierTruncated).toBe(false);
   });
 
-  it("extends the reference window with daily closes beyond snapshot retention", () => {
-    // The universe query only keeps the last 48 snapshots (about 12 hours
-    // at the scan cadence), so a 7-day steady window could never be built
-    // from snapshots alone. Older days arrive as their closing sell front;
-    // the current day's close is derived from the same scans and must not
-    // be counted twice.
-    const item = history([
-      { daysAgo: 1 / 24, sellPrice: 100 },
+  it("builds the reference from every retained series point in the phase window", () => {
+    const series = points([
+      { daysAgo: 4, sellPrice: 400 },
+      { daysAgo: 3, sellPrice: 400 },
+      { daysAgo: 2, sellPrice: 400 },
+      { daysAgo: 1, sellPrice: 400 },
+      { daysAgo: 3 / 24, sellPrice: 100 },
       { daysAgo: 2 / 24, sellPrice: 100 },
-      { daysAgo: 3 / 24, sellPrice: 100 }
+      { daysAgo: 1 / 24, sellPrice: 100 }
     ]);
-    item.dailySummaries = [
-      { date: new Date("2026-07-20T00:00:00Z"), openPrice: 400, closePrice: 400, highPrice: 420, lowPrice: 380, volume: 10 },
-      { date: new Date("2026-07-21T00:00:00Z"), openPrice: 400, closePrice: 400, highPrice: 420, lowPrice: 380, volume: 10 },
-      { date: new Date("2026-07-22T00:00:00Z"), openPrice: 400, closePrice: 400, highPrice: 420, lowPrice: 380, volume: 10 },
-      { date: new Date("2026-07-23T00:00:00Z"), openPrice: 400, closePrice: 400, highPrice: 420, lowPrice: 380, volume: 10 },
-      // Today's close comes from these snapshots; counting it again would
-      // let one scan generation masquerade as a day of history.
-      { date: new Date("2026-07-24T00:00:00Z"), openPrice: 999, closePrice: 999, highPrice: 999, lowPrice: 999, volume: 10 }
-    ];
-    const steady = buildMarketSignal(item, now, { phase: "steady" });
+    const steady = buildMarketSignal(input(series), now, { phase: "steady" });
     expect(steady.sellRef).toBe(400);
-    expect(steady.sellSamples).toBe(7); // 4 daily closes + 3 snapshots
-    // A 6-hour wave window excludes every older daily close.
-    const wave = buildMarketSignal(item, now, { phase: "wave" });
+    expect(steady.sellSamples).toBe(7);
+    const wave = buildMarketSignal(input(series), now, { phase: "wave" });
     expect(wave.sellRef).toBe(100);
     expect(wave.sellSamples).toBe(3);
   });
 
   it("measures spread at the current sell front, not the window reference", () => {
     const signal = buildMarketSignal(
-      history([
+      input(points([
         { daysAgo: 2, sellPrice: 100 },
         { daysAgo: 1, sellPrice: 100 },
-        { daysAgo: 0, sellPrice: 120, minPrice: 80 }
-      ]),
+        { daysAgo: 0, sellPrice: 120 }
+      ]), { sellPrice: 120, minPrice: 80 }),
       now
     );
-    // Lower median of [100, 100, 120] is 100, so a reference-based spread
-    // would read 20%; the executable gap at today's front is 33%.
     expect(signal.sellRef).toBe(100);
     expect(signal.spreadPercent).toBeCloseTo((1 - 80 / 120) * 100, 5);
   });
 
   it("keeps P10 as a separate statistic, not the reference", () => {
     const signal = buildMarketSignal(
-      history([
-        { daysAgo: 2, sellPrice: 100, marketPrice: 500 },
-        { daysAgo: 1, sellPrice: 120, marketPrice: 500 },
-        { daysAgo: 0, sellPrice: 110, marketPrice: 500 }
-      ]),
+      input(points([
+        { daysAgo: 2, sellPrice: 100 },
+        { daysAgo: 1, sellPrice: 120 },
+        { daysAgo: 0, sellPrice: 110 }
+      ]), { sellPrice: 110, marketPrice: 500 }),
       now
     );
     expect(signal.price).toBe(500);
     expect(signal.sellRef).toBe(110);
-    // The spread is measured against the sell front, never P10.
     expect(signal.spreadPercent).toBeCloseTo((1 - 99 / 110) * 100, 5);
   });
 
-  it("ignores snapshots outside the phase window", () => {
+  it("ignores a series point later than the signal's own scan", () => {
+    // The addon file can already hold the next scan when an older duplicate
+    // is replayed. A stored signal must describe its own generation, not a
+    // future price.
+    const series = points([
+      { daysAgo: 0, sellPrice: 110 },
+      { daysAgo: -1, sellPrice: 999999 }
+    ]);
+    const signal = buildMarketSignal(input(series, { sellPrice: 110 }), now);
+    expect(signal.sellRef).toBe(110);
+    expect(signal.spark).toEqual([110]);
+  });
+
+  it("ignores series points outside the phase window", () => {
     const signal = buildMarketSignal(
-      history([
+      input(points([
         { daysAgo: 20, sellPrice: 999999 },
         { daysAgo: 1, sellPrice: 100 },
         { daysAgo: 0, sellPrice: 110 }
-      ]),
+      ]), { sellPrice: 110 }),
       now,
-      { phase: "settle" } // 24-hour window
+      { phase: "settle" }
     );
-    // The 20-day outlier is outside the 24h window; [100, 110] has a lower
-    // median of 100.
     expect(signal.sellRef).toBe(100);
   });
 
   it("reports the deflated price when a price index is supplied", () => {
-    const item = history([
+    const series = points([
       { daysAgo: 1, sellPrice: 100 },
       { daysAgo: 0, sellPrice: 200 }
     ]);
-    const index = buildPriceIndex([item]);
-    const signal = buildMarketSignal(item, now, { index });
+    const index = buildPriceIndex([{ itemId: 2770, points: series }]);
+    const signal = buildMarketSignal(input(series, { sellPrice: 200 }), now, { index });
     expect(signal.realSellPrice).not.toBeNull();
-    // The index is normalised to its first day, so the second day's real
-    // price is half its nominal doubling.
     expect(signal.realSellPrice!).toBeLessThan(signal.sellPrice);
   });
 
-  it("carries demand and inferred-flow fields straight from the snapshot", () => {
+  it("carries demand and inferred-flow fields straight from the quote", () => {
     const signal = buildMarketSignal(
-      history([{ daysAgo: 0, sellPrice: 100, bidOnly: 4 }]),
+      input(points([{ daysAgo: 0, sellPrice: 100 }]), { bidOnlyCount: 4 }),
       now
     );
     expect(signal.bidOnlyCount).toBe(4);
@@ -212,17 +226,23 @@ describe("buildMarketSignal", () => {
     expect(signal.sellersInvisible).toBe(false);
   });
 
-  it("flags an item whose newest price row predates the current scan", () => {
-    const item = history([{ daysAgo: 1, sellPrice: 100 }]);
-    const scannedAt = new Date(now.getTime() - 60 * 60 * 1000);
-    const signal = buildMarketSignal(item, now, { currentAt: scannedAt });
-    expect(signal.stale).toBe(true);
-    // Without an explicit generation the latest row is the current book.
-    expect(buildMarketSignal(item, now).stale).toBe(false);
+  it("flags an item whose quote predates the current scan", () => {
+    const scannedAt = new Date(now.getTime() + 60 * 60 * 1000);
+    expect(buildMarketSignal(input(points([{ daysAgo: 1, sellPrice: 100 }])), now, { currentAt: scannedAt }).stale).toBe(true);
+    expect(buildMarketSignal(input(points([{ daysAgo: 1, sellPrice: 100 }])), now).stale).toBe(false);
   });
 
-  it("throws on an item with no snapshots instead of inventing a signal", () => {
-    expect(() => buildMarketSignal(history([]), now)).toThrow(/no snapshots/i);
+  it("still prices an item whose series is empty", () => {
+    const signal = buildMarketSignal(input([], { sellPrice: 500, minPrice: 400 }), now);
+    expect(signal.sellPrice).toBe(500);
+    expect(signal.sellRef).toBe(500);
+    expect(signal.spark).toEqual([]);
+  });
+
+  it("carries the catalogue icon and subclass onto the signal", () => {
+    const signal = buildMarketSignal(input(points([{ daysAgo: 0, sellPrice: 100 }])), now);
+    expect(signal.iconId).toBe(101);
+    expect(signal.subCategory).toBe("金属和矿石");
   });
 });
 

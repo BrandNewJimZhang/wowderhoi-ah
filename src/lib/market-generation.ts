@@ -1,0 +1,302 @@
+// One scan becomes one immutable generation: the current book (quotes), the
+// signals derived from the book plus the series, the shared core's output,
+// and the decisions that output named. Everything expensive happens here,
+// outside the write transaction; page reads only decode what this module
+// produced.
+import type { AddonScan } from "@/lib/addon-scan";
+import { buildMarketSignal } from "@/lib/analytics";
+import { buildCoreInput } from "@/lib/core/from-market";
+import { runCore } from "@/lib/core/run-core";
+import type { CoreOutput, OwnSales } from "@/lib/core/types";
+import { decisionIdFor } from "@/lib/decision-id";
+import { buildPriceIndex, type PriceIndex } from "@/lib/deflator";
+import {
+  mergeSeries,
+  scanSeriesPoints,
+  type AddonSeries,
+  type SeriesPoint
+} from "@/lib/item-series";
+import type { MarketQuote, SignalItem } from "@/lib/market-data";
+import { resolvePhase } from "@/lib/phase";
+import type { MarketPhase } from "@/lib/market-rules";
+import { SIGNAL_SCHEMA_VERSION, type StoredSignalRow } from "@/lib/signal-row";
+
+export type QuoteRow = MarketQuote;
+
+export type SeriesRow = {
+  itemId: number;
+  firstAt: Date;
+  lastAt: Date;
+  pointCount: number;
+  points: SeriesPoint[];
+};
+
+export type DecisionRow = {
+  decisionId: string;
+  itemId: number | null;
+  kind: string;
+  reason: string | null;
+  expectedNet: number | null;
+  fillProb: number | null;
+  fillBasis: string | null;
+  allocQty: number | null;
+  allocUnitPrice: number | null;
+};
+
+export type GenerationPlan = {
+  scannedAt: Date;
+  phase: MarketPhase;
+  breadth: number;
+  staleCount: number;
+  firstScanAt: Date;
+  priceIndex: PriceIndex;
+  core: CoreOutput;
+  gapMinutes: number | null;
+  quotes: Array<{ itemId: number; quote: QuoteRow }>;
+  signals: Array<{ itemId: number; data: StoredSignalRow }>;
+  series: SeriesRow[];
+  decisions: DecisionRow[];
+  seriesPointCount: number;
+};
+
+export type GenerationInput = {
+  scan: AddonScan;
+  series: AddonSeries | null;
+  // Static facts for every item either the scan or the previous generation
+  // references. A missing row is a programming error, not a soft skip.
+  items: Map<number, SignalItem>;
+  existingSeries: Array<{ itemId: number; points: readonly SeriesPoint[] }>;
+  // The previous generation's current book, used to keep delisted items
+  // visible for one generation. Their signals are stale and never reach the
+  // core.
+  previous: { scannedAt: Date; quotes: Array<{ item: SignalItem; quote: MarketQuote }> } | null;
+  openedAt: Date | null;
+  firstScanAt: Date | null;
+  positions: Record<number, { qty: number; cost: number }>;
+  ownSales: OwnSales;
+  budgetCopper: number;
+  phaseOverride: MarketPhase | null;
+};
+
+function ageHours(now: Date, anchor: Date | null): number {
+  if (!anchor) return 0;
+  return Math.max(0, (now.getTime() - anchor.getTime()) / (60 * 60 * 1000));
+}
+
+function quoteFromScanItem(item: AddonScan["items"][number], scannedAt: Date, observationVersion: number | null): MarketQuote {
+  return {
+    timestamp: scannedAt,
+    priced: item.priced,
+    minPrice: item.minPrice,
+    marketPrice: item.marketPrice,
+    sellPrice: item.sellPrice,
+    p5Price: item.p5Price,
+    quantity: item.quantity,
+    numAuctions: item.numAuctions,
+    sellerCount: item.sellerCount,
+    sellersInvisible: item.sellersInvisible,
+    ownerVisible: item.ownerVisible,
+    observationVersion,
+    sellerHHI: item.sellerHHI,
+    topSellerShare: item.topSellerShare,
+    marketType: item.marketType,
+    bidOnlyCount: item.bidOnlyCount,
+    highestBid: item.highestBid,
+    soldProxyLow: item.inferredSoldLow,
+    soldProxyHigh: item.inferredSoldHigh,
+    flowObserved: item.flowObserved,
+    supplyGrowth: item.supplyGrowth,
+    historySamples: item.historySamples,
+    historySpanHours: item.historySpanHours,
+    tierTruncated: item.tierTruncated,
+    topTiers: item.tiers,
+    expiring: item.expiring
+  };
+}
+
+function signalItemOf(itemId: number, items: Map<number, SignalItem>): SignalItem {
+  const item = items.get(itemId);
+  if (!item) throw new Error(`Generation references item ${itemId} without a catalogue row`);
+  return item;
+}
+
+function previousPointSeconds(points: readonly SeriesPoint[], scanSeconds: number): number | null {
+  for (let index = points.length - 1; index >= 0; index -= 1) {
+    if (points[index].t < scanSeconds) return points[index].t;
+  }
+  return null;
+}
+
+export function buildGenerationPlan(input: GenerationInput): GenerationPlan {
+  const { scan } = input;
+  const scanSeconds = Math.round(scan.scannedAt.getTime() / 1000);
+  const seriesFirst = input.series?.firstScanAt ? new Date(input.series.firstScanAt * 1000) : null;
+  const firstScanAt = [input.firstScanAt, seriesFirst, scan.scannedAt]
+    .filter((value): value is Date => value instanceof Date)
+    .reduce((earliest, value) => (value < earliest ? value : earliest));
+  const phaseAnchor = input.openedAt ?? firstScanAt;
+  const breadth = scan.items.filter((item) => item.priced).length;
+  const phase = input.phaseOverride ?? resolvePhase(ageHours(scan.scannedAt, phaseAnchor), breadth);
+
+  // The addon series is global; the current scan contributes one more point
+  // per priced item. Group once, then merge per item.
+  const incomingByItem = new Map<number, SeriesPoint[]>();
+  for (const point of input.series?.points ?? []) {
+    const list = incomingByItem.get(point.itemId) ?? [];
+    list.push(point);
+    incomingByItem.set(point.itemId, list);
+  }
+  for (const point of scanSeriesPoints(scan)) {
+    const list = incomingByItem.get(point.itemId) ?? [];
+    list.push(point);
+    incomingByItem.set(point.itemId, list);
+  }
+
+  // Only a priced row replaces the item's current book. A demand-only row
+  // in the newest scan leaves the last priced book to be carried as stale.
+  const currentIds = new Set(scan.items.filter((item) => item.priced).map((item) => item.itemId));
+  const staleCandidates = (input.previous?.quotes ?? []).filter((row) => !currentIds.has(row.item.itemId));
+  const existingById = new Map(input.existingSeries.map((row) => [row.itemId, row.points]));
+  const seriesIds = new Set<number>([...incomingByItem.keys(), ...staleCandidates.map((row) => row.item.itemId)]);
+  for (const itemId of seriesIds) {
+    // A scan-only demand row has no price point; an existing series can
+    // still describe it, so it is only dropped when both sides are empty.
+    if (!incomingByItem.has(itemId) && !existingById.has(itemId)) seriesIds.delete(itemId);
+  }
+
+  const merged = new Map<number, SeriesPoint[]>();
+  for (const itemId of seriesIds) {
+    const points = mergeSeries(existingById.get(itemId) ?? [], incomingByItem.get(itemId) ?? [], scanSeconds);
+    if (points.length > 0) merged.set(itemId, points);
+  }
+
+  const priceIndex = buildPriceIndex(
+    Array.from(merged.entries()).map(([itemId, points]) => ({ itemId, points }))
+  );
+  // The scan's own point sits at scannedAt; elapsedHours is the distance to
+  // the point before it, so the lookup is strictly earlier.
+  const previousAtById = new Map<number, number | null>();
+  for (const [itemId, points] of merged) {
+    previousAtById.set(itemId, previousPointSeconds(points, scanSeconds));
+  }
+
+  const quoteById = new Map<number, MarketQuote>();
+  for (const item of scan.items) {
+    quoteById.set(item.itemId, quoteFromScanItem(item, scan.scannedAt, scan.observationVersion));
+  }
+
+  const signals: Array<{ itemId: number; data: StoredSignalRow }> = [];
+  for (const item of scan.items) {
+    if (!item.priced) continue;
+    const quote = quoteById.get(item.itemId)!;
+    const signal = buildMarketSignal(
+      { item: signalItemOf(item.itemId, input.items), quote, series: merged.get(item.itemId) ?? [] },
+      scan.scannedAt,
+      { phase, index: priceIndex, currentAt: scan.scannedAt }
+    );
+    signals.push({
+      itemId: item.itemId,
+      data: {
+        schemaVersion: SIGNAL_SCHEMA_VERSION,
+        signal,
+        coreRow: null,
+        previousAt: previousAtById.get(item.itemId) ?? null
+      }
+    });
+  }
+  for (const row of staleCandidates) {
+    const signal = buildMarketSignal(
+      { item: row.item, quote: row.quote, series: merged.get(row.item.itemId) ?? [] },
+      scan.scannedAt,
+      { phase, index: priceIndex, currentAt: scan.scannedAt }
+    );
+    signals.push({
+      itemId: row.item.itemId,
+      data: {
+        schemaVersion: SIGNAL_SCHEMA_VERSION,
+        signal,
+        coreRow: null,
+        previousAt: previousAtById.get(row.item.itemId) ?? null
+      }
+    });
+  }
+  signals.sort((left, right) => left.itemId - right.itemId);
+
+  const corePairs = signals
+    .filter((row) => !row.data.signal.stale)
+    .map((row) => {
+      const quote = quoteById.get(row.itemId)!;
+      const previous = previousAtById.get(row.itemId) ?? null;
+      return { signal: row.data.signal, quote, previousAt: previous === null ? null : new Date(previous * 1000) };
+    });
+  const core = runCore(buildCoreInput(corePairs, {
+    now: scan.scannedAt,
+    phase,
+    firstScanAt,
+    positions: input.positions,
+    ownSales: input.ownSales,
+    budgetCopper: input.budgetCopper,
+    cashCopper: scan.cash,
+    bagSlots: scan.bagSlots ?? undefined
+  }));
+  const coreByItem = new Map(core.rows.map((row) => [row.itemId, row]));
+  for (const row of signals) {
+    row.data.coreRow = coreByItem.get(row.itemId) ?? null;
+  }
+
+  const decisionsById = new Map<string, DecisionRow>();
+  for (const action of core.actions) {
+    const decisionId = decisionIdFor({
+      realm: scan.server,
+      faction: scan.faction,
+      scannedAt: scan.scannedAt,
+      itemId: action.itemId,
+      kind: action.kind
+    });
+    // The core emits at most one action per item and kind; a duplicate id
+    // would mean two recommendations share an identity, which the review
+    // could not attribute. Fail loudly instead of silently keeping one.
+    if (decisionsById.has(decisionId)) {
+      throw new Error(`Duplicate decision identity ${decisionId}`);
+    }
+    decisionsById.set(decisionId, {
+      decisionId,
+      itemId: action.itemId,
+      kind: action.kind,
+      reason: action.reason,
+      expectedNet: action.expectedNet,
+      fillProb: action.kind === "buy" ? action.fillProb : null,
+      fillBasis: action.kind === "buy" ? action.fillBasis : null,
+      allocQty: action.kind === "buy" ? action.allocQty : action.qty,
+      allocUnitPrice: action.kind === "buy" ? action.allocUnitPrice : action.price
+    });
+  }
+
+  const series: SeriesRow[] = Array.from(merged.entries())
+    .sort(([left], [right]) => left - right)
+    .map(([itemId, points]) => ({
+      itemId,
+      firstAt: new Date(points[0].t * 1000),
+      lastAt: new Date(points[points.length - 1].t * 1000),
+      pointCount: points.length,
+      points
+    }));
+
+  return {
+    scannedAt: scan.scannedAt,
+    phase,
+    breadth,
+    staleCount: staleCandidates.length,
+    firstScanAt,
+    priceIndex,
+    core,
+    gapMinutes: input.previous
+      ? Math.max(0, Math.round((scan.scannedAt.getTime() - input.previous.scannedAt.getTime()) / 60_000))
+      : null,
+    quotes: Array.from(quoteById.entries()).map(([itemId, quote]) => ({ itemId, quote })),
+    signals,
+    series,
+    decisions: Array.from(decisionsById.values()),
+    seriesPointCount: series.reduce((sum, row) => sum + row.pointCount, 0)
+  };
+}

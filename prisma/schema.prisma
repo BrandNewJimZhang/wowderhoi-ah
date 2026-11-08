@@ -34,6 +34,9 @@ model Market {
 
   snapshots      AuctionSnapshot[]
   dailySummaries DailySummary[]
+  generations    MarketGeneration[]
+  series         ItemSeries[]
+  importRuns     ImportRun[]
   positions      Position[]
   trades         Trade[]
   decisions      Decision[]
@@ -66,6 +69,9 @@ model Item {
   catalogUpdatedAt DateTime?         @map("catalog_updated_at")
   snapshots        AuctionSnapshot[]
   dailySummaries   DailySummary[]
+  quotes           MarketQuote[]
+  series           ItemSeries[]
+  signalRows       MarketSignalRow[]
   alerts           AlertRule[]
   watchlistEntry   Watchlist?
   createdAt        DateTime          @default(now()) @map("created_at")
@@ -155,6 +161,132 @@ model DailySummary {
   @@index([marketId, date])
 }
 
+// One immutable evaluation per scan. The import materialises the signals
+// and the shared core's output here, so a page read never recomputes the
+// market and a restart never loses the derivation. The phase is the one
+// the scan was evaluated under; a read may display a later phase, but it
+// must not silently apply the new gates to the old book.
+model MarketGeneration {
+  id             String   @id @default(cuid())
+  marketId       String   @map("market_id")
+  scannedAt      DateTime @map("scanned_at")
+  phase          String
+  breadth        Int
+  // Items carried over from the previous generation because the newest
+  // scan no longer lists them; they stay visible but never actionable.
+  staleCount     Int      @default(0) @map("stale_count")
+  firstScanAt    DateTime? @map("first_scan_at")
+  priceIndex     Json     @map("price_index")
+  core           Json
+  ledgerRevision String   @map("ledger_revision")
+  // Minutes since the previous generation; null for the first scan.
+  gapMinutes     Int?     @map("gap_minutes")
+  createdAt      DateTime @default(now()) @map("created_at")
+  market         Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  quotes         MarketQuote[]
+  signals        MarketSignalRow[]
+  decisions      Decision[]
+
+  @@unique([marketId, scannedAt])
+  @@index([marketId, scannedAt])
+}
+
+// The current book for one item in one generation. History does not live
+// here; it lives in ItemSeries. Keeping the two apart is what lets old
+// generations be pruned without touching the charts.
+model MarketQuote {
+  generationId       String   @map("generation_id")
+  marketId           String   @map("market_id")
+  itemId             Int      @map("item_id")
+  priced             Boolean  @default(true)
+  minPrice           Float    @map("min_price")
+  marketPrice        Float    @map("market_price")
+  sellPrice          Float    @default(0) @map("sell_price")
+  p5Price            Float    @default(0) @map("p5_price")
+  quantity           Int
+  numAuctions        Int      @map("num_auctions")
+  sellerCount        Int      @default(0) @map("seller_count")
+  sellersInvisible   Boolean  @default(false) @map("sellers_invisible")
+  ownerVisible       Boolean  @default(false) @map("owner_visible")
+  observationVersion Int?     @map("observation_version")
+  sellerHHI          Float?   @map("seller_hhi")
+  topSellerShare     Float?   @map("top_seller_share")
+  marketType         String?  @map("market_type")
+  bidOnlyCount       Int      @default(0) @map("bid_only_count")
+  highestBid         Float    @default(0) @map("highest_bid")
+  soldProxyLow       Float    @default(0) @map("sold_proxy_low")
+  soldProxyHigh      Float    @default(0) @map("sold_proxy_high")
+  flowObserved       Boolean  @default(true) @map("flow_observed")
+  supplyGrowth       Float    @default(0) @map("supply_growth")
+  historySamples     Int?     @map("history_samples")
+  historySpanHours   Float?   @map("history_span_hours")
+  tierTruncated      Boolean  @default(false) @map("tier_truncated")
+  topTiers           Json?    @map("top_tiers")
+  expiring           Json?
+  generation         MarketGeneration @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  item               Item     @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
+
+  @@id([generationId, itemId])
+  @@index([marketId, itemId])
+  @@index([itemId])
+}
+
+// The materialised signal for one item in one generation, including the
+// core row when the item passed the current gates. The item page reads one
+// row instead of loading and searching the whole evaluation.
+model MarketSignalRow {
+  generationId String @map("generation_id")
+  itemId       Int    @map("item_id")
+  data         Json
+  generation   MarketGeneration @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  item         Item   @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
+
+  @@id([generationId, itemId])
+  @@index([itemId])
+}
+
+// The terminal's own copy of the addon series. The addon rebuilds its file
+// when the pipeline version changes and trims it against a 60k-point cap;
+// the terminal keeps a longer, independently retained history so one addon
+// upgrade cannot erase a month of charts.
+model ItemSeries {
+  marketId   String   @map("market_id")
+  itemId     Int      @map("item_id")
+  firstAt    DateTime @map("first_at")
+  lastAt     DateTime @map("last_at")
+  pointCount Int      @map("point_count")
+  // { t, min, sell, q, n, e } parallel arrays, the same shape the addon
+  // writes. See src/lib/item-series.ts for the retention ceiling.
+  points     Json
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  market     Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  item       Item     @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
+
+  @@id([marketId, itemId])
+  @@index([marketId, lastAt])
+}
+
+// One row per import attempt. The health page reads the last N rows; the
+// route writes them even when the import is a duplicate or fails.
+model ImportRun {
+  id            String   @id @default(cuid())
+  marketId      String   @map("market_id")
+  scannedAt     DateTime @map("scanned_at")
+  receivedAt    DateTime @default(now()) @map("received_at")
+  source        String // watcher | manual | api
+  scanItems     Int      @map("scan_items")
+  seriesPoints  Int      @map("series_points")
+  quotes        Int
+  journalEvents Int      @map("journal_events")
+  journalErrors Int      @map("journal_errors")
+  durationMs    Int      @map("duration_ms")
+  status        String // ok | duplicate | error
+  error         String?
+  market        Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+
+  @@index([marketId, receivedAt])
+}
+
 // A position is the ledger projection of the imported journal, rebuilt on
 // every import. It is not hand-edited.
 model Position {
@@ -186,10 +318,16 @@ model Trade {
   // a mailbox sale is necessarily observed later than it happened.
   listedAt   DateTime? @map("listed_at")
   realizedAt DateTime  @map("realized_at")
+  // Set when the player adopted a recommendation and this sale is tied to
+  // it; matchKind names the evidence ("identity" or "window"). A legacy
+  // row has neither.
+  decisionId String?   @map("decision_id")
+  matchKind  String?   @map("match_kind")
   market     Market    @relation(fields: [marketId], references: [id], onDelete: Cascade)
 
   @@index([marketId, realizedAt])
   @@index([itemId])
+  @@index([decisionId])
 }
 
 // What the system recommended and why. Written by the cockpit or the
@@ -198,6 +336,12 @@ model Trade {
 // reads is storage, not a decision log.
 model Decision {
   id             String   @id @default(cuid())
+  // Stable identity shared with the addon: realm|faction|scannedAt:item:kind.
+  // Null on rows written before the identity existed.
+  decisionId     String?  @unique @map("decision_id")
+  generationId   String?  @map("generation_id")
+  // Set when the in-game /wahadopt event names this decision.
+  adoptedAt      DateTime? @map("adopted_at")
   marketId       String   @map("market_id")
   at             DateTime
   phase          String
@@ -212,6 +356,7 @@ model Decision {
   allocQty       Int?     @map("alloc_qty")
   allocUnitPrice Float?   @map("alloc_unit_price")
   market         Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  generation     MarketGeneration? @relation(fields: [generationId], references: [id], onDelete: SetNull)
 
   @@index([at])
   @@index([itemId])

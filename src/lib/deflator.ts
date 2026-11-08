@@ -1,8 +1,8 @@
 // Nominal prices are a currency phenomenon. The opening weeks move the
 // money supply by multiples, so a +50% price can mean "more gold" rather
 // than "more demand". This module builds a market-wide price index from
-// the scans and converts nominal prices into real ones.
-import { sellPriceOf, type MarketHistory } from "@/lib/market-data";
+// the series and converts nominal prices into real ones.
+import type { SeriesPoint } from "@/lib/item-series";
 import { median } from "@/lib/median";
 
 export type PriceIndex = {
@@ -15,28 +15,21 @@ export function utcDateKey(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-// Each item contributes one price per day (its close), so a single
-// heavily scanned item cannot dominate the index. Daily summaries are the
-// multi-day record: the universe query only keeps the last 48 snapshots,
-// which is half a day at the 15-minute cadence, so snapshots alone could
-// never produce an index that spans more than one day. Recent snapshots
-// still refine the current day's close. The daily median is normalised to
-// the first day with data.
-export function buildPriceIndex(items: MarketHistory[]): PriceIndex {
+// Each item contributes one price per day — its close — so a single
+// heavily scanned item cannot dominate the index. The series is the
+// multi-day record; a snapshot page would only cover the last day at a
+// 15-minute cadence. The median of those daily closes is normalised to the
+// first day with data. Points arrive ascending, so the last point of a day
+// is its close.
+export function buildPriceIndex(items: Array<{ itemId: number; points: readonly SeriesPoint[] }>): PriceIndex {
   const byDate = new Map<string, Map<number, number>>();
-  const record = (date: string, itemId: number, price: number) => {
-    if (!price || price <= 0) return;
-    const day = byDate.get(date) ?? new Map<number, number>();
-    day.set(itemId, price);
-    byDate.set(date, day);
-  };
   for (const item of items) {
-    for (const summary of item.dailySummaries) {
-      record(utcDateKey(summary.date), item.itemId, summary.closePrice);
-    }
-    const snapshots = [...item.snapshots].sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
-    for (const snapshot of snapshots) {
-      record(utcDateKey(snapshot.timestamp), item.itemId, sellPriceOf(snapshot));
+    for (const point of item.points) {
+      if (!point.sellPrice || point.sellPrice <= 0) continue;
+      const date = utcDateKey(new Date(point.t * 1000));
+      const day = byDate.get(date) ?? new Map<number, number>();
+      day.set(item.itemId, point.sellPrice);
+      byDate.set(date, day);
     }
   }
   const dates = Array.from(byDate.keys()).sort();

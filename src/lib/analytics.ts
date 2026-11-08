@@ -1,23 +1,25 @@
 // Snapshot-based market signals. Every statistic here follows the same
 // philosophy as the in-game scanner: medians and percentiles over raw
-// snapshots, never means over daily aggregates — means inherit every
+// series points, never means over daily aggregates — means inherit every
 // bait listing, and daily averages erase the hourly structure of the AH.
-// Where the snapshot retention does not reach back to the phase window,
-// older days contribute their closing sell front (a median-compatible
-// statistic), never a daily mean.
+// The series is the addon's own layered history, so a 7-day reference is
+// not silently truncated to the 48 rows a display query happens to keep.
 //
 // The anchor is the sell front. P10 remains a statistic; it is not a
 // reference price and must not drive a recommendation.
-import { sellPriceOf, type MarketHistory } from "@/lib/market-data";
-import { median } from "@/lib/median";
+import { sellPriceOf, type MarketQuote, type SignalItem } from "@/lib/market-data";
+import type { SeriesPoint } from "@/lib/item-series";
+import { seriesSamples, seriesSpanHours, seriesWindow, sparkSeries } from "@/lib/item-series";
+import { median, quantile } from "@/lib/median";
 import { historyWindowHours } from "@/lib/phase";
 import type { MarketPhase } from "@/lib/market-rules";
-import { realPrice, utcDateKey, type PriceIndex } from "@/lib/deflator";
+import { realPrice, type PriceIndex } from "@/lib/deflator";
 
 export type MarketSignal = {
   itemId: number;
   name: string;
   category: string;
+  subCategory: string;
   quality: string;
   // Catalogue icon id; null on scan-only items the public catalogue does
   // not know.
@@ -53,105 +55,103 @@ export type MarketSignal = {
   stale: boolean;
   sellRef: number; // median sell front over the phase window
   sellSamples: number;
-  // History points inside the phase window at scan time, stamped by the
-  // scanner. Null on rows imported before the column existed; the core then
-  // sees no stamped history for that row.
-  historySamples: number | null;
-  // Hours those points span; null on rows imported before the field existed,
-  // where the core applies the sample floor alone instead of inventing a
-  // coverage of zero.
+  // History points inside the phase window. The scanner's own stamp wins;
+  // without one the series answers the same question.
+  historySamples: number;
+  // Hours those points span. Null when there is only one observation: the
+  // core then applies the sample floor alone instead of inventing coverage.
   historySpanHours: number | null;
   // The persisted ladder is a truncated top-of-book; the queue behind a
   // listing above the last visible rung is larger than the rows shown.
   tierTruncated: boolean;
   spreadPercent: number; // (sellPrice - minPrice) / sellPrice
   trendPercent: number; // (sellPrice - sellRef) / sellRef
-  changePercent: number; // sellPrice vs the previous snapshot that priced this item
+  changePercent: number; // sellPrice vs the previous series point
+  // Downsampled sell-front history for the table sparkline.
+  spark: number[];
+  // Quartiles of the sell front inside the phase window; display only.
+  priceP25: number;
+  priceP75: number;
   realSellPrice: number | null; // deflated by the market price index
 };
 
+export type SignalInput = {
+  item: SignalItem;
+  quote: MarketQuote;
+  // Ascending by timestamp. Includes the quote's own point when the scan
+  // was priced.
+  series: readonly SeriesPoint[];
+};
+
 export function buildMarketSignal(
-  item: MarketHistory,
+  input: SignalInput,
   now: Date,
   options?: { phase?: MarketPhase; index?: PriceIndex; currentAt?: Date }
 ): MarketSignal {
-  const snapshots = [...item.snapshots].sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
-  if (snapshots.length === 0) {
-    throw new Error(`buildMarketSignal: item ${item.itemId} has no snapshots — filter empty items before signalling`);
-  }
-  const latest = snapshots[snapshots.length - 1];
-  const previous = snapshots[snapshots.length - 2];
+  const { item, quote, series } = input;
+  const nowSeconds = Math.round(now.getTime() / 1000);
   const phase = options?.phase ?? "steady";
   const windowHours = historyWindowHours(phase);
-  const windowStart = now.getTime() - windowHours * 60 * 60 * 1000;
-  const windowSnapshots = snapshots.filter((snapshot) => snapshot.timestamp.getTime() >= windowStart);
-  const snapshotPrices = windowSnapshots.map(sellPriceOf).filter((value) => value > 0);
-  // The universe query keeps only the last 48 snapshots (about 12 hours),
-  // which is shorter than the wave, settle and steady windows. Days older
-  // than the snapshot window contribute their closing sell front — the
-  // same statistic the median is defined over — so a 7-day reference is
-  // not silently truncated to half a day. The current day's close is
-  // derived from these snapshots and is never counted twice.
-  const oldestSnapshotDay = snapshots.length > 0 ? utcDateKey(snapshots[0].timestamp) : null;
-  const dailyPrices = item.dailySummaries
-    .filter((summary) => summary.date.getTime() >= windowStart)
-    .filter((summary) => oldestSnapshotDay === null || utcDateKey(summary.date) < oldestSnapshotDay)
-    .map((summary) => summary.closePrice)
-    .filter((value) => value > 0);
-  const prices = [...dailyPrices, ...snapshotPrices];
-  const sellPrice = sellPriceOf(latest);
+  const window = seriesWindow(series, nowSeconds, windowHours);
+  const prices = window.map((point) => point.sellPrice).filter((value) => value > 0);
+  const sellPrice = sellPriceOf(quote);
   const sellRef = prices.length > 0 ? median(prices) : sellPrice;
-  // The sample count must describe the median's inputs, not every row in the
-  // window: a legacy or demand-only row carries no usable sell price.
-  const sellSamples = prices.length;
-  // The scanner counts the points it retained against the phase window; the
-  // terminal's sellSamples counts the median's inputs from the snapshot
-  // page. Both used to travel as `history.samples` under the same name.
-  const historySamples = latest.historySamples ?? null;
-  const historySpanHours = latest.historySpanHours ?? null;
-  const tierTruncated = latest.tierTruncated === true;
-  const previousSell = previous ? sellPriceOf(previous) : 0;
+  const quoteSeconds = Math.round(quote.timestamp.getTime() / 1000);
+  let previous: SeriesPoint | null = null;
+  for (let index = series.length - 1; index >= 0; index -= 1) {
+    if (series[index].t < quoteSeconds) {
+      previous = series[index];
+      break;
+    }
+  }
+  const previousSell = previous?.sellPrice ?? 0;
+  // A single-point window still gets a sparkline; points after the scan
+  // never do.
+  const sparkWindow = window.length >= 2 ? window : series.filter((point) => point.t <= nowSeconds);
   return {
     itemId: item.itemId,
     name: item.name,
     category: item.category,
+    subCategory: item.subCategory,
     quality: item.quality,
-    iconId: item.iconId ?? null,
+    iconId: item.iconId,
     sellPrice,
-    minPrice: latest.minPrice,
-    price: latest.marketPrice,
-    quantity: latest.quantity,
-    numAuctions: latest.numAuctions,
-    sellerCount: latest.sellerCount ?? latest.numAuctions,
-    sellersInvisible: latest.sellersInvisible ?? false,
-    // Rows imported before the column existed cannot claim observability:
-    // their flow was computed with own listings still in the book.
-    ownerVisible: latest.ownerVisible === true,
-    sellerHHI: latest.sellerHHI ?? null,
-    topSellerShare: latest.topSellerShare ?? null,
-    marketType: latest.marketType === "commodity" || latest.marketType === "item" ? latest.marketType : null,
-    bidOnlyCount: latest.bidOnlyCount ?? 0,
-    highestBid: latest.highestBid ?? 0,
-    inferredSoldLow: latest.soldProxyLow ?? 0,
-    inferredSoldHigh: Math.max(latest.soldProxyHigh ?? 0, latest.soldProxyLow ?? 0),
-    // Rows imported before the flag existed were produced under the
-    // observed-by-default behaviour, so only an explicit false disqualifies.
-    flowObserved: latest.flowObserved !== false,
-    supplyGrowth: latest.supplyGrowth ?? 0,
+    minPrice: quote.minPrice,
+    price: quote.marketPrice,
+    quantity: quote.quantity,
+    numAuctions: quote.numAuctions,
+    sellerCount: quote.sellerCount,
+    sellersInvisible: quote.sellersInvisible,
+    ownerVisible: quote.ownerVisible,
+    sellerHHI: quote.sellerHHI,
+    topSellerShare: quote.topSellerShare,
+    marketType: quote.marketType === "commodity" || quote.marketType === "item" ? quote.marketType : null,
+    bidOnlyCount: quote.bidOnlyCount,
+    highestBid: quote.highestBid,
+    inferredSoldLow: quote.soldProxyLow,
+    inferredSoldHigh: Math.max(quote.soldProxyHigh, quote.soldProxyLow),
+    flowObserved: quote.flowObserved,
+    supplyGrowth: quote.supplyGrowth,
     vendorPrice: item.vendorPrice,
-    stale: latest.timestamp.getTime() < (options?.currentAt ?? latest.timestamp).getTime(),
+    stale: quote.timestamp.getTime() < (options?.currentAt ?? quote.timestamp).getTime(),
     sellRef,
-    sellSamples,
-    historySamples,
-    historySpanHours,
-    tierTruncated,
+    sellSamples: prices.length,
+    historySamples: quote.historySamples ?? seriesSamples(series, nowSeconds, windowHours),
+    historySpanHours: quote.historySpanHours ?? (() => {
+      const span = seriesSpanHours(series, nowSeconds, windowHours);
+      return span > 0 ? span : null;
+    })(),
+    tierTruncated: quote.tierTruncated,
     // The spread is the executable gap at today's sell front. sellRef is
     // the window reference for trend only; using it here would let a stale
     // median approve a trade that loses money at the current book.
-    spreadPercent: sellPrice > 0 ? ((sellPrice - latest.minPrice) / sellPrice) * 100 : 0,
+    spreadPercent: sellPrice > 0 ? ((sellPrice - quote.minPrice) / sellPrice) * 100 : 0,
     trendPercent: sellRef > 0 ? ((sellPrice - sellRef) / sellRef) * 100 : 0,
     changePercent: previousSell > 0 ? ((sellPrice - previousSell) / previousSell) * 100 : 0,
-    realSellPrice: options?.index ? realPrice(sellPrice, latest.timestamp, options.index) : null
+    spark: sparkSeries(sparkWindow),
+    priceP25: prices.length > 0 ? quantile(prices, 0.25) : sellPrice,
+    priceP75: prices.length > 0 ? quantile(prices, 0.75) : sellPrice,
+    realSellPrice: options?.index ? realPrice(sellPrice, quote.timestamp, options.index) : null
   };
 }
 

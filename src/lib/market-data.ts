@@ -1,69 +1,60 @@
-// The analytics layer reads a market history, not a Prisma row. Keeping the
-// shape structural means a new catalogue column does not force every
-// fixture to invent a value for a field analytics never reads.
+// The shapes the analytics layer consumes. A quote is one item's book in
+// one scan; a series point is one price observation in the addon history.
+// Keeping them separate is what lets the current book and the long history
+// have different lifetimes.
 
-// The analytics layer reads a market snapshot, not a Prisma row. Making
-// the order-book fields optional keeps fixtures honest about what they
-// exercise: a test that does not care about the ladder should not have to
-// invent one.
-export type MarketSnapshot = {
+export type MarketQuote = {
   timestamp: Date;
+  // A demand-only row (bid-only listings, no buyout) has priced=false and
+  // zero price columns; only bidOnlyCount/highestBid are meaningful.
+  priced: boolean;
   minPrice: number;
-  marketPrice: number;
+  marketPrice: number; // P10; a statistic, not a decision anchor
+  sellPrice: number; // depth-aware sell front
+  p5Price: number;
   quantity: number;
   numAuctions: number;
-  sellPrice?: number;
-  sellerCount?: number;
-  sellersInvisible?: boolean;
-  ownerVisible?: boolean | null;
-  sellerHHI?: number | null;
-  topSellerShare?: number | null;
-  // Scan-time book classification. Optional for fixtures and for rows
-  // imported before the column existed.
-  marketType?: string | null;
-  bidOnlyCount?: number;
-  highestBid?: number;
-  soldProxyLow?: number;
-  soldProxyHigh?: number;
-  // False when the scan had no previous capture of this item, so the zero
-  // interval is missing data rather than an observed zero.
-  flowObserved?: boolean;
-  supplyGrowth?: number;
-  // Scan-time history sample count; null/undefined on older rows.
-  historySamples?: number | null;
-  // Scan-time hours the history points span; null/undefined on older rows.
-  historySpanHours?: number | null;
-  // True when topTiers is only the top of a deeper book.
-  tierTruncated?: boolean;
-  topTiers?: unknown;
+  sellerCount: number;
+  sellersInvisible: boolean;
+  // True when the scan could see owner names for this item. Hidden owners
+  // make the flow proxy unobservable rather than zero.
+  ownerVisible: boolean;
+  // Hygiene generation of the flow columns; null on scans from older
+  // builds, which calibration must not mix with clean rows.
+  observationVersion: number | null;
+  sellerHHI: number | null;
+  topSellerShare: number | null;
+  marketType: string | null;
+  bidOnlyCount: number;
+  highestBid: number;
+  soldProxyLow: number;
+  soldProxyHigh: number;
+  flowObserved: boolean;
+  supplyGrowth: number;
+  historySamples: number | null;
+  historySpanHours: number | null;
+  tierTruncated: boolean;
+  topTiers: unknown;
+  expiring: unknown;
 };
 
-export type MarketDailySummary = {
-  date: Date;
-  openPrice: number;
-  closePrice: number;
-  highPrice: number;
-  lowPrice: number;
-  volume: number;
-};
-
-export type MarketHistory = {
+// The static facts a signal needs from the catalogue. Structural, so a new
+// catalogue column does not force every fixture to invent it.
+export type SignalItem = {
   itemId: number;
   name: string;
   quality: string;
   category: string;
   subCategory: string;
   vendorPrice: number | null;
-  iconId?: number | null;
-  snapshots: MarketSnapshot[];
-  dailySummaries: MarketDailySummary[];
+  iconId: number | null;
 };
 
 // The decision anchor is the sell front, but rows imported before that
-// column existed carry 0, not undefined. `??` would keep the zero and erase
-// the price, so those rows fall back to the P10 statistic.
-export function sellPriceOf(snapshot: { sellPrice?: number; marketPrice: number }): number {
-  return snapshot.sellPrice && snapshot.sellPrice > 0 ? snapshot.sellPrice : snapshot.marketPrice;
+// column existed carry 0, not undefined. `??` would keep the zero and
+// erase the price, so those rows fall back to the P10 statistic.
+export function sellPriceOf(quote: { sellPrice?: number; marketPrice: number }): number {
+  return quote.sellPrice && quote.sellPrice > 0 ? quote.sellPrice : quote.marketPrice;
 }
 
 // Bids are a per-scan demand signal. A demand-only row from an older scan
@@ -77,4 +68,3 @@ export function currentScanDemand<T extends { timestamp: Date }>(
   if (!row || !latestAt) return null;
   return row.timestamp.getTime() === latestAt.getTime() ? row : null;
 }
-

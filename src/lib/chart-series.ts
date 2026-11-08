@@ -1,12 +1,8 @@
-// Chart-ready price series. The terminal keeps only the last 48 snapshots
-// per item (about half a day), which is shorter than the 24h/7d/全部 window
-// buttons the chart offers. Older days contribute their closing sell front,
-// the same statistic the price index and the sell median use, so selecting
-// a wider window reaches real observations instead of redrawing the same
-// half-day. The current day is never counted twice: its close is derived
-// from the snapshots already in the series.
-import { utcDateKey } from "@/lib/deflator";
-import { sellPriceOf } from "@/lib/market-data";
+// Chart-ready price series. The addon's layered history is the only input:
+// it already stretches from per-scan points to weekly closes, so the
+// 24h/7d/全部 buttons reach real observations instead of redrawing a
+// display window.
+import type { SeriesPoint } from "@/lib/item-series";
 import { median } from "@/lib/median";
 
 export type TimePoint = {
@@ -61,40 +57,14 @@ export function withGapBreaks(points: TimePoint[]): PlottedPoint[] {
   return out;
 }
 
-type SnapshotLike = {
-  timestamp: Date;
-  sellPrice: number;
-  marketPrice: number;
-  minPrice: number;
-  quantity: number;
-};
-
-type DailyLike = {
-  date: Date;
-  closePrice: number;
-  lowPrice: number;
-  volume: number;
-};
-
-export function buildTimeSeries(snapshots: SnapshotLike[], dailySummaries: DailyLike[]): TimePoint[] {
-  const ordered = [...snapshots].sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
-  const oldestSnapshotDay = ordered.length > 0 ? utcDateKey(ordered[0].timestamp) : null;
-  const dailyPoints: TimePoint[] = dailySummaries
-    .filter((summary) => summary.closePrice > 0)
-    .filter((summary) => oldestSnapshotDay === null || utcDateKey(summary.date) < oldestSnapshotDay)
-    .map((summary) => ({
-      ts: summary.date.getTime(),
-      price: summary.closePrice,
-      min: summary.lowPrice,
-      volume: summary.volume,
-      kind: "daily" as const
+export function buildTimeSeries(points: readonly SeriesPoint[]): TimePoint[] {
+  return points
+    .filter((point) => point.sellPrice > 0)
+    .map((point) => ({
+      ts: point.t * 1000,
+      price: point.sellPrice,
+      min: point.minPrice,
+      volume: point.quantity,
+      kind: "scan" as const
     }));
-  const snapshotPoints: TimePoint[] = ordered.map((snapshot) => ({
-    ts: snapshot.timestamp.getTime(),
-    price: sellPriceOf(snapshot),
-    min: snapshot.minPrice,
-    volume: snapshot.quantity,
-    kind: "scan" as const
-  }));
-  return [...dailyPoints, ...snapshotPoints].sort((left, right) => left.ts - right.ts);
 }
