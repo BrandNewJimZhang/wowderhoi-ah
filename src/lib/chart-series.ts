@@ -2,7 +2,7 @@
 // it already stretches from per-scan points to weekly closes, so the
 // 24h/7d/全部 buttons reach real observations instead of redrawing a
 // display window.
-import type { SeriesPoint } from "@/lib/item-series";
+import { seriesResolution, type SeriesPoint, type SeriesResolution } from "@/lib/item-series";
 import { median } from "@/lib/median";
 
 export type TimePoint = {
@@ -12,44 +12,71 @@ export type TimePoint = {
   price: number | null;
   min?: number | null;
   volume?: number;
-  // Where the point came from. Daily closes are one observation per day,
-  // so a one-day step between them is the normal spacing, not an outage.
-  kind?: "daily" | "scan";
+  // How densely the point was retained. A change of resolution is a normal
+  // step, not an outage: hourly and daily closes sit further apart than
+  // fifteen-minute scans by design.
+  kind?: SeriesResolution;
 };
 
 type PlottedPoint = TimePoint & { gap?: boolean };
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+const WEEK_MS = 7 * DAY_MS;
 
-// A scanning outage is a hole, not a straight line through it. The gap
-// threshold comes from the scan cadence alone: measuring it over a mixed
-// series would compare one-day daily closes against fifteen-minute scans
-// and break the daily segment into disconnected dots.
+function resolutionOf(point: TimePoint): SeriesResolution {
+  return point.kind ?? "scan";
+}
+
+// The normal spacing of a folded point. Scan spacing is the observed
+// median, because the live cadence is set by the scanner, not by a constant.
+function stepOf(kind: SeriesResolution, scanInterval: number | null): number | null {
+  switch (kind) {
+    case "hourly": return HOUR_MS;
+    case "daily": return DAY_MS;
+    case "weekly": return WEEK_MS;
+    default: return scanInterval;
+  }
+}
+
+// A scanning outage is a hole, not a straight line through it. Each gap is
+// measured against its own resolution: the folded history is expected to
+// widen from scans to hourly, daily and weekly closes, so a global median
+// would turn every folded point into a disconnected dot.
 export function withGapBreaks(points: TimePoint[]): PlottedPoint[] {
   if (points.length < 3) return points;
   const scanGaps: number[] = [];
   for (let index = 1; index < points.length; index += 1) {
-    if (points[index].kind !== "daily" && points[index - 1].kind !== "daily") {
+    const previous = resolutionOf(points[index - 1]);
+    const current = resolutionOf(points[index]);
+    if (previous === "scan" && current === "scan") {
       scanGaps.push(points[index].ts - points[index - 1].ts);
     }
   }
-  const interval = scanGaps.length > 0 ? median(scanGaps) : null;
+  const scanInterval = scanGaps.length > 0 ? median(scanGaps) : null;
   const out: PlottedPoint[] = [];
   points.forEach((point, index) => {
     if (index > 0) {
       const previous = points[index - 1];
       const gap = point.ts - previous.ts;
-      // A daily close is dated at midnight, so the step from the last close
-      // to the first intraday scan is under 48 hours by construction: that
-      // junction is a resolution change, not an outage. Two daily closes one
-      // day apart are the normal cadence; a missing day is 48 hours.
-      const bothDaily = point.kind === "daily" && previous.kind === "daily";
-      const mixed = (point.kind === "daily") !== (previous.kind === "daily");
-      const broken = bothDaily
-        ? gap > 1.5 * DAY_MS
-        : mixed
-          ? gap > 2 * DAY_MS
-          : interval !== null && gap > interval * 3;
+      const previousKind = resolutionOf(previous);
+      const currentKind = resolutionOf(point);
+      // Live scans jitter enough that a skipped scan is normal; only three
+      // cadences without a point is an outage. A folded close is stamped on
+      // a fixed grid, so missing one bucket is already a hole. At a change
+      // of resolution the step can be a full wider bucket — a daily close
+      // exists only at the day boundary the fold picked, and the first live
+      // scan after it can be almost a day later — so the junction gets twice
+      // the wider step before it reads as an outage.
+      const broken = previousKind === "scan" && currentKind === "scan"
+        ? scanInterval !== null && gap > scanInterval * 3
+        : (() => {
+            const step = stepOf(previousKind, scanInterval);
+            const next = stepOf(currentKind, scanInterval);
+            if (step === null || next === null) return false;
+            const factor = previousKind === currentKind ? 1.5 : 2;
+            return gap > Math.max(step, next) * factor;
+          })();
       if (broken) {
         out.push({ ts: previous.ts + 1, price: null, min: null, gap: true });
       }
@@ -60,6 +87,9 @@ export function withGapBreaks(points: TimePoint[]): PlottedPoint[] {
 }
 
 export function buildTimeSeries(points: readonly SeriesPoint[]): TimePoint[] {
+  // The retention fold decides a point's resolution by its age, so the
+  // newest observation is the reference for the whole series.
+  const reference = points.length > 0 ? points[points.length - 1].t : 0;
   return points
     .filter((point) => point.sellPrice > 0)
     .map((point) => ({
@@ -67,6 +97,6 @@ export function buildTimeSeries(points: readonly SeriesPoint[]): TimePoint[] {
       price: point.sellPrice,
       min: point.minPrice,
       volume: point.quantity,
-      kind: "scan" as const
+      kind: seriesResolution(point.t, reference)
     }));
 }

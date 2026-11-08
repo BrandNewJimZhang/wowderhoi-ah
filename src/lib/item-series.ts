@@ -179,6 +179,19 @@ function bucketOf(t: number, size: number): number {
   return Math.floor(t / size);
 }
 
+// How densely a series point is retained, decided by its age: every point
+// for a week, then one per hour, day and week. The retention fold and the
+// chart both need this answer, so the thresholds live here once.
+export type SeriesResolution = "scan" | "hourly" | "daily" | "weekly";
+
+export function seriesResolution(t: number, referenceSeconds: number): SeriesResolution {
+  const age = Math.max(0, referenceSeconds - t);
+  if (age < 7 * DAY) return "scan";
+  if (age < 30 * DAY) return "hourly";
+  if (age < 90 * DAY) return "daily";
+  return "weekly";
+}
+
 // Layered retention, mirroring the addon's rule but over a longer window:
 // every point for a week, the last point of each hour for a month, the last
 // point of each day for a quarter, then the last point of each week. Event
@@ -189,20 +202,18 @@ export function retainSeries(
   nowSeconds: number,
   maxPoints = DEFAULT_MAX_POINTS
 ): SeriesPoint[] {
-  const cutoff7 = nowSeconds - 7 * DAY;
-  const cutoff30 = nowSeconds - 30 * DAY;
-  const cutoff90 = nowSeconds - 90 * DAY;
   const kept: SeriesPoint[] = [];
   let lastBucket: number | null = null;
   let lastWasEvent = false;
   for (const point of points) {
-    if (point.t >= cutoff7) {
+    const resolution = seriesResolution(point.t, nowSeconds);
+    if (resolution === "scan") {
       kept.push(point);
       lastBucket = null;
       lastWasEvent = false;
       continue;
     }
-    const size = point.t >= cutoff30 ? HOUR : point.t >= cutoff90 ? DAY : WEEK;
+    const size = resolution === "hourly" ? HOUR : resolution === "daily" ? DAY : WEEK;
     const bucket = bucketOf(point.t, size);
     if (bucket === lastBucket && !lastWasEvent) {
       kept.pop();

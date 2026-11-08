@@ -24,6 +24,53 @@ describe("buildTimeSeries", () => {
     expect(points.map((point) => point.price)).toEqual([800]);
   });
 
+  it("labels folded history by the retention tier", () => {
+    const day = 24 * 60 * 60;
+    const now = 1_800_000_000;
+    const points = buildTimeSeries([
+      seriesPoint((now - 40 * day) * 1000, 100),
+      seriesPoint((now - 20 * day) * 1000, 110),
+      seriesPoint((now - 2 * day) * 1000, 120),
+      seriesPoint(now * 1000, 130)
+    ]);
+    expect(points.map((point) => point.kind)).toEqual(["daily", "hourly", "scan", "scan"]);
+  });
+
+  it("does not break the series at a resolution change", () => {
+    const minute = 60 * 1000;
+    const hour = 60 * minute;
+    const day = 24 * hour;
+    const start = new Date("2026-07-20T00:00:00Z").getTime();
+    const points: TimePoint[] = [];
+    for (let index = 0; index < 9; index += 1) {
+      points.push({ ts: start + index * 15 * minute, price: 700 + index, kind: "scan" });
+    }
+    for (let index = 3; index <= 5; index += 1) {
+      points.push({ ts: start + index * hour, price: 800 + index, kind: "hourly" });
+    }
+    points.push({ ts: start + day, price: 900, kind: "daily" });
+    points.push({ ts: start + 2 * day, price: 950, kind: "daily" });
+    const plotted = withGapBreaks(points);
+    // Layered retention is a change of resolution, not a scanning outage:
+    // the hourly close after the last scan, the daily close after the last
+    // hourly point and consecutive daily closes all belong to one line.
+    expect(plotted.filter((point) => point.gap)).toHaveLength(0);
+  });
+
+  it("breaks an outage inside the folded segment", () => {
+    const hour = 60 * 60 * 1000;
+    const start = new Date("2026-07-20T00:00:00Z").getTime();
+    const plotted = withGapBreaks([
+      { ts: start, price: 700, kind: "hourly" },
+      { ts: start + hour, price: 720, kind: "hourly" },
+      { ts: start + 2 * hour, price: 740, kind: "hourly" },
+      // Four hours with no retained close: the market was not scanned.
+      { ts: start + 6 * hour, price: 800, kind: "hourly" },
+      { ts: start + 7 * hour, price: 820, kind: "hourly" }
+    ]);
+    expect(plotted.filter((point) => point.gap)).toHaveLength(1);
+  });
+
   it("measures gaps from the scan cadence, not the mixed series", () => {
     const day = 24 * 60 * 60 * 1000;
     const minute = 60 * 1000;
