@@ -15,8 +15,8 @@ export const GENERATIONS_KEPT = 2;
 // One day at the compiled 15-minute cadence. Calibration rejects gaps over
 // two hours, so this bounds the sample window rather than promising depth.
 export const CALIBRATION_GENERATIONS_KEPT = 96;
-const DECISION_RETENTION_DAYS = 90;
-const IMPORT_RUN_RETENTION_DAYS = 30;
+export const DECISION_RETENTION_DAYS = 90;
+export const IMPORT_RUN_RETENTION_DAYS = 30;
 
 const EMPTY_DIAGNOSTICS: CoreOutput["diagnostics"] = {
   excluded: {},
