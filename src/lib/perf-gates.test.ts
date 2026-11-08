@@ -35,10 +35,10 @@ const budgets = {
   buildInputMs: 100,
   lp120Ms: 200,
   scan9000Ms: 1000,
-  // Full replicate scan: 170,000 listings into 6,000 item books, including
+  // Full replicate scan: 250,000 listings into 6,000 item books, including
   // the flow capture and series write. Fengari is much slower than the
   // client's native Lua, so the gate catches order-of-magnitude regressions.
-  scan170kMs: 25_000,
+  scan250kMs: 40_000,
   // The three SavedVariables tables a 170k-listing market produces. The
   // budget is deliberately above the current ~6.4MB so a deliberate field
   // addition has room, while a per-row table regressions (the shape this
@@ -98,7 +98,7 @@ describe("system performance gates", () => {
     expect(elapsed).toBeLessThan(budgets.core866Ms);
   });
 
-  it("evaluates 6,000 items (a 170k-listing market) inside the gate (warm)", () => {
+  it("evaluates 6,000 items (a 250k-listing market) inside the gate (warm)", () => {
     const input = coreInput(6000);
     runCore(input); // warm the Lua state and template caches
     const start = process.cpuUsage();
@@ -194,13 +194,13 @@ describe("system performance gates", () => {
     expect(cpuMsSince(start)).toBeLessThan(budgets.scan9000Ms);
   });
 
-  it("walks a 170,000-listing replicate scan inside the gate", () => {
+  it("walks a 250,000-listing replicate scan inside the gate", () => {
     const lua = loadAddon();
     lua.exec(`
       WowTest.fireEvent('AUCTION_HOUSE_SHOW')
       -- Rows are generated in Lua: a 170k-element JS-to-Lua conversion
       -- would measure the test bridge, not the scanner.
-      local ITEMS, LISTINGS = 6000, 170000
+      local ITEMS, LISTINGS = 6000, 250000
       local replicate, itemInfo = WowTest.ah.replicate, WowTest.itemInfo
       for i = 1, ITEMS do
         itemInfo[10000 + i] = { name = "Item " .. i, class = "Trade Goods", subClass = "Other", vendorP = 10 }
@@ -240,10 +240,15 @@ describe("system performance gates", () => {
       for _ in pairs(WoWderhoiAH_Capture.items) do WowTest.capturedItems = WowTest.capturedItems + 1 end
     `);
     const elapsed = lua.number("WowTest.scanElapsedMs");
-    expect(lua.number("WowTest.ns.lastScanStats.rows")).toBe(170_000);
+    expect(lua.number("WowTest.ns.lastScanStats.rows")).toBe(250_000);
     expect(lua.number("WowTest.scannedItems")).toBe(6000);
     expect(lua.number("WowTest.capturedItems")).toBe(6000);
-    expect(elapsed).toBeLessThan(budgets.scan170kMs);
+    expect(elapsed).toBeLessThan(budgets.scan250kMs);
+    // The scan reached the saved phase with every row accounted for; the
+    // old wall-clock guard could abort a book this size mid-processing.
+    expect(lua.eval("WowTest.ns.lastScanStats.reason")).toBeNull();
+    expect(lua.text("WowTest.ns.lastScanStats.phase")).toBe("saved");
+    expect(lua.number("WowTest.ns.lastScanStats.cursor")).toBe(250_000);
     // The finish phase is sliced like the row loop; a single frame that
     // aggregates every book is the stall this gate exists to catch.
     const finishMs = lua.number("WowTest.ns.lastScanStats.finishMs");

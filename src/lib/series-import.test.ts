@@ -50,8 +50,10 @@ describe("parseAddonSeries", () => {
   });
 
   it("rejects arrays that disagree instead of misreading a point", () => {
+    type ItemSeries = Record<string, Record<string, number>>;
+    type Markets = Record<string, { items: Record<string, ItemSeries> }>;
     const raw = sampleSeries([{ t: 1700000000, min: 100, sell: 110, q: 20 }]) as Record<string, unknown>;
-    const series = ((raw.markets as Record<string, any>)["TestRealm|Alliance"].items[2589]) as Record<string, any>;
+    const series = (raw.markets as Markets)["TestRealm|Alliance"].items[2589];
     series.sell["2"] = 120;
     expect(() => parseAddonSeries(raw, MARKET)).toThrow(/arrays disagree/i);
   });

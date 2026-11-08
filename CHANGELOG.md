@@ -16,12 +16,43 @@
   purse.
 - A shared search fixture (`data/search-parity.json`) runs the same cases
   through `Core.rankSearch` and `src/lib/search.ts`.
-- Scans stamp `historySamples` on each priced item, and the importer,
-  snapshot and core input carry it; older rows fall back to the terminal's
-  sell-sample count.
+- Scans stamp `historySamples` and `historySpanHours` on each priced item,
+  and the importer, snapshot and core input carry both. The stamp is the
+  only sample authority: the terminal's 48-row page is a display window, and
+  a row without a stamp applies the sample floor alone.
+- Phase history gates require coverage (samples and span): wave 2/1.5h,
+  settle 4/12h, steady 12/96h, so the default 1-3 manual scans a day can
+  satisfy them.
+- The scan lifecycle is explicit (`waiting -> rows -> hydrate -> finish ->
+  saved`, with one abort exit), keyed by an attempt id. It accepts
+  `REPLICATE_ITEM_LIST_UPDATE` as the acknowledgement, treats
+  `AUCTION_HOUSE_BROWSE_FAILURE` as an explicit failure, keeps a copy
+  already received when the AH closes, refuses to publish a copy cleared
+  mid-read, and counts unreadable rows.
+- Replicate admission is persisted in SavedVariables (`lastReplicateAt`,
+  `retryAfter`) and shared by `/wahscan`, the GUI and the auto ticker. A
+  manual request has a 60-second floor; the auto cadence keeps 15 minutes.
+- Rows whose item record has not loaded are kept: `hasAllInfo` is read,
+  `GetItemInfo` names are cached, and a bounded 3-second hydrate phase fills
+  names via `ITEM_DATA_LOAD_RESULT`.
+- The addon series records each point's listing count, the watcher sends it,
+  and the importer backfills up to 16 missed scans per import.
+- Series retention is budget-aware: each item keeps a breadth-derived point
+  budget, the layered fold downsamples evenly instead of truncating the
+  window, and the global cap is an assertion rather than a trimming pass.
+- `Market.firstScanAt` persists the earliest observation so pruning cannot
+  move the phase anchor forward.
+- `npm run db:prune` keeps the newest 96 snapshot rows per item; daily OHLC
+  is untouched.
+- The radar refreshes when a scan lands while the page is open, and the buy
+  plan's `ifPriceAbove` is enforced before PlaceBid or a commodity purchase
+  (the average price of the requested quantity, not the first rung).
+- Scans accept item names that have not loaded (imported under `#id`), and
+  money columns widened to Float so listings above 32-bit copper import.
+- The performance gate now walks a 250,000-listing scan.
 - Scans mark `tierTruncated` when the book had more than the persisted top
   eight rungs; the core then counts the unseen book as queue ahead.
-- A 170,000-listing scan gate in the perf stage: 6,000 item books, the
+- A 250,000-listing scan gate in the perf stage: 6,000 item books, the
   real per-frame budget path, flow capture and series write. A companion
   gate evaluates the 6,000-item market through the shared core.
 - Search accepts item ids (`4338`, `item:4338`), whitespace-separated name

@@ -51,12 +51,15 @@ AQT_BUDGET_COPPER="500000"          # 终端计划预算；与扫描里的现金
    这是账本在说“成本未知”，不是失败。
 7. 小退或 `/reload` 一次（即使 `SaveAddOns` 可用，也先确认文件真的落盘）。
 8. 启动 `npm run addon:watch`，看到 `Imported N items, M positions and K trades`
-   即接通。
+   即接通。watcher 同时发送插件里保留的 `WoWderhoiAH_Series`，终端会回填
+   watcher 未运行时错过的扫描（响应里的 `backfilled` 是回填次数）。
 9. 打开 `http://localhost:3000`，确认驾驶舱有阶段、数据龄、行动清单，且行动数量与
    游戏内雷达的“可买”一致；交易页的“下一步”应同时出现买入动作与持仓的卖出计划。
 10. 卖出页 `/wahsell`：有该物品自己的成交或可观测消失时，应显示“推荐：价格 / 时长 /
     成交率”；`/wahpricing off` 可退回单一时长。跨角色搬货先 `/wahtransfer … out`，
     记下打印的单位成本，再到接收角色 `/wahtransfer … in <单位成本>`。
+11. 导入积累后运行 `npm run db:prune`：每个物品只保留最近 96 条快照（图表读取上限），
+    日线 OHLC 不受影响；`AQT_RETAIN_SNAPSHOTS` 可调整保留条数。
 
 ### 如果 `/wahdiag` 报异常
 
@@ -67,7 +70,7 @@ AQT_BUDGET_COPPER="500000"          # 终端计划预算；与扫描里的现金
 | `SaveAddOns` 缺失 | 依赖小退/`/reload`；终端显示数据龄 |
 | `PostItem` 缺失 | 卖出页降级为价格助手 |
 | `throttle ready` 为 false | 自动扫描退避；手动降低扫描频率 |
-| 扫描超时 | 确认 AH 开着；失败会指数退避，连续失败 3 次降为 10 分钟 |
+| 扫描无应答 | 请求发出 180 秒仍无复制数据；插件只报告“无应答”并给出重试窗口，处理阶段不再按墙钟中止。等提示的秒数后再 `/wahscan` |
 | mail 发票字段为空 | 该客户端不暴露发票；`/wahcapture mail off` 关闭采集，系统退回推断成交 |
 | 邮箱成交显示 unattributed | 物品不在扫描名表且无唯一开仓挂单；下次扫描后自动重试，不写错账 |
 | craft 一直 unmapped | 配方 id 与数据集不一致且产物非唯一；对照 `/wahdiag` 的 recipe 计数，补映射；需要停掉采集时用 `/wahcapture craft off` |
@@ -141,7 +144,9 @@ AQT_BUDGET_COPPER="500000"          # 终端计划预算；与扫描里的现金
 |---|---|
 | 插件列表没有 WoWDerhoiAH | `.toc` 不在第一层，或客户端不是 16001 |
 | `/wahscan` 提示先开拍卖行 | 必须站在拍卖师面前且 AH 窗口开着 |
-| 扫描超时 | 服务器未返回全量副本；确认 AH 开着后重试，或等退避结束 |
+| 扫描无应答 | 客户端没有交付复制数据；确认 AH 开着，等聊天框给出的重试秒数后再试。处理已收到的数据不设时限 |
+| 扫描失败：browse failure | 客户端显式报告查询失败；重新 `/wahscan` |
+| 复制数据在读取过程中被清空 | 客户端在读取期间清掉了副本，本次快照未保存；重新扫描 |
 | watcher 没反应 | 看 `/wahdiag` 的 `SaveAddOns` 与数据龄；或 `AQT_SAVEDVARS_PATH` 错 |
 | 导入 409 | 同一次扫描已导入且没有附带 Journal；邮箱成交触发的账本重放返回 200，不应报 409 |
 | 导入 400 | 扫描版本不是 v4；用当前插件重扫 |
