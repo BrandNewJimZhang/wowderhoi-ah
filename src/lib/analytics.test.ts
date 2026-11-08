@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMarketSignal, buildWeekdaySeasonality, type SignalInput } from "@/lib/analytics";
+import { buildMarketSignal, buildWeekdaySeasonality, sellFrontByItem, type SignalInput } from "@/lib/analytics";
 import { buildPriceIndex } from "@/lib/deflator";
 import type { MarketQuote } from "@/lib/market-data";
 import type { SeriesPoint } from "@/lib/item-series";
@@ -243,6 +243,17 @@ describe("buildMarketSignal", () => {
     const signal = buildMarketSignal(input(points([{ daysAgo: 0, sellPrice: 100 }])), now);
     expect(signal.iconId).toBe(101);
     expect(signal.subCategory).toBe("金属和矿石");
+  });
+});
+
+describe("sellFrontByItem", () => {
+  it("keeps the current book and drops a delisted item's old price", () => {
+    const prices = sellFrontByItem([
+      { itemId: 1, sellPrice: 250, stale: false },
+      { itemId: 2, sellPrice: 900, stale: true }
+    ]);
+    expect(prices.get(1)).toBe(250);
+    expect(prices.has(2)).toBe(false);
   });
 });
 

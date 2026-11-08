@@ -160,6 +160,18 @@ export function buildMarketSignal(
   };
 }
 
+// The current sell front per item. A delisted row keeps its history in the
+// signal bundle, but its last price is not a book the player can trade
+// against: positions, recipes and plans must price from this map, never from
+// the raw signal list, or a sold-out item manufactures profit.
+export function sellFrontByItem(
+  signals: ReadonlyArray<Pick<MarketSignal, "itemId" | "sellPrice" | "stale">>
+): Map<number, number> {
+  return new Map(
+    signals.filter((signal) => !signal.stale).map((signal) => [signal.itemId, signal.sellPrice])
+  );
+}
+
 type WeekdaySeasonality = {
   weekday: number; // 0 = Sunday .. 6 = Saturday (UTC)
   priceDeviation: number; // weekday median close vs overall median, percent

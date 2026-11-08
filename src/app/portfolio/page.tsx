@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Wallet } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getMarketBundle } from "@/lib/market-read";
+import { sellFrontByItem } from "@/lib/analytics";
 import { getPositions } from "@/lib/repositories";
 import { phaseLabels } from "@/lib/phase";
 import { describeFreshness } from "@/lib/freshness";
@@ -27,7 +28,7 @@ export default async function PortfolioPage() {
   const { signals, phase } = bundle;
   // A position whose item left the newest scan has no current sell front:
   // value it as unpriced instead of carrying the last price it was seen at.
-  const priceById = new Map(signals.filter((signal) => !signal.stale).map((signal) => [signal.itemId, signal.sellPrice]));
+  const priceById = sellFrontByItem(signals);
   const nameById = new Map(signals.map((signal) => [signal.itemId, signal.name]));
   const {
     rows,

@@ -1,6 +1,7 @@
 import { AlertTriangle, Bell, CalendarClock, ClipboardList, RadioTower, Star } from "lucide-react";
 import Link from "next/link";
 import { alertMetricLabels, evaluateAlertRules, formatAlertValue, type AlertMetricKey } from "@/lib/alerts";
+import { sellFrontByItem } from "@/lib/analytics";
 import {
   getAlertRules,
   getPositions,
@@ -17,7 +18,7 @@ import { describeFreshness, scanGapHint, staleScanHint } from "@/lib/freshness";
 import { seriesSpanDays } from "@/lib/item-series";
 import { fillBasisLabels } from "@/lib/fill";
 import { phaseDescription, phaseLabels } from "@/lib/phase";
-import { resolveBudgetCopper } from "@/lib/config";
+import { resolveDeployableCopper } from "@/lib/config";
 import { valuePositions } from "@/lib/position-valuation";
 import { formatPercent } from "@/lib/utils";
 import { qualityColorClass, qualityName as qualityNameByIndex } from "@/lib/quality";
@@ -70,8 +71,7 @@ export default async function Home() {
       : evaluation.rows.length === 0
         ? `当前没有满足${phaseLabels[phase]}门槛的可执行机会。`
         : `通过门槛 ${evaluation.rows.length} 条，均未获资金：钱包不足 ${unfunded.purse} 条、单物品敞口 ${unfunded.exposure} 条、盘口 ${unfunded.depth} 条${sizingExcluded > 0 ? `；另有 ${sizingExcluded} 条被风险模型拒绝` : ""}。`;
-  const capitalBudget = resolveBudgetCopper();
-  const deployableCapital = scope ? Math.min(capitalBudget, scope.cash) : capitalBudget;
+  const deployableCapital = resolveDeployableCopper(scope?.cash ?? null);
   const sizing = evaluation.opportunities
     .filter((row) => !row.vendor)
     .slice(0, 12)
@@ -91,7 +91,7 @@ export default async function Home() {
 
   // Ledger summary: a position whose item left the newest scan is unpriced,
   // not worthless; the valuation helper keeps it out of the totals.
-  const priceById = new Map(signals.filter((signal) => !signal.stale).map((signal) => [signal.itemId, signal.sellPrice]));
+  const priceById = sellFrontByItem(signals);
   const nameById = new Map(signals.map((signal) => [signal.itemId, signal.name]));
   const valuation = valuePositions(positions, priceById, nameById);
   const confirmedWeek = recentTrades.filter((trade) => !trade.inferred);

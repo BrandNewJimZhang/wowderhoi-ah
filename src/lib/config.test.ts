@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resolveBudgetCopper, resolvePhaseOverride } from "@/lib/config";
+import { resolveBudgetCopper, resolveDeployableCopper, resolvePhaseOverride } from "@/lib/config";
 import { DEFAULT_BUDGET_COPPER } from "@/lib/market-rules";
 
 afterEach(() => vi.unstubAllEnvs());
@@ -20,6 +20,23 @@ describe("resolveBudgetCopper", () => {
   it("falls back when the variable is unset", () => {
     vi.stubEnv("AQT_BUDGET_COPPER", undefined);
     expect(resolveBudgetCopper()).toBe(DEFAULT_BUDGET_COPPER);
+  });
+});
+
+describe("resolveDeployableCopper", () => {
+  it("caps the plan at the scanned purse", () => {
+    vi.stubEnv("AQT_BUDGET_COPPER", "500000");
+    expect(resolveDeployableCopper(120000)).toBe(120000);
+  });
+
+  it("never exceeds the planning budget", () => {
+    vi.stubEnv("AQT_BUDGET_COPPER", "500000");
+    expect(resolveDeployableCopper(900000)).toBe(500000);
+  });
+
+  it("uses the whole budget when the balance is unknown", () => {
+    vi.stubEnv("AQT_BUDGET_COPPER", "500000");
+    expect(resolveDeployableCopper(null)).toBe(500000);
   });
 });
 

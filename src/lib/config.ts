@@ -16,6 +16,16 @@ export function resolveBudgetCopper(): number {
   return Number.isFinite(value) && value > 0 ? value : DEFAULT_BUDGET_COPPER;
 }
 
+// What a plan may actually spend: the configured cap, bounded by the purse
+// the last scan reported. The cockpit's "deployable" figure, the production
+// LP and the recipes page must quote one number, or they describe different
+// plans from the same scan. `null` means the balance was never reported; a
+// reported 0 is an empty purse and funds nothing.
+export function resolveDeployableCopper(cashCopper: number | null): number {
+  const planned = resolveBudgetCopper();
+  return cashCopper === null ? planned : Math.min(planned, cashCopper);
+}
+
 // Manual phase lock. An unknown value is ignored rather than silently
 // evaluating the market under a phase the user did not choose.
 export function resolvePhaseOverride(): MarketPhase | null {

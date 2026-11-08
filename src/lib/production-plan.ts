@@ -2,9 +2,9 @@
 // the cockpit summary and the full /recipes page must price the same
 // recipes against the same sells, capacity and budget. The LP itself lives
 // in craft-lp.ts; this only assembles its inputs from terminal data.
-import type { MarketSignal } from "@/lib/analytics";
+import { sellFrontByItem, type MarketSignal } from "@/lib/analytics";
 import { solveProduction, type LpRecipe, type ProductionSolution } from "@/lib/craft-lp";
-import { resolveBudgetCopper } from "@/lib/config";
+import { resolveDeployableCopper } from "@/lib/config";
 import { productionCapacity, productionDefaults } from "@/lib/production-config";
 
 export function buildProductionPlan(
@@ -16,14 +16,10 @@ export function buildProductionPlan(
   // last sell front is history, not an achievable price. Pricing a recipe
   // from it would manufacture profit the market cannot pay.
   const current = signals.filter((signal) => !signal.stale);
-  const prices = new Map(current.map((signal) => [signal.itemId, signal.sellPrice]));
+  const prices = sellFrontByItem(signals);
   const materialSupply = new Map(current.map((signal) => [signal.itemId, signal.quantity]));
-  // Same capital base as the cockpit and the shared core: the planning
-  // budget is an upper cap, never more than the scanned purse. `null` means
-  // the balance is unknown; a reported 0 is an empty purse and funds
-  // nothing.
-  const planned = resolveBudgetCopper();
-  const budget = cashCopper === null ? planned : Math.min(planned, cashCopper);
+  // Same capital base as the cockpit and the shared core.
+  const budget = resolveDeployableCopper(cashCopper);
   const solution = solveProduction(recipes, {
     prices,
     capacity: productionCapacity,
