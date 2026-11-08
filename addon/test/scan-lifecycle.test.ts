@@ -162,6 +162,52 @@ describe("scan lifecycle", () => {
     expect(lua.anyChat("已处理 ")).toBe(true);
   });
 
+  it("refuses a second manual request inside the one-minute floor", () => {
+    const lua = page();
+    setRows(lua, [{ itemId: 2589, name: "Linen", count: 10, buyout: 10000 }]);
+    requestScan(lua);
+    // Closing the house aborts the scan without setting a retry window.
+    lua.exec("WowTest.fireEvent('AUCTION_HOUSE_CLOSED')");
+    expect(lua.number("WowTest.ns.settings.lastReplicateAt")).toBeGreaterThan(0);
+    expect(lua.eval("WowTest.ns.startScan()")).toBe(false);
+    expect(lua.lastChat()).toContain("请再等");
+    lua.advance(60);
+    lua.exec("WowTest.fireEvent('AUCTION_HOUSE_SHOW')");
+    expect(lua.eval("WowTest.ns.startScan()")).toBe(true);
+  });
+
+  it("holds the retry window after a failed request", () => {
+    const lua = page();
+    requestScan(lua);
+    lua.advance(180); // the waiting watchdog reports no answer at t+180
+    expect(lua.text("WowTest.lastStats().reason")).toBe("no_response");
+    expect(lua.number("WowTest.ns.settings.retryAfter")).toBe(1700000000 + 300);
+    expect(lua.eval("WowTest.ns.startScan()")).toBe(false);
+    expect(lua.lastChat()).toContain("上次请求失败");
+    lua.advance(120);
+    lua.exec("WowTest.fireEvent('AUCTION_HOUSE_SHOW')");
+    expect(lua.eval("WowTest.ns.startScan()")).toBe(true);
+  });
+
+  it("runs the automatic cadence on the compiled interval, not on reload state", () => {
+    const lua = page();
+    lua.exec("WowTest.ns.settings.autoScan = true");
+    setRows(lua, [{ itemId: 2589, name: "Linen", count: 10, buyout: 10000 }]);
+    expect(lua.eval("WowTest.ns.requestScan('auto')")).toBe(true);
+    lua.exec("WowTest.fireEvent('AUCTION_HOUSE_CLOSED')");
+    lua.exec("WowTest.fireEvent('AUCTION_HOUSE_SHOW')");
+    // The live ticker would start the scan itself while the clock advances;
+    // disable it so the explicit admission calls are what is under test.
+    lua.exec("WowTest.ns.settings.autoScan = false");
+    lua.advance(899);
+    lua.exec("WowTest.ns.settings.autoScan = true");
+    expect(lua.eval("WowTest.ns.requestScan('auto')")).toBe(false);
+    lua.exec("WowTest.ns.settings.autoScan = false");
+    lua.advance(1);
+    lua.exec("WowTest.ns.settings.autoScan = true");
+    expect(lua.eval("WowTest.ns.requestScan('auto')")).toBe(true);
+  });
+
   it("ignores a response that arrives after the scan was aborted", () => {
     const lua = page();
     setRows(lua, [{ itemId: 2589, name: "Linen", count: 10, buyout: 10000 }]);

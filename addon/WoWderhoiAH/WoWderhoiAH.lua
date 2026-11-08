@@ -65,11 +65,14 @@ local scanAttempt = 0
 -- item database loads lazily, so an unresolved lookup is retried next scan
 -- instead of caching a nil class and a zero vendor price forever.
 local itemInfoCache = {}
--- Admission state moves into SavedVariables in a later step; these two keep
--- the ticker and the retry hint working until then.
-local lastScanStartedAt = 0
-local backoffUntil = 0
 local searchQuietUntil = 0
+-- A manual request floor only stops double-clicks. Real data shows a client
+-- can complete two full scans 5m32s apart, so 15 minutes is a policy for the
+-- automatic cadence, not a server-enforced cooldown.
+local MANUAL_FLOOR_SECONDS = 60
+-- A failed request backs off before the next attempt. The watchdog reports
+-- the failure; this is admission policy, never an automatic retry.
+local RETRY_AFTER_SECONDS = 120
 
 -- The auction house frame is named differently across client eras. The 1.60
 -- client ships the modern AuctionHouseFrame; the fallback keeps the shared
@@ -1121,8 +1124,9 @@ abortScan = function(reason)
   else
     chatMessage(L.SCAN_ABORTED)
   end
-  if reason == "no_response" or reason == "browse_failure" then
-    backoffUntil = time() + REPLICATE_WAIT_SECONDS
+  if (reason == "no_response" or reason == "browse_failure") and WAH.settings then
+    WAH.settings.retryAfter = time() + RETRY_AFTER_SECONDS
+    WAH.requestFlush()
   end
 end
 
@@ -1164,7 +1168,13 @@ local function startScan()
     capture = previousCapture()
   }
   WAH.scanRunning = true
-  lastScanStartedAt = time()
+  -- Every request advances the admission clock, whatever its outcome. A
+  -- refused or unanswered request still spent the attempt; recording it
+  -- here is what keeps the manual floor and the auto cadence honest.
+  if WAH.settings then
+    WAH.settings.lastReplicateAt = time()
+    WAH.requestFlush()
+  end
   chatMessage(L.SCAN_GETALL_START)
   local attempt = scan.attemptId
   C_AuctionHouse.ReplicateItems()
@@ -1179,6 +1189,36 @@ local function startScan()
   end)
   return true
 end
+
+-- The one admission gate. Manual, automatic and retry paths all arrive
+-- here; none of them may send a replicate request around it.
+local function requestScan(origin)
+  if scan then
+    chatMessage(L.SCAN_ALREADY_RUNNING)
+    return false
+  end
+  local settings = WAH.settings
+  local now = time()
+  local last = settings and settings.lastReplicateAt or 0
+  if origin == "auto" then
+    if not autoScanOn() then return false end
+    if settings and now < (settings.retryAfter or 0) then return false end
+    if now - last < AUTO_SCAN_INTERVAL then return false end
+    chatMessage(string.format(L.AUTO_TRIGGER, SCAN_MINUTES))
+  else
+    if settings and now < (settings.retryAfter or 0) then
+      chatMessage(string.format(L.SCAN_RETRY_AT, math.ceil(settings.retryAfter - now)))
+      return false
+    end
+    if last > 0 and now - last < MANUAL_FLOOR_SECONDS then
+      chatMessage(string.format(L.SCAN_TOO_SOON,
+        math.floor(now - last), math.ceil(MANUAL_FLOOR_SECONDS - (now - last))))
+      return false
+    end
+  end
+  return startScan(origin)
+end
+WAH.requestScan = requestScan
 
 frame = CreateFrame("Frame")
 -- The 1.60 client publishes the replicate copy through its own event. The
@@ -1248,11 +1288,8 @@ end)
 C_Timer.NewTicker(20, function()
   if not autoScanOn() or scan then return end
   if not ahIsOpen() then return end
-  if time() < backoffUntil then return end
   if time() < searchQuietUntil then return end
-  if time() - lastScanStartedAt < AUTO_SCAN_INTERVAL then return end
-  chatMessage(string.format(L.AUTO_TRIGGER, SCAN_MINUTES))
-  startScan()
+  requestScan("auto")
 end)
 
 -- ============================== History ==============================
@@ -1369,8 +1406,8 @@ end
 -- ============================== Commands =============================
 
 SLASH_WOWDERHOIAH1 = "/wahscan"
-SlashCmdList["WOWDERHOIAH"] = startScan
-WAH.startScan = startScan
+SlashCmdList["WOWDERHOIAH"] = function() return requestScan("manual") end
+WAH.startScan = SlashCmdList["WOWDERHOIAH"]
 
 SLASH_WOWDERHOIAHAUTO1 = "/wahauto"
 SlashCmdList["WOWDERHOIAHAUTO"] = function()

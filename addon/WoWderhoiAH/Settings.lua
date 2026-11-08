@@ -19,7 +19,13 @@ local DEFAULTS = {
   -- one-copper undercut at the selected duration, which is what a player
   -- who does not trust the model wants.
   pricing = true,
-  serverOpenedAt = 0 -- epoch seconds; 0 = derive age from the first scan
+  serverOpenedAt = 0, -- epoch seconds; 0 = derive age from the first scan
+  -- Replicate admission, persisted so /reload cannot reset the clock. Every
+  -- request advances lastReplicateAt; retryAfter is set only by a failed
+  -- request. The client exposes no cooldown query, so this is the one
+  -- authority both the manual command and the auto ticker consult.
+  lastReplicateAt = 0,
+  retryAfter = 0
 }
 
 WAH.settings = nil -- assigned at ADDON_LOADED once SavedVariables exist
