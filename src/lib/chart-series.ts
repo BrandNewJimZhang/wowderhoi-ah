@@ -7,7 +7,9 @@ import { median } from "@/lib/median";
 
 export type TimePoint = {
   ts: number;
-  price: number;
+  // Null marks a gap inserted between two observations; the chart draws a
+  // break instead of connecting them.
+  price: number | null;
   min?: number | null;
   volume?: number;
   // Where the point came from. Daily closes are one observation per day,
@@ -49,7 +51,7 @@ export function withGapBreaks(points: TimePoint[]): PlottedPoint[] {
           ? gap > 2 * DAY_MS
           : interval !== null && gap > interval * 3;
       if (broken) {
-        out.push({ ts: previous.ts + 1, price: null as unknown as number, min: null, gap: true });
+        out.push({ ts: previous.ts + 1, price: null, min: null, gap: true });
       }
     }
     out.push(point);

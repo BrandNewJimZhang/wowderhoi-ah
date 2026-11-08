@@ -3,7 +3,7 @@
 // series points, never means over daily aggregates — means inherit every
 // bait listing, and daily averages erase the hourly structure of the AH.
 // The series is the addon's own layered history, so a 7-day reference is
-// not silently truncated to the 48 rows a display query happens to keep.
+// not silently truncated to the newest generation's single book.
 //
 // The anchor is the sell front. P10 remains a statistic; it is not a
 // reference price and must not drive a recommendation.
