@@ -15,7 +15,7 @@ import { buildGenerationPlan, seriesRowsFrom } from "@/lib/market-generation";
 import { scanPlaceholderItem } from "@/lib/scan-import";
 import { SCAN_SOURCE } from "@/lib/item-catalog";
 import { writeGeneration, replaceSeries } from "@/lib/import-store";
-import { getLedgerRevision, getOwnSales, getPositions } from "@/lib/repositories";
+import { getOwnSales, getPositions } from "@/lib/repositories";
 import { resolveBudgetCopper } from "@/lib/config";
 import type { MarketScope } from "@/lib/market-scope";
 
@@ -233,6 +233,17 @@ async function main() {
     }
 
     const incoming = addonSeries.get(`${market.realm}|${market.faction}`);
+    // Persist the market's true first observation, matching the live import.
+    // Phase age must not depend on how many generations pruning leaves
+    // behind, so the anchor belongs on the Market row, not on the oldest
+    // surviving generation.
+    const seriesFirst = incoming?.firstScanAt ? new Date(incoming.firstScanAt * 1000) : null;
+    const firstScanAt = [market.firstScanAt, seriesFirst, snapshots[0]?.timestamp]
+      .filter((value): value is Date => value instanceof Date)
+      .reduce<Date | null>((earliest, value) => (earliest === null || value < earliest ? value : earliest), null);
+    if (firstScanAt && (!market.firstScanAt || firstScanAt < market.firstScanAt)) {
+      await prisma.market.update({ where: { id: market.id }, data: { firstScanAt } });
+    }
     const base = new Map<number, SeriesPoint[]>();
     for (const row of existingRows) base.set(row.itemId, arraysToSeries(row.points));
     for (const [itemId, points] of legacy) {
@@ -339,21 +350,19 @@ async function main() {
         existingSeries: Array.from(merged.entries()).map(([itemId, points]) => ({ itemId, points })),
         previous: null,
         openedAt: market.openedAt,
-        firstScanAt: market.firstScanAt ?? snapshots[0].timestamp,
+        firstScanAt: firstScanAt ?? snapshots[0].timestamp,
         positions: await getPositions(scope),
         ownSales: await getOwnSales(scope),
         budgetCopper: resolveBudgetCopper(),
         phaseOverride: null
       });
-      const ledgerRevision = await getLedgerRevision(scope);
       await prisma.$transaction(async (tx) => {
         if (placeholderRows.length > 0) await tx.item.createMany({ data: placeholderRows });
         await writeGeneration(
           tx,
           market.id,
           plan,
-          plan.decisions.map((row) => ({ ...row, adoptedAt: null })),
-          ledgerRevision
+          plan.decisions.map((row) => ({ ...row, adoptedAt: null }))
         );
       }, { timeout: 120_000 });
       generations += 1;

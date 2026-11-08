@@ -90,8 +90,7 @@ export async function writeGeneration(
   tx: Prisma.TransactionClient,
   marketId: string,
   plan: GenerationPlan,
-  decisions: StoredDecision[],
-  ledgerRevision: string
+  decisions: StoredDecision[]
 ): Promise<string> {
   const generation = await tx.marketGeneration.create({
     data: {
@@ -103,7 +102,6 @@ export async function writeGeneration(
       firstScanAt: plan.firstScanAt,
       priceIndex: plan.priceIndex as unknown as Prisma.InputJsonValue,
       core: plan.core as unknown as Prisma.InputJsonValue,
-      ledgerRevision,
       gapMinutes: plan.gapMinutes
     }
   });

@@ -38,7 +38,7 @@ beforeAll(async () => {
   await prisma.$executeRawUnsafe(`CREATE TABLE "MarketGeneration" (
     "id" TEXT PRIMARY KEY, "market_id" TEXT, "scanned_at" DATETIME, "phase" TEXT,
     "breadth" INTEGER, "stale_count" INTEGER, "first_scan_at" DATETIME,
-    "price_index" TEXT, "core" TEXT, "ledger_revision" TEXT, "gap_minutes" INTEGER,
+    "price_index" TEXT, "core" TEXT, "gap_minutes" INTEGER,
     "created_at" DATETIME)`);
   await prisma.$executeRawUnsafe(`CREATE TABLE "MarketQuote" (
     "generation_id" TEXT, "market_id" TEXT, "item_id" INTEGER, "priced" BOOLEAN DEFAULT 1,

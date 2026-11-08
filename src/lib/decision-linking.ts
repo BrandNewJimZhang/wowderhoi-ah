@@ -13,7 +13,15 @@ type LinkableTrade = {
   itemId: number;
   realizedAt: Date;
   decisionId?: string | null;
-  matchKind?: string | null;
+};
+
+// A stored decision row and the journal-derived adoption row have the same
+// shape; only the source differs.
+export type StoredAdoption = {
+  decisionId: string | null;
+  itemId: number | null;
+  kind: string;
+  adoptedAt: Date | null;
 };
 
 // A buy recommendation's goods are sold later; a sell recommendation is
@@ -42,8 +50,45 @@ export function linkTrades<T extends LinkableTrade>(
       if (trade.realizedAt.getTime() - at > windowMs) continue;
       match = decision;
     }
-    return match
-      ? { ...trade, decisionId: match.decisionId, matchKind: "identity" }
-      : trade;
+    return match ? { ...trade, decisionId: match.decisionId } : trade;
   });
+}
+
+// The stored decision log is the durable record: it keeps an adoption even
+// when the scan that produced it has aged out of the generation window. The
+// journal's adopt events are fresher evidence for the same decisions, so
+// they overwrite the stored time. A decision that was never adopted is not
+// an attribution and must not link a sale.
+export function mergeAdoptedDecisions(
+  stored: readonly StoredAdoption[],
+  current: readonly StoredAdoption[],
+  adoptions: ReadonlyMap<string, Date>
+): AdoptedDecision[] {
+  const byId = new Map<string, AdoptedDecision>();
+  for (const row of stored) {
+    if (!row.decisionId || !(row.adoptedAt instanceof Date)) continue;
+    byId.set(row.decisionId, {
+      decisionId: row.decisionId,
+      itemId: row.itemId,
+      kind: row.kind,
+      adoptedAt: row.adoptedAt
+    });
+  }
+  for (const row of current) {
+    const adoptedAt = row.decisionId ? adoptions.get(row.decisionId) : undefined;
+    if (!row.decisionId || !adoptedAt) continue;
+    byId.set(row.decisionId, {
+      decisionId: row.decisionId,
+      itemId: row.itemId,
+      kind: row.kind,
+      adoptedAt
+    });
+  }
+  // A journal event is the freshest evidence for an id already known from
+  // either source; it can correct the stored adoption time.
+  for (const [decisionId, adoptedAt] of adoptions) {
+    const row = byId.get(decisionId);
+    if (row) byId.set(decisionId, { ...row, adoptedAt });
+  }
+  return Array.from(byId.values());
 }

@@ -89,7 +89,6 @@ model MarketGeneration {
   firstScanAt    DateTime? @map("first_scan_at")
   priceIndex     Json     @map("price_index")
   core           Json
-  ledgerRevision String   @map("ledger_revision")
   // Minutes since the previous generation; null for the first scan.
   gapMinutes     Int?     @map("gap_minutes")
   createdAt      DateTime @default(now()) @map("created_at")
@@ -230,10 +229,9 @@ model Trade {
   listedAt   DateTime? @map("listed_at")
   realizedAt DateTime  @map("realized_at")
   // Set when the player adopted a recommendation and this sale is tied to
-  // it; matchKind names the evidence ("identity" or "window"). A legacy
-  // row has neither.
+  // it. A row without one was matched by the calibration's same-item
+  // window instead.
   decisionId String?   @map("decision_id")
-  matchKind  String?   @map("match_kind")
   market     Market    @relation(fields: [marketId], references: [id], onDelete: Cascade)
 
   @@index([marketId, realizedAt])

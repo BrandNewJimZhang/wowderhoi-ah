@@ -4,7 +4,6 @@ import { arraysToSeries, type SeriesPoint } from "@/lib/item-series";
 import { decodeGeneration, type GenerationRecord } from "@/lib/generation-record";
 import { decodeSignalRow, type StoredSignalRow } from "@/lib/signal-row";
 import { ownSalesFromRows } from "@/lib/own-sales";
-import { ledgerRevisionOf } from "@/lib/ledger-revision";
 import type { OwnSales } from "@/lib/core/types";
 import { fillRules } from "@/lib/market-rules";
 import { CATALOG_SOURCE, SCAN_SOURCE } from "@/lib/item-catalog";
@@ -12,7 +11,7 @@ import type { MarketScope } from "@/lib/market-scope";
 
 const GENERATION_SELECT = {
   id: true, marketId: true, scannedAt: true, phase: true, breadth: true, staleCount: true,
-  firstScanAt: true, priceIndex: true, core: true, ledgerRevision: true, gapMinutes: true
+  firstScanAt: true, priceIndex: true, core: true, gapMinutes: true
 } as const;
 
 type QuoteRow = {
@@ -159,18 +158,6 @@ export async function getRecipes() {
 
 // Positions and trades are rewritten by every import, including the
 // journal-only replay the mailbox triggers between scans.
-export async function getLedgerRevision(scope: MarketScope | null): Promise<string> {
-  const where = scope ? { marketId: scope.id } : {};
-  const [trades, positions] = await Promise.all([
-    prisma.trade.findMany({ where, select: { realizedAt: true, pnl: true, fee: true } }),
-    prisma.position.findMany({ where, select: { qty: true, costBasis: true } })
-  ]);
-  return ledgerRevisionOf(
-    trades,
-    positions.map((position) => ({ qty: position.qty, cost: position.costBasis }))
-  );
-}
-
 export async function getPositions(scope: MarketScope | null): Promise<Record<number, { qty: number; cost: number }>> {
   const rows = await prisma.position.findMany({
     where: scope ? { marketId: scope.id } : {},

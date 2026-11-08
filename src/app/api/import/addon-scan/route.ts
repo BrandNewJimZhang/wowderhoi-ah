@@ -11,15 +11,14 @@ import { runCore } from "@/lib/core/run-core";
 import type { CoreOutput } from "@/lib/core/types";
 import type { MarketPhase } from "@/lib/market-rules";
 import { decisionIdFor } from "@/lib/decision-id";
-import { adoptionTimes, bookForCharacter, parseJournal, replayJournal, replayLedgerRevision, type JournalEvent, type ReplayState } from "@/lib/journal";
-import { linkTrades, type AdoptedDecision } from "@/lib/decision-linking";
+import { adoptionTimes, bookForCharacter, parseJournal, replayJournal, type JournalEvent, type ReplayState } from "@/lib/journal";
+import { linkTrades, mergeAdoptedDecisions, type AdoptedDecision, type StoredAdoption } from "@/lib/decision-linking";
 import { ownSalesFromRows } from "@/lib/own-sales";
 import { resolveBudgetCopper, resolvePhaseOverride } from "@/lib/config";
 import { pruneAgedRows, pruneGenerations } from "@/lib/retention";
 import {
   getGenerationQuotes,
   getGenerationSignals,
-  getLedgerRevision,
   getOwnSales,
   getPositions,
   getSeriesForItems
@@ -113,24 +112,16 @@ function decisionRows(
 async function adoptedDecisionsFor(
   marketId: string,
   events: readonly JournalEvent[],
-  current: DecisionRow[],
-  now: Date
+  current: readonly StoredAdoption[]
 ): Promise<AdoptedDecision[]> {
-  const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  // No age filter: a replay of an old scan must rebuild the same links a
+  // fresh import made, and trades outlive the decision log. The attribution
+  // window, not the scan age, is what bounds a match.
   const stored = await prisma.decision.findMany({
-    where: { marketId, adoptedAt: { not: null }, at: { gte: since } },
+    where: { marketId, adoptedAt: { not: null } },
     select: { decisionId: true, itemId: true, kind: true, adoptedAt: true }
   });
-  const adoptions = adoptionTimes(events);
-  const byId = new Map<string, AdoptedDecision>();
-  for (const row of stored) {
-    if (row.decisionId) byId.set(row.decisionId, { decisionId: row.decisionId, itemId: row.itemId, kind: row.kind, adoptedAt: row.adoptedAt });
-  }
-  for (const row of current) {
-    const at = adoptions.get(row.decisionId);
-    if (at) byId.set(row.decisionId, { decisionId: row.decisionId, itemId: row.itemId, kind: row.kind, adoptedAt: at });
-  }
-  return Array.from(byId.values());
+  return mergeAdoptedDecisions(stored, current, adoptionTimes(events));
 }
 
 function journalStatements(
@@ -158,8 +149,7 @@ function journalStatements(
         channel: trade.channel,
         inferred: trade.inferred,
         listedAt: trade.listedAt ? new Date(trade.listedAt * 1000) : null,
-        decisionId: null as string | null,
-        matchKind: null as string | null
+        decisionId: null as string | null
       })),
     adopted
   ).map((trade) => ({
@@ -173,8 +163,7 @@ function journalStatements(
     inferred: trade.inferred,
     listedAt: trade.listedAt,
     realizedAt: trade.realizedAt,
-    decisionId: trade.decisionId ?? null,
-    matchKind: trade.matchKind ?? null
+    decisionId: trade.decisionId ?? null
   }));
   return [
     tx.position.deleteMany({ where: { marketId } }),
@@ -317,16 +306,15 @@ export async function POST(request: Request) {
           adoptedAt: row.adoptedAt ?? previousAdoption.get(row.decisionId) ?? null
         }))
       : [];
-    const adopted = core ? await adoptedDecisionsFor(market.id, book?.events ?? [], rows, scan.scannedAt) : [];
-    const ledgerRevision = replayLedgerRevision(replay);
+    // Adoptions are loaded even when the generation has no materialised
+    // core: the journal replay below rewrites every trade, and without its
+    // links the replay would erase attribution it cannot rebuild.
+    const adopted = await adoptedDecisionsFor(market.id, book?.events ?? [], rows);
     await prisma.$transaction(async (tx) => {
       if (core) {
         await tx.marketGeneration.update({
           where: { id: duplicate.id },
-          data: {
-            core: core as unknown as Prisma.InputJsonValue,
-            ledgerRevision
-          }
+          data: { core: core as unknown as Prisma.InputJsonValue }
         });
         await replaceDecisions(tx, duplicate.id, market.id, scan.scannedAt, duplicate.phase, rows);
       }
@@ -430,7 +418,6 @@ export async function POST(request: Request) {
     const scope = scopeOf(market);
     const positions = replay ? replay.positions : await getPositions(scope);
     const ownSales = replay ? ownSalesOf(replay) : await getOwnSales(scope);
-    const ledgerRevision = replay ? replayLedgerRevision(replay) : await getLedgerRevision(scope);
 
     const plan = buildGenerationPlan({
       scan,
@@ -451,7 +438,7 @@ export async function POST(request: Request) {
       ...row,
       adoptedAt: adoptions.get(row.decisionId) ?? null
     }));
-    const adopted = await adoptedDecisionsFor(market.id, book?.events ?? [], planDecisions, scan.scannedAt);
+    const adopted = await adoptedDecisionsFor(market.id, book?.events ?? [], planDecisions);
 
     await prisma.$transaction(async (tx) => {
       if (itemDiff.creates.length > 0) {
@@ -470,7 +457,7 @@ export async function POST(request: Request) {
       for (const update of itemDiff.updates) {
         await tx.item.update({ where: { itemId: update.itemId }, data: update.data });
       }
-      await writeGeneration(tx, market.id, plan, planDecisions, ledgerRevision);
+      await writeGeneration(tx, market.id, plan, planDecisions);
       if (replay) {
         const statements = journalStatements(tx, replay, market.id, adopted);
         for (const statement of statements) await statement;

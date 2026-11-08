@@ -93,9 +93,21 @@ export async function pruneGenerations(
 export async function pruneAgedRows(now = new Date()): Promise<{ decisions: number; importRuns: number }> {
   const decisionCutoff = new Date(now.getTime() - DECISION_RETENTION_DAYS * 24 * 60 * 60 * 1000);
   const runCutoff = new Date(now.getTime() - IMPORT_RUN_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  // Trades outlive the decision log. A trade that still cites a decision
+  // keeps that row: deleting it would leave an id no replay can reconstruct
+  // (adoption events only name the id, not the item or kind). SQLite stores
+  // DateTime columns as integer milliseconds, so the cutoff binds the same
+  // value a Prisma filter would.
   const [decisions, importRuns] = await Promise.all([
-    prisma.decision.deleteMany({ where: { at: { lt: decisionCutoff } } }),
+    prisma.$executeRawUnsafe(
+      `DELETE FROM "Decision"
+       WHERE "at" < ?
+         AND ("decision_id" IS NULL OR "decision_id" NOT IN (
+           SELECT "decision_id" FROM "Trade" WHERE "decision_id" IS NOT NULL
+         ))`,
+      decisionCutoff.getTime()
+    ),
     prisma.importRun.deleteMany({ where: { receivedAt: { lt: runCutoff } } })
   ]);
-  return { decisions: decisions.count, importRuns: importRuns.count };
+  return { decisions, importRuns: importRuns.count };
 }

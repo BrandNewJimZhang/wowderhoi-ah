@@ -2,7 +2,6 @@
 // rules of addon/WoWderhoiAH/Ledger.lua. The journal is the only clean
 // label the system gets; the ledger is a projection, so the terminal can
 // rebuild positions and P&L at import time without trusting a cached sum.
-import { ledgerRevisionOf } from "@/lib/ledger-revision";
 
 export type JournalEvent = {
   k: string;
@@ -383,16 +382,6 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
     },
     errors
   };
-}
-
-// The same token the database computes after the replay lands, derived
-// straight from the replay so a duplicate import can compare without
-// re-reading the rows it is about to replace.
-export function replayLedgerRevision(replay: ReplayState): string {
-  return ledgerRevisionOf(
-    replay.trades.map((trade) => ({ realizedAt: new Date(trade.t * 1000), pnl: trade.pnl, fee: trade.fee })),
-    Object.values(replay.positions).map((position) => ({ qty: position.qty, cost: position.cost }))
-  );
 }
 
 // The adopt events are annotations, not ledger rows; the import layer reads

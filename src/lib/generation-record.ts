@@ -15,7 +15,6 @@ export type GenerationRecord = {
   firstScanAt: Date | null;
   priceIndex: PriceIndex;
   core: CoreOutput;
-  ledgerRevision: string;
   gapMinutes: number | null;
 };
 
@@ -29,7 +28,6 @@ type GenerationRowLike = {
   firstScanAt: Date | null;
   priceIndex: unknown;
   core: unknown;
-  ledgerRevision: string;
   gapMinutes: number | null;
 };
 
@@ -62,7 +60,6 @@ export function decodeGeneration(row: GenerationRowLike): GenerationRecord {
     firstScanAt: row.firstScanAt,
     priceIndex: decodePriceIndex(row.priceIndex),
     core: decodeCore(row.core),
-    ledgerRevision: row.ledgerRevision,
     gapMinutes: row.gapMinutes
   };
 }

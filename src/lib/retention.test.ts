@@ -43,7 +43,11 @@ beforeAll(async () => {
       FOREIGN KEY ("generation_id") REFERENCES "MarketGeneration"("id") ON DELETE CASCADE)`
   );
   await prisma.$executeRawUnsafe(
-    `CREATE TABLE "Decision" ("id" TEXT PRIMARY KEY, "market_id" TEXT, "at" DATETIME, "generation_id" TEXT)`
+    `CREATE TABLE "Decision" ("id" TEXT PRIMARY KEY, "market_id" TEXT, "at" DATETIME,
+      "generation_id" TEXT, "decision_id" TEXT)`
+  );
+  await prisma.$executeRawUnsafe(
+    `CREATE TABLE "Trade" ("id" TEXT PRIMARY KEY, "decision_id" TEXT)`
   );
   await prisma.$executeRawUnsafe(
     `CREATE TABLE "ImportRun" ("id" TEXT PRIMARY KEY, "market_id" TEXT, "received_at" DATETIME)`
@@ -118,7 +122,8 @@ describe("pruneAgedRows", () => {
   it("drops aged decisions and import runs but keeps fresh rows", async () => {
     const now = new Date(NOW);
     await prisma.$executeRawUnsafe(
-      `INSERT INTO "Decision" VALUES ('old', 'm1', ${NOW - 91 * DAY}, NULL), ('new', 'm1', ${NOW - 10 * DAY}, NULL)`
+      `INSERT INTO "Decision" ("id", "market_id", "at", "generation_id") VALUES
+        ('old', 'm1', ${NOW - 91 * DAY}, NULL), ('new', 'm1', ${NOW - 10 * DAY}, NULL)`
     );
     await prisma.$executeRawUnsafe(
       `INSERT INTO "ImportRun" VALUES ('old', 'm1', ${NOW - 31 * DAY}), ('new', 'm1', ${NOW - 2 * DAY})`
@@ -128,5 +133,22 @@ describe("pruneAgedRows", () => {
     const runs = await prisma.$queryRawUnsafe<Array<{ id: string }>>(`SELECT id FROM "ImportRun"`);
     expect(decisions.map((row) => row.id)).toEqual(["new"]);
     expect(runs.map((row) => row.id)).toEqual(["new"]);
+  });
+
+  it("keeps an aged decision that a permanent trade still cites", async () => {
+    // Trades outlive the decision log. Deleting the decision they point at
+    // would make a replay erase the trade's attribution with no way back.
+    const now = new Date(NOW);
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "Decision" ("id", "market_id", "at", "generation_id", "decision_id") VALUES
+        ('linked', 'm1', ${NOW - 120 * DAY}, NULL, 'd-linked'),
+        ('orphan', 'm1', ${NOW - 120 * DAY}, NULL, 'd-orphan')`
+    );
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "Trade" ("id", "decision_id") VALUES ('t1', 'd-linked')`
+    );
+    expect(await pruneAgedRows(now)).toEqual({ decisions: 1, importRuns: 0 });
+    const decisions = await prisma.$queryRawUnsafe<Array<{ id: string }>>(`SELECT id FROM "Decision" ORDER BY id`);
+    expect(decisions.map((row) => row.id)).toEqual(["linked", "new"]);
   });
 });

@@ -160,7 +160,7 @@ async function main() {
     phaseOverride: null
   });
   await prisma.$transaction(async (tx) => {
-    await writeGeneration(tx, marketRow.id, plan, plan.decisions.map((row) => ({ ...row, adoptedAt: null })), "0:0:0:0:0:0:0");
+    await writeGeneration(tx, marketRow.id, plan, plan.decisions.map((row) => ({ ...row, adoptedAt: null })));
   }, { timeout: 120_000 });
 
   const counts = {
