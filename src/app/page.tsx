@@ -11,6 +11,7 @@ import {
 } from "@/lib/repositories";
 import { prisma } from "@/lib/prisma";
 import { loadDemandEvents, upcomingDemandEvents } from "@/lib/events-calendar";
+import { decisionLogSince, DECISION_LOG_WINDOW_HOURS } from "@/lib/decision-calibration";
 import { buildProductionPlan } from "@/lib/production-plan";
 import { recipeToLp } from "@/lib/recipes";
 import { getMarketBundle } from "@/lib/market-read";
@@ -50,7 +51,12 @@ export default async function Home() {
       where: { ...(scopeId ? { marketId: scopeId } : {}), realizedAt: { gte: new Date(now.getTime() - 7 * DAY_MS) } },
       select: { pnl: true, inferred: true }
     }),
-    prisma.decision.count({ where: scopeId ? { marketId: scopeId } : {} })
+    // The readiness meter describes the sample the review can actually
+    // calibrate: counting every decision ever written overstated it once
+    // older decisions aged out of the review's window.
+    prisma.decision.count({
+      where: { ...(scopeId ? { marketId: scopeId } : {}), at: { gte: decisionLogSince(now) } }
+    })
   ]);
   const upcomingEvents = upcomingDemandEvents(loadDemandEvents(), Math.floor(now.getTime() / 1000));
   const freshness = describeFreshness(latestScanAt, now);
@@ -274,7 +280,7 @@ export default async function Home() {
                 {[
                   { label: "K 线（2 天）", have: seriesDays, need: 2, hint: "每天至少一次扫描" },
                   { label: "星期几季节性（7 天）", have: seriesDays, need: 7, hint: "跨过一整周" },
-                  { label: "复盘校准（10 条决策）", have: decisionCount, need: 10, hint: "每次扫描写入决策" }
+                  { label: "复盘校准（10 条决策）", have: decisionCount, need: 10, hint: `最近 ${DECISION_LOG_WINDOW_HOURS} 小时写入` }
                 ].map((row) => {
                   const ratio = Math.min(1, row.have / row.need);
                   return (

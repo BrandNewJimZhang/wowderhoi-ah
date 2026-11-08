@@ -52,6 +52,13 @@ const CALIBRATION_BUCKET_MIN_SAMPLES = 10;
 // prediction that only covered the first 24 hours.
 export const DECISION_LOG_WINDOW_HOURS = 72;
 
+// The review page and the cockpit's readiness meter must describe the same
+// decision sample. The cockpit used to count every decision ever written,
+// so it could report "ready to calibrate" while the review window held none.
+export function decisionLogSince(now: Date): Date {
+  return new Date(now.getTime() - DECISION_LOG_WINDOW_HOURS * 60 * 60 * 1000);
+}
+
 const BOUNDS = [0, 0.2, 0.4, 0.6, 0.8, 1.0001];
 
 export function bucketPredictions(

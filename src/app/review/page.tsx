@@ -6,7 +6,7 @@ import { getMarketBundle } from "@/lib/market-read";
 import { getPositions } from "@/lib/repositories";
 import { alphaDecay, evaluatePolicy } from "@/lib/off-policy";
 import { designExperiment, experimentResults } from "@/lib/experiments";
-import { bucketPredictions, DECISION_LOG_WINDOW_HOURS } from "@/lib/decision-calibration";
+import { bucketPredictions, decisionLogSince } from "@/lib/decision-calibration";
 import { fillRules } from "@/lib/market-rules";
 import { phaseLabels } from "@/lib/phase";
 import { fillBasisLabel } from "@/lib/fill";
@@ -26,7 +26,7 @@ export default async function ReviewPage() {
   // The prediction table compares every decision made in the calibration
   // window; ordering by time and taking a handful of rows turned the sample
   // into the newest two or three scans.
-  const calibrationSince = new Date(new Date().getTime() - DECISION_LOG_WINDOW_HOURS * 60 * 60 * 1000);
+  const calibrationSince = decisionLogSince(new Date());
   const [trades, decisions, calibrationTrades, positions] = await Promise.all([
     prisma.trade.findMany({ where: marketWhere, orderBy: { realizedAt: "desc" }, take: 100 }),
     prisma.decision.findMany({

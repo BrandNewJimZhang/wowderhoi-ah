@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bucketPredictions } from "@/lib/decision-calibration";
+import { bucketPredictions, decisionLogSince, DECISION_LOG_WINDOW_HOURS } from "@/lib/decision-calibration";
 import { fillRules } from "@/lib/market-rules";
 
 const base = new Date("2026-11-01T00:00:00Z");
@@ -103,5 +103,13 @@ describe("decision calibration", () => {
     expect(bucket.decisions).toBe(10);
     expect(bucket.enoughSamples).toBe(true);
     expect(buckets.find((entry) => entry.label === "0–20%")!.enoughSamples).toBe(false);
+  });
+});
+
+describe("decisionLogSince", () => {
+  it("bounds the decision sample at the same window the review lists", () => {
+    const now = new Date("2026-11-08T12:00:00Z");
+    expect(decisionLogSince(now).toISOString()).toBe("2026-11-05T12:00:00.000Z");
+    expect(DECISION_LOG_WINDOW_HOURS).toBe(72);
   });
 });
