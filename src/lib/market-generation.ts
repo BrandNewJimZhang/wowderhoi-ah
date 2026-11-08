@@ -21,7 +21,7 @@ import { resolvePhase } from "@/lib/phase";
 import type { MarketPhase } from "@/lib/market-rules";
 import { SIGNAL_SCHEMA_VERSION, type StoredSignalRow } from "@/lib/signal-row";
 
-export type QuoteRow = MarketQuote;
+type QuoteRow = MarketQuote;
 
 export type SeriesRow = {
   itemId: number;

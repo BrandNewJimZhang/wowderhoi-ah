@@ -20,8 +20,11 @@ type CoreBuildOptions = {
   // budget; the core falls back to cash only when no budget is supplied.
   cashCopper?: number;
   bagSlots?: number;
-  stackSize?: number;
 };
+
+// The addon's planner fixes a stack at 20 units; the terminal must send the
+// same capacity or the two cores size the same bag differently.
+const STACK_SIZE = 20;
 
 function parseTiers(value: unknown, fallback: Tier): Tier[] {
   if (!Array.isArray(value)) return [fallback];
@@ -118,7 +121,7 @@ export function buildCoreInput(
     },
     capacity: {
       bagSlots: options.bagSlots ?? 20,
-      stackSize: options.stackSize ?? 20
+      stackSize: STACK_SIZE
     },
     positions: options.positions ?? {}
   };

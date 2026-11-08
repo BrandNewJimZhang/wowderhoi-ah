@@ -3,7 +3,7 @@ import { formatWowMoney } from "@/lib/wow-money";
 
 // Metrics an AlertRule may reference — the UI dropdown, the label table and
 // the evaluator share this list as the single authority. Every entry is a
-// real snapshot-derived statistic; gold-denominated ones are marked so the
+// real quote-derived statistic; gold-denominated ones are marked so the
 // UI can convert user input from gold to copper.
 export const alertMetricKeys = ["sellPrice", "minPrice", "sellRef", "spreadPercent", "trendPercent", "quantity", "numAuctions"] as const;
 

@@ -17,10 +17,10 @@ export function utcDateKey(date: Date): string {
 
 // Each item contributes one price per day — its close — so a single
 // heavily scanned item cannot dominate the index. The series is the
-// multi-day record; a snapshot page would only cover the last day at a
-// 15-minute cadence. The median of those daily closes is normalised to the
-// first day with data. Points arrive ascending, so the last point of a day
-// is its close.
+// multi-day record; reading only the newest generation would cover the last
+// scan. The median of those daily closes is normalised to the first day
+// with data. Points arrive ascending, so the last point of a day is its
+// close.
 export function buildPriceIndex(items: Array<{ itemId: number; points: readonly SeriesPoint[] }>): PriceIndex {
   const byDate = new Map<string, Map<number, number>>();
   for (const item of items) {

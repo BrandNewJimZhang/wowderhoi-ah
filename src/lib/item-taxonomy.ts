@@ -6,14 +6,14 @@
 // bands do not know would silently drop the item's prior, so the coverage
 // test walks the committed catalogue against demand-bands.json.
 
-export type CatalogClassInput = {
+type CatalogClassInput = {
   cls: number;
   sub: number;
   armorType?: string | null;
   weaponType?: string | null;
 };
 
-export type ItemTaxonomy = { category: string; subCategory: string };
+type ItemTaxonomy = { category: string; subCategory: string };
 
 export const ITEM_CLASSES: Record<number, string> = {
   0: "消耗品",

@@ -118,6 +118,8 @@
 - The second addon-series parser (`series-import.ts`) whose only consumer
   was its own test, plus two repository exports no module called. The live
   parser in `item-series.ts` is the single implementation.
+- The never-passed `stackSize` override in the core input builder. Both
+  planners fix a stack at 20, so the builder now states that value.
 
 ### Changed
 
