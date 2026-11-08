@@ -239,10 +239,10 @@ model Trade {
   @@index([decisionId])
 }
 
-// What the system recommended and why. Written by the cockpit or the
-// terminal and read by the review page. Only the fields the review and
-// calibration actually consume are stored: a candidate snapshot nobody
-// reads is storage, not a decision log.
+// What the system recommended and why. Written once per generation by the
+// import, never by a page read, and read by the review page and the
+// calibration. Only the fields those consumers actually use are stored: a
+// candidate snapshot nobody reads is storage, not a decision log.
 model Decision {
   id             String   @id @default(cuid())
   // Stable identity shared with the addon: realm|faction|scannedAt:item:kind.

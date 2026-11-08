@@ -113,12 +113,14 @@ an **inferred** sale at the posted price and labelled everywhere.
 ## Terminal
 
 - **Cockpit** (`/`): phase banner, the shared action list, executable
-  opportunities, market monitor, alerts, watchlist, crafting snapshot and
+  opportunities, market movers, alerts, watchlist, crafting snapshot and
   the event calendar.
-- **Market table**: sell price, minimum, sell-front median, spread,
-  trend, change, supply and listings; server-side filter/sort/paging.
-- **Item page**: order-book ladder, 24-hour fill-probability curve,
-  windowed intraday trend, daily candles and weekday seasonality.
+- **Market** (`/market`): sell price, minimum, sell-front median, spread,
+  trend, change, supply, listings, sparklines and a P25–P75 band; the whole
+  projection is sent once and filtered/sorted/paged in the client.
+- **Item page** (`/items/<id>`): order-book ladder, 24-hour
+  fill-probability curve, windowed intraday trend, daily candles and
+  weekday seasonality.
 - **Portfolio** (`/portfolio`): cash from the last scan, position value
   and cost, unrealized P&L, confirmed realized P&L and fees, plus inferred
   sales shown separately and labelled.
@@ -129,6 +131,9 @@ an **inferred** sale at the posted price and labelled everywhere.
 - **Review** (`/review`): decision matching, alpha-decay windows, the next
   listing experiment, and the discipline that thresholds are calibrated
   from own fills, not from public asks.
+- **Data health** (`/health`): scan age and gaps, series coverage,
+  catalogue/icon coverage, the last 20 import runs and Journal replay
+  errors.
 
 ## Data pipeline
 
@@ -211,11 +216,12 @@ the `.toc` declares, so the code under test is the code that ships.
 `Core.lua` is also loaded by `src/lib/core/run-core.ts`; a parity test
 compares the two load paths.
 
-Performance gates cover 866-item core evaluation, core-input assembly,
-5,000-event journal replay, a 120-candidate LP solve, 9,000-item scan
-validation and the SavedVariables size budget. The core budget is looser
-than the client frame budget because the terminal runs Lua in fengari;
-the addon runs the same file natively.
+Performance gates cover 866- and 6,000-item core evaluation, core-input
+assembly, 5,000-event journal replay, a 120-candidate LP solve, 9,000-item
+scan validation, a 250,000-listing replicate walk, a 3,692-item generation
+with series, client-side filtering of 4,048 rows and the SavedVariables size
+budget. The core budget is looser than the client frame budget because the
+terminal runs Lua in fengari; the addon runs the same file natively.
 
 ## Key modules
 
@@ -232,7 +238,8 @@ the addon runs the same file natively.
 | `src/data/demand-bands.json` / `src/lib/demand.ts` | Opening-week demand priors, compiled into `WAH.DEMAND` |
 | `src/lib/journal.ts` | Journal parser and replay, parity-tested against Lua |
 | `src/lib/craft-lp.ts` / `recipes.ts` | Production network and the Forever catalogue |
-| `src/lib/portfolio.ts` / `off-policy.ts` / `experiments.ts` | Sizing, evaluation, controlled experiments |
+| `src/lib/position-valuation.ts` / `off-policy.ts` / `experiments.ts` | Portfolio valuation, policy evaluation, controlled experiments |
+| `src/lib/market-generation.ts` / `market-read.ts` / `import-store.ts` | Generation planning, the read model, the transactional writer |
 | `src/app/api/import/addon-scan/route.ts` | Transactional scan + journal import |
 | `scripts/fetch-recipes.ts` / `import-recipes.ts` | Recipe dataset refresh and projection |
 | `scripts/perf/` | HTTP-level latency budget gates |
@@ -302,7 +309,7 @@ an issue; see [CONTRIBUTING.md](CONTRIBUTING.md). Security notes in
 
 ### 桌面
 
-驾驶舱、市场监控、盘口/成交概率/走势图、组合、制造（2,595 条配方 + LP 影子价格）、复盘（决策匹配、预测分桶校准、alpha 衰减、实验设计）。`npm run calibrate` 从洁净扫描给出成交率先验建议。
+驾驶舱、行情（`/market`，客户端即时筛选排序）、物品页（盘口/成交概率/走势图/K 线/季节性）、组合、制造（2,595 条配方 + LP 影子价格）、复盘（决策匹配、预测分桶校准、alpha 衰减、实验设计）与数据健康（`/health`）。`npm run calibrate` 从洁净扫描给出成交率先验建议。
 
 ### 数据管道
 

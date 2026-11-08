@@ -66,9 +66,10 @@ export type GenerationInput = {
   // references. A missing row is a programming error, not a soft skip.
   items: Map<number, SignalItem>;
   existingSeries: Array<{ itemId: number; points: readonly SeriesPoint[] }>;
-  // The previous generation's current book, used to keep delisted items
-  // visible for one generation. Their signals are stale and never reach the
-  // core.
+  // The previous generation's current book. An item the scan no longer
+  // prices is carried forward (its signal is stale and never reaches the
+  // core) until a later scan lists it again, so the market table can still
+  // explain where its history ends.
   previous: { scannedAt: Date; quotes: Array<{ item: SignalItem; quote: MarketQuote }> } | null;
   openedAt: Date | null;
   firstScanAt: Date | null;
