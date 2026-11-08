@@ -213,6 +213,21 @@ describe("item observation", () => {
     expect(lua.number("WowTest.ns.chartState().itemId")).toBe(4338);
   });
 
+  // An explicit call with no link is an empty slot. Falling back to the
+  // item the shared tooltip still remembers is how the previous hover's
+  // panel leaked onto the next one.
+  it("does not inherit the last item on an empty bag slot", () => {
+    const lua = auctionPage();
+    lua.exec(`
+      WowTest.bagItems[1] = { itemId = 4338, name = "Mageweave Cloth" }
+      GameTooltip:SetBagItem(0, 1)
+      GameTooltip._lines = {}
+      GameTooltip:SetHyperlink(nil)
+    `);
+    expect(lua.tooltipText()).not.toContain("WoWderhoi AHelper");
+    expect(lua.number("WowTest.ns.chartState().itemId")).toBe(4338);
+  });
+
   it("does not force a hidden tooltip open to append", () => {
     const lua = auctionPage();
     lua.exec(`WowTest.fireTooltipPost(Enum.TooltipDataType.Item, GameTooltip, { type = 0, id = 4338 })`);
