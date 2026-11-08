@@ -14,7 +14,7 @@ GeneratedRules.lua
 GeneratedRecipes.lua
 Core.lua
 Settings.lua
-WoWDerhoiAH.lua
+WoWderhoiAH.lua
 Journal.lua
 Ledger.lua
 Mail.lua
