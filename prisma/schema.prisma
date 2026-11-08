@@ -13,109 +13,109 @@ datasource db {
 
 // One row per realm+faction. Scans, positions and trades are scoped to it.
 model Market {
-  id        String   @id @default(cuid())
-  realm     String
-  faction   String
-  cash      Float    @default(0) // latest scan's player cash, copper
+  id          String    @id @default(cuid())
+  realm       String
+  faction     String
+  cash        Float     @default(0) // latest scan's player cash, copper
   // Character whose scan (and journal) produced cash, positions and trades.
   // Empty for scan-only imports that carry no character.
-  character String   @default("")
+  character   String    @default("")
   // Server opening time (epoch seconds from the addon). Phase age is measured
   // from here when set; otherwise from the earliest scan.
-  openedAt  DateTime? @map("opened_at")
+  openedAt    DateTime? @map("opened_at")
   // First observation of this market, persisted so phase age cannot move
   // backwards when old snapshot rows are pruned. openedAt still wins when
   // the player configured it.
   firstScanAt DateTime? @map("first_scan_at")
   // Free bag slots at the latest scan. Null for imports from addons that did
   // not report the field; the shared core then keeps its planning fallback.
-  bagSlots  Int?      @map("bag_slots")
-  createdAt DateTime @default(now()) @map("created_at")
+  bagSlots    Int?      @map("bag_slots")
+  createdAt   DateTime  @default(now()) @map("created_at")
 
-  snapshots AuctionSnapshot[]
+  snapshots      AuctionSnapshot[]
   dailySummaries DailySummary[]
-  positions Position[]
-  trades    Trade[]
-  decisions Decision[]
+  positions      Position[]
+  trades         Trade[]
+  decisions      Decision[]
 
   @@unique([realm, faction])
 }
 
 model Item {
-  id               String            @id @default(cuid())
-  itemId           Int               @unique @map("item_id")
-  name             String
-  quality          String
-  category         String
-  subCategory      String            @map("sub_category")
-  vendorPrice      Float             @default(0) @map("vendor_price") // NPC sell price in copper; 0 = unsellable
-  snapshots        AuctionSnapshot[]
-  dailySummaries   DailySummary[]
-  alerts           AlertRule[]
-  watchlistEntry   Watchlist?
-  createdAt        DateTime          @default(now()) @map("created_at")
-  updatedAt        DateTime          @updatedAt @map("updated_at")
+  id             String            @id @default(cuid())
+  itemId         Int               @unique @map("item_id")
+  name           String
+  quality        String
+  category       String
+  subCategory    String            @map("sub_category")
+  vendorPrice    Float             @default(0) @map("vendor_price") // NPC sell price in copper; 0 = unsellable
+  snapshots      AuctionSnapshot[]
+  dailySummaries DailySummary[]
+  alerts         AlertRule[]
+  watchlistEntry Watchlist?
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
 
   @@index([category, subCategory])
 }
 
 model AuctionSnapshot {
-  id               String   @id @default(cuid())
-  itemId           Int      @map("item_id")
-  timestamp        DateTime
-  marketId         String   @map("market_id")
+  id                 String   @id @default(cuid())
+  itemId             Int      @map("item_id")
+  timestamp          DateTime
+  marketId           String   @map("market_id")
   // A snapshot is one item's observation from one scan. `priced = false`
   // marks a demand-only row: the item had bid-only listings and no buyout,
   // so every price column is zero and only `bidOnlyCount`/`highestBid` are
   // meaningful. Price consumers must filter on `priced`.
-  priced           Boolean  @default(true)
-  minPrice         Float      @map("min_price")
-  marketPrice      Float      @map("market_price") // P10; a statistic, not a decision anchor
-  sellPrice        Float      @default(0) @map("sell_price")
-  p5Price          Float      @default(0) @map("p5_price")
-  quantity         Int
-  numAuctions      Int      @map("num_auctions")
-  sellerCount      Int      @default(0) @map("seller_count")
-  sellersInvisible Boolean  @default(false) @map("sellers_invisible")
+  priced             Boolean  @default(true)
+  minPrice           Float    @map("min_price")
+  marketPrice        Float    @map("market_price") // P10; a statistic, not a decision anchor
+  sellPrice          Float    @default(0) @map("sell_price")
+  p5Price            Float    @default(0) @map("p5_price")
+  quantity           Int
+  numAuctions        Int      @map("num_auctions")
+  sellerCount        Int      @default(0) @map("seller_count")
+  sellersInvisible   Boolean  @default(false) @map("sellers_invisible")
   // True when the scan could see owner names for this item. Hidden owners
   // make the flow proxy unobservable rather than zero.
-  ownerVisible     Boolean  @default(false) @map("owner_visible")
+  ownerVisible       Boolean  @default(false) @map("owner_visible")
   // Hygiene generation of soldProxyLow/High (see OBSERVATION_VERSION in
   // src/lib/market-rules.ts). Calibration only reads the current generation
   // and rows whose owners were fully visible.
-  observationVersion Int?   @map("observation_version")
+  observationVersion Int?     @map("observation_version")
   // Other sellers' supply concentration (0..1). Null when any owner is
   // hidden: the visible subset would look more concentrated than it is.
-  sellerHHI        Float?   @map("seller_hhi")
-  topSellerShare   Float?   @map("top_seller_share")
+  sellerHHI          Float?   @map("seller_hhi")
+  topSellerShare     Float?   @map("top_seller_share")
   // The scanner's classification of this item's book ("commodity" | "item"),
   // decided once at scan time. Null on rows imported before the column
   // existed; consumers fall back to the core's derivation for those.
-  marketType       String?  @map("market_type")
-  bidOnlyCount     Int      @default(0) @map("bid_only_count")
-  highestBid       Float      @default(0) @map("highest_bid")
-  soldProxyLow     Float      @default(0) @map("sold_proxy_low") // left an owner: sales + cancels
-  soldProxyHigh    Float      @default(0) @map("sold_proxy_high") // left a price key: also repricing
+  marketType         String?  @map("market_type")
+  bidOnlyCount       Int      @default(0) @map("bid_only_count")
+  highestBid         Float    @default(0) @map("highest_bid")
+  soldProxyLow       Float    @default(0) @map("sold_proxy_low") // left an owner: sales + cancels
+  soldProxyHigh      Float    @default(0) @map("sold_proxy_high") // left a price key: also repricing
   // False when the scan had no previous capture of this item (first scan
   // after an upgrade, or the item was just listed): the zero interval is
   // missing data, not an observed zero. True for rows imported before the
   // column existed -- that is the behaviour they were imported under.
-  flowObserved     Boolean  @default(true) @map("flow_observed")
-  supplyGrowth     Float    @default(0) @map("supply_growth")
+  flowObserved       Boolean  @default(true) @map("flow_observed")
+  supplyGrowth       Float    @default(0) @map("supply_growth")
   // History points inside the phase window at scan time, stamped by the
   // scanner. Null on rows imported before the column existed; the terminal
   // then falls back to its own sell-sample count.
-  historySamples   Int?     @map("history_samples")
+  historySamples     Int?     @map("history_samples")
   // Time span the stamped history points cover. A sample floor without a
   // span floor lets a burst of scans masquerade as a week of history.
-  historySpanHours Float?   @map("history_span_hours")
+  historySpanHours   Float?   @map("history_span_hours")
   // True when the persisted ladder is only the top eight rungs of a deeper
   // book. The fill model must count the unseen units as a queue.
-  tierTruncated    Boolean  @default(false) @map("tier_truncated")
-  topTiers         Json?    @map("top_tiers")
-  expiring         Json?    @map("expiring")
-  item             Item     @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
-  market           Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  tierTruncated      Boolean  @default(false) @map("tier_truncated")
+  topTiers           Json?    @map("top_tiers")
+  expiring           Json?    @map("expiring")
+  item               Item     @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
+  market             Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
 
   @@unique([marketId, timestamp, itemId])
   @@index([itemId, timestamp])
@@ -127,10 +127,10 @@ model DailySummary {
   itemId     Int      @map("item_id")
   marketId   String   @map("market_id")
   date       DateTime
-  openPrice  Float      @map("open_price")
-  closePrice Float      @map("close_price")
-  highPrice  Float      @map("high_price")
-  lowPrice   Float      @map("low_price")
+  openPrice  Float    @map("open_price")
+  closePrice Float    @map("close_price")
+  highPrice  Float    @map("high_price")
+  lowPrice   Float    @map("low_price")
   volume     Int
   item       Item     @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
   market     Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
@@ -157,20 +157,20 @@ model Position {
 
 // Realized trades, also rebuilt from the journal on every import.
 model Trade {
-  id         String   @id @default(cuid())
-  marketId   String   @map("market_id")
-  itemId     Int      @map("item_id")
+  id         String    @id @default(cuid())
+  marketId   String    @map("market_id")
+  itemId     Int       @map("item_id")
   qty        Int
   price      Float
-  fee        Float    @default(0)
+  fee        Float     @default(0)
   pnl        Float
   channel    String // auction | vendor | disenchant | ...
-  inferred   Boolean  @default(false) // labelled: the client exposes no sale event
+  inferred   Boolean   @default(false) // labelled: the client exposes no sale event
   // When the goods were listed. `realizedAt` is when the sale was observed;
   // a mailbox sale is necessarily observed later than it happened.
   listedAt   DateTime? @map("listed_at")
-  realizedAt DateTime @map("realized_at")
-  market     Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  realizedAt DateTime  @map("realized_at")
+  market     Market    @relation(fields: [marketId], references: [id], onDelete: Cascade)
 
   @@index([marketId, realizedAt])
   @@index([itemId])
@@ -181,21 +181,21 @@ model Trade {
 // calibration actually consume are stored: a candidate snapshot nobody
 // reads is storage, not a decision log.
 model Decision {
-  id         String   @id @default(cuid())
-  marketId   String   @map("market_id")
-  at         DateTime
-  phase      String
-  itemId     Int?     @map("item_id")
-  kind       String
-  reason     String?
+  id             String   @id @default(cuid())
+  marketId       String   @map("market_id")
+  at             DateTime
+  phase          String
+  itemId         Int?     @map("item_id")
+  kind           String
+  reason         String?
   // What the recommendation expected, so the review page can compare the
   // prediction with confirmed sales instead of only describing it.
-  expectedNet    Float?  @map("expected_net")
-  fillProb       Float?  @map("fill_prob")
-  fillBasis      String? @map("fill_basis")
-  allocQty       Int?    @map("alloc_qty")
-  allocUnitPrice Float?  @map("alloc_unit_price")
-  market     Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  expectedNet    Float?   @map("expected_net")
+  fillProb       Float?   @map("fill_prob")
+  fillBasis      String?  @map("fill_basis")
+  allocQty       Int?     @map("alloc_qty")
+  allocUnitPrice Float?   @map("alloc_unit_price")
+  market         Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
 
   @@index([at])
   @@index([itemId])
@@ -206,12 +206,12 @@ model Decision {
 // only reads the fields below, so the table does not mirror source-only
 // metadata (category, effect, rank, skill-up range, expansion).
 model Recipe {
-  id              Int      @id
-  name            String
-  profession      String
-  materials       Json // [{ itemId, name, qty }]
-  products        Json // [{ itemId, name, qty, quality?, ilvl? }]
-  createdAt       DateTime @default(now()) @map("created_at")
+  id         Int      @id
+  name       String
+  profession String
+  materials  Json // [{ itemId, name, qty }]
+  products   Json // [{ itemId, name, qty, quality?, ilvl? }]
+  createdAt  DateTime @default(now()) @map("created_at")
 
   @@index([profession])
 }
@@ -225,13 +225,13 @@ model Watchlist {
 }
 
 model AlertRule {
-  id         String    @id @default(cuid())
-  itemId     Int       @map("item_id")
-  metric     String
-  operator   String
-  threshold  Float
-  enabled    Boolean   @default(true)
-  item       Item      @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
+  id        String  @id @default(cuid())
+  itemId    Int     @map("item_id")
+  metric    String
+  operator  String
+  threshold Float
+  enabled   Boolean @default(true)
+  item      Item    @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
 
   @@index([enabled])
 }
