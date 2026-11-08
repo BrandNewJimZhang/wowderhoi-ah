@@ -208,6 +208,49 @@ describe("scan lifecycle", () => {
     expect(lua.eval("WowTest.ns.requestScan('auto')")).toBe(true);
   });
 
+  it("keeps a row whose item record has not loaded and fills it when it does", () => {
+    const lua = page();
+    setRows(lua, [{ itemId: 2589, name: "", count: 10, buyout: 10000, hasAllInfo: false }]);
+    requestScan(lua);
+    lua.exec("WowTest.fireReplicate()");
+    lua.exec("WowTest.tickFrames(1)");
+    // The observation is complete; the scan is only waiting to improve the
+    // metadata attached to it.
+    expect(lua.eval("WowTest.ns.scanRunning")).toBe(true);
+    expect(lua.eval("WoWderhoiAH_ScanData == nil")).toBe(true);
+    lua.exec(`WowTest.itemInfo[2589] = {
+      name = "Linen Cloth", class = "Trade Goods", subClass = "Cloth", quality = 1, vendorP = 100
+    }`);
+    lua.exec("WowTest.sendItemDataLoaded(2589)");
+    drive(lua);
+    expect(lua.text("WoWderhoiAH_ScanData.items[2589].name")).toBe("Linen Cloth");
+    expect(lua.number("WoWderhoiAH_ScanData.items[2589].minPrice")).toBe(1000);
+    expect(lua.number("WowTest.lastStats().itemsMissingInfo")).toBe(1);
+  });
+
+  it("publishes an unresolved name after the bounded hydrate window", () => {
+    const lua = page();
+    setRows(lua, [{ itemId: 2589, name: "", count: 10, buyout: 10000, hasAllInfo: false }]);
+    requestScan(lua);
+    lua.exec("WowTest.fireReplicate()");
+    lua.exec("WowTest.tickFrames(1)");
+    lua.advance(3); // the item record never arrives
+    drive(lua);
+    expect(lua.text("WoWderhoiAH_ScanData.items[2589].name")).toBe("");
+    expect(lua.number("WoWderhoiAH_ScanData.items[2589].minPrice")).toBe(1000);
+    expect(lua.number("WowTest.lastStats().itemsMissingInfo")).toBe(1);
+  });
+
+  it("uses the name a partially loaded row did carry", () => {
+    const lua = page();
+    setRows(lua, [{ itemId: 2589, name: "Linen", count: 10, buyout: 10000, hasAllInfo: false }]);
+    requestScan(lua);
+    lua.exec("WowTest.fireReplicate()");
+    drive(lua);
+    expect(lua.text("WoWderhoiAH_ScanData.items[2589].name")).toBe("Linen");
+    expect(lua.number("WowTest.lastStats().itemsMissingInfo")).toBe(0);
+  });
+
   it("ignores a response that arrives after the scan was aborted", () => {
     const lua = page();
     setRows(lua, [{ itemId: 2589, name: "Linen", count: 10, buyout: 10000 }]);

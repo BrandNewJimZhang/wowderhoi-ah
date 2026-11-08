@@ -37,6 +37,10 @@ local REPLICATE_WAIT_SECONDS = 180
 -- Progress is announced every tenth of the book, so a slow scan under a low
 -- frame rate reads as slow rather than hung.
 local PROGRESS_STEP = 0.1
+-- How long the row phase waits for lazily loaded item records before it
+-- publishes names as observed. This is a display budget, not a correctness
+-- dependency: the import keeps an unloaded item addressable by its id.
+local HYDRATE_SECONDS = 3
 -- Compiled from src/lib/market-rules.ts; the terminal's elapsed-time floor
 -- reads the same constant, so the ticker and the fill model stay aligned.
 local SCAN_MINUTES = WAH.RULES.scanIntervalMinutes or 15
@@ -363,14 +367,15 @@ local function recordAuction(index)
   -- GetReplicateItemInfo return order: name, texture, count, quality, usable,
   -- level, levelType, minBid, minIncrement, buyoutPrice, bidAmount,
   -- highBidder, bidderFullName, owner, ownerFullName, saleStatus, itemID,
-  -- hasAllInfo.
+  -- hasAllInfo. hasAllInfo is false while the client has only the identity
+  -- of the row: the name and quality are still loading.
   --
   -- Every client lookup counts as API time, including the per-item
   -- GetItemInfo below. Everything else is our own aggregation; /wahdiag
   -- subtracts apiMs from processMs to report the two separately.
   local apiStart = debugprofilestop()
   local name, _, count, quality, _, _, _, _, _, buyoutPrice, bidAmount, _, _,
-    owner, ownerFullName, _, itemId = C_AuctionHouse.GetReplicateItemInfo(index)
+    owner, ownerFullName, _, itemId, hasAllInfo = C_AuctionHouse.GetReplicateItemInfo(index)
   local timeLeft = C_AuctionHouse.GetReplicateItemTimeLeft
     and timeLeftSeconds(C_AuctionHouse.GetReplicateItemTimeLeft(index)) or nil
   scan.apiMs = (scan.apiMs or 0) + (debugprofilestop() - apiStart)
@@ -381,7 +386,8 @@ local function recordAuction(index)
     scan.badRows = (scan.badRows or 0) + 1
     return
   end
-  if not name then return end
+  if hasAllInfo == false then quality = nil end
+  local displayName = (type(name) == "string" and name ~= "") and name or nil
   local seller = owner or ownerFullName
 
   local entry = scan.itemsById[itemId]
@@ -393,21 +399,40 @@ local function recordAuction(index)
       -- and later scans reuse the result. It is a client lookup, so its time
       -- belongs to apiMs rather than the surrounding Lua aggregation.
       local infoStart = debugprofilestop()
-      local _, _, _, _, _, itemClass, itemSubClass, _, _, _, vendorPrice = WAH.getItemInfo(itemId)
+      local infoName, _, _, infoQuality, _, itemClass, itemSubClass, _, _, _, vendorPrice = WAH.getItemInfo(itemId)
       scan.apiMs = (scan.apiMs or 0) + (debugprofilestop() - infoStart)
-      cached = { class = itemClass, subClass = itemSubClass, vendorP = vendorPrice or 0 }
-      if itemClass ~= nil then
+      cached = {
+        name = infoName,
+        quality = infoQuality,
+        class = itemClass,
+        subClass = itemSubClass,
+        vendorP = vendorPrice or 0
+      }
+      if itemClass ~= nil or (type(infoName) == "string" and infoName ~= "") then
         itemInfoCache[itemId] = cached
-      elseif C_Item and C_Item.RequestLoadItemDataByID then
-        -- The item database loads lazily on modern clients. Ask once so the
-        -- next scan can price vendor arbitrage for this item.
+      end
+    end
+    local entryName = displayName or (type(cached.name) == "string" and cached.name or "")
+    local entryQuality = quality
+    if type(entryQuality) ~= "number" or entryQuality < 0 then
+      entryQuality = (type(cached.quality) == "number" and cached.quality >= 0) and cached.quality or -1
+    end
+    entry = newEntry(entryName, entryQuality, cached)
+    scan.itemsById[itemId] = entry
+    if entry.name == "" then
+      -- itemId is the identity; the name is metadata that can arrive later.
+      entry.nameMissing = true
+      scan.missingInfo[itemId] = true
+      scan.itemsMissingInfo = (scan.itemsMissingInfo or 0) + 1
+      if C_Item and C_Item.RequestLoadItemDataByID then
         local requestStart = debugprofilestop()
         C_Item.RequestLoadItemDataByID(itemId)
         scan.apiMs = (scan.apiMs or 0) + (debugprofilestop() - requestStart)
       end
     end
-    entry = newEntry(name, quality, cached)
-    scan.itemsById[itemId] = entry
+  elseif entry.name == "" and displayName then
+    -- A later row of the same item may carry the name this one lacked.
+    entry.name = displayName
   end
 
   -- Own listings are not market supply. Identify by owner name first; when
@@ -973,6 +998,8 @@ end
 
 local function beginFinish(totalAuctions)
   scan.phase = "finish"
+  -- Keep the OnUpdate alive: the finish phase slices its own work.
+  frame:SetScript("OnUpdate", processFinishChunk)
   -- A pipeline bump redefines every field, so old data is discarded rather
   -- than reinterpreted. This reset must run before the new series is read.
   local previousScan = WoWderhoiAH_ScanData
@@ -1025,6 +1052,7 @@ local function beginFinish(totalAuctions)
 end
 
 local abortScan -- forward declaration: the row loop can detect a cleared copy
+local beginHydrate -- forward declaration: the row loop decides when to hydrate
 
 local function stopScanTimers(s)
   if s.watchdog then s.watchdog:Cancel(); s.watchdog = nil end
@@ -1063,9 +1091,13 @@ local function processReplicateChunk()
       abortScan("replicate_cleared")
       return
     end
-    -- Keep the OnUpdate alive: the finish phase slices its own work.
-    frame:SetScript("OnUpdate", processFinishChunk)
-    beginFinish(total)
+    -- Rows whose item record had not loaded get a short, bounded chance to
+    -- resolve before the book is published.
+    if (scan.itemsMissingInfo or 0) > 0 then
+      beginHydrate()
+    else
+      beginFinish(total)
+    end
   end
 end
 
@@ -1220,6 +1252,54 @@ local function requestScan(origin)
 end
 WAH.requestScan = requestScan
 
+-- Rows whose item record had not loaded wait here, bounded by HYDRATE_SECONDS.
+-- The scan is already complete as an observation; this phase only improves
+-- the names and qualities attached to it.
+beginHydrate = function()
+  scan.phase = "hydrate"
+  local remaining = 0
+  for itemId in pairs(scan.missingInfo or {}) do
+    if not scan.resolvedInfo[itemId] then remaining = remaining + 1 end
+  end
+  scan.hydrateRemaining = remaining
+  if remaining == 0 then
+    beginFinish(scan.total or 0)
+    return
+  end
+  local attempt = scan.attemptId
+  scan.hydrateTimer = C_Timer.NewTimer(HYDRATE_SECONDS, function()
+    if scan and scan.attemptId == attempt and scan.phase == "hydrate" then
+      scan.hydrateTimer = nil
+      beginFinish(scan.total or 0)
+    end
+  end)
+end
+
+local function onItemDataLoaded(itemId, success)
+  if not scan or scan.phase ~= "hydrate" then return end
+  if not (scan.missingInfo and scan.missingInfo[itemId]) then return end
+  if scan.resolvedInfo[itemId] then return end
+  scan.resolvedInfo[itemId] = true
+  scan.hydrateRemaining = math.max(0, (scan.hydrateRemaining or 0) - 1)
+  if success ~= false then
+    local infoName, _, _, infoQuality = WAH.getItemInfo(itemId)
+    local entry = scan.itemsById[itemId]
+    if entry then
+      if type(infoName) == "string" and infoName ~= "" then entry.name = infoName end
+      if type(infoQuality) == "number" and infoQuality >= 0 then entry.quality = infoQuality end
+    end
+    local cached = itemInfoCache[itemId]
+    if cached then
+      if type(infoName) == "string" and infoName ~= "" then cached.name = infoName end
+      if type(infoQuality) == "number" and infoQuality >= 0 then cached.quality = infoQuality end
+    end
+  end
+  if scan and scan.phase == "hydrate" and (scan.hydrateRemaining or 0) <= 0 then
+    if scan.hydrateTimer then scan.hydrateTimer:Cancel(); scan.hydrateTimer = nil end
+    beginFinish(scan.total or 0)
+  end
+end
+
 frame = CreateFrame("Frame")
 -- The 1.60 client publishes the replicate copy through its own event. The
 -- browse signals stay registered as fallbacks and as the player-search
@@ -1231,6 +1311,9 @@ frame:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_ADDED")
 frame:RegisterEvent("AUCTION_HOUSE_NEW_RESULTS_RECEIVED")
 frame:RegisterEvent("AUCTION_HOUSE_BROWSE_FAILURE")
 frame:RegisterEvent("AUCTION_HOUSE_CLOSED")
+-- A lazily loaded item record answers here. The hydrate phase uses it to
+-- fill names for rows the replicate copy delivered without them.
+frame:RegisterEvent("ITEM_DATA_LOAD_RESULT")
 -- The owned-auction response is asynchronous; keep the fallback snapshot
 -- fresh whenever the client publishes one.
 frame:RegisterEvent("OWNED_AUCTIONS_UPDATED")
@@ -1240,7 +1323,7 @@ local function markPlayerSearch()
   if scan then scan.searchSeen = true end
 end
 
-frame:SetScript("OnEvent", function(_, event, payload)
+frame:SetScript("OnEvent", function(_, event, payload, arg2)
   if event == "AUCTION_HOUSE_SHOW" then
     WAH.ahOpen = true
     refreshOwnedSnapshot()
@@ -1268,6 +1351,10 @@ frame:SetScript("OnEvent", function(_, event, payload)
   end
   if event == "REPLICATE_ITEM_LIST_UPDATE" then
     if scan and scan.phase == "waiting" then acceptReplicate("replicate") end
+    return
+  end
+  if event == "ITEM_DATA_LOAD_RESULT" then
+    onItemDataLoaded(payload, arg2)
     return
   end
   -- A NEW_RESULTS_RECEIVED with an itemKey belongs to an item search. Let

@@ -274,7 +274,7 @@ C_Item = {
   GetItemInfo = function(itemId)
     bed.itemInfoCalls = (bed.itemInfoCalls or 0) + 1
     local info = bed.itemInfo[itemId] or {}
-    return info.name, nil, nil, nil, nil, info.class or "Trade Goods", info.subClass or "Other",
+    return info.name, nil, info.quality, nil, nil, info.class or "Trade Goods", info.subClass or "Other",
       nil, nil, nil, info.vendorP or 0
   end,
   GetItemIconByID = function(itemId) return "icon:" .. tostring(itemId) end,
