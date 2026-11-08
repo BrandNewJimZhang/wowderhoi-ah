@@ -183,6 +183,41 @@ describe("forever replicate scan v4", () => {
     expect(lua.eval("WoWderhoiAH_ScanData.items[2590].tierTruncated")).toBe(false);
   });
 
+  it("folds a long series to its breadth budget without losing the window", () => {
+    const lua = auctionPage();
+    lua.exec(`
+      local function seed()
+        local s = { t = {}, min = {}, sell = {}, q = {}, n = {}, e = {} }
+        for i = 1, 40000 do
+          s.t[i] = time() - 40000 + i
+          s.min[i], s.sell[i], s.q[i], s.n[i], s.e[i] = 100, 100, 1, 1, 0
+        end
+        return s
+      end
+      WoWderhoiAH_Series = {
+        v = WowTest.ns.PIPELINE_VERSION,
+        markets = { ['TestRealm|Alliance'] = {
+          firstScanAt = time() - 40000,
+          items = { [2589] = seed(), [2590] = seed() }
+        } }
+      }
+    `);
+    lua.runScan([
+      { itemId: 2589, name: "Linen", count: 10, buyout: 10000 },
+      { itemId: 2590, name: "Wool", count: 10, buyout: 20000 }
+    ]);
+    const series = "WoWderhoiAH_Series.markets['TestRealm|Alliance'].items[2589]";
+    // Two items share the 60,000-point cap, so each keeps 30,000 points.
+    expect(lua.number(`#${series}.t`)).toBeLessThanOrEqual(30001);
+    expect(lua.number("WowTest.lastStats().seriesBudget")).toBe(30000);
+    // The fold keeps the first and last points: the window is not cut short.
+    expect(lua.number(`${series}.t[1]`)).toBe(1700000000 - 39999);
+    expect(lua.number(`${series}.t[#${series}.t]`)).toBe(1700000000);
+    // The stamped coverage describes the retained series, not the raw count.
+    expect(lua.number("WoWderhoiAH_ScanData.items[2589].historySamples")).toBeGreaterThan(29900);
+    expect(lua.number("WoWderhoiAH_ScanData.items[2589].historySpanHours")).toBeGreaterThan(10);
+  });
+
   it("hands the stamped sample count to the core instead of recounting", () => {
     const lua = auctionPage();
     lua.runScan([{ itemId: 2589, name: "Linen", count: 10, buyout: 10000 }]);

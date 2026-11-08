@@ -69,6 +69,7 @@ function signal(itemId: number): MarketSignal {
     sellRef: 1000,
     sellSamples: 2,
     historySamples: null,
+    historySpanHours: null,
     tierTruncated: false,
     spreadPercent: 30,
     trendPercent: 0,

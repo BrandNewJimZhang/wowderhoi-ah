@@ -17,6 +17,7 @@ function history(
     sellerCount?: number;
     bidOnly?: number;
     historySamples?: number | null;
+    historySpanHours?: number | null;
   }>,
   overrides?: { vendorPrice?: number; itemId?: number; name?: string }
 ): MarketHistory {
@@ -41,6 +42,7 @@ function history(
       soldProxyHigh: 0,
       supplyGrowth: 0,
       historySamples: snap.historySamples ?? null,
+      historySpanHours: snap.historySpanHours ?? null,
       topTiers: [{ p: Math.round(snap.sellPrice * 0.9), q: 100 }],
       expiring: { soon: 1, mid: 1, late: 1 }
     })),

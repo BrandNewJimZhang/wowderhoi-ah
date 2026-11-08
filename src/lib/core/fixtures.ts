@@ -33,7 +33,7 @@ export function commodityInput(overrides?: {
             { p: 800, q: 100 },
             { p: 1000, q: 500 }
           ],
-          history: { samples: 8 },
+          history: { samples: 8, spanHours: 24 },
           inferredSoldLow: 50,
           inferredSoldHigh: 50,
           elapsedHours: 0.25

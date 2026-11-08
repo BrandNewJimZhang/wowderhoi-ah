@@ -36,6 +36,9 @@ describe("phase rules", () => {
       const current = phaseHistory[marketPhases[index]];
       expect(current.windowHours).toBeGreaterThanOrEqual(previous.windowHours);
       expect(current.minSamples).toBeGreaterThanOrEqual(previous.minSamples);
+      expect(current.minSpanHours).toBeGreaterThanOrEqual(previous.minSpanHours);
+      // Coverage must fit inside the window it is measured over.
+      expect(current.minSpanHours).toBeLessThanOrEqual(current.windowHours);
     }
   });
 

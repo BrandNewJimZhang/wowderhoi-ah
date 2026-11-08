@@ -29,6 +29,8 @@ export type MarketSnapshot = {
   supplyGrowth?: number;
   // Scan-time history sample count; null/undefined on older rows.
   historySamples?: number | null;
+  // Scan-time hours the history points span; null/undefined on older rows.
+  historySpanHours?: number | null;
   // True when topTiers is only the top of a deeper book.
   tierTruncated?: boolean;
   topTiers?: unknown;

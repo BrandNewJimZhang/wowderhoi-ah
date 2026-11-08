@@ -294,6 +294,7 @@ export async function POST(request: Request) {
         flowObserved: item.flowObserved,
         supplyGrowth: item.supplyGrowth,
         historySamples: item.historySamples,
+        historySpanHours: item.historySpanHours,
         tierTruncated: item.tierTruncated,
         topTiers: item.tiers,
         expiring: item.expiring

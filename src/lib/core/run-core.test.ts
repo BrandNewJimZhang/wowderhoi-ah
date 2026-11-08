@@ -42,7 +42,7 @@ describe("Core.evaluate through fengari", () => {
           numAuctions: 10,
           sellers: 4,
           tiers: [{ p: 700, q: 20 }, { p: 800, q: 100 }],
-          history: { samples: 8 }
+          history: { samples: 8, spanHours: 24 }
         }
       }
     }));
@@ -70,9 +70,25 @@ describe("Core.evaluate through fengari", () => {
     expect(output.diagnostics.excluded.spread).toBe(1);
   });
 
-  it("requires the phase's history depth outside ignition", () => {
+  it("requires the phase's history coverage outside ignition", () => {
     const input = commodityInput({ phase: "wave" });
-    input.market.items[2589].history = { samples: 2 };
+    input.market.items[2589].history = { samples: 1, spanHours: 0.5 };
+    const output = runCore(input);
+    expect(output.rows).toHaveLength(0);
+    expect(output.diagnostics.excluded.noHistory).toBe(1);
+  });
+
+  it("admits a few samples spread across the window", () => {
+    // The default workflow is a handful of manual scans a day, not a
+    // 15-minute poll. Coverage, not cadence, is what makes history usable.
+    const input = commodityInput({ phase: "wave" });
+    input.market.items[2589].history = { samples: 2, spanHours: 2 };
+    expect(runCore(input).rows).toHaveLength(1);
+  });
+
+  it("rejects a burst of samples crammed into too short a span", () => {
+    const input = commodityInput({ phase: "settle" });
+    input.market.items[2589].history = { samples: 6, spanHours: 2 };
     const output = runCore(input);
     expect(output.rows).toHaveLength(0);
     expect(output.diagnostics.excluded.noHistory).toBe(1);
@@ -99,7 +115,7 @@ describe("Core.evaluate through fengari", () => {
           numAuctions: 12,
           sellers: 6,
           tiers: [{ p: 1000, q: 5000 }],
-          history: { samples: 60 },
+          history: { samples: 60, spanHours: 168 },
           ownerVisible: true,
           flowObserved: true,
           inferredSoldLow: 0,
@@ -126,7 +142,7 @@ describe("Core.evaluate through fengari", () => {
 
   it("caps confidence at medium when the fill estimate is only a prior", () => {
     const input = commodityInput({ phase: "wave" });
-    input.market.items[2589].history = { samples: 12 };
+    input.market.items[2589].history = { samples: 12, spanHours: 6 };
     input.market.items[2589].inferredSoldLow = 0;
     input.market.items[2589].inferredSoldHigh = 0;
     const output = runCore(input);
@@ -184,7 +200,7 @@ describe("Core.evaluate through fengari", () => {
       numAuctions: 10,
       sellers: 4,
       tiers: visibleTiers,
-      history: { samples: 8 },
+      history: { samples: 8, spanHours: 24 },
       ownerVisible: true,
       flowObserved: true,
       inferredSoldLow: 0,
@@ -235,7 +251,7 @@ describe("Core.evaluate through fengari", () => {
       numAuctions: 10,
       sellers: 4,
       tiers: [{ p: 700, q: 20 }, { p: 800, q: 100 }],
-      history: { samples: 0 }
+      history: { samples: 0, spanHours: 0 }
     };
     const input = commodityInput({
       ageHours: 1,

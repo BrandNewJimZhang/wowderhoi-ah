@@ -52,7 +52,7 @@ function radar(candidates: Candidate[], phase?: string): WowLua {
   })));
   lua.setPoints(candidates
     .filter((candidate) => candidate.closes)
-    .map((candidate) => ({ itemId: candidate.itemId, closes: candidate.closes! })));
+    .map((candidate) => ({ itemId: candidate.itemId, closes: candidate.closes!, spacing: 1800 })));
   lua.openTab();
   return lua;
 }
@@ -122,7 +122,7 @@ describe("executable-profit radar", () => {
       itemSubClass: candidate.itemSubClass,
       tiers: candidate.tiers
     })));
-    lua.setPoints([{ itemId: 10, closes: bag.closes }, { itemId: 11, closes: armor.closes }]);
+    lua.setPoints([{ itemId: 10, closes: bag.closes, spacing: 1800 }, { itemId: 11, closes: armor.closes, spacing: 1800 }]);
     lua.openTab();
     expect(lua.names()).toEqual(["Bag", "Armor"]);
   });
@@ -138,7 +138,7 @@ describe("executable-profit radar", () => {
       numAuctions: 12, sellers: 6, quantity: 5000, itemClass: "Trade Goods",
       tiers: [{ p: 1000, q: 5000 }]
     }]);
-    lua.setPoints([{ itemId: 1, closes: Array.from({ length: 60 }, () => 1186) }]);
+    lua.setPoints([{ itemId: 1, closes: Array.from({ length: 60 }, () => 1186), spacing: 7200 }]);
     lua.exec(`
       local entry = WoWderhoiAH_ScanData.items[1]
       entry.ownerVisible = true
@@ -156,7 +156,7 @@ describe("executable-profit radar", () => {
     // The old radar refused a flat series because P10 was the reference.
     // Core prices the spread against the sell front; a flat history is
     // just a still market, not a broken reference.
-    const flat = { ...CLEAN, itemId: 4, name: "Flat History", closes: [11000, 11000, 11000] };
+    const flat = { ...CLEAN, itemId: 4, name: "Flat History", closes: [11000, 11000, 11000, 11000, 11000, 11000] };
     expect(radar([flat]).names()).toEqual(["Flat History"]);
   });
 });

@@ -50,6 +50,9 @@ export type AddonScanItem = {
   // the series, so it stamps this once instead of every radar refresh
   // walking the points again; null on scans from before the field existed.
   historySamples: number | null;
+  // Hours the stamped samples span. Null on scans from before the field
+  // existed; the core then treats the coverage as unknown (zero).
+  historySpanHours: number | null;
   vendorPrice: number; // NPC sell price in copper; 0 = unsellable to vendors
   tiers: AddonTier[]; // top of the price ladder, ascending
   // True when the book had more rungs than the persisted top eight. The
@@ -354,6 +357,9 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
       supplyGrowth: optionalFinite(entry.supplyGrowth, "supplyGrowth", key),
       historySamples: typeof entry.historySamples === "number"
         ? Math.round(optionalNonNegative(entry.historySamples, "historySamples", key))
+        : null,
+      historySpanHours: typeof entry.historySpanHours === "number"
+        ? optionalFinite(entry.historySpanHours, "historySpanHours", key)
         : null,
       vendorPrice: optionalNonNegative(entry.vendorP, "vendorP", key),
       tiers: priced ? normalizeTiers(entry.tiers, key, { p: minPrice, q: quantity }) : [],

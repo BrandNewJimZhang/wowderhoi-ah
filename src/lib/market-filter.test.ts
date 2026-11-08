@@ -28,6 +28,7 @@ function makeSignal(partial: Partial<MarketSignal> & Pick<MarketSignal, "itemId"
     sellRef: 100,
     sellSamples: 1,
     historySamples: null,
+    historySpanHours: null,
     tierTruncated: false,
     spreadPercent: 10,
     trendPercent: 0,

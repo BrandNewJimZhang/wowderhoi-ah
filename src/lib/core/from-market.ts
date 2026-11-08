@@ -98,7 +98,12 @@ export function buildCoreInput(
       tierTruncated: signal.tierTruncated,
       // The scan-time stamp is the history definition both runtimes share;
       // sellSamples is the terminal's own fallback for older rows.
-      history: { samples: signal.historySamples ?? signal.sellSamples }
+      history: {
+        samples: signal.historySamples ?? signal.sellSamples,
+        // Null means the row predates the span stamp; the core then applies
+        // the sample floor alone instead of fabricating a coverage of zero.
+        ...(signal.historySpanHours === null ? {} : { spanHours: signal.historySpanHours })
+      }
     };
   }
   return {

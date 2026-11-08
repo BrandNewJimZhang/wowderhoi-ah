@@ -31,19 +31,23 @@ WAH.RULES = {
   phaseHistory = {
   ignition = {
     windowHours = 0,
-    minSamples = 0
+    minSamples = 0,
+    minSpanHours = 0
   },
   wave = {
     windowHours = 6,
-    minSamples = 6
+    minSamples = 2,
+    minSpanHours = 1.5
   },
   settle = {
     windowHours = 24,
-    minSamples = 12
+    minSamples = 4,
+    minSpanHours = 12
   },
   steady = {
     windowHours = 168,
-    minSamples = 48
+    minSamples = 12,
+    minSpanHours = 96
   }
 },
   fill = {

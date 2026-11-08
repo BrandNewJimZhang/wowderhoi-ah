@@ -799,8 +799,11 @@ function bed.setPoints(entries)
   for _, entry in ipairs(entries) do
     -- Same parallel arrays the addon writes: t, min, sell, q, n, e.
     local point = { t = {}, min = {}, sell = {}, q = {}, n = {}, e = {} }
+    -- Spacing is the fixture's coverage: a series that must satisfy a phase
+    -- span floor passes a wider spacing than the default quarter hour.
+    local spacing = entry.spacing or 900
     for index, close in ipairs(entry.closes) do
-      point.t[index] = NOW - (#entry.closes - index) * 900
+      point.t[index] = NOW - (#entry.closes - index) * spacing
       point.min[index], point.sell[index] = close, close
       point.q[index], point.n[index], point.e[index] = 100, 1, 0
     end

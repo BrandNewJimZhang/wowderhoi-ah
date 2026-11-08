@@ -54,7 +54,7 @@ export type CoreMarketItem = {
   highestBid?: number;
   demandPrior?: number;
   marketType?: MarketType;
-  history?: { samples?: number };
+  history?: { samples?: number; spanHours?: number };
 };
 
 export type CoreInput = {

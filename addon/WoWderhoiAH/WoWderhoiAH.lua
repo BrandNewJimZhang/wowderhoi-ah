@@ -576,16 +576,47 @@ local function popKept(kept)
   kept.e[#kept.e] = nil
 end
 
+-- Fold to a point budget without cutting the window short: the first and
+-- last point survive, event points survive, and the rest of the span is
+-- sampled at even intervals, keeping each bucket's close. Truncating the
+-- oldest points instead would silently turn a 30-day series into a 4-hour
+-- one while the phase gate still asked for 7 days.
+local function foldToBudget(kept, budget)
+  local count = #kept.t
+  if count <= budget or budget < 3 then return kept end
+  local first, last = kept.t[1], kept.t[count]
+  local span = math.max(1, last - first)
+  local bucketSize = span / math.max(1, budget - 2)
+  local keep = { [1] = true, [count] = true }
+  local lastInBucket = {}
+  for index = 2, count - 1 do
+    if kept.e[index] == 1 then
+      keep[index] = true
+    else
+      local bucket = math.floor((kept.t[index] - first) / bucketSize)
+      local previous = lastInBucket[bucket]
+      if previous then keep[previous] = nil end
+      keep[index] = true
+      lastInBucket[bucket] = index
+    end
+  end
+  local out = { t = {}, min = {}, sell = {}, q = {}, n = {}, e = {} }
+  for index = 1, count do
+    if keep[index] then copyPoint(kept, index, out) end
+  end
+  return out
+end
+
 -- Layered retention: every scan for 24 hours, the LAST point of each hour
--- for a week, the last point of each day for a month. A close is the
--- statistic the charts and the sell median read, so a folded hour keeps
--- its close rather than its open. Event points (a 10% sell-front move or a
--- 25% supply move) survive the fold in addition to the close.
-local function pruneSeries(series, nowTs)
-  -- Within the per-scan window the layered retention keeps every point
-  -- unchanged. Rebuilding five arrays per item per scan was pure garbage;
-  -- the common case returns the series it was given.
-  if series.t[1] and series.t[1] >= nowTs - DAY then return series end
+-- for a week, the last point of each day for a month, then a budget fold.
+-- A close is the statistic the charts and the sell median read, so a folded
+-- hour keeps its close rather than its open. Event points (a 10% sell-front
+-- move or a 25% supply move) survive every fold.
+local function pruneSeries(series, nowTs, budget)
+  -- The common case: the whole series sits in the full-resolution day and
+  -- fits its budget, so nothing needs rebuilding.
+  local insideFullResolution = series.t[1] and series.t[1] >= nowTs - DAY
+  if insideFullResolution and (not budget or #series.t <= budget) then return series end
   local cutoff24, cutoff7, cutoff30 = nowTs - DAY, nowTs - 7 * DAY, nowTs - 30 * DAY
   local kept = { t = {}, min = {}, sell = {}, q = {}, n = {}, e = {} }
   local lastHour, lastDay
@@ -609,30 +640,35 @@ local function pruneSeries(series, nowTs)
       end
     end
   end
-  return kept
+  return foldToBudget(kept, budget)
 end
 
-local function enforceSeriesCap(market)
-  local total, count = 0, 0
-  for _, series in pairs(market.items) do
-    total = total + #series.t
-    count = count + 1
-  end
-  if total <= SERIES_CAP or count == 0 then return end
-  local perItem = math.max(8, math.floor(SERIES_CAP / count))
+-- The per-item budget follows the market's breadth. It is computed once per
+-- scan and stamped on the scan, so every item is pruned against the same
+-- number instead of discovering the cap after the fact.
+local function seriesBudgetFor(itemCount)
+  return math.max(8, math.floor(SERIES_CAP / math.max(1, itemCount)))
+end
+WAH.seriesBudget = seriesBudgetFor
+
+-- The global cap is now an assertion, not a trimming pass: shape-bounded
+-- pruning should keep the total under it. If it ever fires, the budget
+-- arithmetic is wrong and the counter says so instead of silently deleting
+-- the oldest history of every item.
+local function finalizeSeries(market)
+  local total = 0
   for itemId, series in pairs(market.items) do
-    if #series.t > perItem then
-      local trimmed = { t = {}, min = {}, sell = {}, q = {}, n = {}, e = {} }
-      for index = #series.t - perItem + 1, #series.t do copyPoint(series, index, trimmed) end
-      market.items[itemId] = trimmed
-    end
+    if #series.t == 0 then market.items[itemId] = nil else total = total + #series.t end
+  end
+  if total > SERIES_CAP then
+    WAH.seriesCapViolation = (WAH.seriesCapViolation or 0) + 1
   end
 end
 
 -- Append one scan point for one item. Demand-only rows carry no price;
 -- keeping their zeros in the series would drag every sell-median and chart
 -- toward 0, so they return nil and are never stored.
-local function appendSeriesPoint(market, itemId, item, nowTs)
+local function appendSeriesPoint(market, itemId, item, nowTs, budget)
   if not (item.minPrice and item.minPrice > 0) then return nil end
   local series = market.items[itemId]
   if not series then
@@ -640,7 +676,7 @@ local function appendSeriesPoint(market, itemId, item, nowTs)
     market.items[itemId] = series
   end
   appendPoint(series, item, nowTs)
-  series = pruneSeries(series, nowTs)
+  series = pruneSeries(series, nowTs, budget)
   market.items[itemId] = series
   return series
 end
@@ -669,13 +705,24 @@ local function seriesSamples(series, nowTs, windowHours)
   return count > 0 and count or 1
 end
 
--- The per-item work is done; drop empty series and enforce the global cap
--- once, rather than rebuilding every item's arrays on every scan.
-local function finalizeSeries(market)
-  for itemId, series in pairs(market.items) do
-    if #series.t == 0 then market.items[itemId] = nil end
+-- How much time the samples inside the window actually cover. Twelve points
+-- crammed into six hours are not a week of history; the phase gate must ask
+-- both questions.
+local function seriesSpanHours(series, nowTs, windowHours)
+  if not series or #series.t == 0 then return 0 end
+  local cutoff = nowTs - (windowHours or 0) * HOUR
+  local first, last
+  for index = 1, #series.t do
+    local stamp = series.t[index]
+    if stamp >= cutoff then
+      if not first then first = stamp end
+      last = stamp
+    end
   end
-  enforceSeriesCap(market)
+  if not first then
+    return 0
+  end
+  return math.max(0, (last - first) / HOUR)
 end
 
 -- ============================== Finish ===============================
@@ -850,11 +897,13 @@ local function finishItem(itemId)
       supplyGrowth = supplyGrowth,
       elapsedHours = math.max(finish.elapsedSeconds / HOUR, SCAN_FLOOR_HOURS)
     }
-    -- The sample count is a property of the series at scan time. Stamping it
-    -- here means a radar refresh reads one number instead of walking every
-    -- retained point of every item.
-    local series = appendSeriesPoint(finish.market, itemId, item, finish.nowTs)
+    -- The sample count and its span are properties of the series at scan
+    -- time. Stamping both here means a radar refresh reads two numbers
+    -- instead of walking every retained point of every item.
+    local series = appendSeriesPoint(
+      finish.market, itemId, item, finish.nowTs, finish.seriesBudget)
     item.historySamples = series and seriesSamples(series, finish.nowTs, finish.seriesWindow) or 0
+    item.historySpanHours = series and seriesSpanHours(series, finish.nowTs, finish.seriesWindow) or 0
     finish.items[itemId] = item
     finish.captureItems[itemId] = {
       keys = entry.flow,
@@ -884,7 +933,8 @@ local function finishItem(itemId)
       inferredSoldLow = 0,
       inferredSoldHigh = 0,
       supplyGrowth = 0,
-      historySamples = 0
+      historySamples = 0,
+      historySpanHours = 0
     }
     finish.items[itemId] = item
   end
@@ -1029,7 +1079,7 @@ local function beginFinish(totalAuctions)
   for itemId in pairs(scan.itemsById) do itemIds[#itemIds + 1] = itemId end
   -- The per-item history budget follows the market's breadth: a fixed cap
   -- divided by a growing item count silently shrinks every item's window.
-  local seriesBudget = math.max(8, math.floor(SERIES_CAP / math.max(1, #itemIds)))
+  local seriesBudget = seriesBudgetFor(#itemIds)
   scan.seriesBudget = seriesBudget
   finish = {
     totalAuctions = totalAuctions,
@@ -1448,6 +1498,13 @@ function WAH.historySamples(itemId)
   return seriesSamples(market and market.items[itemId], time(), historyWindowHours())
 end
 
+-- Live span for a scan written before the stamp existed. New scans carry
+-- historySpanHours on the item record, matching historySamples.
+function WAH.historySpan(itemId)
+  local market = WAH.seriesMarket()
+  return seriesSpanHours(market and market.items[itemId], time(), historyWindowHours())
+end
+
 -- Single history authority. The decision core reads samples; the tooltip
 -- and charts read sellRef/latest/min/max. P10 stays on the scan snapshot
 -- as a statistic and must not re-enter a decision.
@@ -1674,6 +1731,8 @@ function WAH.coreInput()
       -- refresh reads one number instead of walking every item's points.
       -- Older scans in the same session fall back to the live count.
       local samples = entry.historySamples or WAH.historySamples(itemId)
+      local spanHours = entry.historySpanHours
+      if spanHours == nil then spanHours = WAH.historySpan(itemId) end
       local own = ownSales[itemId]
       -- The key is the item's identity: Core.evaluate iterates pairs(items)
       -- and never reads an id field from the record.
@@ -1710,7 +1769,7 @@ function WAH.coreInput()
         ownSamples = own and own.samples or 0,
         ownExposedHours = own and own.exposedHours or 0,
         demandPrior = Core.demandFor(entry.itemClass, entry.itemSubClass),
-        history = samples > 0 and { samples = samples } or nil
+        history = samples > 0 and { samples = samples, spanHours = spanHours or 0 } or nil
       }
     end
   end

@@ -669,7 +669,8 @@ function Core.evaluate(input)
   local ageHours = math.max(0, (now - firstScanAt) / 3600)
   local phase = input.phaseOverride
     or Core.phaseFor(ageHours, breadth, rules.phaseBoundaries)
-  local historyRule = (rules.phaseHistory or {})[phase] or { windowHours = 0, minSamples = 0 }
+  local historyRule = (rules.phaseHistory or {})[phase]
+    or { windowHours = 0, minSamples = 0, minSpanHours = 0 }
   local typeRules = ((rules.marketTypeRules or {})[phase]) or {}
   -- The per-unit ceiling a gate applies: the listing net of the fee, minus
   -- the phase's minimum unit profit. The buy action's abort price must be
@@ -772,6 +773,9 @@ function Core.evaluate(input)
       else
         local history = item.history or {}
         local samples = history.samples or 0
+        -- nil means the observation predates the span stamp: apply the old
+        -- sample floor rather than inventing a coverage of zero.
+        local spanHours = history.spanHours
         -- The gate measures the trade you can execute now: buy at minPrice,
         -- resell at the live sell front. A historical median is context for
         -- the trend, never the reference a spread is measured against.
@@ -783,7 +787,8 @@ function Core.evaluate(input)
           excluded.thinBook = excluded.thinBook + 1
         elseif sellers < ((marketRules and marketRules.minSellers) or 1) then
           excluded.thinBook = excluded.thinBook + 1
-        elseif samples < historyRule.minSamples then
+        elseif samples < (historyRule.minSamples or 0)
+          or (spanHours ~= nil and spanHours < (historyRule.minSpanHours or 0)) then
           excluded.noHistory = excluded.noHistory + 1
         elseif qty <= 0 or priceCap < minPrice then
           excluded.noDepth = excluded.noDepth + 1

@@ -110,14 +110,16 @@ export const phaseBoundaries = {
   settleBreadth: 800
 } as const;
 
-// History window and sample floor per phase. Ignition deliberately has no
-// history requirement: the first hours are the most profitable and the
-// least observable, so structural priors must carry the decision.
-export const phaseHistory: Record<MarketPhase, { windowHours: number; minSamples: number }> = {
-  ignition: { windowHours: 0, minSamples: 0 },
-  wave: { windowHours: 6, minSamples: 6 },
-  settle: { windowHours: 24, minSamples: 12 },
-  steady: { windowHours: 168, minSamples: 48 }
+// History coverage per phase. "Enough history" is a coverage question, not
+// a polling-frequency question: a handful of points spread across the window
+// is evidence, twelve points crammed into one hour is not. The addon's
+// default workflow is 1-3 manual scans a day, so a sample floor that assumes
+// a 15-minute cadence is unreachable by construction.
+export const phaseHistory: Record<MarketPhase, { windowHours: number; minSamples: number; minSpanHours: number }> = {
+  ignition: { windowHours: 0, minSamples: 0, minSpanHours: 0 },
+  wave: { windowHours: 6, minSamples: 2, minSpanHours: 1.5 },
+  settle: { windowHours: 24, minSamples: 4, minSpanHours: 12 },
+  steady: { windowHours: 168, minSamples: 12, minSpanHours: 96 }
 };
 
 type MarketTypeRule = {
