@@ -71,7 +71,7 @@ end
 -- Hover is read-only. The chart is a panel that lives beside the auction
 -- house or the trader page, where its mode and window buttons stay put and
 -- can be clicked; it never floats after a tooltip.
-local lastTooltipItemId = nil
+local observedItemId = nil
 local chart = nil
 
 local function hideChart()
@@ -135,20 +135,6 @@ local function lineItemLink(tooltip)
   local text = line and line.GetText and line:GetText()
   if not readableString(text) then return nil end
   return text:match("|H(item:[%d:%-]+)|h")
-end
-
-local function displayedItemLink(tooltip)
-  local link = getterItemLink(tooltip.processingInfo or tooltip.info)
-  if readableString(link) then return link end
-  if TooltipUtil and TooltipUtil.GetDisplayedItem then
-    local _, displayed = TooltipUtil.GetDisplayedItem(tooltip)
-    if readableString(displayed) then return displayed end
-  end
-  if tooltip.GetItem then
-    local _, remembered = tooltip:GetItem()
-    if readableString(remembered) then return remembered end
-  end
-  return lineItemLink(tooltip)
 end
 
 -- The section is identified by its own header line, not by a boolean. A
@@ -280,28 +266,78 @@ SlashCmdList["WOWDERHOIAHTIP"] = function()
   end
 end
 
--- explicit: the call named its item through arguments. A nil link on such a
--- call is an empty slot, never permission to reuse the tooltip's remembered
--- item -- that is how the previous item's panel leaked onto other hovers.
-local function appendTraderSection(tooltip, source, hyperlink, explicit)
-  if tooltip.IsForbidden and tooltip:IsForbidden() then return end
-  if WAH.settings and not WAH.settings.tooltip then return end
-  local link = hyperlink
-  if not readableString(link) and not explicit then link = displayedItemLink(tooltip) end
-  local itemId = WAH.itemIdFromLink(link)
-  if not itemId then
-    -- A spell/unit hyperlink is a normal rejection: the link is present but
-    -- not an item. An entry point that produces no link at all has failed.
-    if link == nil then
-      reportTip(string.format("%s: no item link (frame=%s)", source, frameName(tooltip)))
+local function itemType()
+  return Enum and Enum.TooltipDataType and Enum.TooltipDataType.Item
+end
+
+-- Item identity is resolved once, from the most authoritative source the
+-- client offers. The typed TooltipData already carries the item ID; a
+-- setter names it in its own arguments; TooltipUtil, GetItem and the
+-- rendered first line are fallbacks for native frames that report nothing
+-- typed. `sawLink` separates "this is a spell link" from "no link at all":
+-- only the second is a pipeline failure worth reporting.
+local function resolveItem(tooltip, hyperlink, explicit, data)
+  if type(data) == "table" and not isSecret(data) then
+    local dataType = data.type
+    if isSecret(dataType) then dataType = nil end
+    local id = data.id
+    if dataType ~= nil and dataType == itemType()
+      and type(id) == "number" and not isSecret(id) then
+      return id, "data.id", true
     end
-    return
+    local typedLink = data.hyperlink
+    if readableString(typedLink) then
+      return WAH.itemIdFromLink(typedLink), "data.link", true
+    end
   end
+  if readableString(hyperlink) then
+    return WAH.itemIdFromLink(hyperlink), "setter", true
+  end
+  if explicit then
+    -- The call named its slot but produced no link: an empty slot, never
+    -- permission to reuse the item the shared tooltip still remembers.
+    return nil, "empty", false
+  end
+  local infoLink = getterItemLink(tooltip.processingInfo or tooltip.info)
+  if readableString(infoLink) then
+    return WAH.itemIdFromLink(infoLink), "getter", true
+  end
+  if TooltipUtil and TooltipUtil.GetDisplayedItem then
+    local _, link, id = TooltipUtil.GetDisplayedItem(tooltip)
+    if type(id) == "number" and not isSecret(id) then
+      return id, "util.id", true
+    end
+    if readableString(link) then
+      return WAH.itemIdFromLink(link), "util.link", true
+    end
+  end
+  if tooltip.GetItem then
+    local _, remembered = tooltip:GetItem()
+    if readableString(remembered) then
+      return WAH.itemIdFromLink(remembered), "getitem", true
+    end
+  end
+  local lineLink = lineItemLink(tooltip)
+  if readableString(lineLink) then
+    return WAH.itemIdFromLink(lineLink), "line", true
+  end
+  return nil, "none", false
+end
+
+-- The observer hands the item to the chart before any display switch is
+-- consulted. `tooltip` and `chart` are independent consumers of the same
+-- observation; neither can short-circuit the other.
+local function observeItem(itemId)
+  if observedItemId == itemId then return end
+  observedItemId = itemId
+  if WoWderhoiAH_UpdateChart then WoWderhoiAH_UpdateChart(itemId) end
+end
+
+local function renderTraderSection(tooltip, itemId, source, resolvedFrom)
   -- Another entry point reposted the same item and the rendered lines still
   -- carry the section: nothing to add. A wipe drops the header line, and
   -- the scan below then lets the section back in.
   if tooltip.wahSectionLink == itemId and traderSectionAlive(tooltip) then return end
-  lastTooltipItemId = itemId
   local scanned = currentItem(itemId)
   -- Inspect the raw global on purpose: this is the one place that must tell
   -- "no scan yet" apart from "a scan from another pipeline is on disk".
@@ -310,7 +346,8 @@ local function appendTraderSection(tooltip, source, hyperlink, explicit)
     and raw.dataVersion ~= WAH.PIPELINE_VERSION and raw.items ~= nil
   local entry = historyFor(itemId)
   if not scanned and not entry and not staleScan then
-    recordTip(string.format("%s: item=%d has no scan or history", source, itemId))
+    recordTip(string.format("%s/%s: item=%d has no scan or history",
+      source, resolvedFrom, itemId))
     return
   end
   trackTooltip(tooltip)
@@ -355,15 +392,36 @@ local function appendTraderSection(tooltip, source, hyperlink, explicit)
     if range then tooltip:AddDoubleLine("  " .. string.format(L.TT_RANGE, window), range) end
   end
   tooltip:AddLine(" ")
-  -- Native tooltips lay out before the setter returns; a line appended
-  -- outside that pass needs a Show to grow the frame, or it stays clipped.
-  if tooltip == GameTooltip or tooltip == ItemRefTooltip
-    or (GameTooltipTooltip and tooltip == GameTooltipTooltip) then
-    tooltip:Show()
-  end
+  -- Appending never decides whether the frame is visible. A shown tooltip
+  -- is re-laid out so the new lines are not clipped; a hidden one is shown
+  -- by the client's own setter pass.
+  if tooltip:IsShown() then tooltip:Show() end
   tooltip.wahSectionLink = itemId
-  recordTip(string.format("%s: item=%d appended (frame=%s)", source, itemId, frameName(tooltip)))
-  if WoWderhoiAH_UpdateChart then WoWderhoiAH_UpdateChart(itemId) end
+  recordTip(string.format("%s/%s: item=%d appended (frame=%s)",
+    source, resolvedFrom, itemId, frameName(tooltip)))
+end
+
+-- One entry point for every pipeline. strict marks the paths that can only
+-- fire for an item: a missing link there is a failure worth reporting.
+-- ProcessInfo is generic and stays silent about non-item tooltips.
+local function onTooltipEntry(source, tooltip, hyperlink, explicit, data, strict)
+  if tooltip.IsForbidden and tooltip:IsForbidden() then return end
+  local itemId, resolvedFrom, sawLink = resolveItem(tooltip, hyperlink, explicit, data)
+  if not itemId then
+    if resolvedFrom == "empty" then
+      recordTip(string.format("%s: empty slot (frame=%s)", source, frameName(tooltip)))
+    elseif strict and not sawLink then
+      reportTip(string.format("%s: no item link (frame=%s)", source, frameName(tooltip)))
+    end
+    return
+  end
+  observeItem(itemId)
+  if WAH.settings and not WAH.settings.tooltip then
+    recordTip(string.format("%s/%s: item=%d observed (tooltip off)",
+      source, resolvedFrom, itemId))
+    return
+  end
+  renderTraderSection(tooltip, itemId, source, resolvedFrom)
 end
 
 -- Every entry point this client can use to render an item tooltip. The
@@ -394,8 +452,8 @@ local SETTER_LINKS = {
 -- so these alone may fall back to the frame's displayed item.
 local LINKLESS_SETTER = { SetAuctionSellItem = true }
 
-local function runTraderSection(source, tooltip, hyperlink, explicit)
-  local ok, err = pcall(appendTraderSection, tooltip, source, hyperlink, explicit)
+local function runEntry(source, tooltip, hyperlink, explicit, data, strict)
+  local ok, err = pcall(onTooltipEntry, source, tooltip, hyperlink, explicit, data, strict)
   if ok then return end
   reportTip(source .. ": error: " .. (isSecret(err) and "secret value" or tostring(err)))
 end
@@ -403,23 +461,21 @@ end
 local function hookTooltipFrame(frame)
   if not frame then return end
   installScriptHook("OnTooltipSetItem", frame, "OnTooltipSetItem", function(self)
-    runTraderSection("OnTooltipSetItem", self)
+    runEntry("OnTooltipSetItem", self, nil, false, nil, true)
   end)
   -- The tooltip data table carries its own hyperlink. This fires on the
   -- render call itself, so it still names the item when the post-call
   -- registration is present but does not fire on this client.
   installMethodHook("ProcessInfo", frame, "ProcessInfo", function(self, data)
     local link = type(data) == "table" and data.hyperlink
-    if readableString(link) then
-      runTraderSection("ProcessInfo", self, link, true)
-    end
+    runEntry("ProcessInfo", self, link, readableString(link), data, false)
   end)
   for method, linkFrom in pairs(SETTER_LINKS) do
     if frame[method] then
       local hookedMethod, resolve = method, linkFrom
       installMethodHook("setter", frame, hookedMethod, function(self, ...)
-        runTraderSection(hookedMethod, self, resolve(self, ...),
-          not LINKLESS_SETTER[hookedMethod])
+        runEntry(hookedMethod, self, resolve(self, ...),
+          not LINKLESS_SETTER[hookedMethod], nil, true)
       end)
     end
   end
@@ -432,8 +488,8 @@ local function registerPostCall()
   if not (TooltipDataProcessor and Enum and Enum.TooltipDataType
     and TooltipDataProcessor.AddTooltipPostCall) then return end
   local ok, err = pcall(TooltipDataProcessor.AddTooltipPostCall,
-    Enum.TooltipDataType.Item, function(tooltip)
-      runTraderSection("postcall", tooltip)
+    Enum.TooltipDataType.Item, function(tooltip, data)
+      runEntry("postcall", tooltip, nil, false, data, true)
     end)
   if not ok then noteHookFailure("postcall/AddTooltipPostCall", err) end
 end
@@ -746,11 +802,11 @@ local function trackChartPanel(panel)
   if not panel or panel.wahChartTracked then return end
   panel.wahChartTracked = true
   panel:HookScript("OnShow", function()
-    if lastTooltipItemId then WoWderhoiAH_UpdateChart(lastTooltipItemId) end
+    if observedItemId then WoWderhoiAH_UpdateChart(observedItemId) end
   end)
   panel:HookScript("OnHide", function()
     if chartAnchor() then
-      if lastTooltipItemId then WoWderhoiAH_UpdateChart(lastTooltipItemId) end
+      if observedItemId then WoWderhoiAH_UpdateChart(observedItemId) end
     else
       hideChart()
     end
@@ -812,6 +868,9 @@ local function renderChart(itemId)
     button:SetShown(mode == "time")
     button:SetText(button.hours == window and ("|cffffd100" .. button.label .. "|r") or button.label)
   end
+  -- The state names the item it describes: the panel outlives the tooltip,
+  -- and "which item is this" must not be inferred from the title text.
+  chart._state.itemId = itemId
   chart:Show()
 end
 
@@ -885,7 +944,7 @@ function WoWderhoiAH_UpdateChart(itemId)
     hideChart()
     return
   end
-  lastTooltipItemId = itemId
+  observedItemId = itemId
   if not chartAnchor() then
     hideChart()
     return
@@ -896,13 +955,13 @@ end
 
 function WAH.setChartMode(mode)
   chartMode = mode
-  if lastTooltipItemId and chart then renderChart(lastTooltipItemId) end
+  if observedItemId and chart then renderChart(observedItemId) end
 end
 
 function WAH.setChartWindow(hours)
   chartWindow = hours
   chartMode = "time"
-  if lastTooltipItemId and chart then renderChart(lastTooltipItemId) end
+  if observedItemId and chart then renderChart(observedItemId) end
 end
 
 function WAH.chartState()
@@ -930,7 +989,7 @@ guiFrame:SetScript("OnEvent", function(_, event)
     return
   end
   if event == "AUCTION_HOUSE_SHOW" then
-    if lastTooltipItemId then WoWderhoiAH_UpdateChart(lastTooltipItemId) end
+    if observedItemId then WoWderhoiAH_UpdateChart(observedItemId) end
   else
     hideChart()
   end

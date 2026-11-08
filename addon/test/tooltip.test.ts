@@ -155,6 +155,72 @@ describe("modern tooltip pipeline", () => {
   });
 });
 
+describe("item observation", () => {
+  // The typed TooltipData is the client's own answer: type=Item and id is
+  // the item ID. It must resolve the item even when the frame reports no
+  // hyperlink, no remembered item and no TooltipUtil answer.
+  it("resolves an item from the typed tooltip data alone", () => {
+    const lua = auctionPage();
+    lua.exec(`
+      TooltipUtil.GetDisplayedItem = function() return nil end
+      GameTooltip.GetItem = function() return nil end
+      WowTest.fireTooltipPost(Enum.TooltipDataType.Item, GameTooltip, { type = 0, id = 4338 })
+    `);
+    expect(lua.tooltipText()).toContain("建议卖价");
+  });
+
+  it("appends from OnTooltipSetItem when the processor never fires", () => {
+    const lua = loadAddon({ prelude: "TooltipDataProcessor.AddTooltipPostCall = function() end" });
+    lua.setScan(SCAN);
+    lua.exec(`
+      GameTooltip._link = "|Hitem:4338:0:0|h[Mageweave Cloth]|h"
+      GameTooltip._itemName = "Mageweave Cloth"
+      GameTooltip._scripts.OnTooltipSetItem(GameTooltip)
+    `);
+    expect(lua.tooltipText()).toContain("建议卖价");
+  });
+
+  it("appends from ProcessInfo data", () => {
+    const lua = auctionPage();
+    lua.exec(`GameTooltip:ProcessInfo({ type = 0, hyperlink = "|Hitem:4338:0:0|h[Mageweave Cloth]|h" })`);
+    expect(lua.tooltipText()).toContain("建议卖价");
+  });
+
+  // Two independent consumers: the tooltip switch silences the text block,
+  // never the observation. The chart still moves to the hovered item.
+  it("updates the chart while the tooltip block is switched off", () => {
+    const lua = loadAddon();
+    lua.setScan(SCAN);
+    lua.openTab();
+    lua.exec(`
+      WowTest.ns.settings.tooltip = false
+      WowTest.bagItems[1] = { itemId = 4338, name = "Mageweave Cloth" }
+      GameTooltip:SetBagItem(0, 1)
+    `);
+    expect(lua.tooltipText()).not.toContain("WoWderhoi AHelper");
+    expect(lua.number("WowTest.ns.chartState().itemId")).toBe(4338);
+  });
+
+  it("keeps the chart on the last item when a spell link is hovered", () => {
+    const lua = loadAddon();
+    lua.setScan(SCAN);
+    lua.openTab();
+    lua.exec(`
+      WowTest.bagItems[1] = { itemId = 4338, name = "Mageweave Cloth" }
+      GameTooltip:SetBagItem(0, 1)
+      GameTooltip:SetHyperlink("spell:116")
+    `);
+    expect(lua.number("WowTest.ns.chartState().itemId")).toBe(4338);
+  });
+
+  it("does not force a hidden tooltip open to append", () => {
+    const lua = auctionPage();
+    lua.exec(`WowTest.fireTooltipPost(Enum.TooltipDataType.Item, GameTooltip, { type = 0, id = 4338 })`);
+    expect(lua.tooltipText()).toContain("建议卖价");
+    expect(lua.eval("GameTooltip:IsShown()")).toBe(false);
+  });
+});
+
 describe("tooltip pipeline diagnostics", () => {
   // A failed hook registration must not take the rest of the file down.
   // /wahtip is registered before any hook so the command survives, and the
