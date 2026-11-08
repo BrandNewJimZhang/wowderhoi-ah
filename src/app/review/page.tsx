@@ -10,6 +10,7 @@ import { bucketPredictions, DECISION_LOG_WINDOW_HOURS } from "@/lib/decision-cal
 import { fillRules } from "@/lib/market-rules";
 import { phaseLabels } from "@/lib/phase";
 import { fillBasisLabel } from "@/lib/fill";
+import { describeFreshness } from "@/lib/freshness";
 import { summarizeTrades, tradeChannelLabel } from "@/lib/trade-summary";
 import { Coins } from "@/components/coins";
 import { Panel, PanelHeader } from "@/components/ui/panel";
@@ -43,6 +44,9 @@ export default async function ReviewPage() {
     getPositions(scope)
   ]);
   const { signals, phase } = bundle;
+  // Experiments are priced from the newest scan's sell front; the ledger
+  // itself is not, so the age labels the quote-derived sections only.
+  const freshness = describeFreshness(bundle.latestScanAt, new Date());
   // Calibration reads confirmed sales only. An inferred sale is a vanished
   // listing booked at its ask; it may be a cancellation, so it is displayed
   // but never treated as a clean label.
@@ -114,7 +118,7 @@ export default async function ReviewPage() {
         <div>
           <div className="font-mono text-xs uppercase text-terminal-muted">复盘与校准</div>
           <h1 className="flex items-center gap-2 font-mono text-lg font-semibold text-terminal-amber"><ClipboardCheck size={18} /> 决策 vs 结果</h1>
-          <p className="font-mono text-xs text-terminal-muted">{phaseLabels[phase]} · 只用真实成交校准，不用公共挂单分布假装利润</p>
+          <p className="font-mono text-xs text-terminal-muted">{phaseLabels[phase]} · 行情更新于 {freshness.label} · 只用真实成交校准，不用公共挂单分布假装利润</p>
         </div>
         <div className="flex gap-3 font-mono text-xs">
           <Link href="/" className="text-terminal-muted hover:text-terminal-amber">驾驶舱</Link>

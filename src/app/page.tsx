@@ -335,13 +335,14 @@ export default async function Home() {
             <Panel>
               <PanelHeader title="制造利润" action={<Link href="/recipes" className="font-mono text-xs text-terminal-muted hover:text-terminal-amber">完整计划 →</Link>} />
               <div className="space-y-2 p-3 font-mono text-xs">
-                {recipeRows.length === 0 && (
+                {actionsBlocked && <div className="text-terminal-muted">数据过期或阶段已推移，等下一次扫描后再给出制造计划。</div>}
+                {!actionsBlocked && recipeRows.length === 0 && (
                   <div className="text-terminal-muted">配方表尚未导入。运行 <span className="text-terminal-amber">npm run recipes:import</span>。</div>
                 )}
-                {recipeRows.length > 0 && production.solution.rows.length === 0 && (
+                {!actionsBlocked && recipeRows.length > 0 && production.solution.rows.length === 0 && (
                   <div className="text-terminal-muted">当前价格、产能与预算下没有正利润的配方</div>
                 )}
-                {production.solution.rows.slice(0, 6).map((row) => (
+                {!actionsBlocked && production.solution.rows.slice(0, 6).map((row) => (
                   <div key={row.recipe.id} className="flex items-center justify-between gap-2">
                     <span className="text-slate-100">{row.recipe.name}<span className="ml-1 text-[10px] text-terminal-muted">{row.recipe.profession}</span></span>
                     <span className="flex items-center gap-3">

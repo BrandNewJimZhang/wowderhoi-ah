@@ -43,8 +43,9 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
             <div className="font-mono text-xs uppercase text-terminal-muted">市场浏览</div>
             <h1 className="font-mono text-lg font-semibold text-terminal-amber">行情</h1>
             <p className="font-mono text-xs text-terminal-muted">
-              {bundle.scope ? `${bundle.scope.realm} · ${bundle.scope.faction}` : "未导入市场"} · {phaseLabels[phase]} · 数据更新于 {freshness.label}
-              {" · "}{bundle.staleCount} 种已下架仍保留历史
+              {bundle.scope ? `${bundle.scope.realm} · ${bundle.scope.faction}` : "未导入市场"} · {phaseLabels[phase]}
+              {bundle.phaseMismatch ? `（统计窗口按${phaseLabels[bundle.generationPhase]}，新扫描后更新）` : ""}
+              {" · "}数据更新于 {freshness.label}{" · "}{bundle.staleCount} 种已下架仍保留历史
             </p>
           </div>
           <div className="font-mono text-xs text-terminal-muted">

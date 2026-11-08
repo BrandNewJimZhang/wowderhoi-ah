@@ -3,6 +3,8 @@ import Link from "next/link";
 import { Hammer } from "lucide-react";
 import { getMarketBundle } from "@/lib/market-read";
 import { phaseLabels } from "@/lib/phase";
+import { describeFreshness } from "@/lib/freshness";
+import { SCAN_INTERVAL_MINUTES } from "@/lib/market-rules";
 import { buildProductionPlan } from "@/lib/production-plan";
 import { recipeToLp } from "@/lib/recipes";
 import { getRecipes } from "@/lib/repositories";
@@ -13,9 +15,15 @@ import { AppShell } from "@/components/app-shell";
 export const dynamic = "force-dynamic";
 
 export default async function RecipesPage() {
-  const [{ signals, phase, scope }, recipeRows] = await Promise.all([getMarketBundle(), getRecipes()]);
+  const [bundle, recipeRows] = await Promise.all([getMarketBundle(), getRecipes()]);
+  const { signals, phase, scope } = bundle;
   const recipes = recipeRows.map(recipeToLp);
   const { solution, budget } = buildProductionPlan(signals, recipes, scope?.cash ?? null);
+  // The LP sizes volumes against the last scanned prices, exactly like the
+  // cockpit's action sizes. Stale data or a moved phase makes those volumes
+  // a plan for a market that no longer exists, so the plan is withheld.
+  const freshness = describeFreshness(bundle.latestScanAt, new Date());
+  const planBlocked = freshness.stale || bundle.phaseMismatch;
 
   return (
     <AppShell active="/recipes">
@@ -27,7 +35,7 @@ export default async function RecipesPage() {
             <Hammer size={18} /> 制造机会
           </h1>
           <p className="font-mono text-xs text-terminal-muted">
-            {phaseLabels[phase]} · 预算 <Coins copper={budget} /> · {recipes.length} 条配方
+            {phaseLabels[phase]} · 预算 <Coins copper={budget} /> · {recipes.length} 条配方 · 数据更新于 {freshness.label}
           </p>
         </div>
         <div className="flex gap-3 font-mono text-xs">
@@ -46,7 +54,16 @@ export default async function RecipesPage() {
         </Panel>
       )}
 
-      {recipeRows.length > 0 && (
+      {recipeRows.length > 0 && planBlocked && (
+        <Panel>
+          <div className="p-6 font-mono text-xs text-terminal-red">
+            {freshness.stale && `最新扫描已超过 ${SCAN_INTERVAL_MINUTES} 分钟；进游戏 /wahscan。`}
+            {bundle.phaseMismatch && `市场已从${phaseLabels[bundle.generationPhase]}推移到${phaseLabels[phase]}；制造计划需要重新扫描后再生成。`}
+          </div>
+        </Panel>
+      )}
+
+      {recipeRows.length > 0 && !planBlocked && (
         <div className="grid gap-3 xl:grid-cols-[1fr_360px]">
           <Panel>
             <PanelHeader

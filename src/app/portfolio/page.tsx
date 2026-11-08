@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getMarketBundle } from "@/lib/market-read";
 import { getPositions } from "@/lib/repositories";
 import { phaseLabels } from "@/lib/phase";
+import { describeFreshness } from "@/lib/freshness";
 import { valuePositions } from "@/lib/position-valuation";
 import { summarizeTrades, tradeChannelLabel } from "@/lib/trade-summary";
 import { Coins } from "@/components/coins";
@@ -37,6 +38,7 @@ export default async function PortfolioPage() {
   } = valuePositions(positions, priceById, nameById);
   const trades = summarizeTrades(allTrades);
   const cash = scope?.cash ?? 0;
+  const freshness = describeFreshness(bundle.latestScanAt, new Date());
 
   return (
     <AppShell active="/portfolio">
@@ -46,7 +48,7 @@ export default async function PortfolioPage() {
           <div className="font-mono text-xs uppercase text-terminal-muted">组合与资金</div>
           <h1 className="flex items-center gap-2 font-mono text-lg font-semibold text-terminal-amber"><Wallet size={18} /> 头寸账本</h1>
           <p className="font-mono text-xs text-terminal-muted">
-            {scope ? `角色 ${scope.character || "未知"}` : "未导入市场"} · {phaseLabels[phase]} · 账本由游戏内 Journal 重放而来，跟随最近一次扫描的角色
+            {scope ? `角色 ${scope.character || "未知"}` : "未导入市场"} · {phaseLabels[phase]} · 行情更新于 {freshness.label} · 账本由游戏内 Journal 重放而来，跟随最近一次扫描的角色
           </p>
         </div>
         <div className="flex gap-3 font-mono text-xs">

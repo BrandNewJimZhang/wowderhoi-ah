@@ -38,7 +38,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
   const now = new Date();
   // The price's age comes from the last series point, not from the quote:
   // a bid-only scan in the newest generation writes a quote and no price.
-  const priceAt = priceObservationAt(series, quote, bundle.latestScanAt);
+  const priceAt = priceObservationAt(series, quote?.priced ? quote : null, bundle.latestScanAt);
   const stale = priceAt !== null
     && bundle.latestScanAt !== null
     && priceAt.getTime() < bundle.latestScanAt.getTime();
@@ -62,7 +62,9 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
           // replacement at wall-clock "now" would read a window that did
           // not exist at the scan, so the price's own observation anchors it.
           priceAt ?? now,
-          { phase: bundle.phase, index: bundle.priceIndex, currentAt: bundle.latestScanAt ?? priceAt ?? now }
+          // Match the stored signal rows: the window is the one the core
+          // evaluated under, not a display phase recomputed later.
+          { phase: bundle.generationPhase, index: bundle.priceIndex, currentAt: bundle.latestScanAt ?? priceAt ?? now }
         )
       : null);
   const dailyBars = seriesToDailyBars(series);
@@ -171,9 +173,11 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
                       ? "NPC 收购价高于挂单价：成交由商人保证，无需挂单成交估计。"
                       : stale
                         ? "最近一次扫描中已无在售挂单，无法估计成交概率；价格是上次有货时的值。"
-                        : quote
-                          ? "该物品未通过当前阶段门槛或风险仓位检查，暂无成交概率估计；先看盘口与建议卖价。"
-                          : "尚无扫描数据"}
+                        : quote && !quote.priced
+                          ? "本次扫描只有竞价、没有买断挂单，无法估计卖出的成交概率。"
+                          : quote
+                            ? "该物品未通过当前阶段门槛或风险仓位检查，暂无成交概率估计；先看盘口与建议卖价。"
+                            : "尚无扫描数据"}
                   </div>}
             </div>
           </Panel>
