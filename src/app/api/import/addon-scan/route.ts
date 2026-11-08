@@ -1,196 +1,201 @@
 import { NextResponse } from "next/server";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { normalizeAddonScan, type AddonScan } from "@/lib/addon-scan";
-import { mergeScanIntoDailySummaries } from "@/lib/daily-summary";
 import { ensureScanItems } from "@/lib/scan-import";
-import { aggregateSeriesDays, parseAddonSeries, selectSeriesBackfill, type AddonSeries } from "@/lib/series-import";
 import { placeholderItemName } from "@/lib/item-name";
-import { bookForCharacter, parseJournal, replayJournal, type ReplayState } from "@/lib/journal";
+import { parseAddonSeries } from "@/lib/item-series";
+import { buildGenerationPlan, type DecisionRow } from "@/lib/market-generation";
+import { replaceDecisions, writeGeneration } from "@/lib/import-store";
+import { buildCoreInput } from "@/lib/core/from-market";
+import { runCore } from "@/lib/core/run-core";
+import type { CoreOutput } from "@/lib/core/types";
+import type { MarketPhase } from "@/lib/market-rules";
+import { decisionIdFor } from "@/lib/decision-id";
+import { adoptionTimes, bookForCharacter, parseJournal, replayJournal, replayLedgerRevision, type JournalEvent, type ReplayState } from "@/lib/journal";
+import { linkTrades, type AdoptedDecision } from "@/lib/decision-linking";
+import { ownSalesFromRows } from "@/lib/own-sales";
+import { resolveBudgetCopper, resolvePhaseOverride } from "@/lib/config";
+import { pruneAgedRows, pruneGenerations } from "@/lib/retention";
+import {
+  getGenerationQuotes,
+  getGenerationSignals,
+  getLedgerRevision,
+  getOwnSales,
+  getPositions,
+  getSeriesForItems
+} from "@/lib/repositories";
+import type { MarketScope } from "@/lib/market-scope";
+import type { SignalItem } from "@/lib/market-data";
 
-// A missed scan is backfilled as price/listings history only. Bounded so one
-// import cannot turn into an unbounded write; the addon keeps the rest.
-const SERIES_BACKFILL_LIMIT = 16;
-// Prisma/SQLite bind one parameter per column; keep a createMany well inside
-// the driver's parameter budget.
-const SNAPSHOT_BATCH = 2000;
+function scopeOf(market: {
+  id: string; realm: string; faction: string; cash: number; character: string;
+  openedAt: Date | null; firstScanAt: Date | null; bagSlots: number | null;
+}): MarketScope {
+  return {
+    id: market.id,
+    realm: market.realm,
+    faction: market.faction,
+    cash: market.cash,
+    character: market.character,
+    openedAt: market.openedAt,
+    firstScanAt: market.firstScanAt,
+    bagSlots: market.bagSlots
+  };
+}
 
-// The journal projection is replaced wholesale on every import: the replay
-// is the single authority for positions and realized trades.
-function journalStatements(replay: ReplayState, marketId: string): Prisma.PrismaPromise<unknown>[] {
+function signalItem(row: {
+  itemId: number; name: string; quality: string; category: string;
+  subCategory: string; vendorPrice: number | null; iconId: number | null;
+}): SignalItem {
+  return {
+    itemId: row.itemId,
+    name: row.name,
+    quality: row.quality,
+    category: row.category,
+    subCategory: row.subCategory,
+    vendorPrice: row.vendorPrice,
+    iconId: row.iconId
+  };
+}
+
+function decisionRows(
+  core: CoreOutput,
+  scan: AddonScan,
+  adopted: Map<string, Date>
+): Array<DecisionRow & { adoptedAt: Date | null }> {
+  return core.actions.map((action) => {
+    const decisionId = decisionIdFor({
+      realm: scan.server,
+      faction: scan.faction,
+      scannedAt: scan.scannedAt,
+      itemId: action.itemId,
+      kind: action.kind
+    });
+    return {
+      decisionId,
+      itemId: action.itemId,
+      kind: action.kind,
+      reason: action.reason,
+      expectedNet: action.expectedNet,
+      fillProb: action.kind === "buy" ? action.fillProb : null,
+      fillBasis: action.kind === "buy" ? action.fillBasis : null,
+      allocQty: action.kind === "buy" ? action.allocQty : action.qty,
+      allocUnitPrice: action.kind === "buy" ? action.allocUnitPrice : action.price,
+      adoptedAt: adopted.get(decisionId) ?? null
+    };
+  });
+}
+
+async function adoptedDecisionsFor(
+  marketId: string,
+  events: readonly JournalEvent[],
+  current: DecisionRow[],
+  now: Date
+): Promise<AdoptedDecision[]> {
+  const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const stored = await prisma.decision.findMany({
+    where: { marketId, adoptedAt: { not: null }, at: { gte: since } },
+    select: { decisionId: true, itemId: true, kind: true, adoptedAt: true }
+  });
+  const adoptions = adoptionTimes(events);
+  const byId = new Map<string, AdoptedDecision>();
+  for (const row of stored) {
+    if (row.decisionId) byId.set(row.decisionId, { decisionId: row.decisionId, itemId: row.itemId, kind: row.kind, adoptedAt: row.adoptedAt });
+  }
+  for (const row of current) {
+    const at = adoptions.get(row.decisionId);
+    if (at) byId.set(row.decisionId, { decisionId: row.decisionId, itemId: row.itemId, kind: row.kind, adoptedAt: at });
+  }
+  return Array.from(byId.values());
+}
+
+function journalStatements(
+  tx: Prisma.TransactionClient,
+  replay: ReplayState,
+  marketId: string,
+  adopted: readonly AdoptedDecision[]
+): Prisma.PrismaPromise<unknown>[] {
   const positions = Object.entries(replay.positions).map(([itemId, position]) => ({
     marketId,
     itemId: Number(itemId),
     qty: position.qty,
     costBasis: position.cost
   }));
-  const trades = replay.trades.map((trade) => ({
+  const linked = linkTrades(
+    replay.trades
+      .filter((trade) => trade.itemId !== null)
+      .map((trade) => ({
+        itemId: trade.itemId as number,
+        realizedAt: new Date(trade.t * 1000),
+        qty: trade.qty,
+        price: trade.price,
+        fee: trade.fee,
+        pnl: trade.pnl,
+        channel: trade.channel,
+        inferred: trade.inferred,
+        listedAt: trade.listedAt ? new Date(trade.listedAt * 1000) : null,
+        decisionId: null as string | null,
+        matchKind: null as string | null
+      })),
+    adopted
+  ).map((trade) => ({
     marketId,
-    itemId: trade.itemId ?? 0,
+    itemId: trade.itemId,
     qty: trade.qty,
     price: trade.price,
     fee: trade.fee,
     pnl: trade.pnl,
     channel: trade.channel,
     inferred: trade.inferred,
-    listedAt: trade.listedAt ? new Date(trade.listedAt * 1000) : null,
-    realizedAt: new Date(trade.t * 1000)
+    listedAt: trade.listedAt,
+    realizedAt: trade.realizedAt,
+    decisionId: trade.decisionId ?? null,
+    matchKind: trade.matchKind ?? null
   }));
   return [
-    prisma.position.deleteMany({ where: { marketId } }),
-    ...(positions.length > 0 ? [prisma.position.createMany({ data: positions })] : []),
-    prisma.trade.deleteMany({ where: { marketId } }),
-    ...(trades.length > 0 ? [prisma.trade.createMany({ data: trades })] : [])
+    tx.position.deleteMany({ where: { marketId } }),
+    ...(positions.length > 0 ? [tx.position.createMany({ data: positions })] : []),
+    tx.trade.deleteMany({ where: { marketId } }),
+    ...(linked.length > 0 ? [tx.trade.createMany({ data: linked })] : [])
   ];
 }
 
-type BackfillResult = {
-  statements: Prisma.PrismaPromise<unknown>[];
-  timestamps: number[];
-  skipped: number;
-};
-
-// Scans completed while the watcher was not running survive only in the
-// addon's series. Deliver the ones the database has never seen, newest first
-// and bounded per import. The same builder serves a new scan and a duplicate:
-// after a watcher restart the latest scan is already in the database while
-// the scans before it may be missing, and that replay is exactly when the
-// backfill matters.
-async function buildBackfillStatements(
-  scan: AddonScan,
-  series: AddonSeries | null,
-  marketId: string,
-  knownItemIds: Set<number>
-): Promise<BackfillResult> {
-  if (!series) return { statements: [], timestamps: [], skipped: 0 };
-  const currentScanAt = Math.round(scan.scannedAt.getTime() / 1000);
-  const existingStamps = await prisma.auctionSnapshot.findMany({
-    where: { marketId, timestamp: { lt: scan.scannedAt } },
-    select: { timestamp: true },
-    distinct: ["timestamp"]
-  });
-  const backfill = selectSeriesBackfill(
-    series,
-    existingStamps.map((row) => Math.round(row.timestamp.getTime() / 1000)),
-    currentScanAt,
-    SERIES_BACKFILL_LIMIT
-  );
-  if (backfill.points.length === 0) {
-    return { statements: [], timestamps: backfill.timestamps, skipped: backfill.skipped };
+async function recordRun(data: {
+  marketId: string;
+  scannedAt: Date;
+  source: string;
+  scanItems: number;
+  seriesPoints: number;
+  quotes: number;
+  journalEvents: number;
+  journalErrors: number;
+  durationMs: number;
+  status: string;
+  error?: string;
+}): Promise<void> {
+  try {
+    await prisma.importRun.create({ data });
+  } catch (error) {
+    // The import itself already committed. A diagnostics row must not turn
+    // a successful import into a failed request.
+    console.error("Failed to record import run:", error);
   }
-
-  // Backfilled items may not appear in the current scan. The Item row is the
-  // snapshot's foreign key, so every referenced id must exist before the
-  // snapshot batch runs. `knownItemIds` includes the rows the caller is about
-  // to create in the same transaction.
-  const itemCreates: Array<{ itemId: number; name: string; quality: string; category: string; subCategory: string; vendorPrice: number | null; catalogSource: string }> = [];
-  const snapshots: Prisma.AuctionSnapshotCreateManyInput[] = [];
-  for (const point of backfill.points) {
-    if (!knownItemIds.has(point.itemId)) {
-      knownItemIds.add(point.itemId);
-      itemCreates.push({
-        itemId: point.itemId,
-        name: placeholderItemName(point.itemId),
-        quality: "unknown",
-        category: "unknown",
-        subCategory: "unknown",
-        // A series-only id that the catalogue does not know has no static
-        // facts at all. Zero would claim it is unsellable.
-        vendorPrice: null,
-        catalogSource: "scan"
-      });
-    }
-    snapshots.push({
-      itemId: point.itemId,
-      timestamp: new Date(point.timestamp * 1000),
-      marketId,
-      priced: true,
-      minPrice: point.minPrice,
-      marketPrice: point.minPrice,
-      sellPrice: point.sellPrice,
-      // The series does not carry P10, tiers, sellers or flow. Zero/null is
-      // an honest "not observed", not a measured zero.
-      p5Price: 0,
-      quantity: point.quantity,
-      numAuctions: point.numAuctions,
-      // The series carries no seller identity. Marking the count invisible
-      // is the same convention the addon uses for a hidden-owner book:
-      // sellerCount is the listing count, not a claim about distinct sellers.
-      sellerCount: point.numAuctions,
-      sellersInvisible: true,
-      ownerVisible: false,
-      observationVersion: null,
-      marketType: null,
-      flowObserved: false
-    });
-  }
-
-  const aggregates = aggregateSeriesDays(backfill.points, scan.scannedAt);
-  const aggregateDates = Array.from(new Set(aggregates.map((row) => row.date.toISOString())))
-    .map((iso) => new Date(iso));
-  const existingDayRows = aggregateDates.length === 0 ? [] : await prisma.dailySummary.findMany({
-    where: { marketId, date: { in: aggregateDates } },
-    select: { itemId: true, date: true, highPrice: true, lowPrice: true }
-  });
-  const existingByKey = new Map(existingDayRows.map((row) => [`${row.date.toISOString()}|${row.itemId}`, row]));
-  const newDayRows: Prisma.DailySummaryCreateManyInput[] = [];
-  const dayUpdates: Prisma.PrismaPromise<unknown>[] = [];
-  for (const aggregate of aggregates) {
-    const existing = existingByKey.get(`${aggregate.date.toISOString()}|${aggregate.itemId}`);
-    if (!existing) {
-      newDayRows.push({ marketId, ...aggregate });
-    } else {
-      // The day already has a scan in the database. Extend its extremes but
-      // never move the close backwards from a partial history point.
-      dayUpdates.push(prisma.dailySummary.update({
-        where: { marketId_itemId_date: { marketId, itemId: aggregate.itemId, date: aggregate.date } },
-        data: {
-          highPrice: Math.max(existing.highPrice, aggregate.highPrice),
-          lowPrice: Math.min(existing.lowPrice, aggregate.lowPrice)
-        }
-      }));
-    }
-  }
-  if (newDayRows.length > 0) {
-    dayUpdates.push(prisma.dailySummary.createMany({ data: newDayRows }));
-  }
-
-  const snapshotBatches: Prisma.PrismaPromise<unknown>[] = [];
-  for (let start = 0; start < snapshots.length; start += SNAPSHOT_BATCH) {
-    snapshotBatches.push(prisma.auctionSnapshot.createMany({ data: snapshots.slice(start, start + SNAPSHOT_BATCH) }));
-  }
-  return {
-    statements: [
-      ...(itemCreates.length > 0 ? [prisma.item.createMany({ data: itemCreates })] : []),
-      ...snapshotBatches,
-      ...dayUpdates
-    ],
-    timestamps: backfill.timestamps,
-    skipped: backfill.skipped
-  };
 }
 
-// Imports one addon snapshot plus the character's action journal. The
-// snapshot is the market observation; the journal is the only clean
-// record of what the player actually did. Positions and realized trades
-// are rebuilt from the journal on every import, so the terminal never
-// accumulates a cached P&L that drifts from the facts.
 export async function POST(request: Request) {
+  const startedAt = Date.now();
   const payload = (await request.json()) as Record<string, unknown>;
   const rawScan = payload.scan ?? payload;
-  let scan;
+  const source = typeof payload.source === "string" ? payload.source : "api";
+  let scan: AddonScan;
   let series;
   try {
     scan = normalizeAddonScan(rawScan);
-    // The series is the addon's own append-only log. A stale or foreign
-    // series is simply absent; a malformed one is a code-shape error and
-    // must not be misread point by point.
     series = parseAddonSeries(payload.series, { server: scan.server, faction: scan.faction });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 400 });
   }
-  // Validate the journal attribution before any write: a journal that cannot
-  // be tied to a character must not leave a half-imported market behind.
   const journalPresent = payload.journal !== undefined && payload.journal !== null;
   if (journalPresent && !scan.character) {
     return NextResponse.json(
@@ -198,80 +203,117 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
+  const book = journalPresent
+    ? bookForCharacter(parseJournal(payload.journal), scan.character ? [scan.server, scan.faction, scan.character].join("|") : null)
+    : null;
+  const replay = journalPresent ? replayJournal(book?.events ?? []) : null;
+  const journalEvents = book?.events.length ?? 0;
 
-  // Market identity lives in the Market row; snapshots reference it and do
-  // not duplicate the realm/faction strings.
-  const duplicate = await prisma.auctionSnapshot.findFirst({
+  const duplicate = await prisma.marketGeneration.findFirst({
     where: {
-      timestamp: scan.scannedAt,
+      scannedAt: scan.scannedAt,
       market: { is: { realm: scan.server, faction: scan.faction } }
     },
-    select: { id: true, marketId: true }
+    select: { id: true, marketId: true, phase: true, firstScanAt: true, scannedAt: true }
   });
   if (duplicate) {
-    // The mailbox and the sell page flush the journal between scans. The
-    // snapshot is already imported, but the actions inside it are not: a
-    // duplicate timestamp carrying a journal replays the ledger so a
-    // confirmed sale reaches the terminal without waiting for the next
-    // scan. Scan-only tooling keeps the old "already imported" answer.
-    if (!journalPresent) {
+    if (!journalPresent || !replay) {
+      await recordRun({
+        marketId: duplicate.marketId, scannedAt: scan.scannedAt, source, scanItems: scan.items.length,
+        seriesPoints: series?.points.length ?? 0, quotes: 0, journalEvents: 0, journalErrors: 0,
+        durationMs: Date.now() - startedAt, status: "duplicate"
+      });
       return NextResponse.json({ error: `Scan at ${scan.scannedAt.toISOString()} already imported` }, { status: 409 });
     }
-    const book = bookForCharacter(
-      parseJournal(payload.journal),
-      scan.character ? [scan.server, scan.faction, scan.character].join("|") : null
-    );
-    const replay = replayJournal(book?.events ?? []);
-    // A restart replays the latest scan through this branch. The scans that
-    // happened while the watcher was down are still only in the series, so
-    // the duplicate import must backfill them too.
-    const existingItemIds = await prisma.item.findMany({ select: { itemId: true } });
-    const backfill = await buildBackfillStatements(
-      scan, series, duplicate.marketId, new Set(existingItemIds.map((row) => row.itemId))
-    );
-    // An upgrade imports the already-present scan through this branch before
-    // any new scan arrives. Persist the series' first observation now so the
-    // phase anchor does not wait for the next scan to become truthful.
-    const marketAnchor = await prisma.market.findUnique({
-      where: { id: duplicate.marketId },
-      select: { firstScanAt: true }
-    });
-    const seriesFirst = series?.firstScanAt ? new Date(series.firstScanAt * 1000) : null;
-    const anchorUpdates = seriesFirst && (!marketAnchor?.firstScanAt || seriesFirst < marketAnchor.firstScanAt)
-      ? [prisma.market.update({ where: { id: duplicate.marketId }, data: { firstScanAt: seriesFirst } })]
-      : [];
-    await prisma.$transaction([
-      ...anchorUpdates,
-      ...backfill.statements,
-      ...journalStatements(replay, duplicate.marketId)
+    const market = await prisma.market.findUnique({ where: { id: duplicate.marketId } });
+    if (!market) throw new Error(`Market ${duplicate.marketId} disappeared during import`);
+    const [storedRows, storedQuotes] = await Promise.all([
+      getGenerationSignals(duplicate.id),
+      getGenerationQuotes(duplicate.id)
     ]);
+    const quoteById = new Map(storedQuotes.map((row) => [row.itemId, row.quote]));
+    const pairs = storedRows
+      .filter((row) => !row.signal.stale)
+      .map((row) => {
+        const quote = quoteById.get(row.signal.itemId);
+        if (!quote) throw new Error(`Generation ${duplicate.id} has a signal without a quote for ${row.signal.itemId}`);
+        return {
+          signal: row.signal,
+          quote,
+          previousAt: row.previousAt === null ? null : new Date(row.previousAt * 1000)
+        };
+      });
+    const ownSales = ownSalesFromRows(
+      replay.trades
+        .filter((trade) => trade.channel === "auction" && !trade.inferred && trade.itemId !== null)
+        .map((trade) => ({
+          itemId: trade.itemId as number,
+          qty: trade.qty,
+          realizedAt: new Date(trade.t * 1000),
+          listedAt: trade.listedAt ? new Date(trade.listedAt * 1000) : null
+        }))
+    );
+    const core = runCore(buildCoreInput(pairs, {
+      now: duplicate.scannedAt,
+      phase: duplicate.phase as MarketPhase,
+      firstScanAt: duplicate.firstScanAt ?? market.firstScanAt ?? undefined,
+      positions: replay.positions,
+      ownSales,
+      budgetCopper: resolveBudgetCopper(),
+      cashCopper: market.cash,
+      bagSlots: market.bagSlots ?? undefined
+    }));
+    const adoptions = adoptionTimes(book?.events ?? []);
+    const existingDecisions = await prisma.decision.findMany({
+      where: { generationId: duplicate.id },
+      select: { decisionId: true, adoptedAt: true }
+    });
+    const previousAdoption = new Map(
+      existingDecisions.filter((row) => row.decisionId).map((row) => [row.decisionId as string, row.adoptedAt])
+    );
+    const rows = decisionRows(core, scan, adoptions).map((row) => ({
+      ...row,
+      adoptedAt: row.adoptedAt ?? previousAdoption.get(row.decisionId) ?? null
+    }));
+    const adopted = await adoptedDecisionsFor(market.id, book?.events ?? [], rows, scan.scannedAt);
+    const ledgerRevision = replayLedgerRevision(replay);
+    await prisma.$transaction(async (tx) => {
+      await tx.marketGeneration.update({
+        where: { id: duplicate.id },
+        data: {
+          core: core as unknown as Prisma.InputJsonValue,
+          ledgerRevision
+        }
+      });
+      await replaceDecisions(tx, duplicate.id, market.id, scan.scannedAt, duplicate.phase, rows);
+      const statements = journalStatements(tx, replay, market.id, adopted);
+      for (const statement of statements) await statement;
+    }, { timeout: 60_000 });
+    await recordRun({
+      marketId: market.id, scannedAt: scan.scannedAt, source, scanItems: scan.items.length,
+      seriesPoints: series?.points.length ?? 0, quotes: 0, journalEvents,
+      journalErrors: replay.errors.length, durationMs: Date.now() - startedAt, status: "duplicate"
+    });
     return NextResponse.json({
       duplicate: true,
       journalUpdated: true,
-      backfilled: backfill.timestamps.length,
-      backfillSkipped: backfill.skipped,
+      skippedItems: scan.skippedItems,
       scannedAt: scan.scannedAt.toISOString(),
-      marketId: duplicate.marketId,
+      marketId: market.id,
       positions: Object.keys(replay.positions).length,
       trades: replay.trades.length,
       journalErrors: replay.errors.length
     });
   }
 
-  // The market's first observation only moves earlier. Persisting it keeps
-  // phase age stable when retention later deletes the oldest snapshots.
   const existingMarket = await prisma.market.findUnique({
     where: { realm_faction: { realm: scan.server, faction: scan.faction } },
     select: { firstScanAt: true }
   });
-  const firstScanAt = [
-    existingMarket?.firstScanAt,
-    series?.firstScanAt ? new Date(series.firstScanAt * 1000) : null,
-    scan.scannedAt
-  ]
+  const seriesFirst = series?.firstScanAt ? new Date(series.firstScanAt * 1000) : null;
+  const firstScanAt = [existingMarket?.firstScanAt, seriesFirst, scan.scannedAt]
     .filter((value): value is Date => value instanceof Date)
     .reduce((earliest, value) => (value < earliest ? value : earliest));
-
   const market = await prisma.market.upsert({
     where: { realm_faction: { realm: scan.server, faction: scan.faction } },
     create: {
@@ -283,11 +325,6 @@ export async function POST(request: Request) {
       firstScanAt,
       bagSlots: scan.bagSlots
     },
-    // A scan-only import carries no character, so it must not erase the one
-    // the last journal-bearing scan recorded. An opening time of null means
-    // the addon did not report the field (an older version) and must leave a
-    // configured anchor alone; 0 means the player cleared it with
-    // /wahopen auto and the stored anchor must go too.
     update: {
       cash: scan.cash,
       ...(scan.character ? { character: scan.character } : {}),
@@ -295,109 +332,152 @@ export async function POST(request: Request) {
         openedAt: scan.openedAt > 0 ? new Date(scan.openedAt * 1000) : null
       }),
       firstScanAt,
-      // Null means an older addon that did not report bags; keep the last
-      // known capacity rather than resetting the core to its fallback.
       ...(scan.bagSlots === null ? {} : { bagSlots: scan.bagSlots })
     }
   });
 
-  // Full-table reads instead of `in` filters: the item table is small and
-  // this keeps the statements clear of SQLite's bound-parameter limit even
-  // at 100x-scale scans.
-  const existingItems = await prisma.item.findMany({
-    select: {
-      itemId: true, name: true, quality: true, category: true, subCategory: true,
-      vendorPrice: true, catalogSource: true
+  try {
+    const existingItems = await prisma.item.findMany({
+      select: {
+        itemId: true, name: true, quality: true, category: true, subCategory: true,
+        vendorPrice: true, iconId: true, catalogSource: true
+      }
+    });
+    const itemDiff = ensureScanItems(scan.items, existingItems);
+    const itemsById = new Map<number, SignalItem>();
+    for (const row of existingItems) itemsById.set(row.itemId, signalItem(row));
+    for (const row of itemDiff.creates) itemsById.set(row.itemId, signalItem({ ...row, iconId: null }));
+    for (const row of scan.items) {
+      if (!itemsById.has(row.itemId)) throw new Error(`Scan item ${row.itemId} has no Item row`);
     }
-  });
-  const itemDiff = ensureScanItems(scan.items, existingItems);
-  // Daily OHLC is a price series: demand-only snapshots carry no price.
-  const pricedItems = scan.items.filter((item) => item.priced);
-  const dayProbe = mergeScanIntoDailySummaries(pricedItems, scan.scannedAt, market.id, []);
-  const existingDayRows = await prisma.dailySummary.findMany({
-    where: { marketId: market.id, date: dayProbe.date },
-    select: { itemId: true, highPrice: true, lowPrice: true }
-  });
-  const { date, creates, updates } = mergeScanIntoDailySummaries(pricedItems, scan.scannedAt, market.id, existingDayRows);
 
-  const knownItemIds = new Set(existingItems.map((row) => row.itemId));
-  for (const create of itemDiff.creates) knownItemIds.add(create.itemId);
-  const backfill = await buildBackfillStatements(scan, series, market.id, knownItemIds);
+    const previous = await prisma.marketGeneration.findFirst({
+      where: { marketId: market.id, scannedAt: { lt: scan.scannedAt } },
+      orderBy: { scannedAt: "desc" },
+      select: { id: true, scannedAt: true }
+    });
+    const previousQuotes = previous ? await getGenerationQuotes(previous.id) : [];
+    const previousRefs = previousQuotes.map((row) => {
+      const item = itemsById.get(row.itemId);
+      if (!item) throw new Error(`Previous generation references item ${row.itemId} without a row`);
+      return { item, quote: row.quote };
+    });
 
-  const book = bookForCharacter(
-    parseJournal(payload.journal),
-    scan.character ? [scan.server, scan.faction, scan.character].join("|") : null
-  );
-  // A v4 addon writes the journal global on every load, so a journal-bearing
-  // scan is authoritative even when this character has no events yet: an
-  // empty book rebuilds an empty ledger instead of leaving a previous
-  // character's positions next to this scan's cash. A scan-only payload
-  // (tooling) leaves the ledger untouched.
-  const replay = journalPresent ? replayJournal(book?.events ?? []) : null;
+    const seriesIds = new Set<number>();
+    for (const item of scan.items) if (item.priced) seriesIds.add(item.itemId);
+    for (const point of series?.points ?? []) seriesIds.add(point.itemId);
+    for (const row of previousQuotes) seriesIds.add(row.itemId);
+    // The addon series can name items that were never in an imported scan
+    // (they were listed earlier in the day and dropped out). The series row
+    // has a foreign key to Item, so those ids need a placeholder before the
+    // history can land. They stay scan-owned and are never signalled.
+    for (const itemId of seriesIds) {
+      if (itemsById.has(itemId)) continue;
+      const create = {
+        itemId,
+        name: placeholderItemName(itemId),
+        quality: "unknown",
+        category: "unknown",
+        subCategory: "unknown",
+        vendorPrice: null,
+        catalogSource: "scan"
+      };
+      itemDiff.creates.push(create);
+      itemsById.set(itemId, signalItem({ ...create, iconId: null }));
+    }
+    const existingSeries = await getSeriesForItems(market.id, Array.from(seriesIds));
 
-  // The snapshot, the backfilled history, the derived daily rows and the
-  // journal projection land all-or-nothing. The market row was upserted
-  // first because its id keys every statement below; it is idempotent and
-  // a retry of the same scan advances it again.
-  const statements: Prisma.PrismaPromise<unknown>[] = [
-    ...(itemDiff.creates.length > 0 ? [prisma.item.createMany({ data: itemDiff.creates })] : []),
-    ...backfill.statements,
-    ...itemDiff.updates.map((update) => prisma.item.update({ where: { itemId: update.itemId }, data: update.data })),
-    prisma.auctionSnapshot.createMany({
-      data: scan.items.map((item) => ({
-        itemId: item.itemId,
-        timestamp: scan.scannedAt,
-        marketId: market.id,
-        priced: item.priced,
-        minPrice: item.minPrice,
-        marketPrice: item.marketPrice,
-        sellPrice: item.sellPrice,
-        p5Price: item.p5Price,
-        quantity: item.quantity,
-        numAuctions: item.numAuctions,
-        sellerCount: item.sellerCount,
-        sellersInvisible: item.sellersInvisible,
-        ownerVisible: item.ownerVisible,
-        observationVersion: scan.observationVersion,
-        sellerHHI: item.sellerHHI,
-        topSellerShare: item.topSellerShare,
-        marketType: item.marketType,
-        bidOnlyCount: item.bidOnlyCount,
-        highestBid: item.highestBid,
-        soldProxyLow: item.inferredSoldLow,
-        soldProxyHigh: item.inferredSoldHigh,
-        flowObserved: item.flowObserved,
-        supplyGrowth: item.supplyGrowth,
-        historySamples: item.historySamples,
-        historySpanHours: item.historySpanHours,
-        tierTruncated: item.tierTruncated,
-        topTiers: item.tiers,
-        expiring: item.expiring
-      }))
-    }),
-    ...(creates.length > 0 ? [prisma.dailySummary.createMany({ data: creates })] : []),
-    ...updates.map((update) => prisma.dailySummary.update({
-      where: { marketId_itemId_date: { marketId: market.id, itemId: update.itemId, date } },
-      data: update.data
-    }))
-  ];
+    const scope = scopeOf(market);
+    const positions = replay ? replay.positions : await getPositions(scope);
+    const ownSales = replay
+      ? ownSalesFromRows(
+          replay.trades
+            .filter((trade) => trade.channel === "auction" && !trade.inferred && trade.itemId !== null)
+            .map((trade) => ({
+              itemId: trade.itemId as number,
+              qty: trade.qty,
+              realizedAt: new Date(trade.t * 1000),
+              listedAt: trade.listedAt ? new Date(trade.listedAt * 1000) : null
+            }))
+        )
+      : await getOwnSales(scope);
+    const ledgerRevision = replay ? replayLedgerRevision(replay) : await getLedgerRevision(scope);
 
-  if (replay) {
-    statements.push(...journalStatements(replay, market.id));
+    const plan = buildGenerationPlan({
+      scan,
+      series,
+      items: itemsById,
+      existingSeries,
+      previous: previous ? { scannedAt: previous.scannedAt, quotes: previousRefs } : null,
+      openedAt: market.openedAt,
+      firstScanAt: market.firstScanAt,
+      positions,
+      ownSales,
+      budgetCopper: resolveBudgetCopper(),
+      phaseOverride: resolvePhaseOverride()
+    });
+
+    const adoptions = adoptionTimes(book?.events ?? []);
+    const planDecisions = plan.decisions.map((row) => ({
+      ...row,
+      adoptedAt: adoptions.get(row.decisionId) ?? null
+    }));
+    const adopted = await adoptedDecisionsFor(market.id, book?.events ?? [], planDecisions, scan.scannedAt);
+
+    await prisma.$transaction(async (tx) => {
+      if (itemDiff.creates.length > 0) {
+        await tx.item.createMany({
+          data: itemDiff.creates.map((row) => ({
+            itemId: row.itemId,
+            name: row.name,
+            quality: row.quality,
+            category: row.category,
+            subCategory: row.subCategory,
+            vendorPrice: row.vendorPrice,
+            catalogSource: row.catalogSource
+          }))
+        });
+      }
+      for (const update of itemDiff.updates) {
+        await tx.item.update({ where: { itemId: update.itemId }, data: update.data });
+      }
+      await writeGeneration(tx, market.id, plan, planDecisions, ledgerRevision);
+      if (replay) {
+        const statements = journalStatements(tx, replay, market.id, adopted);
+        for (const statement of statements) await statement;
+      }
+    }, { timeout: 120_000 });
+
+    await pruneGenerations(market.id);
+    await pruneAgedRows();
+    await recordRun({
+      marketId: market.id, scannedAt: scan.scannedAt, source, scanItems: scan.items.length,
+      seriesPoints: plan.seriesPointCount, quotes: plan.quotes.length, journalEvents,
+      journalErrors: replay?.errors.length ?? 0, durationMs: Date.now() - startedAt, status: "ok"
+    });
+    return NextResponse.json({
+      imported: scan.items.length,
+      skippedItems: scan.skippedItems,
+      bidOnly: scan.items.filter((item) => item.bidOnlyCount > 0).length,
+      seriesPoints: plan.seriesPointCount,
+      quotes: plan.quotes.length,
+      signals: plan.signals.length,
+      decisions: planDecisions.length,
+      stale: plan.staleCount,
+      phase: plan.phase,
+      scannedAt: scan.scannedAt.toISOString(),
+      marketId: market.id,
+      positions: replay ? Object.keys(replay.positions).length : 0,
+      trades: replay ? replay.trades.length : 0,
+      journalErrors: replay ? replay.errors.length : 0
+    });
+  } catch (error) {
+    await recordRun({
+      marketId: market.id, scannedAt: scan.scannedAt, source, scanItems: scan.items.length,
+      seriesPoints: series?.points.length ?? 0, quotes: 0, journalEvents,
+      journalErrors: replay?.errors.length ?? 0, durationMs: Date.now() - startedAt,
+      status: "error", error: error instanceof Error ? error.message : String(error)
+    });
+    throw error;
   }
-
-  await prisma.$transaction(statements);
-
-  return NextResponse.json({
-    imported: scan.items.length,
-    bidOnly: scan.items.filter((item) => item.bidOnlyCount > 0).length,
-    // Scans delivered from the series rather than from the current snapshot.
-    backfilled: backfill.timestamps.length,
-    backfillSkipped: backfill.skipped,
-    scannedAt: scan.scannedAt.toISOString(),
-    marketId: market.id,
-    positions: replay ? Object.keys(replay.positions).length : 0,
-    trades: replay ? replay.trades.length : 0,
-    journalErrors: replay ? replay.errors.length : 0
-  });
 }

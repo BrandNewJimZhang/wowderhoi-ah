@@ -2,6 +2,7 @@
 // rules of addon/WoWderhoiAH/Ledger.lua. The journal is the only clean
 // label the system gets; the ledger is a projection, so the terminal can
 // rebuild positions and P&L at import time without trusting a cached sum.
+import { ledgerRevisionOf } from "@/lib/ledger-revision";
 
 export type JournalEvent = {
   k: string;
@@ -23,6 +24,10 @@ export type JournalEvent = {
   // observed later than it happened (the mailbox is the observation).
   listedAt?: number;
   censored?: boolean;
+  // /wahadopt carries the terminal's stable decision identity. It is a
+  // ledger annotation, not a trade: replay records it for attribution and
+  // never lets it change positions or P&L.
+  id?: string;
 };
 
 type JournalBook = {
@@ -116,6 +121,7 @@ export function parseJournal(raw: unknown): JournalBook[] {
       if (typeof event.auctionID === "number" || typeof event.auctionID === "string") parsed.auctionID = event.auctionID;
       if (event.inferred === true) parsed.inferred = true;
       if (typeof event.listedAt === "number") parsed.listedAt = event.listedAt;
+      if (typeof event.id === "string" && event.id !== "") parsed.id = event.id;
       if (event.censored === true) parsed.censored = true;
       const outputs = numericEntries(event.outputs).map((output) => {
         const row = (output ?? {}) as Record<string, unknown>;
@@ -347,6 +353,11 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
         for (const output of outputs) addLot(output.itemId, output.qty ?? 0, unitCost, at);
         break;
       }
+      case "adopt": {
+        // The adoption is read by the import layer from the raw event list;
+        // the ledger has no state to update.
+        break;
+      }
       default:
         errors.push({ t: at, kind: "unknown_event", name: event.k });
     }
@@ -372,5 +383,25 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
     },
     errors
   };
+}
+
+// The same token the database computes after the replay lands, derived
+// straight from the replay so a duplicate import can compare without
+// re-reading the rows it is about to replace.
+export function replayLedgerRevision(replay: ReplayState): string {
+  return ledgerRevisionOf(
+    replay.trades.map((trade) => ({ realizedAt: new Date(trade.t * 1000), pnl: trade.pnl, fee: trade.fee })),
+    Object.values(replay.positions).map((position) => ({ qty: position.qty, cost: position.cost }))
+  );
+}
+
+// The adopt events are annotations, not ledger rows; the import layer reads
+// their ids to set Decision.adoptedAt.
+export function adoptionTimes(events: readonly JournalEvent[]): Map<string, Date> {
+  const adopted = new Map<string, Date>();
+  for (const event of events) {
+    if (event.k === "adopt" && event.id) adopted.set(event.id, new Date((event.t ?? 0) * 1000));
+  }
+  return adopted;
 }
 

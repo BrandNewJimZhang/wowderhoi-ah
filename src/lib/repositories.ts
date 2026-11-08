@@ -1,43 +1,155 @@
 import { prisma } from "@/lib/prisma";
-import { type MarketHistory } from "@/lib/market-data";
+import type { MarketQuote } from "@/lib/market-data";
+import { arraysToSeries, type SeriesPoint } from "@/lib/item-series";
+import { decodeGeneration, type GenerationRecord } from "@/lib/generation-record";
+import { decodeSignalRow, type StoredSignalRow } from "@/lib/signal-row";
+import { ownSalesFromRows } from "@/lib/own-sales";
+import { ledgerRevisionOf } from "@/lib/ledger-revision";
 import type { OwnSales } from "@/lib/core/types";
-import { SCAN_INTERVAL_MINUTES, fillRules } from "@/lib/market-rules";
+import { fillRules } from "@/lib/market-rules";
 import type { MarketScope } from "@/lib/market-scope";
 
-export async function getMarketUniverse(scope: MarketScope | null): Promise<MarketHistory[]> {
-  const marketId = scope?.id;
-  return prisma.item.findMany({
-    include: {
-      // Price series only: demand-only rows carry no price and must never
-      // reach the signal layer.
-      snapshots: { where: marketId ? { marketId, priced: true } : { priced: true }, orderBy: { timestamp: "asc" }, take: -48 },
-      dailySummaries: { where: marketId ? { marketId } : {}, orderBy: { date: "asc" }, take: -30 }
-    },
-    orderBy: { name: "asc" }
-  });
+const GENERATION_SELECT = {
+  id: true, marketId: true, scannedAt: true, phase: true, breadth: true, staleCount: true,
+  firstScanAt: true, priceIndex: true, core: true, ledgerRevision: true, gapMinutes: true
+} as const;
+
+type QuoteRow = {
+  itemId: number;
+  priced: boolean;
+  minPrice: number;
+  marketPrice: number;
+  sellPrice: number;
+  p5Price: number;
+  quantity: number;
+  numAuctions: number;
+  sellerCount: number;
+  sellersInvisible: boolean;
+  ownerVisible: boolean;
+  observationVersion: number | null;
+  sellerHHI: number | null;
+  topSellerShare: number | null;
+  marketType: string | null;
+  bidOnlyCount: number;
+  highestBid: number;
+  soldProxyLow: number;
+  soldProxyHigh: number;
+  flowObserved: boolean;
+  supplyGrowth: number;
+  historySamples: number | null;
+  historySpanHours: number | null;
+  tierTruncated: boolean;
+  topTiers: unknown;
+  expiring: unknown;
+};
+
+function toQuote(row: QuoteRow, timestamp: Date): MarketQuote {
+  return { ...row, timestamp };
 }
 
+export async function getLatestGeneration(scope: MarketScope | null): Promise<GenerationRecord | null> {
+  const row = await prisma.marketGeneration.findFirst({
+    where: scope ? { marketId: scope.id } : {},
+    orderBy: { scannedAt: "desc" },
+    select: GENERATION_SELECT
+  });
+  return row ? decodeGeneration(row) : null;
+}
+
+export async function getPreviousGeneration(scope: MarketScope | null, before: Date): Promise<GenerationRecord | null> {
+  const row = await prisma.marketGeneration.findFirst({
+    where: { ...(scope ? { marketId: scope.id } : {}), scannedAt: { lt: before } },
+    orderBy: { scannedAt: "desc" },
+    select: GENERATION_SELECT
+  });
+  return row ? decodeGeneration(row) : null;
+}
+
+export async function getGenerationSignals(generationId: string): Promise<StoredSignalRow[]> {
+  const rows = await prisma.marketSignalRow.findMany({
+    where: { generationId },
+    select: { data: true },
+    orderBy: { itemId: "asc" }
+  });
+  return rows.map((row) => decodeSignalRow(row.data));
+}
+
+export async function getGenerationQuotes(generationId: string): Promise<Array<{ itemId: number; quote: MarketQuote }>> {
+  const generation = await prisma.marketGeneration.findUnique({
+    where: { id: generationId },
+    select: { scannedAt: true }
+  });
+  if (!generation) throw new Error(`Generation ${generationId} does not exist`);
+  const rows = await prisma.marketQuote.findMany({ where: { generationId } });
+  return rows.map((row) => ({ itemId: row.itemId, quote: toQuote(row, generation.scannedAt) }));
+}
+
+// SQLite binds one parameter per id; 500 keeps a batch well inside the
+// driver's budget without making one query per item.
+const ID_CHUNK = 500;
+
+export async function getSeriesForItems(
+  marketId: string,
+  itemIds?: readonly number[]
+): Promise<Array<{ itemId: number; points: SeriesPoint[] }>> {
+  if (!itemIds) {
+    const rows = await prisma.itemSeries.findMany({ where: { marketId }, select: { itemId: true, points: true } });
+    return rows.map((row) => ({ itemId: row.itemId, points: arraysToSeries(row.points) }));
+  }
+  const out: Array<{ itemId: number; points: SeriesPoint[] }> = [];
+  const ids = Array.from(new Set(itemIds));
+  for (let start = 0; start < ids.length; start += ID_CHUNK) {
+    const chunk = ids.slice(start, start + ID_CHUNK);
+    const rows = await prisma.itemSeries.findMany({
+      where: { marketId, itemId: { in: chunk } },
+      select: { itemId: true, points: true }
+    });
+    for (const row of rows) out.push({ itemId: row.itemId, points: arraysToSeries(row.points) });
+  }
+  return out;
+}
+
+async function latestQuoteForItem(itemId: number, marketId: string | undefined) {
+  const row = await prisma.marketQuote.findFirst({
+    where: { itemId, ...(marketId ? { marketId } : {}) },
+    orderBy: { generation: { scannedAt: "desc" } },
+    include: { generation: { select: { scannedAt: true } } }
+  });
+  return row ? toQuote(row, row.generation.scannedAt) : null;
+}
+
+async function demandQuoteForItem(itemId: number, marketId: string | undefined) {
+  const row = await prisma.marketQuote.findFirst({
+    where: { itemId, bidOnlyCount: { gt: 0 }, ...(marketId ? { marketId } : {}) },
+    orderBy: { generation: { scannedAt: "desc" } },
+    include: { generation: { select: { scannedAt: true } } }
+  });
+  return row ? toQuote(row, row.generation.scannedAt) : null;
+}
 
 export async function getItemDetail(itemId: number, scope: MarketScope | null) {
   const marketId = scope?.id;
-  const where = marketId ? { marketId } : {};
-  // Price history and demand history are separate windows. Fetching every
-  // row and filtering in the view let demand-only rows (no price) consume
-  // part of the 96-snapshot chart window.
-  const [item, demandSnapshot] = await Promise.all([
-    prisma.item.findUnique({
-      where: { itemId },
-      include: {
-        snapshots: { where: { ...where, priced: true }, orderBy: { timestamp: "asc" }, take: -96 },
-        dailySummaries: { where, orderBy: { date: "asc" }, take: -60 }
-      }
-    }),
-    prisma.auctionSnapshot.findFirst({
-      where: { ...where, itemId, bidOnlyCount: { gt: 0 } },
-      orderBy: { timestamp: "desc" }
+  const [item, quote, demandQuote, seriesRow, signalRow] = await Promise.all([
+    prisma.item.findUnique({ where: { itemId } }),
+    latestQuoteForItem(itemId, marketId),
+    demandQuoteForItem(itemId, marketId),
+    marketId
+      ? prisma.itemSeries.findUnique({ where: { marketId_itemId: { marketId, itemId } }, select: { points: true } })
+      : Promise.resolve(null),
+    prisma.marketSignalRow.findFirst({
+      where: { itemId, ...(marketId ? { generation: { marketId } } : {}) },
+      orderBy: { generation: { scannedAt: "desc" } },
+      select: { data: true }
     })
   ]);
-  return item ? { ...item, demandSnapshot } : null;
+  if (!item) return null;
+  return {
+    item,
+    quote,
+    demandQuote,
+    series: seriesRow ? arraysToSeries(seriesRow.points) : [],
+    signal: signalRow ? decodeSignalRow(signalRow.data) : null
+  };
 }
 
 export async function getWatchedItemIds() {
@@ -49,55 +161,22 @@ export async function getAlertRules() {
   return prisma.alertRule.findMany({ orderBy: { itemId: "asc" } });
 }
 
-
-export async function getLatestSnapshotTime(scope: MarketScope | null) {
-  const row = await prisma.auctionSnapshot.findFirst({
-    where: scope ? { marketId: scope.id } : {},
-    orderBy: { timestamp: "desc" },
-    select: { timestamp: true }
-  });
-  return row?.timestamp ?? null;
-}
-
-export async function getEarliestSnapshotTime(scope: MarketScope | null) {
-  const row = await prisma.auctionSnapshot.findFirst({
-    where: scope ? { marketId: scope.id } : {},
-    orderBy: { timestamp: "asc" },
-    select: { timestamp: true }
-  });
-  return row?.timestamp ?? null;
-}
-
 export async function getRecipes() {
   return prisma.recipe.findMany({ orderBy: [{ profession: "asc" }, { name: "asc" }] });
 }
 
 // Positions and trades are rewritten by every import, including the
-// journal-only replay the mailbox triggers between scans. The signal bundle
-// caches per scan generation, so without this token a confirmed sale would
-// only reach the cockpit at the next scan. Counts, quantities and sums move
-// on buys, sales and confirm upgrades (which replace an inferred row in
-// place and therefore change pnl/fee without adding a row).
+// journal-only replay the mailbox triggers between scans.
 export async function getLedgerRevision(scope: MarketScope | null): Promise<string> {
   const where = scope ? { marketId: scope.id } : {};
   const [trades, positions] = await Promise.all([
-    prisma.trade.aggregate({
-      where,
-      _count: { _all: true },
-      _max: { realizedAt: true },
-      _sum: { pnl: true, fee: true }
-    }),
-    prisma.position.aggregate({ where, _count: { _all: true }, _sum: { qty: true, costBasis: true } })
+    prisma.trade.findMany({ where, select: { realizedAt: true, pnl: true, fee: true } }),
+    prisma.position.findMany({ where, select: { qty: true, costBasis: true } })
   ]);
-  return [
-    trades._count._all,
-    trades._max.realizedAt?.getTime() ?? 0,
-    trades._sum.pnl ?? 0,
-    trades._sum.fee ?? 0,
-    positions._count._all,
-    positions._sum.qty ?? 0,
-    positions._sum.costBasis ?? 0
-  ].join(":");
+  return ledgerRevisionOf(
+    trades,
+    positions.map((position) => ({ qty: position.qty, cost: position.costBasis }))
+  );
 }
 
 export async function getPositions(scope: MarketScope | null): Promise<Record<number, { qty: number; cost: number }>> {
@@ -122,30 +201,44 @@ export async function getOwnSales(scope: MarketScope | null): Promise<OwnSales> 
     },
     select: { itemId: true, qty: true, realizedAt: true, listedAt: true }
   });
-  const floorMs = (SCAN_INTERVAL_MINUTES / 60) * 60 * 60 * 1000;
-  const byItem = new Map<number, { qty: number; samples: number; exposureMs: number }>();
-  for (const row of rows) {
-    const observedAt = row.realizedAt.getTime();
-    const listedAt = row.listedAt?.getTime() ?? observedAt - floorMs;
-    // Exposure is per sale: how long that listing waited on the book. The
-    // span between the first and last sale understates it when several
-    // listings sold close together. The window bounds which sales count,
-    // not how long a sale waited.
-    const exposure = Math.max(observedAt - listedAt, floorMs);
-    const record = byItem.get(row.itemId) ?? { qty: 0, samples: 0, exposureMs: 0 };
-    record.qty += row.qty;
-    record.samples += 1;
-    record.exposureMs += exposure;
-    byItem.set(row.itemId, record);
-  }
-  return Object.fromEntries(
-    Array.from(byItem.entries()).map(([itemId, record]) => [
-      itemId,
-      {
-        qty: record.qty,
-        samples: record.samples,
-        exposedHours: Math.max(record.exposureMs / (60 * 60 * 1000), SCAN_INTERVAL_MINUTES / 60)
-      }
-    ])
-  );
+  return ownSalesFromRows(rows);
+}
+
+export async function getSeriesStats(marketId: string) {
+  const stats = await prisma.itemSeries.aggregate({
+    where: { marketId },
+    _count: { _all: true },
+    _sum: { pointCount: true },
+    _min: { firstAt: true },
+    _max: { lastAt: true }
+  });
+  return {
+    items: stats._count._all,
+    points: stats._sum.pointCount ?? 0,
+    firstAt: stats._min.firstAt,
+    lastAt: stats._max.lastAt
+  };
+}
+
+export async function getGenerationCount(marketId: string) {
+  return prisma.marketGeneration.count({ where: { marketId } });
+}
+
+export async function getImportRuns(marketId: string, limit = 20) {
+  return prisma.importRun.findMany({
+    where: { marketId },
+    orderBy: { receivedAt: "desc" },
+    take: limit
+  });
+}
+
+export async function getCatalogueStats() {
+  const [total, catalogue, scanOwned, placeholders, withIcon] = await Promise.all([
+    prisma.item.count(),
+    prisma.item.count({ where: { catalogSource: "wuxianwow.com" } }),
+    prisma.item.count({ where: { catalogSource: "scan" } }),
+    prisma.item.count({ where: { name: { startsWith: "#" } } }),
+    prisma.item.count({ where: { iconId: { not: null } } })
+  ]);
+  return { total, catalogue, scanOwned, placeholders, withIcon };
 }

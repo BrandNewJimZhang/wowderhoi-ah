@@ -1,10 +1,43 @@
-// Retention for the snapshot table. A snapshot is "an item's observation in
-// one scan"; the terminal reads a rolling window (48 rows for the universe,
-// 96 for the item detail) plus the daily OHLC history. Rows older than the
-// widest read window have no consumer, so keeping them costs disk and
-// nothing else. The daily summaries are the long-term history and are never
-// pruned here.
+// Retention for the read model. A generation is an immutable evaluation;
+// the terminal reads the newest one, and keeps the previous one for the
+// "what changed" comparison. Older generations cascade their quotes and
+// signal rows. Decisions live longer because the review page learns from
+// them; import runs are diagnostics with a short life.
 import { prisma } from "@/lib/prisma";
+
+export const GENERATIONS_KEPT = 2;
+export const DECISION_RETENTION_DAYS = 90;
+export const IMPORT_RUN_RETENTION_DAYS = 30;
+
+// Keeps the newest `keep` generations for one market and returns how many
+// metadata rows were removed. Quotes and signals follow by cascade.
+export async function pruneGenerations(marketId: string, keep = GENERATIONS_KEPT): Promise<number> {
+  if (!Number.isInteger(keep) || keep <= 0) {
+    throw new Error(`pruneGenerations: keep must be a positive integer, got ${keep}`);
+  }
+  const boundary = await prisma.marketGeneration.findFirst({
+    where: { marketId },
+    orderBy: { scannedAt: "desc" },
+    skip: keep,
+    take: 1,
+    select: { scannedAt: true }
+  });
+  if (!boundary) return 0;
+  const deleted = await prisma.marketGeneration.deleteMany({
+    where: { marketId, scannedAt: { lt: boundary.scannedAt } }
+  });
+  return deleted.count;
+}
+
+export async function pruneAgedRows(now = new Date()): Promise<{ decisions: number; importRuns: number }> {
+  const decisionCutoff = new Date(now.getTime() - DECISION_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  const runCutoff = new Date(now.getTime() - IMPORT_RUN_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  const [decisions, importRuns] = await Promise.all([
+    prisma.decision.deleteMany({ where: { at: { lt: decisionCutoff } } }),
+    prisma.importRun.deleteMany({ where: { receivedAt: { lt: runCutoff } } })
+  ]);
+  return { decisions: decisions.count, importRuns: importRuns.count };
+}
 
 // The item detail chart reads up to 96 snapshots; the universe reads 48.
 export const DEFAULT_SNAPSHOT_KEEP = 96;
