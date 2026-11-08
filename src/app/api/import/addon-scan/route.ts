@@ -212,7 +212,7 @@ export async function POST(request: Request) {
   const rawScan = payload.scan ?? payload;
   const source = typeof payload.source === "string" ? payload.source : "api";
   let scan: AddonScan;
-  let series;
+  let series: AddonSeries | null;
   try {
     scan = normalizeAddonScan(rawScan);
     series = parseAddonSeries(payload.series, { server: scan.server, faction: scan.faction });
