@@ -3,7 +3,9 @@ import type { AddonScan, AddonScanItem } from "@/lib/addon-scan";
 import { decisionIdFor } from "@/lib/decision-id";
 import type { MarketQuote, SignalItem } from "@/lib/market-data";
 import type { SeriesPoint } from "@/lib/item-series";
-import { buildGenerationPlan, type GenerationInput } from "@/lib/market-generation";
+import { buildGenerationPlan, withCoreRows, type GenerationInput } from "@/lib/market-generation";
+import { signalFixture } from "@/lib/signal-fixture";
+import type { StoredSignalRow } from "@/lib/signal-row";
 
 const SCANNED_AT = new Date("2026-11-08T07:58:00Z");
 const SCAN_SECONDS = Math.round(SCANNED_AT.getTime() / 1000);
@@ -201,6 +203,33 @@ describe("buildGenerationPlan", () => {
     const stale = plan.signals.find((row) => row.itemId === 1)?.data.signal;
     expect(stale?.stale).toBe(true);
     expect(stale?.sellPrice).toBe(180);
+  });
+
+  it("re-projects the stored core rows after a journal-only recompute", () => {
+    const plan = buildGenerationPlan(input());
+    const fresh = plan.signals[0].data;
+    const staleRow: StoredSignalRow = {
+      schemaVersion: 1,
+      signal: signalFixture({ itemId: 99 }),
+      coreRow: fresh.coreRow,
+      previousAt: 123
+    };
+    const priorRow: StoredSignalRow = {
+      schemaVersion: 1,
+      signal: fresh.signal,
+      coreRow: null,
+      previousAt: 456
+    };
+    const refreshed = withCoreRows([priorRow, staleRow], plan.core);
+    expect(refreshed).toHaveLength(2);
+    expect(refreshed[0].coreRow?.itemId).toBe(1);
+    expect(refreshed[0].signal).toBe(priorRow.signal);
+    expect(refreshed[0].previousAt).toBe(456);
+    // A row the new core no longer names keeps no old projection.
+    expect(refreshed[1].coreRow).toBeNull();
+    // The stored rows are rebuilt, not mutated in place: the caller reuses
+    // them to decide what changed.
+    expect(priorRow.coreRow).toBeNull();
   });
 
   it("anchors the phase on the persisted first observation", () => {

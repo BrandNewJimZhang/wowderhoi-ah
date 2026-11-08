@@ -81,6 +81,18 @@ export type GenerationInput = {
 // The stored shape of a merged series. The live import, its duplicate
 // path and the migration all write this table, so they build the rows in
 // one place instead of three hand-copied maps.
+// The stored signal rows carry the core's per-item projection so the item
+// page can read one row instead of searching the evaluation. A journal-only
+// replay recomputes the core in place; its projections must be rebuilt with
+// it, or the page would keep a fill estimate sized for the previous ledger.
+export function withCoreRows(
+  rows: readonly StoredSignalRow[],
+  core: CoreOutput
+): StoredSignalRow[] {
+  const byItem = new Map(core.rows.map((row) => [row.itemId, row]));
+  return rows.map((row) => ({ ...row, coreRow: byItem.get(row.signal.itemId) ?? null }));
+}
+
 export function seriesRowsFrom(merged: ReadonlyMap<number, readonly SeriesPoint[]>): SeriesRow[] {
   return Array.from(merged.entries())
     .sort(([left], [right]) => left - right)

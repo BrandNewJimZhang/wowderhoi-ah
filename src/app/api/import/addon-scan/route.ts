@@ -4,8 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { normalizeAddonScan, type AddonScan } from "@/lib/addon-scan";
 import { ensureScanItems, scanPlaceholderItem } from "@/lib/scan-import";
 import { mergeSeriesByItem, parseAddonSeries, scanSeriesPoints, type AddonSeries } from "@/lib/item-series";
-import { buildGenerationPlan, seriesRowsFrom, type DecisionRow } from "@/lib/market-generation";
-import { replaceDecisions, replaceSeries, writeGeneration } from "@/lib/import-store";
+import { buildGenerationPlan, seriesRowsFrom, withCoreRows, type DecisionRow } from "@/lib/market-generation";
+import { replaceDecisions, replaceSeries, replaceSignals, writeGeneration } from "@/lib/import-store";
 import { buildCoreInput } from "@/lib/core/from-market";
 import { runCore } from "@/lib/core/run-core";
 import type { CoreOutput } from "@/lib/core/types";
@@ -317,6 +317,10 @@ export async function POST(request: Request) {
           data: { core: core as unknown as Prisma.InputJsonValue }
         });
         await replaceDecisions(tx, duplicate.id, market.id, scan.scannedAt, duplicate.phase, rows);
+        // The signal rows carry the per-item projection of the same core;
+        // leaving them behind would let the item page price a fill from the
+        // previous ledger while the cockpit uses the new one.
+        await replaceSignals(tx, duplicate.id, withCoreRows(storedRows, core));
       }
       if (seriesItemCreates.length > 0) await tx.item.createMany({ data: seriesItemCreates });
       await replaceSeries(tx, market.id, seriesRows);

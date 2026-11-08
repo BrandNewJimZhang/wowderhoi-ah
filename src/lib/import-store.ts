@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 import type { GenerationPlan, DecisionRow, SeriesRow } from "@/lib/market-generation";
 import { seriesToArrays } from "@/lib/item-series";
 import type { MarketQuote } from "@/lib/market-data";
+import type { StoredSignalRow } from "@/lib/signal-row";
 
 const QUOTE_BATCH = 1000;
 const SIGNAL_BATCH = 1000;
@@ -19,6 +20,36 @@ export function chunks<T>(values: readonly T[], size: number): T[][] {
 }
 
 type StoredDecision = DecisionRow & { adoptedAt: Date | null };
+
+type SignalInsert = { itemId: number; data: StoredSignalRow };
+
+async function insertSignals(
+  tx: Prisma.TransactionClient,
+  generationId: string,
+  rows: readonly SignalInsert[]
+): Promise<void> {
+  for (const batch of chunks(rows, SIGNAL_BATCH)) {
+    await tx.marketSignalRow.createMany({
+      data: batch.map((row) => ({
+        generationId,
+        itemId: row.itemId,
+        data: row.data as unknown as Prisma.InputJsonValue
+      }))
+    });
+  }
+}
+
+// A journal-only replay recomputes the generation's core in place. Its
+// materialised signal rows must be replaced with it, exactly like the
+// decisions, so the item page and the cockpit read one evaluation.
+export async function replaceSignals(
+  tx: Prisma.TransactionClient,
+  generationId: string,
+  rows: readonly StoredSignalRow[]
+): Promise<void> {
+  await tx.marketSignalRow.deleteMany({ where: { generationId } });
+  await insertSignals(tx, generationId, rows.map((row) => ({ itemId: row.signal.itemId, data: row })));
+}
 
 function quoteCreateData(
   row: { itemId: number; quote: MarketQuote },
@@ -108,15 +139,7 @@ export async function writeGeneration(
   for (const batch of chunks(plan.quotes, QUOTE_BATCH)) {
     await tx.marketQuote.createMany({ data: batch.map((row) => quoteCreateData(row, generation.id, marketId)) });
   }
-  for (const batch of chunks(plan.signals, SIGNAL_BATCH)) {
-    await tx.marketSignalRow.createMany({
-      data: batch.map((row) => ({
-        generationId: generation.id,
-        itemId: row.itemId,
-        data: row.data as unknown as Prisma.InputJsonValue
-      }))
-    });
-  }
+  await insertSignals(tx, generation.id, plan.signals);
   await replaceSeries(tx, marketId, plan.series);
   for (const batch of chunks(decisions, DECISION_BATCH)) {
     await tx.decision.createMany({
