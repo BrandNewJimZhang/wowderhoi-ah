@@ -200,6 +200,41 @@ describe("normalizeAddonScan", () => {
     expect(scan.items.find((item) => item.itemId === 700)?.marketType).toBeNull();
   });
 
+  it("accepts an item whose client record has not loaded yet", () => {
+    // The modern client returns an empty name and no class for an item it
+    // has not cached, while the scan still carries a real book. Rejecting
+    // the payload would block every import until every item loaded.
+    const raw = rawScan() as Record<string, unknown>;
+    const items = raw.items as Record<string, Record<string, unknown>>;
+    items["2770"].name = "";
+    items["2770"].quality = -1;
+    items["2770"].itemClass = "";
+    items["2770"].itemSubClass = "";
+    const scan = normalizeAddonScan(raw);
+    expect(scan.items.find((item) => item.itemId === 2770)).toMatchObject({
+      name: "",
+      quality: "unknown",
+      category: "unknown",
+      subCategory: "unknown"
+    });
+    items["2770"].name = 42;
+    expect(() => normalizeAddonScan(raw)).toThrow(/name/i);
+  });
+
+  it("keeps copper prices above the 32-bit range", () => {
+    // The 无限 economy lists well above INT_MAX (2^31-1 copper ≈ 214k gold).
+    // The scan is the observation; the pipeline must not cap or reject it.
+    const raw = rawScan() as Record<string, unknown>;
+    const items = raw.items as Record<string, Record<string, unknown>>;
+    items["2770"].minPrice = 11111110100;
+    items["2770"].sellP = 11111110100;
+    items["2770"].p5 = 11111110100;
+    items["2770"].marketPrice = 11111110100;
+    items["2770"].tiers = { 1: { p: 11111110100, q: 100 } };
+    const scan = normalizeAddonScan(raw);
+    expect(scan.items.find((item) => item.itemId === 2770)?.minPrice).toBe(11111110100);
+  });
+
   it("rejects a market type the decision core cannot route", () => {
     const broken = {
       dataVersion: 4, scannedAt: 1721700000, server: "A", faction: "Alliance",

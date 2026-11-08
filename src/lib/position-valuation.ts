@@ -1,3 +1,5 @@
+import { placeholderItemName } from "@/lib/item-name";
+
 // Portfolio valuation. A position whose item has no current sell front is
 // unpriced, not worthless: folding it in at zero would invent a total loss
 // the market never printed. Unpriced rows stay visible in the table but are
@@ -37,7 +39,7 @@ export function valuePositions(
       const priced = price > 0;
       return {
         itemId,
-        name: nameById.get(itemId) ?? `#${itemId}`,
+        name: nameById.get(itemId) ?? placeholderItemName(itemId),
         qty: position.qty,
         cost: position.cost,
         unitCost: position.qty > 0 ? position.cost / position.qty : 0,

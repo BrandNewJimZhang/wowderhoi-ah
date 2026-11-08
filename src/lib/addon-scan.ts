@@ -309,8 +309,12 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
     if (inferredSoldHigh < inferredSoldLow) {
       throw new Error(`Addon scan item ${key}: inferredSoldHigh (${inferredSoldHigh}) is below inferredSoldLow (${inferredSoldLow})`);
     }
-    if (typeof entry.name !== "string" || entry.name === "") {
-      throw new Error(`Addon scan item ${key}: name must be a non-empty string`);
+    // The modern client loads item records lazily and reports an empty name
+    // for an item it has not cached yet. That is a missing read, not a
+    // malformed scan: the book is real and the item table keeps the name it
+    // already knows until a later scan resolves it.
+    if (typeof entry.name !== "string") {
+      throw new Error(`Addon scan item ${key}: name must be a string`);
     }
     const qualityIndex = typeof entry.quality === "number" ? entry.quality : -1;
     // A bid-only item has no buyout on any listing: it is a demand-only

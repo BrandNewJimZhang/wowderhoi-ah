@@ -120,6 +120,40 @@ describe("diffScanItems", () => {
     }]);
   });
 
+  it("never lets a lazy-load miss erase a known name", () => {
+    const diff = diffScanItems(
+      [scanItem({ itemId: 1, name: "", quality: "unknown", category: "unknown", subCategory: "unknown", vendorPrice: 0 })],
+      [{ itemId: 1, name: "梦叶草", quality: "common", category: "Trade Goods", subCategory: "Herb", vendorPrice: 0 }]
+    );
+    expect(diff.updates).toEqual([]);
+  });
+
+  it("names an unloaded item with a stable placeholder until the client loads it", () => {
+    const diff = diffScanItems(
+      [scanItem({ itemId: 700, name: "", quality: "unknown", category: "unknown", subCategory: "unknown", vendorPrice: 0 })],
+      []
+    );
+    expect(diff.creates).toEqual([{
+      itemId: 700,
+      name: "#700",
+      quality: "unknown",
+      category: "unknown",
+      subCategory: "unknown",
+      vendorPrice: 0
+    }]);
+  });
+
+  it("replaces the placeholder once the client loads the real name", () => {
+    const diff = diffScanItems(
+      [scanItem({ itemId: 700, name: "精金矿石", subCategory: "Metal & Stone", vendorPrice: 50 })],
+      [{ itemId: 700, name: "#700", quality: "common", category: "Trade Goods", subCategory: "Metal & Stone", vendorPrice: 50 }]
+    );
+    expect(diff.updates).toEqual([{
+      itemId: 700,
+      data: { name: "精金矿石", quality: "common", category: "Trade Goods", subCategory: "Metal & Stone", vendorPrice: 50 }
+    }]);
+  });
+
   it("creates an item row for demand-only entries so a bid-only market stays visible", () => {
     const diff = diffScanItems(
       [scanItem({ itemId: 700, name: "Bid Only", priced: false, minPrice: 0, marketPrice: 0, sellPrice: 0, p5Price: 0, quantity: 0, numAuctions: 0, sellerCount: 0, bidOnlyCount: 2, highestBid: 500, tiers: [] })],
