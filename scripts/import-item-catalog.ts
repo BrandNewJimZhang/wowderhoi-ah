@@ -46,11 +46,11 @@ async function main() {
   }
 
   const inCatalogue = new Set(dataset.items.map((item) => item.itemId));
-  const snapshots = await prisma.auctionSnapshot.findMany({
-    select: { itemId: true, marketId: true },
+  const quoted = await prisma.marketQuote.findMany({
+    select: { itemId: true },
     distinct: ["itemId"]
   });
-  const missing = snapshots.filter((row) => !inCatalogue.has(row.itemId)).length;
+  const missing = quoted.filter((row) => !inCatalogue.has(row.itemId)).length;
   console.log(
     `Imported. ${missing} scanned item ids are outside the public catalogue and stay scan-owned.`
   );

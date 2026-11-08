@@ -32,8 +32,6 @@ model Market {
   bagSlots    Int?      @map("bag_slots")
   createdAt   DateTime  @default(now()) @map("created_at")
 
-  snapshots      AuctionSnapshot[]
-  dailySummaries DailySummary[]
   generations    MarketGeneration[]
   series         ItemSeries[]
   importRuns     ImportRun[]
@@ -67,8 +65,6 @@ model Item {
   catalogSource    String            @default("scan") @map("catalog_source")
   catalogBuild     String?           @map("catalog_build")
   catalogUpdatedAt DateTime?         @map("catalog_updated_at")
-  snapshots        AuctionSnapshot[]
-  dailySummaries   DailySummary[]
   quotes           MarketQuote[]
   series           ItemSeries[]
   signalRows       MarketSignalRow[]
@@ -81,91 +77,6 @@ model Item {
   @@index([catalogSource])
 }
 
-model AuctionSnapshot {
-  id                 String   @id @default(cuid())
-  itemId             Int      @map("item_id")
-  timestamp          DateTime
-  marketId           String   @map("market_id")
-  // A snapshot is one item's observation from one scan. `priced = false`
-  // marks a demand-only row: the item had bid-only listings and no buyout,
-  // so every price column is zero and only `bidOnlyCount`/`highestBid` are
-  // meaningful. Price consumers must filter on `priced`.
-  priced             Boolean  @default(true)
-  minPrice           Float    @map("min_price")
-  marketPrice        Float    @map("market_price") // P10; a statistic, not a decision anchor
-  sellPrice          Float    @default(0) @map("sell_price")
-  p5Price            Float    @default(0) @map("p5_price")
-  quantity           Int
-  numAuctions        Int      @map("num_auctions")
-  sellerCount        Int      @default(0) @map("seller_count")
-  sellersInvisible   Boolean  @default(false) @map("sellers_invisible")
-  // True when the scan could see owner names for this item. Hidden owners
-  // make the flow proxy unobservable rather than zero.
-  ownerVisible       Boolean  @default(false) @map("owner_visible")
-  // Hygiene generation of soldProxyLow/High (see OBSERVATION_VERSION in
-  // src/lib/market-rules.ts). Calibration only reads the current generation
-  // and rows whose owners were fully visible.
-  observationVersion Int?     @map("observation_version")
-  // Other sellers' supply concentration (0..1). Null when any owner is
-  // hidden: the visible subset would look more concentrated than it is.
-  sellerHHI          Float?   @map("seller_hhi")
-  topSellerShare     Float?   @map("top_seller_share")
-  // The scanner's classification of this item's book ("commodity" | "item"),
-  // decided once at scan time. Null on rows imported before the column
-  // existed; consumers fall back to the core's derivation for those.
-  marketType         String?  @map("market_type")
-  bidOnlyCount       Int      @default(0) @map("bid_only_count")
-  highestBid         Float    @default(0) @map("highest_bid")
-  soldProxyLow       Float    @default(0) @map("sold_proxy_low") // left an owner: sales + cancels
-  soldProxyHigh      Float    @default(0) @map("sold_proxy_high") // left a price key: also repricing
-  // False when the scan had no previous capture of this item (first scan
-  // after an upgrade, or the item was just listed): the zero interval is
-  // missing data, not an observed zero. True for rows imported before the
-  // column existed -- that is the behaviour they were imported under.
-  flowObserved       Boolean  @default(true) @map("flow_observed")
-  supplyGrowth       Float    @default(0) @map("supply_growth")
-  // History points inside the phase window at scan time, stamped by the
-  // scanner. Null on rows imported before the column existed; the terminal
-  // then falls back to its own sell-sample count.
-  historySamples     Int?     @map("history_samples")
-  // Time span the stamped history points cover. A sample floor without a
-  // span floor lets a burst of scans masquerade as a week of history.
-  historySpanHours   Float?   @map("history_span_hours")
-  // True when the persisted ladder is only the top eight rungs of a deeper
-  // book. The fill model must count the unseen units as a queue.
-  tierTruncated      Boolean  @default(false) @map("tier_truncated")
-  topTiers           Json?    @map("top_tiers")
-  expiring           Json?    @map("expiring")
-  item               Item     @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
-  market             Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
-
-  @@unique([marketId, timestamp, itemId])
-  @@index([itemId, timestamp])
-  @@index([marketId, priced, timestamp])
-}
-
-model DailySummary {
-  id         String   @id @default(cuid())
-  itemId     Int      @map("item_id")
-  marketId   String   @map("market_id")
-  date       DateTime
-  openPrice  Float    @map("open_price")
-  closePrice Float    @map("close_price")
-  highPrice  Float    @map("high_price")
-  lowPrice   Float    @map("low_price")
-  volume     Int
-  item       Item     @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
-  market     Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
-
-  @@unique([marketId, itemId, date])
-  @@index([marketId, date])
-}
-
-// One immutable evaluation per scan. The import materialises the signals
-// and the shared core's output here, so a page read never recomputes the
-// market and a restart never loses the derivation. The phase is the one
-// the scan was evaluated under; a read may display a later phase, but it
-// must not silently apply the new gates to the old book.
 model MarketGeneration {
   id             String   @id @default(cuid())
   marketId       String   @map("market_id")

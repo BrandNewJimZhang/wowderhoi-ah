@@ -66,14 +66,9 @@ AH 开着时可以 `/wahauto` 开启自动重扫（间隔来自编译规则，�
 AQT_SAVEDVARS_PATH="<游戏数据目录>\\WTF\\Account\\<你的账号ID>\\SavedVariables\\WoWderhoiAH.lua"
 ```
 
-保持 `npm run dev` 运行，另开一个终端：
-
-```powershell
-npm run addon:watch
-```
-
-看到 `Imported N items, M positions and K trades from scan ...` 就说明快照和
-Journal 都已入库。刷新 `http://localhost:3000`。
+保持 `npm run dev` 运行即可：应用会自己监听 `AQT_SAVEDVARS_PATH` 指向的存档。
+日志出现 `Imported N items, M positions and K trades from scan ...` 就说明盘口、
+序列和 Journal 都已入库。刷新 `http://localhost:3000`。
 
 ## 第 5 步：在游戏里用起来
 
@@ -99,7 +94,7 @@ Journal 都已入库。刷新 `http://localhost:3000`。
 
 ## 第 6 步：看终端
 
-- 驾驶舱：阶段横幅、行动清单、可执行机会、市场表。
+- 驾驶舱：阶段横幅、账本摘要、行动清单、可执行机会、市场变动与数据就绪；完整行情在 `/market`。
 - 商品页：盘口阶梯、24 小时成交概率、走势、日线 K 线。
 - 组合页：现金（上次扫描）、持仓市值/成本、浮动、确认成交的已实现；推断成交单列，
   不计入已实现与校准。
@@ -109,8 +104,8 @@ Journal 都已入库。刷新 `http://localhost:3000`。
 ## 日常循环
 
 每天只需要：开拍卖行 → `/wahscan`。插件在扫描结束后调用 `SaveAddOns`，
-`addon:watch` 会发现新文件并入库；若客户端不支持即时落盘，再小退或 `/reload`。
-同一次扫描不会重复导入。快照积累两天以上后，
+应用会发现新文件并入库；若客户端不支持即时落盘，再小退或 `/reload`。
+同一次扫描不会重复导入。序列积累两天以上后，
 走势与星期季节性开始有意义；积累自己的成交后，成交率区间才会收窄。
 
 ## 常见问题

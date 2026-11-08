@@ -6,13 +6,16 @@ import { rmSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { PrismaClient } from "@prisma/client";
 import { DEFAULT_BUDGET_COPPER, SCAN_INTERVAL_MINUTES } from "@/lib/market-rules";
-import { generateMarket, qualityName, syntheticMarketType, syntheticSellers, syntheticTiers, type SyntheticMarket } from "./fixtures";
+import { generateMarket, qualityName, syntheticMarketType, syntheticSellers, syntheticTiers } from "./fixtures";
+import { buildGenerationPlan } from "@/lib/market-generation";
+import { writeGeneration } from "@/lib/import-store";
+import type { AddonScan, AddonScanItem } from "@/lib/addon-scan";
+import type { SeriesPoint } from "@/lib/item-series";
 
 // The synthetic history must walk at the compiled scan cadence, or the
 // elapsed-time and per-day folding the perf pages measure would describe a
 // different ticker than /wahauto runs.
 const SCAN_INTERVAL_MS = SCAN_INTERVAL_MINUTES * 60 * 1000;
-const SCANS_PER_DAY = (24 * 60) / SCAN_INTERVAL_MINUTES;
 const INSERT_CHUNK = 2000;
 
 const { values } = parseArgs({
@@ -37,30 +40,6 @@ async function insertChunked<T>(rows: T[], insert: (chunk: T[]) => Promise<unkno
   for (let offset = 0; offset < rows.length; offset += INSERT_CHUNK) {
     await insert(rows.slice(offset, offset + INSERT_CHUNK));
   }
-}
-
-function dailySummariesFor(market: SyntheticMarket, newestScanMs: number, marketId: string) {
-  const rows: Array<{ itemId: number; marketId: string; date: Date; openPrice: number; closePrice: number; highPrice: number; lowPrice: number; volume: number }> = [];
-  for (const item of market.items) {
-    for (let start = 0; start < item.walk.length; start += SCANS_PER_DAY) {
-      const day = item.walk.slice(start, start + SCANS_PER_DAY);
-      const prices = day.map((point) => point.marketPrice);
-      const timestampMs = newestScanMs - (item.walk.length - 1 - start) * SCAN_INTERVAL_MS;
-      const date = new Date(timestampMs);
-      date.setUTCHours(0, 0, 0, 0);
-      rows.push({
-        itemId: item.itemId,
-        marketId,
-        date,
-        openPrice: prices[0],
-        closePrice: prices[prices.length - 1],
-        highPrice: Math.max(...prices),
-        lowPrice: Math.min(...prices),
-        volume: day.reduce((sum, point) => sum + point.quantity, 0)
-      });
-    }
-  }
-  return rows;
 }
 
 async function main() {
@@ -96,39 +75,100 @@ async function main() {
     (chunk) => prisma.item.createMany({ data: chunk })
   );
 
-  const snapshotRows = market.items.flatMap((item) =>
-    item.walk.map((point, step) => ({
-      itemId: item.itemId,
-      timestamp: new Date(newestScanMs - (item.walk.length - 1 - step) * SCAN_INTERVAL_MS),
-      marketId: marketRow.id,
+  // The walk is the series; the last step of each item is the current
+  // book. One generation is enough for the perf pages: they read the newest
+  // generation, exactly like production.
+  const series = market.items.map((item) => ({
+    itemId: item.itemId,
+    points: item.walk.map((point, step): SeriesPoint => ({
+      t: Math.round((newestScanMs - (item.walk.length - 1 - step) * SCAN_INTERVAL_MS) / 1000),
       minPrice: point.minPrice,
-      marketPrice: point.marketPrice,
-      // The fixture's sell front is its market price; seeding zero here would
-      // make every terminal signal read a zero sell price and measure a dead
-      // page instead of the real analytics path.
       sellPrice: point.marketPrice,
       quantity: point.quantity,
       numAuctions: point.numAuctions,
-      // Depth, sellers and classification come from the same helpers the
-      // addon-payload generator uses. Leaving them at schema defaults made
-      // the seeder's core evaluation empty: zero sellers fails every phase's
-      // book gate, so the pages under test never rendered the radar.
+      event: false
+    }))
+  }));
+  const scanItems: AddonScanItem[] = market.items.map((item) => {
+    const point = item.walk[item.walk.length - 1];
+    return {
+      itemId: item.itemId,
+      name: item.name,
+      quality: qualityName(item.qualityIndex),
+      category: item.itemClass,
+      subCategory: item.itemSubClass,
+      marketType: syntheticMarketType(item, point),
+      priced: true,
+      minPrice: point.minPrice,
+      marketPrice: point.marketPrice,
+      sellPrice: point.marketPrice,
+      p5Price: point.minPrice,
+      quantity: point.quantity,
+      numAuctions: point.numAuctions,
       sellerCount: syntheticSellers(point),
       sellersInvisible: false,
-      marketType: syntheticMarketType(item, point),
-      topTiers: syntheticTiers(point)
-    }))
-  );
-  await insertChunked(snapshotRows, (chunk) => prisma.auctionSnapshot.createMany({ data: chunk }));
-  await insertChunked(dailySummariesFor(market, newestScanMs, marketRow.id), (chunk) => prisma.dailySummary.createMany({ data: chunk }));
+      ownerVisible: true,
+      sellerHHI: null,
+      topSellerShare: null,
+      bidOnlyCount: 0,
+      highestBid: 0,
+      inferredSoldLow: 0,
+      inferredSoldHigh: 0,
+      flowObserved: true,
+      supplyGrowth: 0,
+      historySamples: item.walk.length,
+      historySpanHours: (item.walk.length * SCAN_INTERVAL_MINUTES) / 60,
+      vendorPrice: 0,
+      tiers: syntheticTiers(point),
+      tierTruncated: false,
+      expiring: { soon: 0, mid: 0, late: 0 }
+    };
+  });
+  const scan: AddonScan = {
+    scannedAt: new Date(newestScanMs),
+    server: "PerfRealm",
+    faction: "Alliance",
+    character: "Perf",
+    cash: DEFAULT_BUDGET_COPPER,
+    openedAt: null,
+    bagSlots: 20,
+    observationVersion: 2,
+    skippedItems: 0,
+    items: scanItems
+  };
+  const signalItems = new Map(market.items.map((item) => [item.itemId, {
+    itemId: item.itemId,
+    name: item.name,
+    quality: qualityName(item.qualityIndex),
+    category: item.itemClass,
+    subCategory: item.itemSubClass,
+    vendorPrice: 0,
+    iconId: null
+  }] as const));
+  const plan = buildGenerationPlan({
+    scan,
+    series: null,
+    items: signalItems,
+    existingSeries: series,
+    previous: null,
+    openedAt: null,
+    firstScanAt: new Date(newestScanMs - (depth * SCAN_INTERVAL_MS)),
+    positions: {},
+    ownSales: {},
+    budgetCopper: DEFAULT_BUDGET_COPPER,
+    phaseOverride: null
+  });
+  await prisma.$transaction(async (tx) => {
+    await writeGeneration(tx, marketRow.id, plan, plan.decisions.map((row) => ({ ...row, adoptedAt: null })), "0:0:0:0:0:0:0");
+  }, { timeout: 120_000 });
 
   const counts = {
     items: await prisma.item.count(),
-    snapshots: await prisma.auctionSnapshot.count(),
-    summaries: await prisma.dailySummary.count()
+    series: await prisma.itemSeries.count(),
+    signals: await prisma.marketSignalRow.count()
   };
   await prisma.$disconnect();
-  console.log(`Seeded ${counts.items} items, ${counts.snapshots} snapshots, ${counts.summaries} summaries in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
+  console.log(`Seeded ${counts.items} items, ${counts.series} series, ${counts.signals} signals in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
 }
 
 void main();

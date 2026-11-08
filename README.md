@@ -136,33 +136,34 @@ an **inferred** sale at the posted price and labelled everywhere.
 Copy-Item .env.example .env
 npm install
 npm run db:push
-npm run recipes:import   # project data/recipes.forever.json into SQLite
-npm run recipes:lua      # compile the materials into addon/GeneratedRecipes.lua
+npm run items:catalog:import  # project data/items.forever.json into Item
+npm run icons:fetch          # download the shared icons (public/icons is gitignored)
+npm run recipes:import       # project data/recipes.forever.json into SQLite
+npm run recipes:lua          # compile the materials into addon/GeneratedRecipes.lua
 npm run dev
 ```
 
 In game, scan (`/wahscan`); the addon calls `C_AddOns.SaveAddOns()` after
 each scan, and falls back to log out / `/reload` on clients without it. Point
-`AQT_SAVEDVARS_PATH` at the SavedVariables file and run:
-
-```powershell
-npm run addon:watch
-```
+`AQT_SAVEDVARS_PATH` at the SavedVariables file; the Next app starts the
+watcher itself, so `npm run dev` is the only long-running command. The
+standalone `npm run addon:watch` remains for a terminal deployment.
 
 The watcher posts `{ scan, series, journal }` to `/api/import/addon-scan`.
-The import is transactional: the snapshot, daily OHLC (built from the sell
-front), positions and trades land all-or-nothing. `series` is the addon's
-append-only history; any scans it holds that the terminal never imported are
-backfilled as price/listing observations, up to 16 per import. A duplicate scan
-timestamp carrying a journal still replays the ledger, so a sale the
+The import materialises one immutable `MarketGeneration`: the current book
+(`MarketQuote`), the signals derived from it and the addon series, and the
+shared core's output (`MarketSignalRow`). The terminal keeps its own longer
+`ItemSeries`, so an addon upgrade that rebuilds the game file cannot erase
+history. A duplicate scan timestamp carrying a journal replays the ledger,
+recomputes that generation's core output and merges the series, so a sale the
 mailbox flushed between scans reaches the terminal immediately; only a
 journal-less duplicate is skipped. `WoWderhoiAH_Capture` is the previous
 scan's tier-level identity table, used only for the flow estimate.
 
 Every terminal read is scoped to one `Market` (realm + faction): the
-market of the newest snapshot, or `AQT_MARKET="realm|faction"` when you
-want to pin it. Snapshots, daily summaries, positions, trades and
-decisions from another realm can never leak into the same signal.
+market of the newest generation, or `AQT_MARKET="realm|faction"` when you
+want to pin it. Generations, series, positions, trades and decisions from
+another realm can never leak into the same signal.
 
 The ledger follows the character that produced the scan: positions and
 trades are replayed only from that character's journal book, never from
@@ -173,10 +174,12 @@ with no events shows an empty ledger rather than an alt's holdings; a
 scan-only import that carries no journal leaves the recorded character
 and ledger untouched.
 
-Upgrading an existing `prisma/dev.db` from an earlier v0.4 build needs one
-schema push that drops write-only columns/tables and re-keys daily
-summaries. Either delete `prisma/dev.db` and re-import, or run
-`npx prisma db push --accept-data-loss` once.
+Upgrading an existing `prisma/dev.db` from the snapshot read model: run
+`npm run read-model:backfill` once. It rebuilds `ItemSeries` from the legacy
+snapshots and daily summaries, merges the addon series when the
+SavedVariables file is configured, materialises one generation per market
+and drops the two legacy tables. It is idempotent. A new database does not
+need it.
 
 ### Recipe data
 
@@ -305,12 +308,14 @@ an issue; see [CONTRIBUTING.md](CONTRIBUTING.md). Security notes in
 Copy-Item .env.example .env
 npm install
 npm run db:push
+npm run items:catalog:import
+npm run icons:fetch
 npm run recipes:import
 npm run recipes:lua
 npm run dev
 ```
 
-游戏内扫描后插件会自动调用 `SaveAddOns`，任何账本写入（成交、买入、上架、制造、手动记录）也会在约 2 秒内合并落盘（不支持时小退/`/reload`）；配置 `AQT_SAVEDVARS_PATH` 后运行 `npm run addon:watch`。导入是事务式的：快照、日线、头寸与成交一起落库；账本变化会在两次扫描之间单独触发一次账本重放，重复的快照本身不重复写入。
+游戏内扫描后插件会自动调用 `SaveAddOns`，任何账本写入（成交、买入、上架、制造、手动记录）也会在约 2 秒内合并落盘（不支持时小退/`/reload`）；配置 `AQT_SAVEDVARS_PATH` 后 `npm run dev` 会自己监听存档，不需要另开进程（`npm run addon:watch` 仍可独立运行）。导入会生成一代不可变读模型：当前盘口、物化信号、共享核心输出、序列、头寸与成交一起落库；账本变化会在两次扫描之间单独触发一次重放与核心重算，重复的扫描不新建代际。
 
 ### 边界
 

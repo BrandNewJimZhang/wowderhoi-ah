@@ -19,8 +19,13 @@ async function main() {
     // Observations come from clean rows only, but breadth and age are
     // properties of the whole market: a hidden-owner or pre-hygiene scan
     // still proves how many kinds were listed and when the market started.
-    const [rows, breadthByTimestamp, earliest] = await Promise.all([
-      prisma.auctionSnapshot.findMany({
+    const [generations, rows, breadthGroups] = await Promise.all([
+      prisma.marketGeneration.findMany({
+        where: { marketId: market.id },
+        select: { id: true, scannedAt: true },
+        orderBy: { scannedAt: "asc" }
+      }),
+      prisma.marketQuote.findMany({
         where: {
           marketId: market.id,
           priced: true,
@@ -29,30 +34,44 @@ async function main() {
         },
         select: {
           itemId: true,
-          timestamp: true,
           marketType: true,
           quantity: true,
           soldProxyLow: true,
           observationVersion: true,
           priced: true,
           sellersInvisible: true,
-          flowObserved: true
+          flowObserved: true,
+          generation: { select: { scannedAt: true } }
         },
-        orderBy: { timestamp: "asc" }
+        orderBy: { generation: { scannedAt: "asc" } }
       }),
-      prisma.auctionSnapshot.groupBy({
-        by: ["timestamp"],
+      prisma.marketQuote.groupBy({
+        by: ["generationId"],
         where: { marketId: market.id, priced: true },
         _count: { _all: true }
-      }),
-      prisma.auctionSnapshot.aggregate({
-        where: { marketId: market.id, priced: true },
-        _min: { timestamp: true }
       })
     ]);
-    const breadthByScan = new Map(breadthByTimestamp.map((entry) => [entry.timestamp.getTime(), entry._count._all]));
+    const scannedAtById = new Map(generations.map((generation) => [generation.id, generation.scannedAt]));
+    const breadthByScan = new Map(
+      breadthGroups
+        .map((entry) => [scannedAtById.get(entry.generationId)?.getTime(), entry._count._all] as const)
+        .filter((entry): entry is [number, number] => entry[0] !== undefined)
+    );
+    const earliest = { _min: { timestamp: generations[0]?.scannedAt ?? null } };
     const observations = calibrationObservations(
-      rows.map((row) => ({ ...row, supply: row.quantity, soldLow: row.soldProxyLow })),
+      rows.map((row) => ({
+        itemId: row.itemId,
+        timestamp: row.generation.scannedAt,
+        marketType: row.marketType,
+        quantity: row.quantity,
+        soldProxyLow: row.soldProxyLow,
+        observationVersion: row.observationVersion,
+        priced: row.priced,
+        sellersInvisible: row.sellersInvisible,
+        flowObserved: row.flowObserved,
+        supply: row.quantity,
+        soldLow: row.soldProxyLow
+      })),
       {
         scanMinutes: SCAN_INTERVAL_MINUTES,
         marketOpenedAt: market.openedAt,

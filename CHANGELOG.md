@@ -4,6 +4,31 @@
 
 ### Added
 
+- The client item catalogue (`data/items.forever.json`, 16,939 public items)
+  is the authority for item names, quality, category, icon id, level, slot and
+  vendor price. Scans only create placeholders for ids the catalogue does not
+  own; a catalogue row is never rewritten by a lazy-load miss. `vendorPrice`
+  is nullable: null means unresolved, zero keeps its meaning (unsellable).
+- Icons are keyed by the client's shared icon id (`/icons/<iconId>.webp`) and
+  downloaded once per icon; `npm run icons:fetch` and `npm run icons:prune`.
+- The terminal persists the addon's `WoWderhoiAH_Series` in `ItemSeries` with
+  a longer retention than the game file, and derives every price statistic
+  from it. `npm run read-model:backfill` migrates an existing database.
+- Each import materialises one immutable `MarketGeneration` with its
+  `MarketQuote` rows, `MarketSignalRow` rows and the shared core's output.
+  Page reads never rerun the core and never write a decision.
+- `/market` is a client-filtered market browser with sparklines, P25–P75 bands
+  and mobile cards; the dashboard is ledger-first and the shell adds a
+  persistent rail with action/stale/position badges.
+- `src/instrumentation.ts` starts the SavedVariables watcher with the app;
+  `ImportRun` records every import and `/health` shows freshness, gaps, series
+  coverage, catalogue/icon coverage and journal replay errors.
+- Recommendations have a stable `decisionId` shared with the addon.
+  `/wahadopt <itemId> buy|sell` records adoption; a later matching sale is
+  attributed by identity, and the review separates identity from window
+  matches.
+
+
 - `/wahdiag` splits a scan into wait, client API, Lua, finish and save
   milliseconds and prints their shares, counting the per-item `GetItemInfo`
   lookup as client time; the finish phase now runs across frames and the
@@ -61,6 +86,12 @@
   the cheapest row.
 
 ### Removed
+
+- The `AuctionSnapshot` and `DailySummary` tables, the per-request market
+  cache, the GET-time decision writer, the 16-scan snapshot backfill and the
+  snapshot retention script. History now lives in `ItemSeries`; current books
+  live in generations.
+- The Wowhead item-metadata pass and the per-item JPEG icon cache.
 
 - `Core.searchScore` is module-internal in both runtimes; `rankSearch` is
   the only public search entry point.

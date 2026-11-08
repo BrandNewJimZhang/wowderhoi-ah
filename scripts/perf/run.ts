@@ -100,7 +100,7 @@ async function main() {
     const prisma = new PrismaClient({ datasourceUrl: databaseUrl });
     const itemRows = await prisma.item.findMany({ select: { itemId: true }, take: 400 });
     const itemCount = await prisma.item.count();
-    const depthProbe = await prisma.auctionSnapshot.count({ where: { itemId: itemRows[0]?.itemId ?? 0 } });
+    const depthProbe = await prisma.marketQuote.count({ where: { itemId: itemRows[0]?.itemId ?? 0 } });
     await prisma.$disconnect();
     if (itemRows.length === 0) {
       throw new Error("Perf DB has no items — run perf:seed first");

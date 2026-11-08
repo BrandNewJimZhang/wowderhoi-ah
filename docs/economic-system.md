@@ -26,7 +26,7 @@
 ## 2. 数据契约
 
 桌面端的每一次读取都按 `Market`（realm + faction）隔离：默认取最新扫描所属市场，
-可用 `AQT_MARKET="realm|faction"` 固定。快照、日线、头寸、成交、决策都不会跨市场合并。
+可用 `AQT_MARKET="realm|faction"` 固定。行情代际、序列、头寸、成交、决策都不会跨市场合并。
 
 ### 2.1 `WoWderhoiAH_ScanData`（v4）
 
@@ -65,7 +65,7 @@
 t, min, sell, q, n, e
 ```
 
-序列只保留图表、回填与卖价中位实际读取的数组。P10、卖家数和推断消失量保存在最新快照
+序列只保留图表、回填与卖价中位实际读取的数组。P10、卖家数和推断消失量保存在最新一次扫描
 `WoWderhoiAH_ScanData.items` 里，由终端逐次扫描导入数据库；把它们再复制进每条历史点
 只会放大 SavedVariables，没有消费方。挂单数 `n` 随点保存，因为回填时只有它能把
 “空书”和“缺测”分开；旧点没有该数组时按 0（未知）补齐，所有数组保持等长。
@@ -169,19 +169,26 @@ Ledger 是 Journal 的纯投影：
   `bagSlots`（最近一次扫描的背包空位；空值只出现在不上报该字段的旧插件导入，
   此时共享核心才使用规划默认值）。持仓、成交和现金都来自同一个角色的
   一次扫描，界面显示该角色名。
-- `AuctionSnapshot`：v4 全字段 + `topTiers` / `expiring`；`marketType` 保存扫描时的
-  市场类型，空值只出现在该列引入前导入的旧行，核心会退回自己的分类逻辑。观测洁净度
-  单独存：`ownerVisible`、`sellersInvisible`、`observationVersion`（校准只读当前
-  `OBSERVATION_VERSION` 及以上，且 `sellersInvisible = false`），
-  以及卖家集中度 `sellerHHI` / `topSellerShare`（owner 不可见时为空）。`priced = false`
-  标记纯需求行，所有价格序列查询都必须过滤 `priced: true`。市场身份只存在 `Market` 行，
-  快照不重复存 realm/faction。快照、日线与决策的 `marketId` 都是必填：它们不可能脱离
-  某个市场存在，空值只会让两个市场的数据混在一起。
+- `MarketGeneration`：一次扫描一份不可变读模型，记录扫描时间、求值阶段、宽度、
+  已下架数、`firstScanAt`、价格指数、共享核心输出、账本修订与扫描缺口。页面只读这一代，
+  不再在请求里重算市场。只保留最近 2 代，旧代际级联删除其 quotes / signal rows。
+- `MarketQuote`：这一代里每个物品的当前盘口（`AuctionSnapshot` 的全字段），不再承担历史。
+  `priced = false` 标记纯需求行；价格统计只读 `priced = true`。行情历史在 `ItemSeries`，
+  两边的寿命因此分开：删旧代际不会碰图表，折叠历史不会影响当前盘口。
+- `MarketSignalRow`：这一代每个物品的物化信号，以及该物品在共享核心里的行（若通过门槛）。
+  物品页只读自己的一行，不加载整个市场求值。
+- `ItemSeries`：终端自己的插件序列副本，按物品存并行数组 `t/min/sell/q/n/e`。
+  保留策略：最近 7 天全量、7–30 天每小时最后一个点、30–90 天每天最后一个点、
+  更久每周一个点；事件点永远保留；单物品上限 4,000 点，超出等距折叠。
+  插件升级会重建自己的文件，所以长历史必须由终端持有。
+- `ImportRun`：每次导入一行（来源、扫描数、序列点数、quote 数、Journal 事件/错误、
+  耗时、状态、错误信息）。健康页读最近 20 行；`/health` 也显示扫描缺口与序列覆盖。
 - `Position` / `Trade`：每次导入从 Journal 重建，整体替换，幂等。邮箱在两次扫描之间
-  落盘时，同一快照时间戳的导入只重放账户账本、不重写快照，因此确认成交不必等下一次
-  扫描。`Trade.listedAt` 保存挂单时间（可空），成交时间是观测时间，二者之差就是成交等待。
-- `Decision`：每次扫描代际写入一次，记录阶段、行动类型、物品、理由与时间，以及
-  预期净利、成交概率、成交依据、分配数量与成交价；复盘页按它做分桶预测校准
+  落盘时，同一快照时间戳的导入只重放账户账本、重算该代际的核心输出并合并序列，
+  不新建代际，因此确认成交不必等下一次扫描。`Trade.listedAt` 保存挂单时间（可空），成交时间是观测时间，二者之差就是成交等待。
+- `Decision`：每次扫描代际由导入写入一次（不是页面 GET），记录稳定 `decisionId`
+  （`realm|faction|scannedAt:item:kind`，与插件 `/wahadopt` 同一公式）、阶段、行动类型、物品、理由与时间，以及
+  预期净利、成交概率、成交依据、分配数量与成交价；采纳时间来自插件的 `adopt` 事件，复盘优先按 `decisionId` 归因，未采纳的旧决策才退回同物品时间窗。复盘页按它做分桶预测校准
   （在预测窗口 `fillRules.horizonHours` 内同物品的确认拍卖成交；卖店成交不是拍卖
   成交，NPC 保底决策的成交率恒为 1、不参与校准），少于 10 条决策的桶只显示
   “样本不足”。决策日志按 72 小时列出，那是列表窗口，不是预测窗口。
@@ -292,7 +299,7 @@ P(fill ≤ T) = 1 − exp(−h · supply · T / (ahead + qty))
 `fillPrior`，编译进 `WAH.RULES.fillPrior`；核心不再自带一份数字。`proxy` 与
 `observed-zero` 用 Gamma–Poisson 收缩：盘口越大、观测越久，先验权重越小。
 `npm run calibrate` 只读当前 `OBSERVATION_VERSION` 及以上、卖家完全可见
-（`sellersInvisible = false`）且 `flowObserved = true` 的快照：owner 隐藏或没有上一轮基线时
+（`sellersInvisible = false`）且 `flowObserved = true` 的 quote：owner 隐藏或没有上一轮基线时
 下沿恒为 0，那是缺失数据，不是零成交，学进去会把先验压向零。该标记出现之前导入的行按
 导入时的行为视为已观测（`flowObserved = true`）。阶段与宽度按**那次扫描的整个市场**判定（每个时间戳的在售种类数、
 市场最早扫描或开服锚点），不是按单个物品的首次出现。输出按阶段 × 市场类型的中位数与
@@ -320,9 +327,12 @@ phase = ignition  if age < 6h  or breadth < 80
 ```
 
 `breadth` 是最近一次扫描中有正价的物品种类数：已下架物品保留历史，但不再计入市场宽度。
-`/wahphase` 可手动覆盖；桌面用 `AQT_PHASE` 覆盖。桌面在每次请求时按“库里最早扫描时间 +
-当前代际的 breadth”重算阶段，再作为 `phaseOverride` 传给共享核心；阶段跨越边界会触发
-市场重建，所以即使扫描暂停，阶段也会像游戏内的 `WAH.currentPhase` 一样随真实时间推进。
+`/wahphase` 可手动覆盖；桌面用 `AQT_PHASE` 覆盖。**导入时**按 `openedAt ?? firstScanAt`
+把年龄和这一代的 breadth 代入规则，结果写进 `MarketGeneration.phase`，共享核心就在这个
+阶段下求值。页面读取时再按真实时钟重算“显示阶段”：跨过边界时，旧代际的行动清单收起并
+提示需要重新扫描，而不是拿新阶段的门槛去套旧盘口。核心不会用单次扫描窗口重新推算阶段，
+否则活跃市场会因为“最近一次扫描是几分钟前”而被永久判成点火期。阶段决定历史窗口、样本
+门槛、价差窗口与净利门槛：
 核心不会用单次快照窗口重新推算阶段，否则活跃市场会因为“最近一次扫描是几分钟前”而被
 永久判成点火期。阶段决定历史窗口、样本门槛、价差窗口与净利门槛：
 

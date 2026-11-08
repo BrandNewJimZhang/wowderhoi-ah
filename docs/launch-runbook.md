@@ -50,16 +50,16 @@ AQT_BUDGET_COPPER="500000"          # 终端计划预算；与扫描里的现金
 6. 制造一件物品，确认 `/wahdiag` 的 `craft: N recorded` 增加；材料未入账时会记短头寸，
    这是账本在说“成本未知”，不是失败。
 7. 小退或 `/reload` 一次（即使 `SaveAddOns` 可用，也先确认文件真的落盘）。
-8. 启动 `npm run addon:watch`，看到 `Imported N items, M positions and K trades`
-   即接通。watcher 同时发送插件里保留的 `WoWderhoiAH_Series`，终端会回填
-   watcher 未运行时错过的扫描（响应里的 `backfilled` 是回填次数）。
+8. `npm run dev` 启动后会自动监听存档（`AQT_SAVEDVARS_PATH`）；日志出现
+   `Imported N items, M positions and K trades` 即接通。每次导入同时发送
+   `WoWderhoiAH_Series`，终端把它合并进 `ItemSeries` 并写进当前代际（响应的
+   `seriesPoints` 是合并后的点数）。需要脱离 Next 运行时再跑 `npm run addon:watch`。
 9. 打开 `http://localhost:3000`，确认驾驶舱有阶段、数据龄、行动清单，且行动数量与
    游戏内雷达的“可买”一致；交易页的“下一步”应同时出现买入动作与持仓的卖出计划。
 10. 卖出页 `/wahsell`：有该物品自己的成交或可观测消失时，应显示“推荐：价格 / 时长 /
     成交率”；`/wahpricing off` 可退回单一时长。跨角色搬货先 `/wahtransfer … out`，
     记下打印的单位成本，再到接收角色 `/wahtransfer … in <单位成本>`。
-11. 导入积累后运行 `npm run db:prune`：每个物品只保留最近 96 条快照（图表读取上限），
-    日线 OHLC 不受影响；`AQT_RETAIN_SNAPSHOTS` 可调整保留条数。
+11. 读模型自动保留最近 2 代 generation；序列按 7 天全量、7–30 天每小时、30–90 天每天、更久每周折叠，事件点始终保留。日线 OHLC 从序列派生，不再单独存储。
 
 ### 如果 `/wahdiag` 报异常
 
