@@ -551,6 +551,9 @@ local function appendPoint(series, item, nowTs)
   series.min[#series.min + 1] = item.minPrice
   series.sell[#series.sell + 1] = item.sellP
   series.q[#series.q + 1] = item.quantity
+  -- Listing count is the one series field a later backfill can still use to
+  -- tell an empty book from a missing observation. Older points have no n.
+  series.n[#series.n + 1] = item.numAuctions or 0
   series.e[#series.e + 1] = event
 end
 
@@ -559,6 +562,7 @@ local function copyPoint(series, source, target)
   target.min[#target.min + 1] = series.min[source]
   target.sell[#target.sell + 1] = series.sell[source]
   target.q[#target.q + 1] = series.q[source]
+  target.n[#target.n + 1] = series.n and series.n[source] or 0
   target.e[#target.e + 1] = series.e[source]
 end
 
@@ -568,6 +572,7 @@ local function popKept(kept)
   kept.min[#kept.min] = nil
   kept.sell[#kept.sell] = nil
   kept.q[#kept.q] = nil
+  kept.n[#kept.n] = nil
   kept.e[#kept.e] = nil
 end
 
@@ -582,7 +587,7 @@ local function pruneSeries(series, nowTs)
   -- the common case returns the series it was given.
   if series.t[1] and series.t[1] >= nowTs - DAY then return series end
   local cutoff24, cutoff7, cutoff30 = nowTs - DAY, nowTs - 7 * DAY, nowTs - 30 * DAY
-  local kept = { t = {}, min = {}, sell = {}, q = {}, e = {} }
+  local kept = { t = {}, min = {}, sell = {}, q = {}, n = {}, e = {} }
   local lastHour, lastDay
   local lastIsEvent = false -- event points are never replaced by a later close
   for index = 1, #series.t do
@@ -617,7 +622,7 @@ local function enforceSeriesCap(market)
   local perItem = math.max(8, math.floor(SERIES_CAP / count))
   for itemId, series in pairs(market.items) do
     if #series.t > perItem then
-      local trimmed = { t = {}, min = {}, sell = {}, q = {}, e = {} }
+      local trimmed = { t = {}, min = {}, sell = {}, q = {}, n = {}, e = {} }
       for index = #series.t - perItem + 1, #series.t do copyPoint(series, index, trimmed) end
       market.items[itemId] = trimmed
     end
@@ -631,7 +636,7 @@ local function appendSeriesPoint(market, itemId, item, nowTs)
   if not (item.minPrice and item.minPrice > 0) then return nil end
   local series = market.items[itemId]
   if not series then
-    series = { t = {}, min = {}, sell = {}, q = {}, e = {} }
+    series = { t = {}, min = {}, sell = {}, q = {}, n = {}, e = {} }
     market.items[itemId] = series
   end
   appendPoint(series, item, nowTs)

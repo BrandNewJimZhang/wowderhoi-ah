@@ -37,6 +37,9 @@ describe("forever replicate scan v4", () => {
       "WoWderhoiAH_Series.markets['TestRealm|Alliance'].items[2589].sell[1]"
     );
     expect(seriesSell).toBe(1000);
+    // The listing count rides with the point so a missed scan can still be
+    // backfilled as a real observation rather than an empty book.
+    expect(lua.number("WoWderhoiAH_Series.markets['TestRealm|Alliance'].items[2589].n[1]")).toBe(2);
     // The series stores only the arrays its consumers read; P10, listing
     // count, seller count and inferred flow live on the scan snapshot and
     // are imported from there, not duplicated per history point.

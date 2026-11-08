@@ -45,9 +45,14 @@ async function importLatestScan() {
   const response = await fetch(importUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    // The scan is the observation; the journal is the action record. Both
-    // travel together so the terminal can rebuild positions and P&L.
-    body: JSON.stringify({ scan, journal: parsed.WoWderhoiAH_Journal })
+    // The scan is the current observation; the series is the append-only
+    // history of every scan the addon retained, including those completed
+    // while this watcher was not running; the journal is the action record.
+    body: JSON.stringify({
+      scan,
+      series: parsed.WoWderhoiAH_Series,
+      journal: parsed.WoWderhoiAH_Journal
+    })
   });
   const body = await response.json();
   if (!response.ok && response.status !== 409) {
