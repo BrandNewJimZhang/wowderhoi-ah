@@ -3,8 +3,7 @@ import Link from "next/link";
 import { Hammer } from "lucide-react";
 import { getMarketBundle } from "@/lib/market-read";
 import { phaseLabels } from "@/lib/phase";
-import { describeFreshness } from "@/lib/freshness";
-import { SCAN_INTERVAL_MINUTES } from "@/lib/market-rules";
+import { describeFreshness, staleScanHint } from "@/lib/freshness";
 import { buildProductionPlan } from "@/lib/production-plan";
 import { recipeToLp } from "@/lib/recipes";
 import { getRecipes } from "@/lib/repositories";
@@ -57,7 +56,7 @@ export default async function RecipesPage() {
       {recipeRows.length > 0 && planBlocked && (
         <Panel>
           <div className="p-6 font-mono text-xs text-terminal-red">
-            {freshness.stale && `最新扫描已超过 ${SCAN_INTERVAL_MINUTES} 分钟；进游戏 /wahscan。`}
+            {freshness.stale && staleScanHint()}
             {bundle.phaseMismatch && `市场已从${phaseLabels[bundle.generationPhase]}推移到${phaseLabels[phase]}；制造计划需要重新扫描后再生成。`}
           </div>
         </Panel>

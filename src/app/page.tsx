@@ -13,7 +13,8 @@ import { loadDemandEvents, upcomingDemandEvents } from "@/lib/events-calendar";
 import { buildProductionPlan } from "@/lib/production-plan";
 import { recipeToLp } from "@/lib/recipes";
 import { getMarketBundle } from "@/lib/market-read";
-import { describeFreshness } from "@/lib/freshness";
+import { describeFreshness, staleScanHint } from "@/lib/freshness";
+import { seriesSpanDays } from "@/lib/item-series";
 import { fillBasisLabels } from "@/lib/fill";
 import { phaseDescription, phaseLabels } from "@/lib/phase";
 import { resolveBudgetCopper } from "@/lib/config";
@@ -105,9 +106,7 @@ export default async function Home() {
   );
   const gainers = [...movers].sort((left, right) => right.changePercent - left.changePercent).slice(0, 5);
   const losers = [...movers].sort((left, right) => left.changePercent - right.changePercent).slice(0, 5);
-  const seriesDays = seriesStats.firstAt && seriesStats.lastAt
-    ? Math.max(1, Math.ceil((seriesStats.lastAt.getTime() - seriesStats.firstAt.getTime()) / DAY_MS))
-    : 0;
+  const seriesDays = seriesSpanDays(seriesStats.firstAt, seriesStats.lastAt);
 
   return (
     <AppShell active="/">
@@ -130,7 +129,7 @@ export default async function Home() {
         {(actionsBlocked || gapWarning) && (
           <div className="mb-3 flex flex-wrap items-center gap-3 border border-terminal-red/60 bg-terminal-panel px-4 py-3 font-mono text-xs text-terminal-red">
             <AlertTriangle size={15} />
-            {freshness.stale && <span>最新扫描已超过 {SCAN_INTERVAL_MINUTES} 分钟；进游戏 /wahscan。</span>}
+            {freshness.stale && <span>{staleScanHint()}</span>}
             {bundle.phaseMismatch && <span>市场已从{phaseLabels[bundle.generationPhase]}推移到{phaseLabels[phase]}；行动清单需要重新扫描后再生成。</span>}
             {gapWarning && <span>扫描缺口 {bundle.gapMinutes} 分钟。</span>}
           </div>

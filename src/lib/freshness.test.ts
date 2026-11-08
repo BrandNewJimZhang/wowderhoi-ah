@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { describeFreshness } from "@/lib/freshness";
+import { describeFreshness, staleScanHint } from "@/lib/freshness";
+import { SCAN_STALE_MINUTES } from "@/lib/market-rules";
 
 const now = new Date("2026-07-24T12:00:00Z");
 const minutesAgo = (minutes: number) => new Date(now.getTime() - minutes * 60_000);
@@ -22,5 +23,12 @@ describe("describeFreshness", () => {
 
   it("labels days as always stale", () => {
     expect(describeFreshness(minutesAgo(2 * 24 * 60), now)).toEqual({ label: "2 天前", stale: true });
+  });
+});
+
+describe("staleScanHint", () => {
+  it("names the threshold that marks a scan stale, not the scan cadence", () => {
+    expect(staleScanHint()).toContain(`${SCAN_STALE_MINUTES} 分钟`);
+    expect(staleScanHint()).toContain("/wahscan");
   });
 });

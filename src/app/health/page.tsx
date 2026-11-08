@@ -8,7 +8,8 @@ import {
   getImportRuns,
   getSeriesStats
 } from "@/lib/repositories";
-import { describeFreshness } from "@/lib/freshness";
+import { describeFreshness, staleScanHint } from "@/lib/freshness";
+import { seriesSpanDays } from "@/lib/item-series";
 import { phaseLabels } from "@/lib/phase";
 import {
   CALIBRATION_GENERATIONS_KEPT,
@@ -47,9 +48,7 @@ export default async function HealthPage() {
     : [{ items: 0, points: 0, firstAt: null, lastAt: null }, { total: 0, catalogue: 0, scanOwned: 0, placeholders: 0, withIcon: 0, build: null }, 0, []];
   const freshness = describeFreshness(bundle.latestScanAt, new Date());
   const latestRun = runs[0];
-  const seriesDays = series.firstAt && series.lastAt
-    ? Math.max(1, Math.round((series.lastAt.getTime() - series.firstAt.getTime()) / (24 * 60 * 60 * 1000)))
-    : 0;
+  const seriesDays = seriesSpanDays(series.firstAt, series.lastAt);
   const gapWarning = bundle.gapMinutes !== null && bundle.gapMinutes > 2 * SCAN_INTERVAL_MINUTES;
   const database = databaseSize();
 
@@ -76,7 +75,7 @@ export default async function HealthPage() {
 
       {(freshness.stale || gapWarning) && (
         <div className="mb-3 border border-terminal-red/60 bg-terminal-panel px-4 py-3 font-mono text-xs text-terminal-red">
-          {freshness.stale ? `最新扫描已超过 ${SCAN_INTERVAL_MINUTES} 分钟；进游戏 /wahscan。` : ""}
+          {freshness.stale ? staleScanHint() : ""}
           {gapWarning ? ` 扫描缺口 ${bundle.gapMinutes} 分钟，超过 2 个扫描间隔。` : ""}
         </div>
       )}

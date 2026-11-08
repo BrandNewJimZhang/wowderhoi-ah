@@ -6,6 +6,13 @@ import { SCAN_STALE_MINUTES } from "@/lib/market-rules";
 
 type Freshness = { label: string; stale: boolean };
 
+// The banner every stale page shows. It names the threshold `describeFreshness`
+// applies, not the scan cadence: restating the cadence in the text told the
+// player 15 minutes while the flag only flips at 30.
+export function staleScanHint(): string {
+  return `最新扫描已超过 ${SCAN_STALE_MINUTES} 分钟；进游戏 /wahscan。`;
+}
+
 export function describeFreshness(latest: Date | null, now: Date): Freshness {
   if (!latest) return { label: "无数据", stale: true };
   const minutes = Math.floor((now.getTime() - latest.getTime()) / 60_000);
