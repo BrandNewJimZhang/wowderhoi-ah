@@ -236,6 +236,9 @@ function Ledger.replay(events, market)
       for _, output in ipairs(outputs) do
         addLot(state, output.itemId, output.qty or 0, unitCost, event.t)
       end
+    elseif kind == "adopt" then
+      -- An annotation, not a trade: the terminal reads it to attribute a
+      -- later sale, and the ledger has no state to change.
     else
       state.errors[#state.errors + 1] = { t = event.t, kind = "unknown_event", name = tostring(kind) }
     end

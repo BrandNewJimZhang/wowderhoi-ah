@@ -68,6 +68,24 @@ describe("decision calibration", () => {
     expect(bucket.filled).toBe(0);
   });
 
+  it("attributes an adopted sale by identity and a legacy one by window", () => {
+    const adopted = bucketPredictions(
+      [{ ...buy({ at: at(0), fillProb: 0.3 }), decisionId: "d1" }],
+      [{ ...sale({ at: at(100) }), decisionId: "d1" }]
+    ).find((entry) => entry.label === "20–40%")!;
+    expect(adopted.filled).toBe(1);
+    expect(adopted.linked).toBe(1);
+    expect(adopted.window).toBe(0);
+
+    const legacy = bucketPredictions(
+      [buy({ at: at(0), fillProb: 0.3 })],
+      [sale({ at: at(10) })]
+    ).find((entry) => entry.label === "20–40%")!;
+    expect(legacy.filled).toBe(1);
+    expect(legacy.linked).toBe(0);
+    expect(legacy.window).toBe(1);
+  });
+
   it("marks buckets below the sample floor as insufficient", () => {
     const decisions = Array.from({ length: 10 }, (_, index) => buy({ at: at(index), fillProb: 0.9 }));
     const buckets = bucketPredictions(decisions, []);

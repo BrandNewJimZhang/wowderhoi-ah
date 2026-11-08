@@ -16,6 +16,9 @@ type CalibrationDecision = {
   at: Date;
   fillProb: number | null;
   fillBasis: string | null;
+  // Present once the player adopted the recommendation; the sale then
+  // carries the same id and is a direct match, not a window guess.
+  decisionId?: string | null;
 };
 
 type CalibrationTrade = {
@@ -23,6 +26,7 @@ type CalibrationTrade = {
   realizedAt: Date;
   inferred: boolean;
   channel: string;
+  decisionId?: string | null;
 };
 
 export type CalibrationBucket = {
@@ -31,6 +35,11 @@ export type CalibrationBucket = {
   high: number;
   decisions: number;
   filled: number;
+  // How the fill was attributed: identity (adopted) vs the historical
+  // same-item window. The review must not present the second as a clean
+  // adoption rate.
+  linked: number;
+  window: number;
   rate: number; // confirmed fills / decisions
   enoughSamples: boolean;
 };
@@ -66,6 +75,8 @@ export function bucketPredictions(
     label: `${Math.round(low * 100)}–${Math.round(Math.min(BOUNDS[index + 1], 1) * 100)}%`,
     decisions: 0,
     filled: 0,
+    linked: 0,
+    window: 0,
     rate: 0,
     enoughSamples: false
   }));
@@ -74,12 +85,23 @@ export function bucketPredictions(
       ?? buckets[buckets.length - 1];
     bucket.decisions += 1;
     const start = decision.at.getTime();
-    const filled = confirmed.some((trade) =>
+    // An adopted decision owns a sale through its id; the window is only
+    // the fallback for the decisions written before adoption existed.
+    const linked = decision.decisionId
+      ? confirmed.some((trade) => trade.decisionId === decision.decisionId)
+      : false;
+    const windowMatch = !linked && confirmed.some((trade) =>
       trade.itemId === decision.itemId
       && trade.realizedAt.getTime() >= start
       && trade.realizedAt.getTime() <= start + windowMs
     );
-    if (filled) bucket.filled += 1;
+    if (linked) {
+      bucket.filled += 1;
+      bucket.linked += 1;
+    } else if (windowMatch) {
+      bucket.filled += 1;
+      bucket.window += 1;
+    }
   }
   for (const bucket of buckets) {
     bucket.rate = bucket.decisions > 0 ? bucket.filled / bucket.decisions : 0;

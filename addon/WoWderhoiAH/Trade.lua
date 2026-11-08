@@ -859,6 +859,7 @@ local function createTradeFrame()
     renderRows()
     if #actionRows > 0 then
       chatMessage(string.format(L.ACTIONS_FOUND, #actionRows))
+      chatMessage(L.ACTIONS_ADOPT_HINT)
     else
       chatMessage(L.ACTIONS_EMPTY)
     end

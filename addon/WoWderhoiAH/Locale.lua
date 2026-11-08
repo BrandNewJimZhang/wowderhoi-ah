@@ -186,6 +186,10 @@ local L = {
   STATUS_MAIL = " | mail in transit %s",
   COST_USAGE = "Usage: /wahcost <itemId> <qty> <paid copper> — records a vendor sale the client does not report",
   COST_RECORDED = "Booked a vendor sale: %d x item %d for %s.",
+  ADOPT_USAGE = "Usage: /wahadopt <itemId> buy|sell, or /wahadopt <full decision id>",
+  ADOPT_NO_SCAN = "Adopt a decision after a scan: the id is built from the latest scannedAt.",
+  ADOPT_RECORDED = "Adopted decision %s. The next matching sale is attributed to it.",
+  ACTIONS_ADOPT_HINT = "Adopt one with /wahadopt <itemId> buy|sell.",
 }
 
 if GetLocale() == "zhCN" then
@@ -363,6 +367,10 @@ if GetLocale() == "zhCN" then
   L.STATUS_MAIL = " | 在途 %s"
   L.COST_USAGE = "用法：/wahcost <物品ID> <数量> <卖得铜币>——补记客户端不会上报的卖店交易"
   L.COST_RECORDED = "已记录卖店：%d 件物品 %d，共 %s。"
+  L.ADOPT_USAGE = "用法：/wahadopt <物品ID> buy|sell，或 /wahadopt <完整决策ID>"
+  L.ADOPT_NO_SCAN = "请先完成一次扫描，再采纳决策：ID 由最近一次 scannedAt 生成。"
+  L.ADOPT_RECORDED = "已采纳决策 %s；之后匹配的成交会归因到它。"
+  L.ACTIONS_ADOPT_HINT = "用 /wahadopt <物品ID> buy|sell 采纳其中一条。"
 end
 
 WAH.L = L

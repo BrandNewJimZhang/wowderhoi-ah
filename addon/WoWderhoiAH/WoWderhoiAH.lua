@@ -1690,6 +1690,41 @@ SlashCmdList["WOWDERHOIAHCAPTURE"] = setCapture
 -- manual: record it on the sender with `out`, note the printed cost, and
 -- record it on the receiver with `in <unit cost>`. Recording it on one side
 -- only is worse than not recording it: the books would disagree.
+-- The terminal's stable decision identity, reproduced in game so /wahadopt
+-- can name one. Epoch seconds, not an ISO date: this side already has the
+-- scan timestamp and Lua cannot format ISO without a second implementation.
+function WAH.decisionId(itemId, kind)
+  local scan = WoWderhoiAH_ScanData
+  if type(scan) ~= "table" or type(scan.scannedAt) ~= "number" then return nil end
+  return string.format("%s|%s|%d:%d:%s",
+    tostring(scan.server or ""), tostring(scan.faction or ""),
+    scan.scannedAt, tonumber(itemId) or 0, tostring(kind or ""))
+end
+
+SLASH_WOWDERHOIAHADOPT1 = "/wahadopt"
+SlashCmdList["WOWDERHOIAHADOPT"] = function(input)
+  local raw = (input or ""):match("^%s*(.-)%s*$")
+  if raw == "" then
+    chatMessage(L.ADOPT_USAGE)
+    return
+  end
+  local itemId, kind = raw:match("^(%d+)%s+(%a+)$")
+  local id = raw
+  if itemId then
+    if kind ~= "buy" and kind ~= "sell" then
+      chatMessage(L.ADOPT_USAGE)
+      return
+    end
+    id = WAH.decisionId(tonumber(itemId), kind)
+    if not id then
+      chatMessage(L.ADOPT_NO_SCAN)
+      return
+    end
+  end
+  WAH.recordEvent({ k = "adopt", id = id })
+  chatMessage(string.format(L.ADOPT_RECORDED, id))
+end
+
 -- Vendor sales have no per-item client event (the sales UI reports a
 -- localized summary line, not a fact this addon can attribute). The plan
 -- is to record nothing automatically rather than guess; this command is

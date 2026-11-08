@@ -13,6 +13,9 @@ export type LoggedDecision = {
   kind: string; // buy | sell
   at: Date;
   propensity?: number | null; // P(logging policy chose this action); default 1
+  // The stable identity shared with the adopted sale, when the player
+  // adopted this recommendation.
+  decisionId?: string | null;
 };
 
 export type RealizedTrade = {
@@ -20,6 +23,7 @@ export type RealizedTrade = {
   pnl: number;
   realizedAt: Date;
   inferred?: boolean;
+  decisionId?: string | null;
 };
 
 type TargetPolicy = (decision: LoggedDecision) => boolean;
@@ -27,6 +31,8 @@ type TargetPolicy = (decision: LoggedDecision) => boolean;
 type PolicyEstimate = {
   estimate: number; // weighted mean P&L of matched trades
   matched: number;
+  // Matches made through an adopted decision id, not a same-item window.
+  identityMatched: number;
   decisions: number;
   coverage: number; // matched / decisions
   effectiveSampleSize: number;
@@ -47,17 +53,25 @@ export function evaluatePolicy(
   let sumSquares = 0;
   let weightedPnl = 0;
   let matched = 0;
+  let identityMatched = 0;
   let truncated = 0;
   for (const decision of decisions) {
     if (!policy(decision) || decision.itemId === null) continue;
-    const tradeIndex = sortedTrades.findIndex((trade, index) =>
-      !used.has(index)
-      && trade.itemId === decision.itemId
-      && trade.realizedAt.getTime() >= decision.at.getTime()
-      && trade.realizedAt.getTime() - decision.at.getTime() <= windowMs
-    );
+    // Identity wins: an adopted decision names the sale it produced.
+    const identityIndex = decision.decisionId
+      ? sortedTrades.findIndex((trade, index) => !used.has(index) && trade.decisionId === decision.decisionId)
+      : -1;
+    const tradeIndex = identityIndex !== -1
+      ? identityIndex
+      : sortedTrades.findIndex((trade, index) =>
+          !used.has(index)
+          && trade.itemId === decision.itemId
+          && trade.realizedAt.getTime() >= decision.at.getTime()
+          && trade.realizedAt.getTime() - decision.at.getTime() <= windowMs
+        );
     if (tradeIndex === -1) continue;
     used.add(tradeIndex);
+    if (identityIndex !== -1) identityMatched += 1;
     const propensity = decision.propensity && decision.propensity > 0 ? decision.propensity : 1;
     const rawWeight = 1 / propensity;
     const weight = Math.min(rawWeight, maxWeight);
@@ -70,6 +84,7 @@ export function evaluatePolicy(
   return {
     estimate: weightSum > 0 ? weightedPnl / weightSum : 0,
     matched,
+    identityMatched,
     decisions: decisions.length,
     coverage: decisions.length > 0 ? matched / decisions.length : 0,
     effectiveSampleSize: sumSquares > 0 ? (weightSum * weightSum) / sumSquares : 0,

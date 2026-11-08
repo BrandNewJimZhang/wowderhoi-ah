@@ -22,6 +22,16 @@ describe("evaluatePolicy", () => {
     expect(estimate.effectiveSampleSize).toBeCloseTo(1, 5);
   });
 
+  it("attributes an adopted trade by identity even outside the window", () => {
+    const estimate = evaluatePolicy(
+      [{ ...decisions[0], decisionId: "d1" }],
+      [{ itemId: 1, pnl: 100, realizedAt: new Date(start.getTime() + 30 * DAY), decisionId: "d1" }],
+      () => true
+    );
+    expect(estimate.matched).toBe(1);
+    expect(estimate.identityMatched).toBe(1);
+  });
+
   it("weights by the logged propensity and clips extreme weights", () => {
     const estimate = evaluatePolicy(
       [{ ...decisions[0], propensity: 0.1 }],

@@ -13,6 +13,7 @@ import { fillBasisLabel } from "@/lib/fill";
 import { summarizeTrades, tradeChannelLabel } from "@/lib/trade-summary";
 import { Coins } from "@/components/coins";
 import { Panel, PanelHeader } from "@/components/ui/panel";
+import { AppShell } from "@/components/app-shell";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +38,7 @@ export default async function ReviewPage() {
     // would otherwise drop the fills of older decisions.
     prisma.trade.findMany({
       where: { ...marketWhere, realizedAt: { gte: calibrationSince } },
-      select: { itemId: true, realizedAt: true, inferred: true, channel: true }
+      select: { itemId: true, realizedAt: true, inferred: true, channel: true, decisionId: true }
     }),
     getPositions(scope)
   ]);
@@ -51,16 +52,19 @@ export default async function ReviewPage() {
     itemId: trade.itemId,
     pnl: trade.pnl,
     realizedAt: trade.realizedAt,
-    inferred: false
+    inferred: false,
+    decisionId: trade.decisionId
   }));
   const decay = alphaDecay(realizedTrades);
   const loggedDecisions = decisions.map((decision) => ({
     id: decision.id,
     itemId: decision.itemId,
     kind: decision.kind,
-    at: decision.at
+    at: decision.at,
+    decisionId: decision.decisionId
   }));
   const policyEstimate = evaluatePolicy(loggedDecisions, realizedTrades, () => true);
+  const adoptedCount = decisions.filter((decision) => decision.adoptedAt !== null).length;
   // Predicted fill chance vs confirmed sells, bucketed. A decision counts
   // as filled when a confirmed sale of the same item lands inside its
   // window; the player chooses what to act on, so this is descriptive.
@@ -70,10 +74,13 @@ export default async function ReviewPage() {
       kind: decision.kind,
       at: decision.at,
       fillProb: decision.fillProb,
-      fillBasis: decision.fillBasis
+      fillBasis: decision.fillBasis,
+      decisionId: decision.decisionId
     })),
     calibrationTrades
   );
+  const linkedFills = calibration.reduce((sum, bucket) => sum + bucket.linked, 0);
+  const windowFills = calibration.reduce((sum, bucket) => sum + bucket.window, 0);
   // Largest committed position, not whatever order the database returned:
   // the experiment section must name the same item on every render.
   const focusPosition = Object.entries(positions).sort((left, right) => right[1].cost - left[1].cost)[0];
@@ -101,7 +108,8 @@ export default async function ReviewPage() {
   }
 
   return (
-    <main className="terminal-grid min-h-screen bg-terminal-bg p-3 text-slate-200">
+    <AppShell active="C:/Program Files/Git/review">
+      <main className="terminal-grid min-h-screen bg-terminal-bg p-3 text-slate-200">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border border-terminal-border bg-terminal-panel px-4 py-3">
         <div>
           <div className="font-mono text-xs uppercase text-terminal-muted">复盘与校准</div>
@@ -140,6 +148,7 @@ export default async function ReviewPage() {
 
       <div className="mb-3 flex flex-wrap items-center gap-4 border border-terminal-border bg-terminal-panel px-3 py-2 font-mono text-[11px] text-terminal-muted">
         <span>决策匹配：{policyEstimate.matched} / {policyEstimate.decisions}（覆盖率 {(policyEstimate.coverage * 100).toFixed(0)}%）</span>
+        <span>已采纳 {adoptedCount} 条 · 按 id 归因 {linkedFills} 笔 vs 按窗口 {windowFills} 笔</span>
         <span>
           匹配后平均净利 {policyEstimate.matched > 0 ? <Coins copper={policyEstimate.estimate} /> : "—"}
         </span>
@@ -179,7 +188,10 @@ export default async function ReviewPage() {
                     <span className={decision.kind === "buy" ? "text-terminal-green" : "text-terminal-amber"}>{decision.kind === "buy" ? "买入" : "卖出"}</span>
                     {" "}{nameById.get(decision.itemId ?? 0) ?? `#${decision.itemId}`}
                   </span>
-                  <span className="text-terminal-muted">{decision.at.toISOString().slice(5, 16).replace("T", " ")} · {phaseLabels[decision.phase as keyof typeof phaseLabels] ?? decision.phase}</span>
+                  <span className="flex items-center gap-2 text-terminal-muted">
+                    {decision.adoptedAt !== null && <span className="text-terminal-green">已采纳</span>}
+                    {decision.at.toISOString().slice(5, 16).replace("T", " ")} · {phaseLabels[decision.phase as keyof typeof phaseLabels] ?? decision.phase}
+                  </span>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 text-[11px] text-terminal-muted">
                   {decision.expectedNet !== null && <span>预期 <Coins copper={decision.expectedNet} /></span>}
@@ -288,5 +300,6 @@ export default async function ReviewPage() {
         </div>
       </Panel>
     </main>
+    </AppShell>
   );
 }
