@@ -96,8 +96,6 @@ export function buildCoreInput(
       demandPrior: demandFor(signal.category, history.subCategory),
       tiers: parseTiers(latest.topTiers, { p: signal.minPrice, q: Math.max(signal.quantity, 1) }),
       tierTruncated: signal.tierTruncated,
-      // The scan-time stamp is the history definition both runtimes share;
-      // sellSamples is the terminal's own fallback for older rows.
       // The scanner owns the history series and stamps the count; the
       // terminal's 48-snapshot page is a display window, not a sample
       // authority. Falling back to it let the two runtimes judge the same

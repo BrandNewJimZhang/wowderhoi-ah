@@ -48,11 +48,12 @@ export type MarketSignal = {
   sellRef: number; // median sell front over the phase window
   sellSamples: number;
   // History points inside the phase window at scan time, stamped by the
-  // scanner. Null on rows imported before the column existed; the core
-  // falls back to sellSamples for those.
+  // scanner. Null on rows imported before the column existed; the core then
+  // sees no stamped history for that row.
   historySamples: number | null;
-  // Hours the stamped samples span; null on rows imported before the field
-  // existed, which the core treats as unknown coverage (zero).
+  // Hours those points span; null on rows imported before the field existed,
+  // where the core applies the sample floor alone instead of inventing a
+  // coverage of zero.
   historySpanHours: number | null;
   // The persisted ladder is a truncated top-of-book; the queue behind a
   // listing above the last visible rung is larger than the rows shown.

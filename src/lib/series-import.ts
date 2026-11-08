@@ -175,11 +175,12 @@ export type SeriesBackfill = {
 // Every retained timestamp older than the current scan and absent from the
 // database is a scan the terminal never saw. Only the newest `limit` are
 // delivered so one import stays bounded; the rest remain in the addon file.
+// The caller owns `limit` because it also reports the cap to the operator.
 export function selectSeriesBackfill(
   series: AddonSeries,
   existingTimestamps: Iterable<number>,
   currentScanAt: number,
-  limit = 16
+  limit: number
 ): SeriesBackfill {
   const existing = new Set(existingTimestamps);
   const missing = series.timestamps.filter(

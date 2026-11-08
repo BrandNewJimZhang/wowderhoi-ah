@@ -38,7 +38,6 @@ function debugprofilestop()
 end
 
 function bed.setFrameCost(ms) stepCostMs = ms end
-function bed.resetProfiler() profilerMs = 0 end
 
 -- Advance the wall clock and run everything that became due: timers first,
 -- then ticker intervals. Callbacks may schedule more work, so the loop runs
@@ -997,11 +996,6 @@ function bed.wrappingCells()
 end
 
 function bed.lastStats() return WowTest.ns.lastScanStats end
-
-function bed.requestScan(origin)
-  if WowTest.ns.requestScan then return WowTest.ns.requestScan(origin or "manual") end
-  return WowTest.ns.startScan()
-end
 
 function bed.lastChat() return bed.plain(bed.chat[#bed.chat] or "") end
 function bed.anyChat(text)
