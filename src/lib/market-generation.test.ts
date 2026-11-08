@@ -3,7 +3,8 @@ import type { AddonScan, AddonScanItem } from "@/lib/addon-scan";
 import { decisionIdFor } from "@/lib/decision-id";
 import type { MarketQuote, SignalItem } from "@/lib/market-data";
 import type { SeriesPoint } from "@/lib/item-series";
-import { buildGenerationPlan, withCoreRows, type GenerationInput } from "@/lib/market-generation";
+import { buildGenerationPlan, decisionRowsFrom, withCoreRows, type GenerationInput } from "@/lib/market-generation";
+import type { CoreOutput } from "@/lib/core/types";
 import { signalFixture } from "@/lib/signal-fixture";
 import type { StoredSignalRow } from "@/lib/signal-row";
 
@@ -138,6 +139,51 @@ function input(overrides: Partial<GenerationInput> = {}): GenerationInput {
     ...overrides
   };
 }
+
+describe("decisionRowsFrom", () => {
+  const identity = { realm: "Realm", faction: "Alliance", scannedAt: SCANNED_AT };
+  const core = (actions: CoreOutput["actions"]): CoreOutput => ({
+    phase: "ignition",
+    rows: [],
+    opportunities: [],
+    actions,
+    diagnostics: { excluded: {}, unfunded: { kelly: 0, exposure: 0, purse: 0, depth: 0 } }
+  });
+
+  it("gives every action the identity /wahadopt uses and its own fill fields", () => {
+    const rows = decisionRowsFrom(core([
+      {
+        kind: "buy", itemId: 1, name: "梦叶草", qty: 5, maxUnitPrice: 180, unitPrice: 170,
+        expectedNet: 500, netPerMinute: 10, fillProb: 0.6, fillBasis: "proxy",
+        allocQty: 4, allocUnitPrice: 160, confidence: "medium", exit: "auction", reason: "价差"
+      },
+      { kind: "sell", itemId: 2, qty: 3, price: 400, expectedNet: 1200, netPerMinute: 20, reason: "出清" }
+    ]), identity);
+    expect(rows[0]).toMatchObject({
+      decisionId: decisionIdFor({ ...identity, itemId: 1, kind: "buy" }),
+      fillProb: 0.6,
+      fillBasis: "proxy",
+      allocQty: 4,
+      allocUnitPrice: 160
+    });
+    // A sell carries no fill prediction: it is the sale, not an estimate.
+    expect(rows[1]).toMatchObject({
+      decisionId: decisionIdFor({ ...identity, itemId: 2, kind: "sell" }),
+      fillProb: null,
+      allocQty: 3,
+      allocUnitPrice: 400
+    });
+  });
+
+  it("refuses two actions that would share one identity", () => {
+    const buy = {
+      kind: "buy" as const, itemId: 1, name: "梦叶草", qty: 1, maxUnitPrice: 10, unitPrice: 9,
+      expectedNet: 1, netPerMinute: 1, fillProb: 0.5, fillBasis: "prior" as const,
+      allocQty: 1, allocUnitPrice: 9, confidence: "low" as const, exit: "auction" as const, reason: "x"
+    };
+    expect(() => decisionRowsFrom(core([buy, buy]), identity)).toThrow(/Duplicate decision identity/);
+  });
+});
 
 describe("buildGenerationPlan", () => {
   it("materialises the current book, the signals and the core output", () => {

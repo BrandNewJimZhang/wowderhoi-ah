@@ -4,13 +4,11 @@ import { prisma } from "@/lib/prisma";
 import { normalizeAddonScan, type AddonScan } from "@/lib/addon-scan";
 import { ensureScanItems, scanPlaceholderItem } from "@/lib/scan-import";
 import { mergeSeriesByItem, parseAddonSeries, scanSeriesPoints, type AddonSeries } from "@/lib/item-series";
-import { buildGenerationPlan, seriesRowsFrom, withCoreRows, type DecisionRow } from "@/lib/market-generation";
+import { buildGenerationPlan, decisionRowsFrom, seriesRowsFrom, withCoreRows } from "@/lib/market-generation";
 import { replaceDecisions, replaceSeries, replaceSignals, writeGeneration } from "@/lib/import-store";
 import { buildCoreInput } from "@/lib/core/from-market";
 import { runCore } from "@/lib/core/run-core";
-import type { CoreOutput } from "@/lib/core/types";
 import type { MarketPhase } from "@/lib/market-rules";
-import { decisionIdFor } from "@/lib/decision-id";
 import { adoptionTimes, bookForCharacter, parseJournal, replayJournal, type JournalEvent, type ReplayState } from "@/lib/journal";
 import { linkTrades, mergeAdoptedDecisions, type AdoptedDecision, type StoredAdoption } from "@/lib/decision-linking";
 import { ownSalesFromRows } from "@/lib/own-sales";
@@ -81,34 +79,6 @@ function ownSalesOf(replay: ReplayState, at: Date) {
       })),
     at
   );
-}
-
-function decisionRows(
-  core: CoreOutput,
-  scan: AddonScan,
-  adopted: Map<string, Date>
-): Array<DecisionRow & { adoptedAt: Date | null }> {
-  return core.actions.map((action) => {
-    const decisionId = decisionIdFor({
-      realm: scan.server,
-      faction: scan.faction,
-      scannedAt: scan.scannedAt,
-      itemId: action.itemId,
-      kind: action.kind
-    });
-    return {
-      decisionId,
-      itemId: action.itemId,
-      kind: action.kind,
-      reason: action.reason,
-      expectedNet: action.expectedNet,
-      fillProb: action.kind === "buy" ? action.fillProb : null,
-      fillBasis: action.kind === "buy" ? action.fillBasis : null,
-      allocQty: action.kind === "buy" ? action.allocQty : action.qty,
-      allocUnitPrice: action.kind === "buy" ? action.allocUnitPrice : action.price,
-      adoptedAt: adopted.get(decisionId) ?? null
-    };
-  });
 }
 
 async function adoptedDecisionsFor(
@@ -302,10 +272,12 @@ export async function POST(request: Request) {
     const previousAdoption = new Map(
       existingDecisions.filter((row) => row.decisionId).map((row) => [row.decisionId as string, row.adoptedAt])
     );
+    // The journal is fresher than the stored adoption time; a rebuild keeps
+    // whichever evidence is available so a replay cannot drop an adoption.
     const rows = core
-      ? decisionRows(core, scan, adoptions).map((row) => ({
+      ? decisionRowsFrom(core, { realm: scan.server, faction: scan.faction, scannedAt: scan.scannedAt }).map((row) => ({
           ...row,
-          adoptedAt: row.adoptedAt ?? previousAdoption.get(row.decisionId) ?? null
+          adoptedAt: adoptions.get(row.decisionId) ?? previousAdoption.get(row.decisionId) ?? null
         }))
       : [];
     // Adoptions are loaded even when the generation has no materialised

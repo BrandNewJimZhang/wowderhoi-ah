@@ -143,6 +143,46 @@ function signalItemOf(itemId: number, items: Map<number, SignalItem>): SignalIte
   return item;
 }
 
+type DecisionIdentity = { realm: string; faction: string; scannedAt: Date };
+
+// The core's actions are the only source of decisions, and the import writes
+// them from two paths: a fresh scan and the journal-only replay of an
+// existing generation. Both must name and size them identically, or a
+// replayed scan would attribute a sale to an identity the first import
+// never wrote.
+export function decisionRowsFrom(core: CoreOutput, identity: DecisionIdentity): DecisionRow[] {
+  const rows: DecisionRow[] = [];
+  const seen = new Set<string>();
+  for (const action of core.actions) {
+    const decisionId = decisionIdFor({
+      realm: identity.realm,
+      faction: identity.faction,
+      scannedAt: identity.scannedAt,
+      itemId: action.itemId,
+      kind: action.kind
+    });
+    // The core emits at most one action per item and kind; a duplicate id
+    // would mean two recommendations share an identity, which the review
+    // could not attribute. Fail loudly instead of silently keeping one.
+    if (seen.has(decisionId)) {
+      throw new Error(`Duplicate decision identity ${decisionId}`);
+    }
+    seen.add(decisionId);
+    rows.push({
+      decisionId,
+      itemId: action.itemId,
+      kind: action.kind,
+      reason: action.reason,
+      expectedNet: action.expectedNet,
+      fillProb: action.kind === "buy" ? action.fillProb : null,
+      fillBasis: action.kind === "buy" ? action.fillBasis : null,
+      allocQty: action.kind === "buy" ? action.allocQty : action.qty,
+      allocUnitPrice: action.kind === "buy" ? action.allocUnitPrice : action.price
+    });
+  }
+  return rows;
+}
+
 function previousPointSeconds(points: readonly SeriesPoint[], scanSeconds: number): number | null {
   for (let index = points.length - 1; index >= 0; index -= 1) {
     if (points[index].t < scanSeconds) return points[index].t;
@@ -243,33 +283,11 @@ export function buildGenerationPlan(input: GenerationInput): GenerationPlan {
     row.data.coreRow = coreByItem.get(row.itemId) ?? null;
   }
 
-  const decisionsById = new Map<string, DecisionRow>();
-  for (const action of core.actions) {
-    const decisionId = decisionIdFor({
-      realm: scan.server,
-      faction: scan.faction,
-      scannedAt: scan.scannedAt,
-      itemId: action.itemId,
-      kind: action.kind
-    });
-    // The core emits at most one action per item and kind; a duplicate id
-    // would mean two recommendations share an identity, which the review
-    // could not attribute. Fail loudly instead of silently keeping one.
-    if (decisionsById.has(decisionId)) {
-      throw new Error(`Duplicate decision identity ${decisionId}`);
-    }
-    decisionsById.set(decisionId, {
-      decisionId,
-      itemId: action.itemId,
-      kind: action.kind,
-      reason: action.reason,
-      expectedNet: action.expectedNet,
-      fillProb: action.kind === "buy" ? action.fillProb : null,
-      fillBasis: action.kind === "buy" ? action.fillBasis : null,
-      allocQty: action.kind === "buy" ? action.allocQty : action.qty,
-      allocUnitPrice: action.kind === "buy" ? action.allocUnitPrice : action.price
-    });
-  }
+  const decisions = decisionRowsFrom(core, {
+    realm: scan.server,
+    faction: scan.faction,
+    scannedAt: scan.scannedAt
+  });
 
   const series = seriesRowsFrom(merged);
 
@@ -287,7 +305,7 @@ export function buildGenerationPlan(input: GenerationInput): GenerationPlan {
     quotes: Array.from(quoteById.entries()).map(([itemId, quote]) => ({ itemId, quote })),
     signals,
     series,
-    decisions: Array.from(decisionsById.values()),
+    decisions,
     seriesPointCount: series.reduce((sum, row) => sum + row.pointCount, 0)
   };
 }
