@@ -174,6 +174,8 @@
   relevance, matching the in-game box. The terminal never passed the
   ranker's `booked` flag, so a delisted row with a large last-listed
   quantity could win a same-name tie.
+- The health page reads the imported catalogue build from the item rows
+  instead of printing a hardcoded client version.
 - The production image ships `addon/WoWderhoiAH` so an import inside the
   container can load the shared `Core.lua`; the bundler does not trace that
   filesystem read.

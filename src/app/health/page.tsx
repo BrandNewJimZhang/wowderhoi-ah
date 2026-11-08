@@ -39,7 +39,7 @@ export default async function HealthPage() {
         getGenerationCount(scope.id),
         getImportRuns(scope.id, 20)
       ])
-    : [{ items: 0, points: 0, firstAt: null, lastAt: null }, { total: 0, catalogue: 0, scanOwned: 0, placeholders: 0, withIcon: 0 }, 0, []];
+    : [{ items: 0, points: 0, firstAt: null, lastAt: null }, { total: 0, catalogue: 0, scanOwned: 0, placeholders: 0, withIcon: 0, build: null }, 0, []];
   const freshness = describeFreshness(bundle.latestSnapshotAt, new Date());
   const latestRun = runs[0];
   const seriesDays = series.firstAt && series.lastAt
@@ -150,7 +150,7 @@ export default async function HealthPage() {
           <Panel>
             <PanelHeader title="数据来源" />
             <div className="space-y-2 p-3 font-mono text-[11px] text-terminal-muted">
-              <p>物品静态事实：无限图鉴 wuxianwow.com，构建 {catalogue.total > 0 ? "1.60.1.70862" : "未导入"}。</p>
+              <p>物品静态事实：无限图鉴 wuxianwow.com，构建 {catalogue.build ?? "未导入"}。</p>
               <p>市场观测与历史序列：游戏内 WoWderhoiAH 插件。</p>
               <p>账本：插件 Journal 重放；决策：共享 Core.lua 在导入时求值。</p>
             </div>

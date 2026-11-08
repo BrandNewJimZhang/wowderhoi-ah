@@ -225,12 +225,13 @@ export async function getImportRuns(marketId: string, limit = 20) {
 }
 
 export async function getCatalogueStats() {
-  const [total, catalogue, scanOwned, placeholders, withIcon] = await Promise.all([
+  const [total, catalogue, scanOwned, placeholders, withIcon, build] = await Promise.all([
     prisma.item.count(),
     prisma.item.count({ where: { catalogSource: CATALOG_SOURCE } }),
     prisma.item.count({ where: { catalogSource: SCAN_SOURCE } }),
     prisma.item.count({ where: { name: { startsWith: "#" } } }),
-    prisma.item.count({ where: { iconId: { not: null } } })
+    prisma.item.count({ where: { iconId: { not: null } } }),
+    prisma.item.findFirst({ where: { catalogSource: CATALOG_SOURCE }, select: { catalogBuild: true } })
   ]);
-  return { total, catalogue, scanOwned, placeholders, withIcon };
+  return { total, catalogue, scanOwned, placeholders, withIcon, build: build?.catalogBuild ?? null };
 }
