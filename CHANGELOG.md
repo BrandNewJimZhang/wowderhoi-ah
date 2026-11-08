@@ -174,6 +174,9 @@
   relevance, matching the in-game box. The terminal never passed the
   ranker's `booked` flag, so a delisted row with a large last-listed
   quantity could win a same-name tie.
+- The production image ships `addon/WoWderhoiAH` so an import inside the
+  container can load the shared `Core.lua`; the bundler does not trace that
+  filesystem read.
 - Fill calibration applies the prediction horizon to identity matches too.
   An adopted decision's sale four days later still carries the id, but it
   is not evidence about a 24-hour fill probability; only the same-item

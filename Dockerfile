@@ -17,5 +17,8 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/prisma ./prisma
+# The import path runs the shipped Core.lua from this directory; it is a
+# runtime asset, not build input the bundler traces.
+COPY --from=builder /app/addon ./addon
 EXPOSE 3000
 CMD ["npm", "start"]
