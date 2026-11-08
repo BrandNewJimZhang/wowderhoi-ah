@@ -10,7 +10,11 @@ import { buildMarketSignal } from "@/lib/analytics";
 import { buildCoreInput } from "@/lib/core/from-market";
 import { runCore } from "@/lib/core/run-core";
 import type { CoreInput } from "@/lib/core/types";
-import type { MarketQuote } from "@/lib/market-data";
+import type { MarketQuote, SignalItem } from "@/lib/market-data";
+import { buildGenerationPlan } from "@/lib/market-generation";
+import { filterSortSignals } from "@/lib/market-filter";
+import type { AddonScan, AddonScanItem } from "@/lib/addon-scan";
+import type { SeriesPoint } from "@/lib/item-series";
 import { solveProduction, type LpRecipe } from "@/lib/craft-lp";
 import { replayJournal, type JournalEvent } from "@/lib/journal";
 import { loadRecipeDataset, recipeToLp } from "@/lib/recipes";
@@ -278,6 +282,77 @@ describe("system performance gates", () => {
     const payloadBytes = Buffer.byteLength(JSON.stringify(payload), "utf8");
     expect(payloadBytes).toBeGreaterThan(0);
     expect(payloadBytes).toBeLessThan(budgets.scanPayloadBytes);
+  });
+
+  it("builds a 3,692-item generation with series inside the import gate", () => {
+    const COUNT = 3692;
+    const POINTS = 5;
+    const scanSeconds = Math.round(Date.now() / 1000 / 900) * 900;
+    const items = new Map<number, SignalItem>();
+    const series: Array<{ itemId: number; points: SeriesPoint[] }> = [];
+    const scanItems: AddonScanItem[] = [];
+    for (let index = 0; index < COUNT; index += 1) {
+      const itemId = 10_000 + index;
+      const sell = 100 + (index % 500);
+      items.set(itemId, {
+        itemId, name: `Item ${index}`, quality: "common", category: "商品", subCategory: "草药",
+        vendorPrice: 1, iconId: null
+      });
+      series.push({
+        itemId,
+        points: Array.from({ length: POINTS }, (_, step) => ({
+          t: scanSeconds - (POINTS - 1 - step) * 900,
+          minPrice: sell - 10, sellPrice: sell, quantity: 200, numAuctions: 10, event: false
+        }))
+      });
+      scanItems.push({
+        itemId, name: `Item ${index}`, quality: "common", category: "商品", subCategory: "草药",
+        marketType: "commodity", priced: true, minPrice: sell - 10, marketPrice: sell,
+        sellPrice: sell, p5Price: sell - 5, quantity: 200, numAuctions: 10, sellerCount: 4,
+        sellersInvisible: false, ownerVisible: false, sellerHHI: null, topSellerShare: null,
+        bidOnlyCount: 0, highestBid: 0, inferredSoldLow: 0, inferredSoldHigh: 0, flowObserved: true,
+        supplyGrowth: 0, historySamples: POINTS, historySpanHours: 1, vendorPrice: 1,
+        tiers: [{ p: sell - 10, q: 100 }, { p: sell, q: 100 }], tierTruncated: false,
+        expiring: { soon: 0, mid: 0, late: 0 }
+      });
+    }
+    const scan: AddonScan = {
+      scannedAt: new Date(scanSeconds * 1000), server: "R", faction: "A", character: "T",
+      cash: 1_000_000, openedAt: null, bagSlots: 20, observationVersion: 2, skippedItems: 0,
+      items: scanItems
+    };
+    const start = process.cpuUsage();
+    const plan = buildGenerationPlan({
+      scan, series: null, items, existingSeries: series, previous: null,
+      openedAt: null, firstScanAt: new Date((scanSeconds - 3 * 86400) * 1000),
+      positions: {}, ownSales: {}, budgetCopper: 1_000_000, phaseOverride: null
+    });
+    expect(plan.signals).toHaveLength(COUNT);
+    expect(plan.series).toHaveLength(COUNT);
+    expect(cpuMsSince(start)).toBeLessThan(3000);
+  });
+
+  it("filters and sorts 4,048 client rows inside the interaction budget", () => {
+    const rows = Array.from({ length: 4048 }, (_, index) => ({
+      itemId: index,
+      name: `亚麻布 ${index}`,
+      category: index % 2 === 0 ? "商品" : "护甲",
+      stale: false,
+      sellPrice: 100 + index,
+      minPrice: 90 + index,
+      sellRef: 95 + index,
+      spreadPercent: index % 100,
+      trendPercent: 0,
+      changePercent: 0,
+      quantity: index,
+      numAuctions: index
+    }));
+    const view = { query: "亚麻", category: "商品", sortKey: "spreadPercent" as const, sortAsc: false, sortExplicit: true };
+    filterSortSignals(rows, view);
+    const start = process.cpuUsage();
+    const filtered = filterSortSignals(rows, view);
+    expect(filtered.length).toBeGreaterThan(0);
+    expect(cpuMsSince(start)).toBeLessThan(50);
   });
 
   it("keeps a 5,000-event journal under the 4MB budget", () => {
