@@ -72,6 +72,38 @@ describe("time-series chart", () => {
     expect(lua.text("WoWderhoiAHChart.hilo:GetText()")).toBe("该时间窗内扫描次数不足");
   });
 
+  it("clears the previous item's plot when the new item has no priced point", () => {
+    // Both items are charted in the same panel. The second one has points
+    // but no price in any of them; the empty state must wipe the first
+    // item's lines and labels instead of leaving them under a new title.
+    const lua = loadAddon();
+    lua.setScan([
+      {
+        itemId: 4338, name: "Mageweave Cloth", minPrice: 8000, sellP: 10000,
+        numAuctions: 6, sellers: 3, quantity: 70, itemClass: "Trade Goods",
+        tiers: [{ p: 8000, q: 20 }, { p: 9000, q: 50 }]
+      },
+      {
+        itemId: 2589, name: "Linen Cloth", minPrice: 0, sellP: 0,
+        numAuctions: 0, sellers: 0, quantity: 0, itemClass: "Trade Goods",
+        tiers: []
+      }
+    ]);
+    lua.setPoints([
+      { itemId: 4338, closes: [9000, 10000, 11000] },
+      { itemId: 2589, closes: [0, 0, 0] }
+    ]);
+    lua.openTab();
+    lua.exec("WoWderhoiAH_UpdateChart(4338)");
+    expect(lua.number("#WoWderhoiAHChart.segments")).toBeGreaterThan(0);
+    lua.exec("WoWderhoiAH_UpdateChart(2589)");
+    expect(lua.text("WoWderhoiAHChart.hilo:GetText()")).toBe("该时间窗内扫描次数不足");
+    expect(lua.text("WoWderhoiAHChart.startLabel:GetText()")).toBe("");
+    expect(lua.text("WoWderhoiAHChart.endLabel:GetText()")).toBe("");
+    expect(lua.eval("WoWderhoiAHChart.segments[1]._shown")).toBe(false);
+    expect(lua.eval("WoWderhoiAHChart.bars[1]._shown")).toBe(false);
+  });
+
   it("filters to the selected window and falls back to the empty state", () => {
     const lua = chartPage([9000, 10000, 11000]);
     lua.exec("WowTest.ns.setChartWindow(1)");

@@ -683,16 +683,6 @@ local function renderTime(entry, windowHours)
   for _, point in ipairs(entry.pts or {}) do
     if point.t >= cutoff then points[#points + 1] = point end
   end
-  if #points < 2 then
-    chart.hilo:SetText(L.CHART_EMPTY)
-    chart.startLabel:SetText("")
-    chart.endLabel:SetText("")
-    hideFrom(chart.segments, 1)
-    hideBarsFrom(1)
-    hideDotsFrom(1)
-    setState({ mode = "time", window = windowHours, points = #points })
-    return
-  end
   local minPrice, maxPrice = math.huge, 0
   local maxSupply = 0
   for _, point in ipairs(points) do
@@ -704,10 +694,17 @@ local function renderTime(entry, windowHours)
     if low > maxPrice then maxPrice = low end
     if (point.q or 0) > maxSupply then maxSupply = point.q or 0 end
   end
-  if minPrice == math.huge or maxPrice == 0 then
+  -- Every empty case -- too few points, or points without a price -- wipes
+  -- the previous item's picture. A panel that keeps the last item's lines
+  -- and labels under a new title is worse than an empty plot. The state
+  -- still records the item and point count for the subtitle.
+  if #points < 2 or minPrice == math.huge or maxPrice == 0 then
     chart.hilo:SetText(L.CHART_EMPTY)
-    -- The empty-state path still owns a state record: renderChart writes
-    -- the item into it, and the subtitle reads its point count.
+    chart.startLabel:SetText("")
+    chart.endLabel:SetText("")
+    hideFrom(chart.segments, 1)
+    hideBarsFrom(1)
+    hideDotsFrom(1)
     setState({ mode = "time", window = windowHours, points = #points })
     return
   end
