@@ -14,7 +14,7 @@ import { fillRules, SCAN_INTERVAL_MINUTES } from "@/lib/market-rules";
 import { bandFromInterval } from "@/lib/fill";
 import { buildTimeSeries } from "@/lib/chart-series";
 import { seriesToDailyBars } from "@/lib/item-series";
-import { currentScanDemand, sellPriceOf } from "@/lib/market-data";
+import { currentScanDemand, priceObservationAt, sellPriceOf } from "@/lib/market-data";
 import { CandlestickChart, FillProbabilityChart, OrderBookChart, TimeSeriesChart, type BookTier } from "@/components/charts";
 import { AlertRulePanel } from "@/components/trader-panels";
 import { WatchStar } from "@/components/watch-star";
@@ -36,9 +36,12 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
     prisma.alertRule.findMany({ where: { itemId: numericItemId } })
   ]);
   const now = new Date();
-  const stale = quote !== null
+  // The price's age comes from the last series point, not from the quote:
+  // a bid-only scan in the newest generation writes a quote and no price.
+  const priceAt = priceObservationAt(series, quote, bundle.latestScanAt);
+  const stale = priceAt !== null
     && bundle.latestScanAt !== null
-    && quote.timestamp.getTime() < bundle.latestScanAt.getTime();
+    && priceAt.getTime() < bundle.latestScanAt.getTime();
   const signal = storedSignal?.signal
     ?? (quote?.priced
       ? buildMarketSignal(
@@ -55,8 +58,11 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
             quote,
             series
           },
-          now,
-          { phase: bundle.phase, index: bundle.priceIndex, currentAt: bundle.latestScanAt ?? quote.timestamp }
+          // A pruned generation has no stored signal; computing its
+          // replacement at wall-clock "now" would read a window that did
+          // not exist at the scan, so the price's own observation anchors it.
+          priceAt ?? now,
+          { phase: bundle.phase, index: bundle.priceIndex, currentAt: bundle.latestScanAt ?? priceAt ?? now }
         )
       : null);
   const dailyBars = seriesToDailyBars(series);
@@ -68,7 +74,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
   const expiring = quote?.expiring && typeof quote.expiring === "object"
     ? quote.expiring as { soon?: number; mid?: number; late?: number }
     : null;
-  const freshness = describeFreshness(quote?.timestamp ?? demand?.timestamp ?? null, now);
+  const freshness = describeFreshness(priceAt ?? demand?.timestamp ?? null, now);
   const candleData = dailyBars.map((bar) => ({
     label: bar.date.toISOString().slice(5, 10),
     open: bar.openPrice,
@@ -140,9 +146,14 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
           <Panel>
             <PanelHeader title="盘口阶梯 (价格 vs 累计在售)" />
             <div className="p-3">
-              {quote
-                ? <OrderBookChart tiers={bookTiers} sellP={signal?.sellPrice ?? sellPriceOf(quote)} minPrice={quote.minPrice} />
-                : <div className="p-4 font-mono text-xs text-terminal-muted">尚无扫描数据</div>}
+              {quote?.priced
+                ? <>
+                    <OrderBookChart tiers={bookTiers} sellP={signal?.sellPrice ?? sellPriceOf(quote)} minPrice={quote.minPrice} />
+                    {stale && <div className="mt-2 font-mono text-[11px] text-terminal-amber">这是上次有货时的盘口。</div>}
+                  </>
+                : demand
+                  ? <div className="p-4 font-mono text-xs text-terminal-muted">本次扫描只有竞价、没有买断挂单；价格是上次有货时的值。</div>
+                  : <div className="p-4 font-mono text-xs text-terminal-muted">尚无扫描数据</div>}
               {expiring && ((expiring.soon ?? 0) + (expiring.mid ?? 0) + (expiring.late ?? 0) > 0) && (
                 <div className="mt-2 border-t border-terminal-border pt-2 font-mono text-[11px] text-terminal-muted">
                   到期分布：2 小时内 {expiring.soon ?? 0} 笔 · 2–12 小时 {expiring.mid ?? 0} 笔 · 12 小时以上 {expiring.late ?? 0} 笔

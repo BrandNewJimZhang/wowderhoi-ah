@@ -3,6 +3,12 @@
 // make dates lie; breadth and age are properties of the data itself.
 import { phaseBoundaries, phaseHistory, type MarketPhase } from "@/lib/market-rules";
 
+// Age in hours, floored at zero so clock skew cannot make a market younger.
+export function ageHours(now: Date, anchor: Date | null): number {
+  if (!anchor) return 0;
+  return Math.max(0, (now.getTime() - anchor.getTime()) / (60 * 60 * 1000));
+}
+
 export function resolvePhase(ageHours: number, breadth: number): MarketPhase {
   const limits = phaseBoundaries;
   if (ageHours < limits.ignitionHours || breadth < limits.ignitionBreadth) return "ignition";

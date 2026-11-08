@@ -68,3 +68,19 @@ export function currentScanDemand<T extends { timestamp: Date }>(
   if (!row || !latestAt) return null;
   return row.timestamp.getTime() === latestAt.getTime() ? row : null;
 }
+
+// When the displayed price was observed. A bid-only scan writes a quote but
+// no series point, so the quote's timestamp describes demand, not the price;
+// the last series point is the price's true observation. A series point
+// later than the newest generation is clamped: a replayed older scan must
+// not make its prices look current.
+export function priceObservationAt(
+  series: ReadonlyArray<{ t: number }>,
+  quote: { timestamp: Date } | null,
+  latestScanAt: Date | null
+): Date | null {
+  const last = series.length > 0 ? series[series.length - 1].t : null;
+  if (last === null) return quote?.timestamp ?? null;
+  const at = new Date(last * 1000);
+  return latestScanAt && at.getTime() > latestScanAt.getTime() ? latestScanAt : at;
+}

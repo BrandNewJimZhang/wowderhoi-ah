@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { currentScanDemand, sellPriceOf } from "@/lib/market-data";
+import { currentScanDemand, priceObservationAt, sellPriceOf } from "@/lib/market-data";
 
 const at = (iso: string) => ({ timestamp: new Date(iso) });
 
@@ -18,6 +18,28 @@ describe("currentScanDemand", () => {
     expect(currentScanDemand(null, new Date("2026-11-05T10:00:00.000Z"))).toBeNull();
     expect(currentScanDemand(undefined, new Date("2026-11-05T10:00:00.000Z"))).toBeNull();
     expect(currentScanDemand(at("2026-11-05T10:00:00.000Z"), null)).toBeNull();
+  });
+});
+
+describe("priceObservationAt", () => {
+  const scan = new Date("2026-11-05T10:00:00.000Z");
+
+  it("dates the price by the last series point, not the demand quote", () => {
+    const series = [{ t: Math.round(scan.getTime() / 1000) - 3600 }];
+    expect(priceObservationAt(series, { timestamp: scan }, scan)).toEqual(new Date(scan.getTime() - 3600 * 1000));
+  });
+
+  it("clamps a series point later than the newest generation", () => {
+    const series = [{ t: Math.round(scan.getTime() / 1000) + 3600 }];
+    expect(priceObservationAt(series, null, scan)).toEqual(scan);
+  });
+
+  it("falls back to the quote when no series point exists", () => {
+    expect(priceObservationAt([], { timestamp: scan }, scan)).toEqual(scan);
+  });
+
+  it("returns null when nothing was priced", () => {
+    expect(priceObservationAt([], null, scan)).toBeNull();
   });
 });
 

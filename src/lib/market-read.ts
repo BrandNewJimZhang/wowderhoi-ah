@@ -10,7 +10,8 @@ import type { CoreOutput } from "@/lib/core/types";
 import type { PriceIndex } from "@/lib/deflator";
 import type { GenerationRecord } from "@/lib/generation-record";
 import { resolvePhaseOverride } from "@/lib/config";
-import { resolvePhase } from "@/lib/phase";
+import { describeFreshness } from "@/lib/freshness";
+import { ageHours, resolvePhase } from "@/lib/phase";
 import type { MarketPhase } from "@/lib/market-rules";
 import type { StoredSignalRow } from "@/lib/signal-row";
 import { getGenerationSignals, getLatestGeneration, getPositions } from "@/lib/repositories";
@@ -62,9 +63,20 @@ function emptyBundle(phase: MarketPhase, scope: MarketScope | null = null): Mark
   };
 }
 
-function ageHours(now: Date, anchor: Date | null): number {
-  if (!anchor) return 0;
-  return Math.max(0, (now.getTime() - anchor.getTime()) / (60 * 60 * 1000));
+// The configured opening time beats the persisted first observation, which
+// beats the generation's own anchor: a pruned store must not reset a mature
+// market to ignition. One resolver keeps the bundle and the shell badges
+// from reading different phases.
+export function displayPhaseOf(
+  scope: MarketScope | null,
+  generation: GenerationRecord | null,
+  now: Date
+): MarketPhase {
+  const override = resolvePhaseOverride();
+  if (override) return override;
+  if (!generation) return "ignition";
+  const anchor = scope?.openedAt ?? scope?.firstScanAt ?? generation.firstScanAt;
+  return resolvePhase(ageHours(now, anchor), generation.breadth);
 }
 
 export function createMarketReader(fetchers: ReaderFetchers) {
@@ -77,11 +89,7 @@ export function createMarketReader(fetchers: ReaderFetchers) {
         return emptyBundle(resolvePhaseOverride() ?? "ignition", scope);
       }
       const rows = await fetchers.getSignals(generation.id);
-      // The configured opening time beats the persisted first observation,
-      // which beats the generation's own anchor: a pruned store must not
-      // reset a mature market to ignition.
-      const anchor = scope?.openedAt ?? scope?.firstScanAt ?? generation.firstScanAt;
-      const phase = resolvePhaseOverride() ?? resolvePhase(ageHours(nowOf(), anchor), generation.breadth);
+      const phase = displayPhaseOf(scope, generation, nowOf());
       return {
         scope,
         signals: rows.map((row) => row.signal),
@@ -108,18 +116,33 @@ export const getMarketBundle = defaultReader.getMarketBundle;
 
 type NavBadges = { actions: number; stale: number; positions: number };
 
+// The badge must agree with the dashboard: a stale scan or a moved phase
+// hides the action list there, so the shell cannot advertise actions the
+// page refuses to show.
+export function badgeCounts(
+  generation: GenerationRecord | null,
+  phase: MarketPhase,
+  stale: boolean,
+  positionCount: number
+): NavBadges {
+  const actionable = generation !== null && !stale && phase === generation.phase;
+  return {
+    actions: actionable ? generation.core.actions.length : 0,
+    stale: generation?.staleCount ?? 0,
+    positions: positionCount
+  };
+}
+
 // The shell renders these on every page; they are two cheap reads plus one
 // count, not the full signal bundle.
 export async function getNavigationBadges(): Promise<NavBadges> {
   const scope = await getMarketScope();
   if (!scope) return { actions: 0, stale: 0, positions: 0 };
+  const now = new Date();
   const [generation, positions] = await Promise.all([
     getLatestGeneration(scope),
     getPositions(scope)
   ]);
-  return {
-    actions: generation?.core.actions.length ?? 0,
-    stale: generation?.staleCount ?? 0,
-    positions: Object.keys(positions).length
-  };
+  const stale = describeFreshness(generation?.scannedAt ?? null, now).stale;
+  return badgeCounts(generation, displayPhaseOf(scope, generation, now), stale, Object.keys(positions).length);
 }

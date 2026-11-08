@@ -3,7 +3,7 @@ import type { GenerationRecord } from "@/lib/generation-record";
 import type { MarketSignal } from "@/lib/analytics";
 import type { StoredSignalRow } from "@/lib/signal-row";
 import { signalFixture } from "@/lib/signal-fixture";
-import { createMarketReader, type MarketBundle } from "@/lib/market-read";
+import { badgeCounts, createMarketReader, type MarketBundle } from "@/lib/market-read";
 
 const LATEST = new Date("2026-07-20T10:00:00Z");
 
@@ -43,7 +43,6 @@ function generation(overrides: Partial<GenerationRecord> = {}): GenerationRecord
       actions: [],
       diagnostics: { excluded: {}, unfunded: { kelly: 0, exposure: 0, purse: 0, depth: 0 } }
     },
-    ledgerRevision: "0",
     gapMinutes: 15,
     ...overrides
   };
@@ -69,6 +68,27 @@ function reader(options: {
     now: () => options.now ?? LATEST
   });
 }
+
+describe("badgeCounts", () => {
+  const action = {
+    kind: "sell", itemId: 1, qty: 1, price: 100, expectedNet: 10, netPerMinute: 1, reason: "test"
+  } as const;
+
+  it("counts the stored actions only while the generation is still actionable", () => {
+    const record = generation({ phase: "ignition", core: { ...generation().core, actions: [action] } });
+    expect(badgeCounts(record, "ignition", false, 3)).toEqual({ actions: 1, stale: 1, positions: 3 });
+  });
+
+  it("hides actions once the display phase moved past the scan", () => {
+    const record = generation({ phase: "ignition", core: { ...generation().core, actions: [action] } });
+    expect(badgeCounts(record, "steady", false, 0).actions).toBe(0);
+  });
+
+  it("hides actions once the scan is stale", () => {
+    const record = generation({ phase: "ignition", core: { ...generation().core, actions: [action] } });
+    expect(badgeCounts(record, "ignition", true, 0).actions).toBe(0);
+  });
+});
 
 describe("getMarketBundle", () => {
   it("returns an empty ignition bundle before the first generation", async () => {

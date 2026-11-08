@@ -253,8 +253,9 @@ export default async function Home() {
             <Panel>
               <PanelHeader title="预算内分配" action={<span className="font-mono text-xs text-terminal-muted">共享核心 · 分数凯利</span>} />
               <div className="space-y-2 p-3 font-mono text-xs">
-                {sizing.length === 0 && <div className="text-terminal-muted">当前没有获分配的机会。</div>}
-                {sizing.map((row) => (
+                {actionsBlocked && <div className="text-terminal-muted">数据过期或阶段已推移，等下一次扫描后再给出分配。</div>}
+                {!actionsBlocked && sizing.length === 0 && <div className="text-terminal-muted">当前没有获分配的机会。</div>}
+                {!actionsBlocked && sizing.map((row) => (
                   <div key={row.itemId} className="flex items-center justify-between gap-2">
                     <Link href={`/items/${row.itemId}`} className="text-slate-100 hover:text-terminal-amber">{row.name}</Link>
                     <span className="flex items-center gap-3 text-terminal-muted">

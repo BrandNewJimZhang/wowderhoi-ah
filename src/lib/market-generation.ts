@@ -17,7 +17,7 @@ import {
   type SeriesPoint
 } from "@/lib/item-series";
 import type { MarketQuote, SignalItem } from "@/lib/market-data";
-import { resolvePhase } from "@/lib/phase";
+import { ageHours, resolvePhase } from "@/lib/phase";
 import type { MarketPhase } from "@/lib/market-rules";
 import { SIGNAL_SCHEMA_VERSION, type StoredSignalRow } from "@/lib/signal-row";
 
@@ -91,11 +91,6 @@ export function seriesRowsFrom(merged: ReadonlyMap<number, readonly SeriesPoint[
       pointCount: points.length,
       points: [...points]
     }));
-}
-
-function ageHours(now: Date, anchor: Date | null): number {
-  if (!anchor) return 0;
-  return Math.max(0, (now.getTime() - anchor.getTime()) / (60 * 60 * 1000));
 }
 
 function quoteFromScanItem(item: AddonScan["items"][number], scannedAt: Date, observationVersion: number | null): MarketQuote {
