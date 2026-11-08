@@ -42,21 +42,37 @@ model Market {
 }
 
 model Item {
-  id             String            @id @default(cuid())
-  itemId         Int               @unique @map("item_id")
-  name           String
-  quality        String
-  category       String
-  subCategory    String            @map("sub_category")
-  vendorPrice    Float             @default(0) @map("vendor_price") // NPC sell price in copper; 0 = unsellable
-  snapshots      AuctionSnapshot[]
-  dailySummaries DailySummary[]
-  alerts         AlertRule[]
-  watchlistEntry Watchlist?
-  createdAt      DateTime          @default(now()) @map("created_at")
-  updatedAt      DateTime          @updatedAt @map("updated_at")
+  id               String            @id @default(cuid())
+  itemId           Int               @unique @map("item_id")
+  name             String
+  quality          String
+  category         String
+  subCategory      String            @map("sub_category")
+  // NPC sell price in copper. Null means no source resolved it; 0 means
+  // the item is genuinely unsellable. The catalogue is the authority for
+  // its items, so a scan can never turn an unread field into a zero.
+  vendorPrice      Float?            @map("vendor_price")
+  // Static facts from the client catalogue. Null on scan-only items.
+  iconId           Int?              @map("icon_id")
+  itemLevel        Int?              @map("item_level")
+  requiredLevel    Int?              @map("required_level")
+  slot             String?
+  typeLabel        String?           @map("type_label")
+  // "wuxianwow.com" once the catalogue has claimed the row; "scan" for a
+  // placeholder the catalogue does not know. Scans only ever fill a
+  // scan-owned row.
+  catalogSource    String            @default("scan") @map("catalog_source")
+  catalogBuild     String?           @map("catalog_build")
+  catalogUpdatedAt DateTime?         @map("catalog_updated_at")
+  snapshots        AuctionSnapshot[]
+  dailySummaries   DailySummary[]
+  alerts           AlertRule[]
+  watchlistEntry   Watchlist?
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
 
   @@index([category, subCategory])
+  @@index([catalogSource])
 }
 
 model AuctionSnapshot {

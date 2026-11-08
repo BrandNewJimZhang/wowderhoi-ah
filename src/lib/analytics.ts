@@ -19,6 +19,9 @@ export type MarketSignal = {
   name: string;
   category: string;
   quality: string;
+  // Catalogue icon id; null on scan-only items the public catalogue does
+  // not know.
+  iconId: number | null;
   sellPrice: number; // depth-aware sell front, copper (the decision anchor)
   minPrice: number; // cheapest listed unit, copper
   price: number; // latest P10, copper; statistics only
@@ -40,7 +43,10 @@ export type MarketSignal = {
   // interval is missing data, so it must not make the book "observed".
   flowObserved: boolean;
   supplyGrowth: number; // fraction per hour
-  vendorPrice: number; // NPC sell price, copper; 0 = unsellable
+  // NPC sell price, copper. Null = no source resolved it; 0 = unsellable.
+  // The core treats both as "no vendor arbitrage", but the UI must not
+  // print an unknown price as zero.
+  vendorPrice: number | null;
   // True when the item had no priced listing in the newest scan generation:
   // its prices describe a book that no longer exists and must not feed a
   // recommendation or an alert.
@@ -110,6 +116,7 @@ export function buildMarketSignal(
     name: item.name,
     category: item.category,
     quality: item.quality,
+    iconId: item.iconId ?? null,
     sellPrice,
     minPrice: latest.minPrice,
     price: latest.marketPrice,

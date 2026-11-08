@@ -24,7 +24,8 @@
     "recipes:import": "tsx scripts/import-recipes.ts",
     "recipes:lua": "tsx scripts/gen-lua-recipes.ts",
     "calibrate": "tsx scripts/calibrate-fill-priors.ts",
-    "items:catalog:fetch": "tsx scripts/fetch-item-catalog.ts"
+    "items:catalog:fetch": "tsx scripts/fetch-item-catalog.ts",
+    "items:catalog:import": "tsx scripts/import-item-catalog.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.10.0",

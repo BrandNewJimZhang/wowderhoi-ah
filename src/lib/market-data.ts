@@ -1,4 +1,6 @@
-import type { DailySummary, Item } from "@prisma/client";
+// The analytics layer reads a market history, not a Prisma row. Keeping the
+// shape structural means a new catalogue column does not force every
+// fixture to invent a value for a field analytics never reads.
 
 // The analytics layer reads a market snapshot, not a Prisma row. Making
 // the order-book fields optional keeps fixtures honest about what they
@@ -36,9 +38,25 @@ export type MarketSnapshot = {
   topTiers?: unknown;
 };
 
-export type MarketHistory = Omit<Item, "id" | "createdAt" | "updatedAt"> & {
+export type MarketDailySummary = {
+  date: Date;
+  openPrice: number;
+  closePrice: number;
+  highPrice: number;
+  lowPrice: number;
+  volume: number;
+};
+
+export type MarketHistory = {
+  itemId: number;
+  name: string;
+  quality: string;
+  category: string;
+  subCategory: string;
+  vendorPrice: number | null;
+  iconId?: number | null;
   snapshots: MarketSnapshot[];
-  dailySummaries: Array<Omit<DailySummary, "id" | "itemId" | "item" | "marketId">>;
+  dailySummaries: MarketDailySummary[];
 };
 
 // The decision anchor is the sell front, but rows imported before that

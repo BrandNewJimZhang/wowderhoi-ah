@@ -73,7 +73,9 @@ export function buildCoreInput(
       // The scan classified the book; only rows without a captured
       // classification fall back to the core's own derivation.
       marketType: signal.marketType ?? undefined,
-      vendorP: signal.vendorPrice,
+      // Null means no source resolved the NPC price. Core.lua's `or 0`
+      // then takes the no-vendor-arbitrage branch, which is fail-closed.
+      vendorP: signal.vendorPrice ?? 0,
       minPrice: signal.minPrice,
       sellP: signal.sellPrice,
       quantity: signal.quantity,
