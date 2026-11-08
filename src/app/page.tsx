@@ -38,6 +38,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   const upcomingEvents = upcomingDemandEvents(loadDemandEvents(), Math.floor(new Date().getTime() / 1000));
   const freshness = describeFreshness(latestSnapshotAt, new Date());
   const watchedSignals = signals.filter((signal) => watchedIds.has(signal.itemId));
+  const iconById = new Map(signals.map((signal) => [signal.itemId, signal.iconId]));
   // Alerts and the action list only see the newest scan's book: a price
   // from an item that is no longer listed must not page the trader.
   const triggeredAlerts = evaluateAlertRules(alertRules, signals.filter((signal) => !signal.stale));
@@ -157,7 +158,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
               {deals.map((deal) => (
                 <div key={deal.itemId} className="flex items-center justify-between gap-2">
                   <Link href={`/items/${deal.itemId}`} className={`inline-flex items-center gap-2 ${qualityColorClass(qualityName(deal.quality))}`}>
-                    <ItemIcon itemId={deal.itemId} size={16} />
+                    <ItemIcon iconId={iconById.get(deal.itemId)} size={16} />
                     {deal.name}
                     {deal.vendor
                       ? <span className="text-terminal-amber">NPC必赚</span>
@@ -232,7 +233,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                 <div key={signal.itemId} className="flex items-center justify-between gap-2">
                   <span className="flex items-center gap-2">
                     <WatchStar itemId={signal.itemId} watched />
-                    <Link href={`/items/${signal.itemId}`} className={`inline-flex items-center gap-1 ${qualityColorClass(signal.quality)}`}><ItemIcon itemId={signal.itemId} size={16} />{signal.name}</Link>
+                    <Link href={`/items/${signal.itemId}`} className={`inline-flex items-center gap-1 ${qualityColorClass(signal.quality)}`}><ItemIcon iconId={signal.iconId} size={16} />{signal.name}</Link>
                   </span>
                   <span className="flex items-center gap-3">
                     <Coins copper={signal.sellPrice} />

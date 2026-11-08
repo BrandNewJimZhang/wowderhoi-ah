@@ -80,7 +80,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
       <div className="mb-3 flex items-center justify-between border border-terminal-border bg-terminal-panel px-4 py-3">
         <div>
           <div className="font-mono text-xs uppercase text-terminal-muted">商品终端</div>
-          <h1 className={`flex items-center gap-2 font-mono text-2xl font-semibold ${qualityColorClass(item.quality)}`}><ItemIcon itemId={item.itemId} size={28} />{item.name}</h1>
+          <h1 className={`flex items-center gap-2 font-mono text-2xl font-semibold ${qualityColorClass(item.quality)}`}><ItemIcon iconId={item.iconId} size={28} />{item.name}</h1>
           <div className={freshness.stale ? "font-mono text-xs text-terminal-red" : "font-mono text-xs text-terminal-green"}>
             数据更新于 {freshness.label}
           </div>
