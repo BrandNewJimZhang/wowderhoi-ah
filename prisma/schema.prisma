@@ -64,7 +64,6 @@ model Item {
   // scan-owned row.
   catalogSource    String            @default("scan") @map("catalog_source")
   catalogBuild     String?           @map("catalog_build")
-  catalogUpdatedAt DateTime?         @map("catalog_updated_at")
   quotes           MarketQuote[]
   series           ItemSeries[]
   signalRows       MarketSignalRow[]

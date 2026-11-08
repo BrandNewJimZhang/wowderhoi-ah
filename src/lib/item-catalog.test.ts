@@ -62,10 +62,9 @@ describe("parseCatalogDataset", () => {
 
 describe("diffCatalog", () => {
   const dataset = normalizeCatalogDataset(RAW, META);
-  const updatedAt = new Date("2026-11-09T00:00:00.000Z");
 
   it("creates missing rows", () => {
-    const diff = diffCatalog(dataset.items, [], META.build, updatedAt);
+    const diff = diffCatalog(dataset.items, [], META.build);
     expect(diff.creates).toHaveLength(dataset.items.length);
     expect(diff.updates).toHaveLength(0);
   });
@@ -77,9 +76,9 @@ describe("diffCatalog", () => {
         catalogSource: "wuxianwow.com",
         catalogBuild: META.build
       }));
-    expect(diffCatalog(dataset.items, existing, META.build, updatedAt).updates).toHaveLength(0);
+    expect(diffCatalog(dataset.items, existing, META.build).updates).toHaveLength(0);
     existing[0] = { ...existing[0], name: "#25", catalogSource: "scan", catalogBuild: null };
-    const diff = diffCatalog(dataset.items, existing, META.build, updatedAt);
+    const diff = diffCatalog(dataset.items, existing, META.build);
     expect(diff.updates).toHaveLength(1);
     expect(diff.updates[0].data).toMatchObject({ name: "破损的短剑", catalogSource: "wuxianwow.com" });
   });
@@ -91,7 +90,7 @@ describe("diffCatalog", () => {
       catalogSource: "scan",
       catalogBuild: null
     }));
-    const diff = diffCatalog(dataset.items, existing, META.build, updatedAt);
+    const diff = diffCatalog(dataset.items, existing, META.build);
     expect(diff.updates.find((row) => row.itemId === 25)?.data.vendorPrice).toBe(7);
   });
 });

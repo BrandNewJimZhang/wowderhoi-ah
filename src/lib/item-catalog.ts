@@ -217,7 +217,7 @@ type ExistingCatalogRow = {
 
 type CatalogDiff = {
   creates: CatalogItem[];
-  updates: Array<{ itemId: number; data: CatalogItem & { catalogSource: string; catalogBuild: string; catalogUpdatedAt: Date } }>;
+  updates: Array<{ itemId: number; data: CatalogItem & { catalogSource: string; catalogBuild: string } }>;
 };
 
 // Only rows whose facts actually moved are written. A catalogue refresh
@@ -225,8 +225,7 @@ type CatalogDiff = {
 export function diffCatalog(
   catalog: CatalogItem[],
   existing: ExistingCatalogRow[],
-  build: string,
-  updatedAt: Date
+  build: string
 ): CatalogDiff {
   const byId = new Map(existing.map((row) => [row.itemId, row]));
   const creates: CatalogItem[] = [];
@@ -252,7 +251,7 @@ export function diffCatalog(
     if (changed) {
       updates.push({
         itemId: item.itemId,
-        data: { ...item, catalogSource: CATALOG_SOURCE, catalogBuild: build, catalogUpdatedAt: updatedAt }
+        data: { ...item, catalogSource: CATALOG_SOURCE, catalogBuild: build }
       });
     }
   }

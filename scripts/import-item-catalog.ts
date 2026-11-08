@@ -21,7 +21,7 @@ async function main() {
       slot: true, typeLabel: true, catalogSource: true, catalogBuild: true
     }
   });
-  const diff = diffCatalog(dataset.items, existing, dataset.build, new Date());
+  const diff = diffCatalog(dataset.items, existing, dataset.build);
   console.log(
     `Catalogue ${dataset.source} build ${dataset.build}: ${dataset.items.length} rows, `
     + `${diff.creates.length} new, ${diff.updates.length} changed, `
@@ -34,8 +34,7 @@ async function main() {
       data: batch.map((item) => ({
         ...item,
         catalogSource: CATALOG_SOURCE,
-        catalogBuild: dataset.build,
-        catalogUpdatedAt: new Date()
+        catalogBuild: dataset.build
       }))
     });
   }
