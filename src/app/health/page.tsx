@@ -87,7 +87,7 @@ export default async function HealthPage() {
         <div className="border border-terminal-border bg-terminal-panel p-3">
           <div className="text-terminal-muted">目录覆盖</div>
           <div className="mt-1 text-lg text-slate-100">{catalogue.catalogue.toLocaleString()} / {catalogue.total.toLocaleString()}</div>
-          <div className="mt-1 text-[10px] text-terminal-muted">占位 {catalogue.placeholders} · 目录外 {catalogue.scanOwned}</div>
+          <div className="mt-1 text-[10px] text-terminal-muted">占位 {catalogue.placeholders} · 目录外 {catalogue.scanOwned} · 图标 {catalogue.withIcon.toLocaleString()}</div>
         </div>
         <div className="border border-terminal-border bg-terminal-panel p-3">
           <div className="text-terminal-muted">最近导入 / Journal 错误</div>
