@@ -788,7 +788,7 @@ SlashCmdList["WOWDERHOIAHDIAG"] = function(input)
     for _, series in pairs(market.items) do points = points + #series.t end
   end
   diagLine(string.format("owner visibility: %d visible / %d hidden / %d priced items", visible, hidden, items))
-  local scanData = WoWDerhoiAH_ScanData
+  local scanData = WoWderhoiAH_ScanData
   local selfListings, selfQty = 0, 0
   local byOwner, byOwned, byNone = 0, 0, 0
   if scanData then

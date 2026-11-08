@@ -11,7 +11,8 @@ function page(): WowLua {
   const lua = loadAddon();
   lua.runScan([
     { itemId: 2589, name: "Linen", count: 10, buyout: 10000, owner: "Alice", timeLeft: 3600 },
-    { itemId: 2589, name: "Linen", count: 10, buyout: 12000, owner: "Bob", timeLeft: 7200 }
+    { itemId: 2589, name: "Linen", count: 10, buyout: 12000, owner: "Bob", timeLeft: 7200 },
+    { itemId: 2589, name: "Linen", count: 10, buyout: 14000, owner: "Tester", timeLeft: 3600 }
   ]);
   lua.setBag([{ bag: 0, slot: 1, itemId: 2589, count: 10, name: "Linen", commodity: true }]);
   lua.setOwned([{ auctionID: 9001, itemId: 2589, quantity: 10, buyoutAmount: 12000, timeLeftSeconds: 3600 }]);
@@ -24,6 +25,10 @@ describe("/wahdiag", () => {
     const lua = page();
     expect(lua.anyChat("GetReplicateItemTimeLeft(1): 3600 (number)")).toBe(true);
     expect(lua.anyChat("owner visibility: 1 visible / 0 hidden / 1 priced items")).toBe(true);
+    // The self-exclusion audit reads the same scan global the scanner writes;
+    // a case-mismatched name here reported zeros forever.
+    expect(lua.anyChat("own listings excluded: 1 listings / 10 units | observation v2")).toBe(true);
+    expect(lua.anyChat("own exclusion channel: owner 1 / owned 0 / none 0 items")).toBe(true);
     expect(lua.anyChat("scan age:")).toBe(true);
     // The terminal can only size against bags the scan reported.
     expect(lua.anyChat("bags: 20 free now | scan recorded 20")).toBe(true);
@@ -32,7 +37,7 @@ describe("/wahdiag", () => {
     // Where a "slow scan" went: the server wait, the client calls and our
     // own Lua work are separate numbers, and the shares answer the question
     // without arithmetic in the head.
-    expect(lua.anyChat("last scan: ok | saved 2/2 rows | via replicate | missing 0 | bad 0 | wait 0 ms | api 0 ms | lua 0 ms | finish 0 ms (max frame 0 ms, 1 frames) | save 0 ms")).toBe(true);
+    expect(lua.anyChat("last scan: ok | saved 3/3 rows | via replicate | missing 0 | bad 0 | wait 0 ms | api 0 ms | lua 0 ms | finish 0 ms (max frame 0 ms, 1 frames) | save 0 ms")).toBe(true);
     expect(lua.anyChat("scan time split: api 0% | lua 0% | finish 0% | save 0% (wait 0%)")).toBe(true);
     expect(lua.anyChat("SaveAddOns: available")).toBe(true);
     expect(lua.anyChat("PostItem/PostCommodity: present/present")).toBe(true);
