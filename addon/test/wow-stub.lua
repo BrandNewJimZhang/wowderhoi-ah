@@ -159,23 +159,63 @@ AuctionHouseFrame = newFrame("AuctionHouseFrame")
 AuctionHouseFrame:SetSize(1000, 700)
 AuctionHouseFrame:Show()
 UIParent = newFrame("UIParent")
-GameTooltip = newFrame("GameTooltip")
-ItemRefTooltip = newFrame("ItemRefTooltip")
-
--- GameTooltip records what it was pointed at and what got written into it.
--- A trade row's whole job is to aim the client's own item tooltip, so the
--- observable result is the source it was given plus the lines GUI.lua's
--- hooks append on top.
-GameTooltip._lines = {}
-function GameTooltip:SetOwner(owner, anchor) self._owner, self._anchor = owner, anchor end
-function GameTooltip:GetItem() return self._itemName, self._link end
-function GameTooltip:AddLine(text) self._lines[#self._lines + 1] = bed.plain(text) end
-function GameTooltip:AddDoubleLine(left, right)
-  self._lines[#self._lines + 1] = bed.plain(left) .. "\t" .. bed.plain(right)
+-- Item tooltip frames: GameTooltip and the client's embedded
+-- GameTooltipTooltip both render lines, and the modern post-call can name
+-- either one. Both get the same line API so a test reads whichever frame
+-- the client actually used.
+local function installTooltip(frame)
+  frame._lines = {}
+  function frame:SetOwner(owner, anchor) self._owner, self._anchor = owner, anchor end
+  function frame:GetItem() return self._itemName, self._link end
+  function frame:AddLine(text) self._lines[#self._lines + 1] = bed.plain(text) end
+  function frame:AddDoubleLine(left, right)
+    self._lines[#self._lines + 1] = bed.plain(left) .. "\t" .. bed.plain(right)
+  end
+  function frame:ClearLines()
+    self._lines, self._source, self._link, self._itemName = {}, nil, nil, nil
+    self.processingInfo = nil
+    if self._scripts.OnTooltipCleared then self._scripts.OnTooltipCleared(self) end
+  end
+  return frame
 end
-function GameTooltip:ClearLines()
-  self._lines, self._source, self._link, self._itemName = {}, nil, nil, nil
-  if self._scripts.OnTooltipCleared then self._scripts.OnTooltipCleared(self) end
+
+GameTooltip = installTooltip(newFrame("GameTooltip"))
+ItemRefTooltip = installTooltip(newFrame("ItemRefTooltip"))
+GameTooltipTooltip = installTooltip(newFrame("GameTooltipTooltip"))
+
+-- The 1.60 client renders item tooltips from typed data and posts the result
+-- to the frame that owns the lines. TooltipUtil is the client accessor that
+-- resolves the displayed item for any of those frames, and processingInfo
+-- names the getter that produced them.
+TooltipUtil = {
+  GetDisplayedItem = function(tooltip) return tooltip._itemName, tooltip._link end
+}
+TooltipDataProcessor = {
+  _postCalls = {},
+  AddTooltipPostCall = function(dataType, handler)
+    table.insert(TooltipDataProcessor._postCalls, { dataType = dataType, handler = handler })
+  end
+}
+function bed.fireTooltipPost(dataType, tooltip, data)
+  for _, call in ipairs(TooltipDataProcessor._postCalls) do
+    if call.dataType == dataType then call.handler(tooltip, data or {}) end
+  end
+end
+
+-- A hover the client resolves itself (the embedded tooltip, a clicked chat
+-- link) reaches the addon only through this post-call.
+function bed.fireItemTooltip(tooltip, link, itemName)
+  tooltip:ClearLines()
+  tooltip._link, tooltip._itemName = link, itemName
+  bed.fireTooltipPost(Enum.TooltipDataType.Item, tooltip)
+end
+
+-- The hook fallback only exists for pre-10.0.2 clients. Dropping the modern
+-- globals before the addon files load makes that branch the shipped path.
+function bed.useLegacyTooltips()
+  TooltipDataProcessor = nil
+  TooltipUtil = nil
+  GameTooltipTooltip = nil
 end
 
 local function tooltipShowItem(tooltip, source, itemId, itemName)
@@ -192,18 +232,32 @@ function GameTooltip:SetBagItem(bag, slot)
   local item = bed.bagItems[slot]
   if not item then error("no bag item at slot " .. tostring(slot)) end
   tooltipShowItem(self, "bag:" .. tostring(slot), item.itemId, item.name)
+  if TooltipDataProcessor then
+    self.processingInfo = { getterName = "GetBagItem", getterArgs = { bag, slot } }
+    bed.fireTooltipPost(Enum.TooltipDataType.Item, self)
+  end
 end
 
 function GameTooltip:SetHyperlink(link)
   local text = tostring(link)
-  if text:find("item:", 1, true) then
-    tooltipShowItem(self, "hyperlink:" .. text, tonumber(text:match("item:(%d+)")) or 0, link)
+  -- Only an anchored item hyperlink produces item tooltip data. A string
+  -- that merely contains "item:" is not one, exactly like the client.
+  local itemId = text:match("^item:(%d+)")
+    or text:match("^|Hitem:(%d+)")
+    or text:match("^|c%x%x%x%x%x%x%x%x|Hitem:(%d+)")
+  if itemId then
+    tooltipShowItem(self, "hyperlink:" .. text, tonumber(itemId), link)
+    if TooltipDataProcessor then
+      self.processingInfo = { getterName = "GetHyperlink", getterArgs = { text } }
+      bed.fireTooltipPost(Enum.TooltipDataType.Item, self)
+    end
     return
   end
   -- The client reuses one GameTooltip. A spell or unit hyperlink replaces
   -- the visible lines but not the item fields the last item left behind;
   -- that stale link is exactly what a tooltip hook must not trust.
   self._source = "hyperlink:" .. text
+  self.processingInfo = nil
   self:Show()
 end
 
@@ -923,6 +977,7 @@ end
 
 function bed.tooltipSource() return GameTooltip._source or "" end
 function bed.tooltipText() return table.concat(GameTooltip._lines, "\n") end
+function bed.tooltipTextNamed(name) return table.concat(_G[name]._lines, "\n") end
 function bed.tooltipShown() return GameTooltip:IsShown() end
 
 function bed.buyRow(index)

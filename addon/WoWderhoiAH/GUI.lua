@@ -55,8 +55,15 @@ end
 
 -- Trader tooltip section: everywhere an item tooltip renders -- bags, bank,
 -- equipped slots, merchants, the auction house and chat item links. Spell,
--- unit and battle-pet links never carry it: the client shares one
--- GameTooltip, and only a link that is itself an item may inherit the panel.
+-- unit and battle-pet links never carry it: the link gate rejects anything
+-- that is not itself an item, so a shared tooltip cannot carry the last
+-- item's panel onto a talent or character button.
+--
+-- The client renders item tooltips through more than the GameTooltip global:
+-- on 1.60 the lines live in the embedded GameTooltipTooltip and the item is
+-- reported through TooltipDataProcessor. Append to the frame the client
+-- names and read its displayed item through TooltipUtil, the client's own
+-- accessor; frame identity is an implementation detail, the link is not.
 --
 -- Hover is read-only. The chart is a panel that lives beside the auction
 -- house or the trader page, where its mode and window buttons stay put and
@@ -68,22 +75,47 @@ local function hideChart()
   if chart then chart:Hide() end
 end
 
-local function appendTraderSection(tooltip, hyperlink)
-  if tooltip ~= GameTooltip then return end
-  if tooltip.wahAppended then return end
-  if WAH.settings and not WAH.settings.tooltip then return end
-  -- SetHyperlink serves spell and unit buttons too, and the client reuses
-  -- one GameTooltip: after an item hover, a non-item hyperlink can still
-  -- report that old item through GetItem(). Only a link that is itself an
-  -- item may carry the trader section; otherwise the price panel appeared
-  -- on talent and character buttons.
-  local itemId
-  if hyperlink ~= nil then
-    itemId = WAH.itemIdFromLink(hyperlink)
-  else
-    local _, link = tooltip:GetItem()
-    itemId = WAH.itemIdFromLink(link)
+-- The typed tooltip data names the getter that produced the lines. A
+-- GetHyperlink tooltip is the one case where the getter argument is the
+-- link itself, and the authoritative one -- TooltipUtil can resolve a
+-- recipe's crafted item instead of the recipe. Everything else goes
+-- through TooltipUtil; GetItem is the pre-10.0.2 fallback.
+local function displayedItemLink(tooltip)
+  local info = tooltip.processingInfo or tooltip.info
+  if info and info.getterName == "GetHyperlink" and info.getterArgs then
+    local link = info.getterArgs[1]
+    if WAH.itemIdFromLink(link) then return link end
   end
+  if TooltipUtil and TooltipUtil.GetDisplayedItem then
+    local _, link = TooltipUtil.GetDisplayedItem(tooltip)
+    if link then return link end
+  end
+  if tooltip.GetItem then
+    local _, link = tooltip:GetItem()
+    return link
+  end
+  return nil
+end
+
+-- The appended flag belongs to the frame that carries the lines. Clear it
+-- through that frame's own scripts; some tooltip frames ship without
+-- OnTooltipCleared, so ask before hooking instead of masking the error.
+local function trackTooltip(tooltip)
+  if tooltip.wahTracked then return end
+  tooltip.wahTracked = true
+  if tooltip.HasScript and tooltip:HasScript("OnTooltipCleared") then
+    tooltip:HookScript("OnTooltipCleared", function(self) self.wahAppended = nil end)
+  end
+  tooltip:HookScript("OnHide", function(self) self.wahAppended = nil end)
+end
+
+local function appendTraderSection(tooltip, hyperlink)
+  if tooltip.wahAppended then return end
+  if tooltip.IsForbidden and tooltip:IsForbidden() then return end
+  if WAH.settings and not WAH.settings.tooltip then return end
+  local link = hyperlink
+  if link == nil then link = displayedItemLink(tooltip) end
+  local itemId = WAH.itemIdFromLink(link)
   if not itemId then return end
   lastTooltipItemId = itemId
   local scanned = currentItem(itemId)
@@ -94,6 +126,7 @@ local function appendTraderSection(tooltip, hyperlink)
     and raw.dataVersion ~= WAH.PIPELINE_VERSION and raw.items ~= nil
   local entry = historyFor(itemId)
   if not scanned and not entry and not staleScan then return end
+  trackTooltip(tooltip)
   tooltip.wahAppended = true
   tooltip:AddLine(" ")
   tooltip:AddLine("|cff33ff99WoWderhoi AHelper|r")
@@ -136,39 +169,38 @@ local function appendTraderSection(tooltip, hyperlink)
     if range then tooltip:AddDoubleLine("  " .. string.format(L.TT_RANGE, window), range) end
   end
   tooltip:AddLine(" ")
-  tooltip:Show()
   if WoWderhoiAH_UpdateChart then WoWderhoiAH_UpdateChart(itemId) end
 end
 
-GameTooltip:HookScript("OnTooltipCleared", function(tooltip) tooltip.wahAppended = nil end)
--- Hiding the tooltip says nothing about the chart: the chart belongs to the
--- auction house or trader page, not to the tooltip.
-GameTooltip:HookScript("OnHide", function(tooltip) tooltip.wahAppended = nil end)
-
 if TooltipDataProcessor and Enum and Enum.TooltipDataType then
-  -- The post-call passes (tooltip, tooltipData); wrap it so the data table
-  -- is not mistaken for a hyperlink.
+  -- Item tooltips are typed data on the modern client. The post-call names
+  -- the frame that actually renders the lines, which may be GameTooltip, its
+  -- embedded GameTooltipTooltip, or ItemRefTooltip; appending there covers
+  -- all of them with one registration and no setter to keep in step.
   TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip)
     appendTraderSection(tooltip)
   end)
-end
-if GameTooltip:HasScript("OnTooltipSetItem") then
-  GameTooltip:HookScript("OnTooltipSetItem", function(tooltip) appendTraderSection(tooltip) end)
-end
-for _, method in ipairs({
-  "SetBagItem", "SetAuctionItem", "SetAuctionSellItem",
-  "SetInventoryItem", "SetMerchantItem", "SetGuildBankItem"
-}) do
-  if GameTooltip[method] then
-    hooksecurefunc(GameTooltip, method, function(tooltip) appendTraderSection(tooltip) end)
+else
+  -- Pre-10.0.2 clients share GameTooltip across every hover and report the
+  -- item through scripts and setters instead. A SetHyperlink carries its own
+  -- type, so it hands the link to the gate rather than trusting whatever
+  -- item the shared tooltip still remembers.
+  if GameTooltip:HasScript("OnTooltipSetItem") then
+    GameTooltip:HookScript("OnTooltipSetItem", function(tooltip) appendTraderSection(tooltip) end)
   end
-end
--- Hyperlinks carry their own type, so the hook hands the link to the gate
--- instead of trusting whatever the shared tooltip still holds.
-if GameTooltip.SetHyperlink then
-  hooksecurefunc(GameTooltip, "SetHyperlink", function(tooltip, link)
-    appendTraderSection(tooltip, link)
-  end)
+  for _, method in ipairs({
+    "SetBagItem", "SetAuctionItem", "SetAuctionSellItem",
+    "SetInventoryItem", "SetMerchantItem", "SetGuildBankItem"
+  }) do
+    if GameTooltip[method] then
+      hooksecurefunc(GameTooltip, method, function(tooltip) appendTraderSection(tooltip) end)
+    end
+  end
+  if GameTooltip.SetHyperlink then
+    hooksecurefunc(GameTooltip, "SetHyperlink", function(tooltip, link)
+      appendTraderSection(tooltip, link)
+    end)
+  end
 end
 
 -- ============================== Chart ===============================

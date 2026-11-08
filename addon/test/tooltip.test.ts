@@ -87,3 +87,47 @@ describe("trader tooltip section", () => {
     expect(lua.number(`WowTest.ns.itemIdFromLink("|cffa335ee|Hitem:4338:0:0|h[Mageweave]|h")`)).toBe(4338);
   });
 });
+
+describe("modern tooltip pipeline", () => {
+  // The 1.60 client resolves bag and chat items itself and posts the result
+  // to the frame that owns the lines. That frame is the embedded
+  // GameTooltipTooltip, not the GameTooltip global the old gate demanded.
+  it("appends to the embedded tooltip frame the client names", () => {
+    const lua = auctionPage();
+    lua.exec(`
+      WowTest.fireItemTooltip(GameTooltipTooltip,
+        "|cffa335ee|Hitem:4338:0:0:0|h[Mageweave Cloth]|h", "Mageweave Cloth")
+    `);
+    expect(lua.tooltipTextNamed("GameTooltipTooltip")).toContain("WoWderhoi AHelper");
+    expect(lua.tooltipTextNamed("GameTooltipTooltip")).toContain("建议卖价");
+  });
+
+  it("appends to the tooltip of a clicked chat item link", () => {
+    const lua = auctionPage();
+    lua.exec(`
+      WowTest.fireItemTooltip(ItemRefTooltip,
+        "|Hitem:4338:0:0:0|h[Mageweave Cloth]|h", "Mageweave Cloth")
+    `);
+    expect(lua.tooltipTextNamed("ItemRefTooltip")).toContain("建议卖价");
+  });
+
+  it("does not append twice when the client reposts the same tooltip", () => {
+    const lua = auctionPage();
+    lua.exec(`
+      WowTest.fireItemTooltip(GameTooltipTooltip, "|Hitem:4338:0:0:0|h[Mageweave]|h", "Mageweave")
+      WowTest.fireTooltipPost(Enum.TooltipDataType.Item, GameTooltipTooltip)
+    `);
+    const text = lua.tooltipTextNamed("GameTooltipTooltip");
+    expect(text.split("WoWderhoi AHelper").length - 1).toBe(1);
+  });
+
+  it("keeps the setter fallback for pre-10.0.2 clients", () => {
+    const lua = loadAddon({ legacyTooltips: true });
+    lua.setScan(SCAN);
+    lua.exec(`
+      WowTest.bagItems[1] = { itemId = 4338, name = "Mageweave Cloth" }
+      GameTooltip:SetBagItem(0, 1)
+    `);
+    expect(lua.tooltipText()).toContain("WoWderhoi AHelper");
+  });
+});

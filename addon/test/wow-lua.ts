@@ -28,7 +28,7 @@ export { toLua };
 
 export type WowLua = ReturnType<typeof loadAddon>;
 
-export function loadAddon(options?: { locale?: string }) {
+export function loadAddon(options?: { locale?: string; legacyTooltips?: boolean }) {
   const state = lauxlib.luaL_newstate();
   lualib.luaL_openlibs(state);
 
@@ -53,6 +53,7 @@ export function loadAddon(options?: { locale?: string }) {
   load(fs.readFileSync(path.join(TEST_DIR, "wow-stub.lua"), "utf8"), "wow-stub.lua");
   if (lua.lua_pcall(state, 0, 0, 0) !== lua.LUA_OK) fail("stub failed to load");
   if (options?.locale) exec(`WowTest.locale = ${toLua(options.locale)}`);
+  if (options?.legacyTooltips) exec("WowTest.useLegacyTooltips()");
 
   // Each file gets the two varargs the client passes: the addon name and
   // the shared namespace table every file writes into.
@@ -154,6 +155,7 @@ export function loadAddon(options?: { locale?: string }) {
     leaveRow: (row: number) => exec(`WowTest.hoverRow(${row}, true)`),
     tooltipSource: () => String(evaluate("WowTest.tooltipSource()")),
     tooltipText: () => String(evaluate("WowTest.tooltipText()")),
+    tooltipTextNamed: (name: string) => String(evaluate(`WowTest.tooltipTextNamed(${toLua(name)})`)),
     tooltipShown: () => Boolean(evaluate("WowTest.tooltipShown()")),
 
     buyRow: (row: number) => exec(`WowTest.buyRow(${row})`),

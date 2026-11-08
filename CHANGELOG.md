@@ -116,6 +116,12 @@
 
 ### Fixed
 
+- Item tooltips in bags carried no price block: the 1.60 client renders bag
+  and chat item tooltips through the embedded `GameTooltipTooltip` frame
+  and reports them via `TooltipDataProcessor`, while the section only
+  accepted the `GameTooltip` global. It now appends to the frame the client
+  names and resolves the item through `TooltipUtil.GetDisplayedItem`, so
+  bags, clicked chat links and the auction house all carry the block.
 - A buy action's displayed `maxUnitPrice` and `stop.ifPriceAbove` are the
   gate's own unit-price cap (`listP · (1 − fee) − minUnitProfit`), not the
   break-even price. The old value let a conditional plan accept a price the
