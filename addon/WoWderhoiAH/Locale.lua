@@ -120,6 +120,7 @@ local L = {
   SORT_ASC = "^",
   SORT_DESC = "v",
   LISTING_CHANGED = "Price changed since the search — search again before buying.",
+  BUY_CAP = "The current price (%s each) is above the plan's cap (%s). Re-evaluate before buying.",
   BOUGHT = "Bought %s x%d for %s.",
   COMMODITY_STARTED = "Purchase started: %s x%d, about %s. Confirm the real total in the auction window.",
   COMMODITY_NO_DEPTH = "Not enough visible supply to fill that quantity — search again.",
@@ -298,6 +299,7 @@ if GetLocale() == "zhCN" then
   L.SORT_ASC = "▲"
   L.SORT_DESC = "▼"
   L.LISTING_CHANGED = "价格已变化 — 请重新搜索后再购买。"
+  L.BUY_CAP = "当前价 %s/件 已高于计划上限 %s；请重新评估后再买。"
   L.BOUGHT = "已购买 %s x%d，花费 %s。"
   L.COMMODITY_STARTED = "已发起购买：%s x%d，约 %s。请在拍卖行窗口确认实际总价。"
   L.COMMODITY_NO_DEPTH = "可见供给不足以覆盖该数量 — 请重新搜索。"

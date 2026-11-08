@@ -399,7 +399,9 @@ C_AuctionHouse = {
   HasFullCommoditySearchResults = function() return true end,
   RequestMoreCommoditySearchResults = function() return true end,
   GetAuctionInfoByID = function(auctionID) return ah.auctions[auctionID] end,
-  PlaceBid = function() end,
+  PlaceBid = function(auctionID, amount)
+    bed.bid = { auctionID = auctionID, amount = amount }
+  end,
   StartCommoditiesPurchase = function(itemId, quantity)
     bed.commodityPurchase = { itemId = itemId, quantity = quantity }
   end,

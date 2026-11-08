@@ -287,6 +287,21 @@ local function refreshRadar()
   end
 end
 
+-- The scanner lands a new book while the page may be open. Only a visible
+-- page is rebuilt: evaluating the core for a closed panel is wasted work,
+-- and the page rebuilds on open anyway.
+WAH.refreshRadar = function()
+  if not (trade and trade:IsShown()) then return end
+  refreshRadar()
+  -- The list may have shrunk under the scroll position; keep the view valid
+  -- and repaint with the new book.
+  local maxOffset = math.max(0, #visibleRows() - ROWS_VISIBLE)
+  if FauxScrollFrame_GetOffset(trade.scroll) > maxOffset then
+    FauxScrollFrame_SetOffset(trade.scroll, maxOffset)
+  end
+  renderRows()
+end
+
 -- ============================== Buy side ==============================
 
 local function itemKeyFor(itemId)
@@ -492,6 +507,17 @@ local function completePurchase(purchase, filled)
   end)
 end
 
+-- The plan's price ceiling is a condition, not a caption. Checking it here
+-- is what makes `stop.ifPriceAbove` executable: a book that moved above the
+-- cap after the radar ran must not be bought at the new price.
+local function rejectAboveCap(unitPrice)
+  local cap = searchState and searchState.maxUnitPrice
+  if not cap or not unitPrice or unitPrice <= cap then return false end
+  chatMessage(string.format("|cffff5555" .. L.BUY_CAP .. "|r",
+    coinString(math.floor(unitPrice + 0.5)), coinString(math.floor(cap + 0.5))))
+  return true
+end
+
 local function verifyAndBuy(row)
   if row.commodity then
     -- Commodities cannot be targeted by auctionID: the purchase always takes
@@ -509,6 +535,9 @@ local function verifyAndBuy(row)
       chatMessage(L.COMMODITY_NO_DEPTH)
       return
     end
+    -- A commodity purchase walks the ladder, so the price that matters is
+    -- the average the requested quantity actually pays.
+    if rejectAboveCap(estimate / row.count) then return end
     awaitPurchase({ itemId = row.itemId, name = row.name, qty = row.count,
       cost = estimate, tiers = tiers, via = "commodity", row = row })
     C_AuctionHouse.StartCommoditiesPurchase(row.itemId, row.count)
@@ -521,6 +550,7 @@ local function verifyAndBuy(row)
     chatMessage("|cffff5555" .. L.LISTING_CHANGED .. "|r")
     return
   end
+  if rejectAboveCap(info.buyoutAmount / (info.quantity or row.count)) then return end
   C_AuctionHouse.PlaceBid(row.auctionID, row.buyout)
   awaitPurchase({ itemId = row.itemId, name = row.name, qty = row.count,
     cost = row.buyout, via = "item", auctionID = row.auctionID, row = row })
@@ -589,17 +619,36 @@ renderRows = function()
             trade.searchBox:SetText(row.name)
             searchState = nil
             searching = nil
-            WAH.searchItem(row.itemId, row.name)
+            -- Carry the plan's cap into the search: the results table and
+            -- the buy click both enforce it.
+            WAH.searchItem(row.itemId, row.name, row)
           end
         end)
       else
         rowFrame.icon:SetTexture(row.texture or WAH.itemIcon(row.itemId))
+        -- A result row above the searched plan's cap is marked where the
+        -- player reads the price, not only in the chat line at click time.
+        local cap = searchState and searchState.maxUnitPrice
+        local overCap = cap ~= nil and row.unitPrice and row.unitPrice > cap
         rowFrame.showTooltip = function()
           GameTooltip:SetHyperlink(row.itemLink or ("item:" .. row.itemId))
+          if overCap then
+            GameTooltip:AddLine(string.format(L.ACTION_ABORT, coinString(math.floor(cap + 0.5))), 1, 0.3, 0.3)
+          end
         end
         rowFrame.name:SetText(row.name)
         rowFrame.buy:SetText(row.commodity and L.BUY_MARKET or L.BUY)
         rowFrame.buy:SetScript("OnClick", function() verifyAndBuy(row) end)
+        for slot = 1, COL_COUNT do
+          local column = columnAt(slot)
+          if column and column.key == "unitPrice" then
+            if overCap then
+              rowFrame.cells[slot]:SetTextColor(1, 0.3, 0.3)
+            else
+              rowFrame.cells[slot]:SetTextColor(1, 1, 1)
+            end
+          end
+        end
       end
       rowFrame:Show()
     else
@@ -614,7 +663,7 @@ local function sameItemKey(left, right)
   return left and right and left.itemID == right.itemID
 end
 
-function WAH.searchItem(itemId, name)
+function WAH.searchItem(itemId, name, plan)
   if not auctionHouseOpen() then
     chatMessage(L.SEARCH_NEED_AH)
     searching = nil
@@ -631,7 +680,10 @@ function WAH.searchItem(itemId, name)
     itemKey = itemKey,
     itemId = itemId,
     name = info.itemName or name or tostring(itemId),
-    commodity = info.isCommodity
+    commodity = info.isCommodity,
+    -- The buy plan's own ceiling. A plain search has no plan and therefore
+    -- no cap; the rows are then informational until the player decides.
+    maxUnitPrice = plan and (plan.stop and plan.stop.ifPriceAbove or plan.maxUnitPrice) or nil
   }
   -- Opening an item resolves the name search: the browse that produced it
   -- has no answer left to deliver.

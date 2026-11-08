@@ -3,7 +3,7 @@
 // the sell plan for a held position -- and the game page had no surface for
 // it until this mode existed.
 import { describe, expect, it } from "vitest";
-import { loadAddon } from "./wow-lua";
+import { loadAddon, type WowLua } from "./wow-lua";
 
 function cockpit(withPosition: boolean) {
   const lua = loadAddon();
@@ -26,6 +26,76 @@ function cockpit(withPosition: boolean) {
   lua.exec("WowTest.clickButton(WowTest.ns.L.NEXT_STEPS)");
   return lua;
 }
+
+// Put one auction-house result in front of the FIND click. The plan's cap
+// for this book is 9999 * 0.95 - 100 = 9399 copper per unit.
+function primeBook(lua: WowLua, unitPrice: number): void {
+  lua.exec(`
+    WowTest.pendingItemResults[4338] = {
+      { itemKey = C_AuctionHouse.MakeItemKey(4338, 0, 0, 0), auctionID = 7001,
+        quantity = 10, itemLink = "|Hitem:4338:0:0:0|h[Clean Spread]|h",
+        minBid = ${unitPrice * 10}, buyoutAmount = ${unitPrice * 10} }
+    }
+    WowTest.ah.auctions[7001] = {
+      itemKey = C_AuctionHouse.MakeItemKey(4338, 0, 0, 0),
+      minBid = ${unitPrice * 10}, bidAmount = ${unitPrice * 10},
+      buyoutAmount = ${unitPrice * 10}
+    }
+  `);
+}
+
+function openPlan(): WowLua {
+  const lua = loadAddon();
+  lua.setScan([{
+    itemId: 4338, name: "Clean Spread", minPrice: 8000, sellP: 10000,
+    numAuctions: 6, sellers: 3, quantity: 70, itemClass: "Trade Goods",
+    tiers: [{ p: 8000, q: 20 }, { p: 9000, q: 50 }]
+  }]);
+  lua.setPoints([{ itemId: 4338, closes: [10000, 10500, 11000, 11500, 11000, 11000], spacing: 1800 }]);
+  lua.openTab();
+  lua.exec("WowTest.clickButton(WowTest.ns.L.NEXT_STEPS)");
+  return lua;
+}
+
+describe("buy plan price cap", () => {
+  it("refuses to buy a listing above the plan's abort price", () => {
+    const lua = openPlan();
+    primeBook(lua, 9500);
+    lua.buyRow(1); // FIND: carries the plan's cap into the search
+    lua.buyRow(1); // BUY on the result row
+    expect(lua.anyChat("高于计划上限")).toBe(true);
+    expect(lua.eval("WowTest.bid == nil")).toBe(true);
+  });
+
+  it("buys a listing inside the plan's cap", () => {
+    const lua = openPlan();
+    primeBook(lua, 9000);
+    lua.buyRow(1);
+    lua.buyRow(1);
+    expect(lua.anyChat("高于计划上限")).toBe(false);
+    expect(lua.number("WowTest.bid.auctionID")).toBe(7001);
+  });
+});
+
+describe("scan refresh", () => {
+  it("rebuilds the visible radar when a scan lands", () => {
+    const lua = loadAddon();
+    lua.setScan([{
+      itemId: 4338, name: "Clean Spread", minPrice: 8000, sellP: 10000,
+      numAuctions: 6, sellers: 3, quantity: 70, itemClass: "Trade Goods",
+      tiers: [{ p: 8000, q: 20 }, { p: 9000, q: 50 }]
+    }]);
+    lua.setPoints([{ itemId: 4338, closes: [10000, 10500, 11000, 11500, 11000, 11000], spacing: 1800 }]);
+    lua.openTab();
+    lua.findDeals();
+    expect(lua.names()).toEqual(["Clean Spread"]);
+    // The new book has one flat tier: no executable spread.
+    lua.runScan([{ itemId: 4338, name: "Clean Spread", count: 10, buyout: 8000 }]);
+    // The refresh is scheduled after the save, not inside the finish frame.
+    lua.advance(1);
+    expect(lua.names()).toEqual([]);
+  });
+});
 
 describe("next steps mode", () => {
   it("renders the conditional buy plan with its price and net", () => {

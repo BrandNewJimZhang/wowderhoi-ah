@@ -989,6 +989,12 @@ local function flushFinishedScan()
   scan = nil
   WAH.scanRunning = false
   frame:SetScript("OnUpdate", nil)
+  -- The page still shows the book from before the scan. Rebuild it after
+  -- the save, outside the finish frame, so "scan complete" and the visible
+  -- rows describe the same market.
+  if WAH.refreshRadar then
+    C_Timer.After(0.5, function() WAH.refreshRadar() end)
+  end
 end
 
 local function finalizeFinish()
