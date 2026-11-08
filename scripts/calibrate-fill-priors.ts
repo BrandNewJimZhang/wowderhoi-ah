@@ -67,8 +67,6 @@ async function main() {
         itemId: row.itemId,
         timestamp: row.generation.scannedAt,
         marketType: row.marketType,
-        quantity: row.quantity,
-        soldProxyLow: row.soldProxyLow,
         observationVersion: row.observationVersion,
         priced: row.priced,
         sellersInvisible: row.sellersInvisible,

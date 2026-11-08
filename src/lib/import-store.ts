@@ -13,7 +13,7 @@ const SERIES_BATCH = 500;
 const DECISION_BATCH = 200;
 const ID_CHUNK = 500;
 
-export function chunks<T>(values: readonly T[], size: number): T[][] {
+function chunks<T>(values: readonly T[], size: number): T[][] {
   const out: T[][] = [];
   for (let start = 0; start < values.length; start += size) out.push(values.slice(start, start + size));
   return out;

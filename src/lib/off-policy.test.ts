@@ -29,7 +29,6 @@ describe("evaluatePolicy", () => {
       () => true
     );
     expect(estimate.matched).toBe(1);
-    expect(estimate.identityMatched).toBe(1);
   });
 
   it("weights by the logged propensity and clips extreme weights", () => {
@@ -40,7 +39,6 @@ describe("evaluatePolicy", () => {
       { maxWeight: 5 }
     );
     expect(estimate.estimate).toBe(100);
-    expect(estimate.truncated).toBe(1);
   });
 
   it("does not match a trade outside the window", () => {

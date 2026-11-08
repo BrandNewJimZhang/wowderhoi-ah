@@ -32,12 +32,9 @@ type TargetPolicy = (decision: LoggedDecision) => boolean;
 type PolicyEstimate = {
   estimate: number; // weighted mean P&L of matched trades
   matched: number;
-  // Matches made through an adopted decision id, not a same-item window.
-  identityMatched: number;
   decisions: number;
   coverage: number; // matched / decisions
   effectiveSampleSize: number;
-  truncated: number; // weights clipped at maxWeight
 };
 
 export function evaluatePolicy(
@@ -54,8 +51,6 @@ export function evaluatePolicy(
   let sumSquares = 0;
   let weightedPnl = 0;
   let matched = 0;
-  let identityMatched = 0;
-  let truncated = 0;
   for (const decision of decisions) {
     if (!policy(decision) || decision.itemId === null) continue;
     // Identity wins: an adopted decision names the sale it produced.
@@ -72,11 +67,8 @@ export function evaluatePolicy(
         );
     if (tradeIndex === -1) continue;
     used.add(tradeIndex);
-    if (identityIndex !== -1) identityMatched += 1;
     const propensity = decision.propensity && decision.propensity > 0 ? decision.propensity : 1;
-    const rawWeight = 1 / propensity;
-    const weight = Math.min(rawWeight, maxWeight);
-    if (rawWeight > maxWeight) truncated += 1;
+    const weight = Math.min(1 / propensity, maxWeight);
     weightSum += weight;
     sumSquares += weight * weight;
     weightedPnl += weight * sortedTrades[tradeIndex].pnl;
@@ -85,11 +77,9 @@ export function evaluatePolicy(
   return {
     estimate: weightSum > 0 ? weightedPnl / weightSum : 0,
     matched,
-    identityMatched,
     decisions: decisions.length,
     coverage: decisions.length > 0 ? matched / decisions.length : 0,
-    effectiveSampleSize: sumSquares > 0 ? (weightSum * weightSum) / sumSquares : 0,
-    truncated
+    effectiveSampleSize: sumSquares > 0 ? (weightSum * weightSum) / sumSquares : 0
   };
 }
 
