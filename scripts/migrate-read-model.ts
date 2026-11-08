@@ -68,21 +68,47 @@ function utcDay(t: number): number {
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) / 1000;
 }
 
-function numberOr(value: unknown, fallback = 0): number {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : fallback;
+// Raw SQL hands the legacy columns back untyped. A value that is not a
+// finite number means the database is corrupt, not that the fact is zero:
+// defaulting it would put a fabricated price or timestamp into the rebuilt
+// generation and call it history.
+function numericReader(row: Record<string, unknown>): (column: string) => number {
+  return (column) => {
+    const value = row[column];
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      throw new Error(`Legacy ${column} must be a finite number, got ${JSON.stringify(value)}`);
+    }
+    return value;
+  };
+}
+
+function stringOf(row: Record<string, unknown>, column: string): string {
+  const value = row[column];
+  if (typeof value !== "string" || value === "") {
+    throw new Error(`Legacy ${column} must be a non-empty string, got ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
+// The query engine hands DATETIME columns back as Date objects even though
+// SQLite stores them as integer milliseconds. Accept exactly that shape: a
+// coerced number here would silently date the whole history to 1970.
+function dateOf(row: Record<string, unknown>, column: string): Date {
+  const value = row[column];
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  throw new Error(`Legacy ${column} must be a valid date, got ${JSON.stringify(value)}`);
 }
 
 function booleanOf(value: unknown): boolean {
   return Number(value) === 1 || value === true;
 }
 
-function jsonOf(value: unknown): unknown {
+function jsonOf(value: unknown, column: string): unknown {
   if (typeof value !== "string") return value ?? null;
   try {
     return JSON.parse(value);
-  } catch {
-    return null;
+  } catch (error) {
+    throw new Error(`Legacy ${column} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -108,36 +134,40 @@ async function loadLegacyRows(): Promise<{ snapshots: LegacySnapshot[]; dailies:
               tier_truncated, top_tiers, expiring
        FROM "AuctionSnapshot" ORDER BY timestamp ASC`
     );
-    snapshots.push(...rows.map((row) => ({
-      marketId: String(row.market_id),
-      itemId: Number(row.item_id),
-      timestamp: new Date(numberOr(row.timestamp)),
-      priced: booleanOf(row.priced),
-      minPrice: numberOr(row.min_price),
-      marketPrice: numberOr(row.market_price),
-      sellPrice: numberOr(row.sell_price),
-      p5Price: numberOr(row.p5_price),
-      quantity: numberOr(row.quantity),
-      numAuctions: numberOr(row.num_auctions),
-      sellerCount: numberOr(row.seller_count),
-      sellersInvisible: booleanOf(row.sellers_invisible),
-      ownerVisible: booleanOf(row.owner_visible),
-      observationVersion: row.observation_version === null ? null : numberOr(row.observation_version),
-      sellerHHI: row.seller_hhi === null ? null : numberOr(row.seller_hhi),
-      topSellerShare: row.top_seller_share === null ? null : numberOr(row.top_seller_share),
-      marketType: typeof row.market_type === "string" ? row.market_type : null,
-      bidOnlyCount: numberOr(row.bid_only_count),
-      highestBid: numberOr(row.highest_bid),
-      soldProxyLow: numberOr(row.sold_proxy_low),
-      soldProxyHigh: numberOr(row.sold_proxy_high),
-      flowObserved: booleanOf(row.flow_observed),
-      supplyGrowth: numberOr(row.supply_growth),
-      historySamples: row.history_samples === null ? null : numberOr(row.history_samples),
-      historySpanHours: row.history_span_hours === null ? null : numberOr(row.history_span_hours),
-      tierTruncated: booleanOf(row.tier_truncated),
-      topTiers: jsonOf(row.top_tiers),
-      expiring: jsonOf(row.expiring)
-    })));
+    snapshots.push(...rows.map((row) => {
+      const n = numericReader(row);
+      const nullable = (column: string) => (row[column] === null ? null : n(column));
+      return {
+        marketId: stringOf(row, "market_id"),
+        itemId: n("item_id"),
+        timestamp: dateOf(row, "timestamp"),
+        priced: booleanOf(row.priced),
+        minPrice: n("min_price"),
+        marketPrice: n("market_price"),
+        sellPrice: n("sell_price"),
+        p5Price: n("p5_price"),
+        quantity: n("quantity"),
+        numAuctions: n("num_auctions"),
+        sellerCount: n("seller_count"),
+        sellersInvisible: booleanOf(row.sellers_invisible),
+        ownerVisible: booleanOf(row.owner_visible),
+        observationVersion: nullable("observation_version"),
+        sellerHHI: nullable("seller_hhi"),
+        topSellerShare: nullable("top_seller_share"),
+        marketType: typeof row.market_type === "string" ? row.market_type : null,
+        bidOnlyCount: n("bid_only_count"),
+        highestBid: n("highest_bid"),
+        soldProxyLow: n("sold_proxy_low"),
+        soldProxyHigh: n("sold_proxy_high"),
+        flowObserved: booleanOf(row.flow_observed),
+        supplyGrowth: n("supply_growth"),
+        historySamples: nullable("history_samples"),
+        historySpanHours: nullable("history_span_hours"),
+        tierTruncated: booleanOf(row.tier_truncated),
+        topTiers: jsonOf(row.top_tiers, "top_tiers"),
+        expiring: jsonOf(row.expiring, "expiring")
+      };
+    }));
   }
 
   const dailies: LegacyDaily[] = [];
@@ -146,14 +176,17 @@ async function loadLegacyRows(): Promise<{ snapshots: LegacySnapshot[]; dailies:
       `SELECT market_id, item_id, date, close_price, low_price, volume
        FROM "DailySummary" ORDER BY date ASC`
     );
-    dailies.push(...rows.map((row) => ({
-      marketId: String(row.market_id),
-      itemId: Number(row.item_id),
-      date: new Date(numberOr(row.date)),
-      closePrice: numberOr(row.close_price),
-      lowPrice: numberOr(row.low_price),
-      volume: numberOr(row.volume)
-    })));
+    dailies.push(...rows.map((row) => {
+      const n = numericReader(row);
+      return {
+        marketId: stringOf(row, "market_id"),
+        itemId: n("item_id"),
+        date: dateOf(row, "date"),
+        closePrice: n("close_price"),
+        lowPrice: n("low_price"),
+        volume: n("volume")
+      };
+    }));
   }
   return { snapshots, dailies };
 }
