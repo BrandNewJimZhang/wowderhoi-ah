@@ -15,7 +15,7 @@ function CoinPart({ value, kind }: { value: number; kind: keyof typeof COIN_ICON
       <span className={kind === "gold" ? "text-wow-gold" : kind === "silver" ? "text-wow-silver" : "text-wow-copper"}>
         {value.toLocaleString()}
       </span>
-      {/* eslint-disable-next-line @next/next/no-img-element -- tiny external sprite, no optimization needed */}
+      {/* eslint-disable-next-line @next/next/no-img-element -- tiny local sprite, no optimization needed */}
       <img src={COIN_ICONS[kind]} alt={kind} width={10} height={10} className="inline-block" />
     </span>
   );

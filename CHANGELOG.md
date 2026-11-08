@@ -170,6 +170,10 @@
   accepted the `GameTooltip` global. It now appends to the frame the client
   names and resolves the item through `TooltipUtil.GetDisplayedItem`, so
   bags, clicked chat links and the auction house all carry the block.
+- Terminal search ranks a buyable book above a delisted row at the same
+  relevance, matching the in-game box. The terminal never passed the
+  ranker's `booked` flag, so a delisted row with a large last-listed
+  quantity could win a same-name tie.
 - Fill calibration applies the prediction horizon to identity matches too.
   An adopted decision's sale four days later still carries the id, but it
   is not evidence about a 24-hour fill probability; only the same-item

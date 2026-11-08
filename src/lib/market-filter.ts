@@ -76,7 +76,9 @@ export function filterSortSignals<T extends SortableSignal>(
     // Matching is the shared ranker's job, not a second copy of the token
     // rules: a bare id outranks a name that contains the same digits, and
     // both stay in the result, exactly as the addon's search box ranks them.
-    rows = rankSearch(rows, raw);
+    // A delisted row is not a buyable book, so it must not win the same-name
+    // tie on its last listed quantity.
+    rows = rankSearch(rows.map((row) => ({ ...row, booked: !row.stale })), raw);
   }
   // Delisted items keep their last book in the monitor, but they must never
   // outrank a tradeable row: an old wide spread is not an opportunity.

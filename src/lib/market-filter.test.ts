@@ -45,6 +45,14 @@ describe("filterSortSignals", () => {
     expect(filterSortSignals(rows, { query: "2589" }).map((signal) => signal.itemId)).toEqual([2589, 5]);
   });
 
+  it("ranks a buyable book above a delisted row at the same relevance", () => {
+    const rows = [
+      makeSignal({ itemId: 1, name: "Linen Cloth", quantity: 100, stale: true }),
+      makeSignal({ itemId: 2, name: "Linen Cloth", quantity: 1 })
+    ];
+    expect(filterSortSignals(rows, { query: "linen" }).map((signal) => signal.itemId)).toEqual([2, 1]);
+  });
+
   it("filters by category", () => {
     expect(filterSortSignals(signals, { category: "草药" }).map((signal) => signal.itemId)).toEqual([3]);
   });
