@@ -65,7 +65,10 @@ async function importLatestScan() {
       ? `Scan ${new Date(scan.scannedAt * 1000).toISOString()} already imported, skipping.`
       : body.journalUpdated
         ? `Journal for scan ${body.scannedAt} updated without a new scan: ${body.positions} positions, ${body.trades} trades.`
-        : `Imported ${body.imported} items, ${body.positions} positions and ${body.trades} trades from scan ${body.scannedAt}.`
+        : `Imported ${body.imported} items, ${body.positions} positions and ${body.trades} trades from scan ${body.scannedAt}` +
+          (body.backfilled > 0
+            ? `; backfilled ${body.backfilled} missed scan(s) from the addon series${body.backfillSkipped > 0 ? `, ${body.backfillSkipped} left for a later import` : ""}.`
+            : ".")
   );
   // Replay errors mean the projected ledger is not the book the player sees:
   // a truncated lot, a sale whose posting is missing, or an event kind the

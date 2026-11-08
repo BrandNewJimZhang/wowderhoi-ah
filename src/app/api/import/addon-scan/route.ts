@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { normalizeAddonScan } from "@/lib/addon-scan";
+import { normalizeAddonScan, type AddonScan } from "@/lib/addon-scan";
 import { mergeScanIntoDailySummaries } from "@/lib/daily-summary";
 import { diffScanItems } from "@/lib/scan-import";
-import { aggregateSeriesDays, parseAddonSeries, selectSeriesBackfill, type SeriesBackfill } from "@/lib/series-import";
+import { aggregateSeriesDays, parseAddonSeries, selectSeriesBackfill, type AddonSeries } from "@/lib/series-import";
 import { placeholderItemName } from "@/lib/item-name";
 import { bookForCharacter, parseJournal, replayJournal, type ReplayState } from "@/lib/journal";
 
@@ -42,6 +42,126 @@ function journalStatements(replay: ReplayState, marketId: string): Prisma.Prisma
     prisma.trade.deleteMany({ where: { marketId } }),
     ...(trades.length > 0 ? [prisma.trade.createMany({ data: trades })] : [])
   ];
+}
+
+type BackfillResult = {
+  statements: Prisma.PrismaPromise<unknown>[];
+  timestamps: number[];
+  skipped: number;
+};
+
+// Scans completed while the watcher was not running survive only in the
+// addon's series. Deliver the ones the database has never seen, newest first
+// and bounded per import. The same builder serves a new scan and a duplicate:
+// after a watcher restart the latest scan is already in the database while
+// the scans before it may be missing, and that replay is exactly when the
+// backfill matters.
+async function buildBackfillStatements(
+  scan: AddonScan,
+  series: AddonSeries | null,
+  marketId: string,
+  knownItemIds: Set<number>
+): Promise<BackfillResult> {
+  if (!series) return { statements: [], timestamps: [], skipped: 0 };
+  const currentScanAt = Math.round(scan.scannedAt.getTime() / 1000);
+  const existingStamps = await prisma.auctionSnapshot.findMany({
+    where: { marketId, timestamp: { lt: scan.scannedAt } },
+    select: { timestamp: true },
+    distinct: ["timestamp"]
+  });
+  const backfill = selectSeriesBackfill(
+    series,
+    existingStamps.map((row) => Math.round(row.timestamp.getTime() / 1000)),
+    currentScanAt,
+    SERIES_BACKFILL_LIMIT
+  );
+  if (backfill.points.length === 0) {
+    return { statements: [], timestamps: backfill.timestamps, skipped: backfill.skipped };
+  }
+
+  // Backfilled items may not appear in the current scan. The Item row is the
+  // snapshot's foreign key, so every referenced id must exist before the
+  // snapshot batch runs. `knownItemIds` includes the rows the caller is about
+  // to create in the same transaction.
+  const itemCreates: Array<{ itemId: number; name: string; quality: string; category: string; subCategory: string; vendorPrice: number }> = [];
+  const snapshots: Prisma.AuctionSnapshotCreateManyInput[] = [];
+  for (const point of backfill.points) {
+    if (!knownItemIds.has(point.itemId)) {
+      knownItemIds.add(point.itemId);
+      itemCreates.push({
+        itemId: point.itemId,
+        name: placeholderItemName(point.itemId),
+        quality: "unknown",
+        category: "unknown",
+        subCategory: "unknown",
+        vendorPrice: 0
+      });
+    }
+    snapshots.push({
+      itemId: point.itemId,
+      timestamp: new Date(point.timestamp * 1000),
+      marketId,
+      priced: true,
+      minPrice: point.minPrice,
+      marketPrice: point.minPrice,
+      sellPrice: point.sellPrice,
+      // The series does not carry P10, tiers, sellers or flow. Zero/null is
+      // an honest "not observed", not a measured zero.
+      p5Price: 0,
+      quantity: point.quantity,
+      numAuctions: point.numAuctions,
+      sellerCount: point.numAuctions,
+      sellersInvisible: false,
+      ownerVisible: false,
+      observationVersion: null,
+      marketType: null,
+      flowObserved: false
+    });
+  }
+
+  const aggregates = aggregateSeriesDays(backfill.points, scan.scannedAt);
+  const aggregateDates = Array.from(new Set(aggregates.map((row) => row.date.toISOString())))
+    .map((iso) => new Date(iso));
+  const existingDayRows = aggregateDates.length === 0 ? [] : await prisma.dailySummary.findMany({
+    where: { marketId, date: { in: aggregateDates } },
+    select: { itemId: true, date: true, highPrice: true, lowPrice: true }
+  });
+  const existingByKey = new Map(existingDayRows.map((row) => [`${row.date.toISOString()}|${row.itemId}`, row]));
+  const newDayRows: Prisma.DailySummaryCreateManyInput[] = [];
+  const dayUpdates: Prisma.PrismaPromise<unknown>[] = [];
+  for (const aggregate of aggregates) {
+    const existing = existingByKey.get(`${aggregate.date.toISOString()}|${aggregate.itemId}`);
+    if (!existing) {
+      newDayRows.push({ marketId, ...aggregate });
+    } else {
+      // The day already has a scan in the database. Extend its extremes but
+      // never move the close backwards from a partial history point.
+      dayUpdates.push(prisma.dailySummary.update({
+        where: { marketId_itemId_date: { marketId, itemId: aggregate.itemId, date: aggregate.date } },
+        data: {
+          highPrice: Math.max(existing.highPrice, aggregate.highPrice),
+          lowPrice: Math.min(existing.lowPrice, aggregate.lowPrice)
+        }
+      }));
+    }
+  }
+  if (newDayRows.length > 0) {
+    dayUpdates.push(prisma.dailySummary.createMany({ data: newDayRows }));
+  }
+
+  const snapshotBatches: Prisma.PrismaPromise<unknown>[] = [];
+  for (let start = 0; start < snapshots.length; start += SNAPSHOT_BATCH) {
+    snapshotBatches.push(prisma.auctionSnapshot.createMany({ data: snapshots.slice(start, start + SNAPSHOT_BATCH) }));
+  }
+  return {
+    statements: [
+      ...(itemCreates.length > 0 ? [prisma.item.createMany({ data: itemCreates })] : []),
+      ...snapshotBatches,
+      ...dayUpdates
+    ],
+    timestamps: backfill.timestamps,
+    skipped: backfill.skipped
+  };
 }
 
 // Imports one addon snapshot plus the character's action journal. The
@@ -96,10 +216,22 @@ export async function POST(request: Request) {
       scan.character ? [scan.server, scan.faction, scan.character].join("|") : null
     );
     const replay = replayJournal(book?.events ?? []);
-    await prisma.$transaction(journalStatements(replay, duplicate.marketId));
+    // A restart replays the latest scan through this branch. The scans that
+    // happened while the watcher was down are still only in the series, so
+    // the duplicate import must backfill them too.
+    const existingItemIds = await prisma.item.findMany({ select: { itemId: true } });
+    const backfill = await buildBackfillStatements(
+      scan, series, duplicate.marketId, new Set(existingItemIds.map((row) => row.itemId))
+    );
+    await prisma.$transaction([
+      ...backfill.statements,
+      ...journalStatements(replay, duplicate.marketId)
+    ]);
     return NextResponse.json({
       duplicate: true,
       journalUpdated: true,
+      backfilled: backfill.timestamps.length,
+      backfillSkipped: backfill.skipped,
       scannedAt: scan.scannedAt.toISOString(),
       marketId: duplicate.marketId,
       positions: Object.keys(replay.positions).length,
@@ -167,95 +299,9 @@ export async function POST(request: Request) {
   });
   const { date, creates, updates } = mergeScanIntoDailySummaries(pricedItems, scan.scannedAt, market.id, existingDayRows);
 
-  // Scans completed while the watcher was not running survive only in the
-  // addon's series. Deliver the ones the database has never seen, newest
-  // first and bounded per import.
-  let backfill: SeriesBackfill | null = null;
-  if (series) {
-    const existingStamps = await prisma.auctionSnapshot.findMany({
-      where: { marketId: market.id, timestamp: { lt: scan.scannedAt } },
-      select: { timestamp: true },
-      distinct: ["timestamp"]
-    });
-    backfill = selectSeriesBackfill(
-      series,
-      existingStamps.map((row) => Math.round(row.timestamp.getTime() / 1000)),
-      Math.round(scan.scannedAt.getTime() / 1000),
-      SERIES_BACKFILL_LIMIT
-    );
-  }
-
-  // Backfilled items may not appear in the current scan. The Item row is the
-  // snapshot's foreign key, so every referenced id must exist before the
-  // snapshot batch runs.
   const knownItemIds = new Set(existingItems.map((row) => row.itemId));
   for (const create of itemDiff.creates) knownItemIds.add(create.itemId);
-  const backfillItemCreates: typeof itemDiff.creates = [];
-  const backfillSnapshots: Prisma.AuctionSnapshotCreateManyInput[] = [];
-  const backfillDayStatements: Prisma.PrismaPromise<unknown>[] = [];
-  if (backfill && backfill.points.length > 0) {
-    for (const point of backfill.points) {
-      if (!knownItemIds.has(point.itemId)) {
-        knownItemIds.add(point.itemId);
-        backfillItemCreates.push({
-          itemId: point.itemId,
-          name: placeholderItemName(point.itemId),
-          quality: "unknown",
-          category: "unknown",
-          subCategory: "unknown",
-          vendorPrice: 0
-        });
-      }
-      backfillSnapshots.push({
-        itemId: point.itemId,
-        timestamp: new Date(point.timestamp * 1000),
-        marketId: market.id,
-        priced: true,
-        minPrice: point.minPrice,
-        marketPrice: point.minPrice,
-        sellPrice: point.sellPrice,
-        // The series does not carry P10, tiers, sellers or flow. Zero/null is
-        // an honest "not observed", not a measured zero.
-        p5Price: 0,
-        quantity: point.quantity,
-        numAuctions: point.numAuctions,
-        sellerCount: point.numAuctions,
-        sellersInvisible: false,
-        ownerVisible: false,
-        observationVersion: null,
-        marketType: null,
-        flowObserved: false
-      });
-    }
-    const aggregates = aggregateSeriesDays(backfill.points, scan.scannedAt);
-    const aggregateDates = Array.from(new Set(aggregates.map((row) => row.date.toISOString())))
-      .map((iso) => new Date(iso));
-    const existingDayForBackfill = aggregateDates.length === 0 ? [] : await prisma.dailySummary.findMany({
-      where: { marketId: market.id, date: { in: aggregateDates } },
-      select: { itemId: true, date: true, highPrice: true, lowPrice: true }
-    });
-    const existingByKey = new Map(existingDayForBackfill.map((row) => [`${row.date.toISOString()}|${row.itemId}`, row]));
-    const newDayRows: Prisma.DailySummaryCreateManyInput[] = [];
-    for (const aggregate of aggregates) {
-      const existing = existingByKey.get(`${aggregate.date.toISOString()}|${aggregate.itemId}`);
-      if (!existing) {
-        newDayRows.push({ marketId: market.id, ...aggregate });
-      } else {
-        // The day already has a scan in the database. Extend its extremes but
-        // never move the close backwards from a partial history point.
-        backfillDayStatements.push(prisma.dailySummary.update({
-          where: { marketId_itemId_date: { marketId: market.id, itemId: aggregate.itemId, date: aggregate.date } },
-          data: {
-            highPrice: Math.max(existing.highPrice, aggregate.highPrice),
-            lowPrice: Math.min(existing.lowPrice, aggregate.lowPrice)
-          }
-        }));
-      }
-    }
-    if (newDayRows.length > 0) {
-      backfillDayStatements.push(prisma.dailySummary.createMany({ data: newDayRows }));
-    }
-  }
+  const backfill = await buildBackfillStatements(scan, series, market.id, knownItemIds);
 
   const book = bookForCharacter(
     parseJournal(payload.journal),
@@ -268,22 +314,13 @@ export async function POST(request: Request) {
   // (tooling) leaves the ledger untouched.
   const replay = journalPresent ? replayJournal(book?.events ?? []) : null;
 
-  const backfillSnapshotBatches: Prisma.PrismaPromise<unknown>[] = [];
-  for (let start = 0; start < backfillSnapshots.length; start += SNAPSHOT_BATCH) {
-    backfillSnapshotBatches.push(
-      prisma.auctionSnapshot.createMany({ data: backfillSnapshots.slice(start, start + SNAPSHOT_BATCH) })
-    );
-  }
-
   // One transaction for the whole import: the snapshot, the backfilled
   // history, the derived daily rows and the journal projection land
   // all-or-nothing.
   const statements: Prisma.PrismaPromise<unknown>[] = [
     ...(itemDiff.creates.length > 0 ? [prisma.item.createMany({ data: itemDiff.creates })] : []),
-    ...(backfillItemCreates.length > 0 ? [prisma.item.createMany({ data: backfillItemCreates })] : []),
+    ...backfill.statements,
     ...itemDiff.updates.map((update) => prisma.item.update({ where: { itemId: update.itemId }, data: update.data })),
-    ...backfillSnapshotBatches,
-    ...backfillDayStatements,
     prisma.auctionSnapshot.createMany({
       data: scan.items.map((item) => ({
         itemId: item.itemId,
@@ -333,8 +370,8 @@ export async function POST(request: Request) {
     imported: scan.items.length,
     bidOnly: scan.items.filter((item) => item.bidOnlyCount > 0).length,
     // Scans delivered from the series rather than from the current snapshot.
-    backfilled: backfill ? backfill.timestamps.length : 0,
-    backfillSkipped: backfill ? backfill.skipped : 0,
+    backfilled: backfill.timestamps.length,
+    backfillSkipped: backfill.skipped,
     scannedAt: scan.scannedAt.toISOString(),
     marketId: market.id,
     positions: replay ? Object.keys(replay.positions).length : 0,

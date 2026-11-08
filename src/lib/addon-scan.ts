@@ -61,7 +61,7 @@ export type AddonScanItem = {
   expiring: { soon: number; mid: number; late: number };
 };
 
-type AddonScan = {
+export type AddonScan = {
   scannedAt: Date;
   server: string;
   faction: string;
