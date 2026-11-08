@@ -8,7 +8,7 @@ import {
   getImportRuns,
   getSeriesStats
 } from "@/lib/repositories";
-import { describeFreshness, staleScanHint } from "@/lib/freshness";
+import { describeFreshness, scanGapHint, staleScanHint } from "@/lib/freshness";
 import { seriesSpanDays } from "@/lib/item-series";
 import { phaseLabels } from "@/lib/phase";
 import {
@@ -17,7 +17,6 @@ import {
   GENERATIONS_KEPT,
   IMPORT_RUN_RETENTION_DAYS
 } from "@/lib/retention";
-import { SCAN_INTERVAL_MINUTES } from "@/lib/market-rules";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { AppShell } from "@/components/app-shell";
 
@@ -49,7 +48,7 @@ export default async function HealthPage() {
   const freshness = describeFreshness(bundle.latestScanAt, new Date());
   const latestRun = runs[0];
   const seriesDays = seriesSpanDays(series.firstAt, series.lastAt);
-  const gapWarning = bundle.gapMinutes !== null && bundle.gapMinutes > 2 * SCAN_INTERVAL_MINUTES;
+  const gapHint = scanGapHint(bundle.gapMinutes);
   const database = databaseSize();
 
   return (
@@ -73,10 +72,10 @@ export default async function HealthPage() {
         </div>
       </div>
 
-      {(freshness.stale || gapWarning) && (
+      {(freshness.stale || gapHint) && (
         <div className="mb-3 border border-terminal-red/60 bg-terminal-panel px-4 py-3 font-mono text-xs text-terminal-red">
           {freshness.stale ? staleScanHint() : ""}
-          {gapWarning ? ` 扫描缺口 ${bundle.gapMinutes} 分钟，超过 2 个扫描间隔。` : ""}
+          {gapHint ? ` ${gapHint}` : ""}
         </div>
       )}
 

@@ -13,7 +13,7 @@ import { loadDemandEvents, upcomingDemandEvents } from "@/lib/events-calendar";
 import { buildProductionPlan } from "@/lib/production-plan";
 import { recipeToLp } from "@/lib/recipes";
 import { getMarketBundle } from "@/lib/market-read";
-import { describeFreshness, staleScanHint } from "@/lib/freshness";
+import { describeFreshness, scanGapHint, staleScanHint } from "@/lib/freshness";
 import { seriesSpanDays } from "@/lib/item-series";
 import { fillBasisLabels } from "@/lib/fill";
 import { phaseDescription, phaseLabels } from "@/lib/phase";
@@ -26,7 +26,6 @@ import { ItemIcon } from "@/components/item-icon";
 import { WatchStar } from "@/components/watch-star";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { AppShell } from "@/components/app-shell";
-import { SCAN_INTERVAL_MINUTES } from "@/lib/market-rules";
 
 export const dynamic = "force-dynamic";
 
@@ -54,7 +53,7 @@ export default async function Home() {
   ]);
   const upcomingEvents = upcomingDemandEvents(loadDemandEvents(), Math.floor(now.getTime() / 1000));
   const freshness = describeFreshness(latestScanAt, now);
-  const gapWarning = bundle.gapMinutes !== null && bundle.gapMinutes > 2 * SCAN_INTERVAL_MINUTES;
+  const gapHint = scanGapHint(bundle.gapMinutes);
   // Actions were sized under the generation's gates. Once the display phase
   // moves past them, applying the old plan would describe a different
   // market, so the list is withheld until the next scan.
@@ -126,12 +125,12 @@ export default async function Home() {
           </div>
         </div>
 
-        {(actionsBlocked || gapWarning) && (
+        {(actionsBlocked || gapHint) && (
           <div className="mb-3 flex flex-wrap items-center gap-3 border border-terminal-red/60 bg-terminal-panel px-4 py-3 font-mono text-xs text-terminal-red">
             <AlertTriangle size={15} />
             {freshness.stale && <span>{staleScanHint()}</span>}
             {bundle.phaseMismatch && <span>市场已从{phaseLabels[bundle.generationPhase]}推移到{phaseLabels[phase]}；行动清单需要重新扫描后再生成。</span>}
-            {gapWarning && <span>扫描缺口 {bundle.gapMinutes} 分钟。</span>}
+            {gapHint && <span>{gapHint}</span>}
           </div>
         )}
 

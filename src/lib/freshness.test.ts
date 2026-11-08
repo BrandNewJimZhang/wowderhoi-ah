@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { describeFreshness, staleScanHint } from "@/lib/freshness";
-import { SCAN_STALE_MINUTES } from "@/lib/market-rules";
+import { describeFreshness, scanGapHint, staleScanHint } from "@/lib/freshness";
+import { SCAN_INTERVAL_MINUTES, SCAN_STALE_MINUTES } from "@/lib/market-rules";
 
 const now = new Date("2026-07-24T12:00:00Z");
 const minutesAgo = (minutes: number) => new Date(now.getTime() - minutes * 60_000);
@@ -30,5 +30,14 @@ describe("staleScanHint", () => {
   it("names the threshold that marks a scan stale, not the scan cadence", () => {
     expect(staleScanHint()).toContain(`${SCAN_STALE_MINUTES} 分钟`);
     expect(staleScanHint()).toContain("/wahscan");
+  });
+});
+
+describe("scanGapHint", () => {
+  it("speaks only once at least two scan intervals are missing", () => {
+    expect(scanGapHint(null)).toBeNull();
+    expect(scanGapHint(SCAN_INTERVAL_MINUTES)).toBeNull();
+    expect(scanGapHint(2 * SCAN_INTERVAL_MINUTES)).toBeNull();
+    expect(scanGapHint(2 * SCAN_INTERVAL_MINUTES + 1)).toContain("超过 2 个扫描间隔");
   });
 });

@@ -2,7 +2,7 @@
 // "how old is this data" visible everywhere prices render. The threshold is
 // the compiled market rule, shared with the in-game tooltip: the same scan
 // must not read expired in game and fresh in the terminal.
-import { SCAN_STALE_MINUTES } from "@/lib/market-rules";
+import { SCAN_INTERVAL_MINUTES, SCAN_STALE_MINUTES } from "@/lib/market-rules";
 
 type Freshness = { label: string; stale: boolean };
 
@@ -11,6 +11,14 @@ type Freshness = { label: string; stale: boolean };
 // player 15 minutes while the flag only flips at 30.
 export function staleScanHint(): string {
   return `最新扫描已超过 ${SCAN_STALE_MINUTES} 分钟；进游戏 /wahscan。`;
+}
+
+// Two missing scans in a row is the point where the interval is no longer
+// jitter. The pages used to carry the threshold and its sentence separately,
+// so the cockpit and the health page described the same gap differently.
+export function scanGapHint(gapMinutes: number | null): string | null {
+  if (gapMinutes === null || gapMinutes <= 2 * SCAN_INTERVAL_MINUTES) return null;
+  return `扫描缺口 ${gapMinutes} 分钟，超过 2 个扫描间隔。`;
 }
 
 export function describeFreshness(latest: Date | null, now: Date): Freshness {
