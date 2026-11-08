@@ -67,7 +67,7 @@ function emptyBundle(phase: MarketPhase, scope: MarketScope | null = null): Mark
 // beats the generation's own anchor: a pruned store must not reset a mature
 // market to ignition. One resolver keeps the bundle and the shell badges
 // from reading different phases.
-export function displayPhaseOf(
+function displayPhaseOf(
   scope: MarketScope | null,
   generation: GenerationRecord | null,
   now: Date

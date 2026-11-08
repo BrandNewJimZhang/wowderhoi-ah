@@ -20,7 +20,7 @@ type SyntheticItem = {
   walk: SnapshotPoint[]; // oldest -> newest, one point per scan
 };
 
-export type SyntheticMarket = { items: SyntheticItem[] };
+type SyntheticMarket = { items: SyntheticItem[] };
 
 // Rough histogram of a real Forever AH scan: trade goods dominate.
 const ITEM_CLASSES: Array<{ itemClass: string; itemSubClass: string; weight: number }> = [

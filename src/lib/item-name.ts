@@ -4,7 +4,3 @@
 export function placeholderItemName(itemId: number): string {
   return `#${itemId}`;
 }
-
-export function isPlaceholderItemName(name: string, itemId: number): boolean {
-  return name === placeholderItemName(itemId);
-}
