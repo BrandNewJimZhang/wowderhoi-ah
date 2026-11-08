@@ -59,7 +59,7 @@ local frame -- created below; scanner helpers close over it
 -- exit. `attemptId` makes every delayed callback check that it still owns
 -- the scan it was scheduled for.
 local scan = nil
--- The finish phase runs across frames like the row loop: a 170k scan
+-- The finish phase runs across frames like the row loop: a 250k scan
 -- collapses to thousands of books, and aggregating them all in one
 -- OnUpdate is the stall a player actually feels at the end of a scan.
 local finish = nil
@@ -421,9 +421,7 @@ local function recordAuction(index)
     scan.itemsById[itemId] = entry
     if entry.name == "" then
       -- itemId is the identity; the name is metadata that can arrive later.
-      entry.nameMissing = true
-      scan.missingInfo[itemId] = true
-      scan.itemsMissingInfo = (scan.itemsMissingInfo or 0) + 1
+      scan.unfilled[itemId] = true
       if C_Item and C_Item.RequestLoadItemDataByID then
         local requestStart = debugprofilestop()
         C_Item.RequestLoadItemDataByID(itemId)
@@ -431,8 +429,11 @@ local function recordAuction(index)
       end
     end
   elseif entry.name == "" and displayName then
-    -- A later row of the same item may carry the name this one lacked.
+    -- A later row of the same item may carry the name this one lacked; it
+    -- no longer needs the hydrate wait.
     entry.name = displayName
+    scan.unfilled[itemId] = nil
+    scan.answered[itemId] = true
   end
 
   -- Own listings are not market supply. Identify by owner name first; when
@@ -547,12 +548,19 @@ local function appendPoint(series, item, nowTs)
   local event = 0
   if prevSell and prevSell > 0 and math.abs(item.sellP - prevSell) / prevSell >= 0.10 then event = 1 end
   if prevQ and prevQ > 0 and math.abs(item.quantity - prevQ) / prevQ >= 0.25 then event = 1 end
+  -- A series written before listing counts existed has no `n` array. Pad it
+  -- with zeros so all arrays stay parallel; the importer reads 0 as "count
+  -- unknown". Appending only the new point would make the arrays disagree
+  -- and the next import would reject the whole payload.
+  if not series.n then series.n = {} end
+  while #series.n < #series.t do series.n[#series.n + 1] = 0 end
   series.t[#series.t + 1] = nowTs
   series.min[#series.min + 1] = item.minPrice
   series.sell[#series.sell + 1] = item.sellP
   series.q[#series.q + 1] = item.quantity
   -- Listing count is the one series field a later backfill can still use to
-  -- tell an empty book from a missing observation. Older points have no n.
+  -- tell an empty book from a missing observation. A legacy point was padded
+  -- with 0 above.
   series.n[#series.n + 1] = item.numAuctions or 0
   series.e[#series.e + 1] = event
 end
@@ -643,18 +651,21 @@ local function pruneSeries(series, nowTs, budget)
   return foldToBudget(kept, budget)
 end
 
--- The per-item budget follows the market's breadth. It is computed once per
--- scan and stamped on the scan, so every item is pruned against the same
--- number instead of discovering the cap after the fact.
+-- The per-item budget follows the market's breadth: the global cap divided
+-- by the item count, with an eight-point floor. It is computed once per scan
+-- and stamped on the finish pass, so every item is pruned against the same
+-- number instead of discovering the cap after the fact. The floor is also a
+-- breadth ceiling: past 7,500 items the fixed budget cannot hold eight
+-- points per item, and the global assertion reports that instead of
+-- silently deleting the oldest history of every item.
 local function seriesBudgetFor(itemCount)
   return math.max(8, math.floor(SERIES_CAP / math.max(1, itemCount)))
 end
-WAH.seriesBudget = seriesBudgetFor
 
 -- The global cap is now an assertion, not a trimming pass: shape-bounded
--- pruning should keep the total under it. If it ever fires, the budget
--- arithmetic is wrong and the counter says so instead of silently deleting
--- the oldest history of every item.
+-- pruning should keep the total under it. If it fires, either the budget
+-- arithmetic is wrong or the market outgrew the eight-point floor above; the
+-- counter says so instead of silently deleting the oldest history.
 local function finalizeSeries(market)
   local total = 0
   for itemId, series in pairs(market.items) do
@@ -953,7 +964,6 @@ local function buildScanStats(reason)
     phase = s and s.phase or "idle",
     reason = reason,
     rows = s and math.max(0, (s.cursor or 1) - 1) or 0,
-    cursor = s and math.max(0, (s.cursor or 1) - 1) or 0,
     total = s and s.total or 0,
     waitMs = s and s.waitMs or 0,
     apiMs = apiMs,
@@ -966,7 +976,7 @@ local function buildScanStats(reason)
     responseVia = s and s.responseVia,
     itemsMissingInfo = s and s.itemsMissingInfo or 0,
     badRows = s and s.badRows or 0,
-    seriesBudget = f and f.seriesBudget or (s and s.seriesBudget),
+    seriesBudget = f and f.seriesBudget,
     saveMs = 0
   }
   return WAH.lastScanStats
@@ -981,7 +991,6 @@ local function flushFinishedScan()
   -- series cap. Publishing the stats here attributes that work instead of
   -- reporting the finish as if assembly were free.
   local stats = buildScanStats(nil)
-  stats.phase = "saved"
   local saveStart = debugprofilestop()
   WAH.flush()
   stats.saveMs = debugprofilestop() - saveStart
@@ -1059,6 +1068,11 @@ end
 
 local function beginFinish(totalAuctions)
   scan.phase = "finish"
+  -- Names still empty at publish time. The set shrinks while rows and load
+  -- results arrive, so this is the honest "missing" number /wahdiag shows.
+  local missing = 0
+  for _ in pairs(scan.unfilled or {}) do missing = missing + 1 end
+  scan.itemsMissingInfo = missing
   -- Keep the OnUpdate alive: the finish phase slices its own work.
   frame:SetScript("OnUpdate", processFinishChunk)
   -- A pipeline bump redefines every field, so old data is discarded rather
@@ -1085,11 +1099,9 @@ local function beginFinish(totalAuctions)
   for itemId in pairs(scan.itemsById) do itemIds[#itemIds + 1] = itemId end
   -- The per-item history budget follows the market's breadth: a fixed cap
   -- divided by a growing item count silently shrinks every item's window.
-  local seriesBudget = seriesBudgetFor(#itemIds)
-  scan.seriesBudget = seriesBudget
   finish = {
     totalAuctions = totalAuctions,
-    seriesBudget = seriesBudget,
+    seriesBudget = seriesBudgetFor(#itemIds),
     nowTs = nowTs,
     market = market,
     phase = phase,
@@ -1103,9 +1115,6 @@ local function beginFinish(totalAuctions)
     captureItems = {},
     itemCount = 0,
     seriesWindow = historyWindowForPhase(phase),
-    waitMs = scan.waitMs or 0,
-    processMs = scan.processMs or 0,
-    apiMs = scan.apiMs or 0,
     finishMs = 0,
     frameMaxMs = 0,
     frames = 0
@@ -1154,7 +1163,7 @@ local function processReplicateChunk()
     end
     -- Rows whose item record had not loaded get a short, bounded chance to
     -- resolve before the book is published.
-    if (scan.itemsMissingInfo or 0) > 0 then
+    if next(scan.unfilled or {}) ~= nil then
       beginHydrate()
     else
       beginFinish(total)
@@ -1253,10 +1262,14 @@ local function startScan()
     frames = 0,
     waitMs = 0,
     badRows = 0,
-    missingInfo = {},
-    resolvedInfo = {},
+    -- Items whose name was not available when their first row arrived. The
+    -- set shrinks as a later row or a load result fills the name; what
+    -- remains when the book is published is what the stats report.
+    unfilled = {},
+    -- Items a load result has answered, successfully or not. This is the
+    -- wait-accounting set: an answered item must not hold the hydrate phase.
+    answered = {},
     itemsMissingInfo = 0,
-    requestAt = time(),
     requestProfile = debugprofilestop(),
     capture = previousCapture()
   }
@@ -1309,7 +1322,7 @@ local function requestScan(origin)
       return false
     end
   end
-  return startScan(origin)
+  return startScan()
 end
 WAH.requestScan = requestScan
 
@@ -1319,8 +1332,8 @@ WAH.requestScan = requestScan
 beginHydrate = function()
   scan.phase = "hydrate"
   local remaining = 0
-  for itemId in pairs(scan.missingInfo or {}) do
-    if not scan.resolvedInfo[itemId] then remaining = remaining + 1 end
+  for itemId in pairs(scan.unfilled or {}) do
+    if not scan.answered[itemId] then remaining = remaining + 1 end
   end
   scan.hydrateRemaining = remaining
   if remaining == 0 then
@@ -1336,26 +1349,34 @@ beginHydrate = function()
   end)
 end
 
+-- A load result can arrive while the rows are still being read: the request
+-- is issued at an item's first row, and the client answers between frames.
+-- Ignoring the event outside the hydrate phase would leave a name that is
+-- already loaded empty for the rest of the scan.
 local function onItemDataLoaded(itemId, success)
-  if not scan or scan.phase ~= "hydrate" then return end
-  if not (scan.missingInfo and scan.missingInfo[itemId]) then return end
-  if scan.resolvedInfo[itemId] then return end
-  scan.resolvedInfo[itemId] = true
+  if not scan then return end
+  -- Metadata is only mutable while rows are being read or hydrated. Once
+  -- the book is published, a late answer must not change what was stamped.
+  if scan.phase ~= "rows" and scan.phase ~= "hydrate" then return end
+  if not (scan.unfilled and scan.unfilled[itemId]) then return end
+  if scan.answered[itemId] then return end
+  scan.answered[itemId] = true
   scan.hydrateRemaining = math.max(0, (scan.hydrateRemaining or 0) - 1)
   if success ~= false then
     local infoName, _, _, infoQuality = WAH.getItemInfo(itemId)
     local entry = scan.itemsById[itemId]
-    if entry then
-      if type(infoName) == "string" and infoName ~= "" then entry.name = infoName end
-      if type(infoQuality) == "number" and infoQuality >= 0 then entry.quality = infoQuality end
-    end
     local cached = itemInfoCache[itemId]
-    if cached then
-      if type(infoName) == "string" and infoName ~= "" then cached.name = infoName end
-      if type(infoQuality) == "number" and infoQuality >= 0 then cached.quality = infoQuality end
+    if type(infoName) == "string" and infoName ~= "" then
+      scan.unfilled[itemId] = nil
+      if entry then entry.name = infoName end
+      if cached then cached.name = infoName end
+    end
+    if type(infoQuality) == "number" and infoQuality >= 0 then
+      if entry then entry.quality = infoQuality end
+      if cached then cached.quality = infoQuality end
     end
   end
-  if scan and scan.phase == "hydrate" and (scan.hydrateRemaining or 0) <= 0 then
+  if scan.phase == "hydrate" and (scan.hydrateRemaining or 0) <= 0 then
     if scan.hydrateTimer then scan.hydrateTimer:Cancel(); scan.hydrateTimer = nil end
     beginFinish(scan.total or 0)
   end

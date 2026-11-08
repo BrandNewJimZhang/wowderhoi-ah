@@ -29,7 +29,7 @@ const NOW = 1_800_000_000;
 // descheduling says nothing about the code under test.
 const budgets = {
   core866Ms: 1000,
-  // A 170k-listing market collapses to roughly 6k item books; the whole
+  // A 250k-listing market collapses to roughly 6k item books; the whole
   // cockpit evaluation runs once per scan generation at that size.
   core6000Ms: 4000,
   buildInputMs: 100,
@@ -39,9 +39,9 @@ const budgets = {
   // the flow capture and series write. Fengari is much slower than the
   // client's native Lua, so the gate catches order-of-magnitude regressions.
   scan250kMs: 40_000,
-  // The three SavedVariables tables a 170k-listing market produces. The
-  // budget is deliberately above the current ~6.4MB so a deliberate field
-  // addition has room, while a per-row table regressions (the shape this
+  // The three SavedVariables tables a 250k-listing market produces. The
+  // budget sits above the fixture's current size so a deliberate field
+  // addition has room, while a per-row table regression (the shape this
   // project already removed once) fails the gate.
   scanPayloadBytes: 8 * 1024 * 1024,
   // Per-frame finish budget. The client budget is 8ms. The mean is the real
@@ -198,7 +198,7 @@ describe("system performance gates", () => {
     const lua = loadAddon();
     lua.exec(`
       WowTest.fireEvent('AUCTION_HOUSE_SHOW')
-      -- Rows are generated in Lua: a 170k-element JS-to-Lua conversion
+      -- Rows are generated in Lua: a 250k-element JS-to-Lua conversion
       -- would measure the test bridge, not the scanner.
       local ITEMS, LISTINGS = 6000, 250000
       local replicate, itemInfo = WowTest.ah.replicate, WowTest.itemInfo
@@ -248,7 +248,7 @@ describe("system performance gates", () => {
     // old wall-clock guard could abort a book this size mid-processing.
     expect(lua.eval("WowTest.ns.lastScanStats.reason")).toBeNull();
     expect(lua.text("WowTest.ns.lastScanStats.phase")).toBe("saved");
-    expect(lua.number("WowTest.ns.lastScanStats.cursor")).toBe(250_000);
+    expect(lua.number("WowTest.ns.lastScanStats.rows")).toBe(250_000);
     // The finish phase is sliced like the row loop; a single frame that
     // aggregates every book is the stall this gate exists to catch.
     const finishMs = lua.number("WowTest.ns.lastScanStats.finishMs");

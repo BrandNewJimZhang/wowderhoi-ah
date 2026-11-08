@@ -39,7 +39,7 @@ describe("scan lifecycle", () => {
     expect(lua.number("WoWderhoiAH_ScanData.items[2589].minPrice")).toBe(1000);
     expect(lua.eval("WowTest.lastStats().reason")).toBeNull();
     expect(lua.text("WowTest.lastStats().responseVia")).toBe("replicate");
-    expect(lua.number("WowTest.lastStats().cursor")).toBe(1);
+    expect(lua.number("WowTest.lastStats().rows")).toBe(1);
     expect(lua.number("WowTest.lastStats().total")).toBe(1);
   });
 
@@ -147,7 +147,7 @@ describe("scan lifecycle", () => {
     }
     expect(lua.eval("WowTest.ns.scanRunning")).toBe(false);
     expect(lua.number("WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.total or -1")).toBe(3000);
-    expect(lua.number("WowTest.lastStats().cursor")).toBe(3000);
+    expect(lua.number("WowTest.lastStats().rows")).toBe(3000);
     expect(lua.eval("WowTest.lastStats().reason")).toBeNull();
   });
 
@@ -225,7 +225,31 @@ describe("scan lifecycle", () => {
     drive(lua);
     expect(lua.text("WoWderhoiAH_ScanData.items[2589].name")).toBe("Linen Cloth");
     expect(lua.number("WoWderhoiAH_ScanData.items[2589].minPrice")).toBe(1000);
-    expect(lua.number("WowTest.lastStats().itemsMissingInfo")).toBe(1);
+    // The name was resolved before the book was published, so nothing is
+    // missing at the moment the stats are stamped.
+    expect(lua.number("WowTest.lastStats().itemsMissingInfo")).toBe(0);
+  });
+
+  it("fills a name when the item record loads before the rows finish", () => {
+    const lua = page();
+    // 1,500 rows span two frames at 1,000 rows per frame, so the load result
+    // arrives while the phase is still "rows". Ignoring the event there used
+    // to leave an already-loaded name empty for the rest of the scan.
+    setRows(lua, Array.from({ length: 1500 }, (_, index) => ({
+      itemId: 10000 + index, name: "", count: 1, buyout: 100 + index, hasAllInfo: false
+    })));
+    requestScan(lua);
+    lua.exec("WowTest.fireReplicate()");
+    lua.exec("WowTest.tickFrames(1)");
+    lua.exec(`WowTest.itemInfo[10000] = {
+      name = "Late Cloth", class = "Trade Goods", subClass = "Cloth", quality = 1, vendorP = 5
+    }`);
+    lua.exec("WowTest.sendItemDataLoaded(10000)");
+    lua.exec("WowTest.tickFrames(1)");
+    lua.advance(3); // the other 1,499 names never arrive
+    drive(lua);
+    expect(lua.text("WoWderhoiAH_ScanData.items[10000].name")).toBe("Late Cloth");
+    expect(lua.number("WowTest.lastStats().rows")).toBe(1500);
   });
 
   it("publishes an unresolved name after the bounded hydrate window", () => {

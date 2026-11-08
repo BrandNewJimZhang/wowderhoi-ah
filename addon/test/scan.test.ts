@@ -40,9 +40,9 @@ describe("forever replicate scan v4", () => {
     // The listing count rides with the point so a missed scan can still be
     // backfilled as a real observation rather than an empty book.
     expect(lua.number("WoWderhoiAH_Series.markets['TestRealm|Alliance'].items[2589].n[1]")).toBe(2);
-    // The series stores only the arrays its consumers read; P10, listing
-    // count, seller count and inferred flow live on the scan snapshot and
-    // are imported from there, not duplicated per history point.
+    // The series stores only the arrays its consumers read (t/min/sell/q/n/e);
+    // P10, seller count, sellers and inferred flow stay on the scan snapshot
+    // and are imported from there, not duplicated per history point.
     expect(lua.eval("WoWderhoiAH_Series.markets['TestRealm|Alliance'].items[2589].p10")).toBeNull();
     expect(lua.number("WowTest.savedCount")).toBeGreaterThan(0);
   });
@@ -216,6 +216,37 @@ describe("forever replicate scan v4", () => {
     // The stamped coverage describes the retained series, not the raw count.
     expect(lua.number("WoWderhoiAH_ScanData.items[2589].historySamples")).toBeGreaterThan(29900);
     expect(lua.number("WoWderhoiAH_ScanData.items[2589].historySpanHours")).toBeGreaterThan(10);
+  });
+
+  it("pads a series written before listing counts existed", () => {
+    const lua = auctionPage();
+    lua.exec(`
+      WoWderhoiAH_Series = {
+        v = WowTest.ns.PIPELINE_VERSION,
+        markets = { ['TestRealm|Alliance'] = {
+          firstScanAt = time() - 1800,
+          items = { [2589] = {
+            t = { time() - 1800, time() - 900 },
+            min = { 100, 110 },
+            sell = { 120, 130 },
+            q = { 5, 6 },
+            e = { 0, 0 }
+          } }
+        } }
+      }
+    `);
+    lua.runScan([
+      { itemId: 2589, name: "Linen", count: 10, buyout: 10000 },
+      { itemId: 2589, name: "Linen", count: 10, buyout: 20000 }
+    ]);
+    const series = "WoWderhoiAH_Series.markets['TestRealm|Alliance'].items[2589]";
+    // Appending only the new point would leave t and n out of step, and the
+    // importer rejects disagreeing arrays instead of misreading a point.
+    expect(lua.number(`#${series}.t`)).toBe(3);
+    expect(lua.number(`#${series}.n`)).toBe(3);
+    expect(lua.number(`${series}.n[1]`)).toBe(0);
+    expect(lua.number(`${series}.n[2]`)).toBe(0);
+    expect(lua.number(`${series}.n[3]`)).toBe(2);
   });
 
   it("hands the stamped sample count to the core instead of recounting", () => {

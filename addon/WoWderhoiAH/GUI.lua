@@ -813,6 +813,11 @@ SlashCmdList["WOWDERHOIAHDIAG"] = function(input)
     WAH.freeBagSlots(), tostring(WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.bagSlots or "none")))
   diagLine(string.format("series: %d points across %d items",
     points, market and (function() local n = 0 for _ in pairs(market.items) do n = n + 1 end return n end)() or 0))
+  -- The global cap no longer trims; it only asserts that the per-item budget
+  -- arithmetic held. A nonzero count means history was not folded correctly.
+  if (WAH.seriesCapViolation or 0) > 0 then
+    diagLine(string.format("series cap violations: %d", WAH.seriesCapViolation))
+  end
   local stats = WAH.lastScanStats
   -- The outcome line answers where the scan stopped and why. Without the
   -- phase and reason, "slow" and "unanswered" and "cleared copy" all looked
