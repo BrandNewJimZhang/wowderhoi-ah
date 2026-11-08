@@ -9,7 +9,7 @@ export type AdoptedDecision = {
   adoptedAt: Date | null;
 };
 
-export type LinkableTrade = {
+type LinkableTrade = {
   itemId: number;
   realizedAt: Date;
   decisionId?: string | null;
@@ -19,7 +19,7 @@ export type LinkableTrade = {
 // A buy recommendation's goods are sold later; a sell recommendation is
 // the sale itself. Both use the same attribution window, which is wider
 // than the fill horizon because the goods must first be bought and listed.
-export const ATTRIBUTION_WINDOW_DAYS = 7;
+const ATTRIBUTION_WINDOW_DAYS = 7;
 
 export function linkTrades<T extends LinkableTrade>(
   trades: T[],

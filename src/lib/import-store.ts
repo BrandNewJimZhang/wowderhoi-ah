@@ -18,7 +18,7 @@ export function chunks<T>(values: readonly T[], size: number): T[][] {
   return out;
 }
 
-export type StoredDecision = DecisionRow & { adoptedAt: Date | null };
+type StoredDecision = DecisionRow & { adoptedAt: Date | null };
 
 function quoteCreateData(
   row: { itemId: number; quote: MarketQuote },

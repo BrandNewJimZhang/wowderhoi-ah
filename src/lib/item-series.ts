@@ -23,9 +23,9 @@ export type SeriesPoint = {
 
 // The addon's flat log carries the item with each point; the stored shape
 // keys the arrays by item, so itemId disappears after parsing.
-export type AddonSeriesPoint = SeriesPoint & { itemId: number };
+type AddonSeriesPoint = SeriesPoint & { itemId: number };
 
-export type SeriesArrays = {
+type SeriesArrays = {
   t: number[];
   min: number[];
   sell: number[];
@@ -255,7 +255,7 @@ export function mergeSeries(
   return retainSeries(ordered, nowSeconds, maxPoints);
 }
 
-export function groupSeriesPoints(points: readonly AddonSeriesPoint[]): Map<number, SeriesPoint[]> {
+function groupSeriesPoints(points: readonly AddonSeriesPoint[]): Map<number, SeriesPoint[]> {
   const byItem = new Map<number, SeriesPoint[]>();
   for (const point of points) {
     const list = byItem.get(point.itemId) ?? [];
@@ -358,7 +358,7 @@ export function sparkSeries(points: readonly SeriesPoint[], limit = 16): number[
   return out;
 }
 
-export type DailyBar = {
+type DailyBar = {
   date: Date; // UTC midnight
   openPrice: number;
   closePrice: number;

@@ -5,7 +5,6 @@
 // exactly as WAH.currentPhase does in game, so the current phase is
 // recomputed per request. When it differs from the generation's phase the
 // UI must not apply the new gates to the old book.
-import { prisma } from "@/lib/prisma";
 import type { MarketSignal } from "@/lib/analytics";
 import type { CoreOutput } from "@/lib/core/types";
 import type { PriceIndex } from "@/lib/deflator";
@@ -107,7 +106,7 @@ const defaultReader = createMarketReader({
 
 export const getMarketBundle = defaultReader.getMarketBundle;
 
-export type NavBadges = { actions: number; stale: number; positions: number };
+type NavBadges = { actions: number; stale: number; positions: number };
 
 // The shell renders these on every page; they are two cheap reads plus one
 // count, not the full signal bundle.
@@ -123,16 +122,4 @@ export async function getNavigationBadges(): Promise<NavBadges> {
     stale: generation?.staleCount ?? 0,
     positions: Object.keys(positions).length
   };
-}
-
-export async function getHealthCounts() {
-  const scope = await getMarketScope();
-  if (!scope) return null;
-  const [generation, positions, trades, decisions] = await Promise.all([
-    getLatestGeneration(scope),
-    prisma.position.count({ where: { marketId: scope.id } }),
-    prisma.trade.count({ where: { marketId: scope.id } }),
-    prisma.decision.count({ where: { marketId: scope.id } })
-  ]);
-  return { scope, generation, positions, trades, decisions };
 }

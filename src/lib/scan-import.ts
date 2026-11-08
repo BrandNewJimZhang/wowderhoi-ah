@@ -17,7 +17,7 @@ type ExistingItemRow = {
   catalogSource: string;
 };
 
-export type ScanItemCreate = {
+type ScanItemCreate = {
   itemId: number;
   name: string;
   quality: string;

@@ -5,9 +5,9 @@
 // them; import runs are diagnostics with a short life.
 import { prisma } from "@/lib/prisma";
 
-export const GENERATIONS_KEPT = 2;
-export const DECISION_RETENTION_DAYS = 90;
-export const IMPORT_RUN_RETENTION_DAYS = 30;
+const GENERATIONS_KEPT = 2;
+const DECISION_RETENTION_DAYS = 90;
+const IMPORT_RUN_RETENTION_DAYS = 30;
 
 // Keeps the newest `keep` generations for one market and returns how many
 // metadata rows were removed. Quotes and signals follow by cascade.

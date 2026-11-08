@@ -2,7 +2,7 @@
 // the addon's /wahadopt. Epoch seconds, not an ISO string, because the
 // addon already has the scan timestamp in that form and Lua cannot format
 // an ISO date without a second implementation.
-export type DecisionIdentity = {
+type DecisionIdentity = {
   realm: string;
   faction: string;
   scannedAt: Date | number;

@@ -22,14 +22,14 @@ export type ImportResponse = {
 
 type PostResult = { status: number; body: ImportResponse };
 
-export type ImporterDeps = {
+type ImporterDeps = {
   readFile: () => string;
   post: (body: unknown) => Promise<PostResult>;
   log?: (message: string) => void;
   warn?: (message: string) => void;
 };
 
-export type ImportOutcome = "idle" | "imported" | "duplicate" | "journal";
+type ImportOutcome = "idle" | "imported" | "duplicate" | "journal";
 
 export function createSavedvarsImporter(deps: ImporterDeps) {
   // The timestamp and the journal revision are the two reasons a file is
@@ -88,7 +88,7 @@ export function createSavedvarsImporter(deps: ImporterDeps) {
   };
 }
 
-export type WatcherHandle = { stop: () => void };
+type WatcherHandle = { stop: () => void };
 
 // Polling is enough: the addon asks the client to flush SavedVariables
 // after every scan, and mtime moves on that write. The in-flight guard

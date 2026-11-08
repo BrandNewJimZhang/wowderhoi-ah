@@ -56,15 +56,6 @@ export async function getLatestGeneration(scope: MarketScope | null): Promise<Ge
   return row ? decodeGeneration(row) : null;
 }
 
-export async function getPreviousGeneration(scope: MarketScope | null, before: Date): Promise<GenerationRecord | null> {
-  const row = await prisma.marketGeneration.findFirst({
-    where: { ...(scope ? { marketId: scope.id } : {}), scannedAt: { lt: before } },
-    orderBy: { scannedAt: "desc" },
-    select: GENERATION_SELECT
-  });
-  return row ? decodeGeneration(row) : null;
-}
-
 export async function getGenerationSignals(generationId: string): Promise<StoredSignalRow[]> {
   const rows = await prisma.marketSignalRow.findMany({
     where: { generationId },
@@ -90,12 +81,8 @@ const ID_CHUNK = 500;
 
 export async function getSeriesForItems(
   marketId: string,
-  itemIds?: readonly number[]
+  itemIds: readonly number[]
 ): Promise<Array<{ itemId: number; points: SeriesPoint[] }>> {
-  if (!itemIds) {
-    const rows = await prisma.itemSeries.findMany({ where: { marketId }, select: { itemId: true, points: true } });
-    return rows.map((row) => ({ itemId: row.itemId, points: arraysToSeries(row.points) }));
-  }
   const out: Array<{ itemId: number; points: SeriesPoint[] }> = [];
   const ids = Array.from(new Set(itemIds));
   for (let start = 0; start < ids.length; start += ID_CHUNK) {

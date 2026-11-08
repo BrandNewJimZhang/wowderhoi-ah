@@ -9,7 +9,7 @@ export type SignalSortKey = (typeof SORT_KEYS)[number];
 // The table only needs the sortable numbers plus the search identity. The
 // market page sends this projection to the client so a row never carries
 // the whole signal.
-export type SortableSignal = {
+type SortableSignal = {
   itemId: number;
   name: string;
   category: string;

@@ -4,7 +4,7 @@
 import type { OwnSales } from "@/lib/core/types";
 import { SCAN_INTERVAL_MINUTES, fillRules } from "@/lib/market-rules";
 
-export type OwnSaleRow = {
+type OwnSaleRow = {
   itemId: number;
   qty: number;
   realizedAt: Date;

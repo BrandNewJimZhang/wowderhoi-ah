@@ -1,8 +1,8 @@
 // One revision token for the ledger, computed from the same facts whether
 // they came from the database or from a journal replay. A generation stores
 // it so a reader can tell whether the ledger moved after the scan.
-export type RevisionTrade = { realizedAt: Date; pnl: number; fee: number };
-export type RevisionPosition = { qty: number; cost: number };
+type RevisionTrade = { realizedAt: Date; pnl: number; fee: number };
+type RevisionPosition = { qty: number; cost: number };
 
 export function ledgerRevisionOf(trades: readonly RevisionTrade[], positions: readonly RevisionPosition[]): string {
   const lastRealized = trades.reduce((latest, trade) => Math.max(latest, trade.realizedAt.getTime()), 0);

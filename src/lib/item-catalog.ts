@@ -20,7 +20,7 @@ export type CatalogItem = {
   typeLabel: string | null;
 };
 
-export type CatalogDataset = {
+type CatalogDataset = {
   source: string;
   build: string;
   fetchedAt: string;
@@ -59,7 +59,7 @@ function optionalString(value: unknown, field: string): string | null {
 // Maps one wuxianwow items.json row onto the committed shape. The raw
 // export carries far more (stats, descriptions, set ids); a field with no
 // consumer in this terminal would be storage, not catalogue.
-export function normalizeCatalogEntry(raw: RawEntry): CatalogItem {
+function normalizeCatalogEntry(raw: RawEntry): CatalogItem {
   const itemId = requirePositiveInt(raw.id, "id");
   if (typeof raw.name !== "string" || raw.name === "") {
     throw new Error(`Catalogue item ${itemId} has no name`);
@@ -210,7 +210,7 @@ type ExistingCatalogRow = {
   catalogBuild: string | null;
 };
 
-export type CatalogDiff = {
+type CatalogDiff = {
   creates: CatalogItem[];
   updates: Array<{ itemId: number; data: CatalogItem & { catalogSource: string; catalogBuild: string; catalogUpdatedAt: Date } }>;
 };
