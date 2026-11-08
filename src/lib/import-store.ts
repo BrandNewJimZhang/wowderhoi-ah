@@ -2,7 +2,7 @@
 // and decisions. The route and the one-off migration share this so a
 // migrated market is byte-for-byte the shape a live import produces.
 import { Prisma } from "@prisma/client";
-import type { GenerationPlan, DecisionRow } from "@/lib/market-generation";
+import type { GenerationPlan, DecisionRow, SeriesRow } from "@/lib/market-generation";
 import { seriesToArrays } from "@/lib/item-series";
 import type { MarketQuote } from "@/lib/market-data";
 
@@ -12,7 +12,7 @@ const SERIES_BATCH = 500;
 const DECISION_BATCH = 200;
 const ID_CHUNK = 500;
 
-export function chunks<T>(values: T[], size: number): T[][] {
+export function chunks<T>(values: readonly T[], size: number): T[][] {
   const out: T[][] = [];
   for (let start = 0; start < values.length; start += size) out.push(values.slice(start, start + size));
   return out;
@@ -62,6 +62,30 @@ function quoteCreateData(
   };
 }
 
+// Series rows are replaced by item id, never the whole table: items whose
+// addon history has aged out of the payload keep their terminal copy.
+export async function replaceSeries(
+  tx: Prisma.TransactionClient,
+  marketId: string,
+  series: readonly SeriesRow[]
+): Promise<void> {
+  for (const batch of chunks(series.map((row) => row.itemId), ID_CHUNK)) {
+    await tx.itemSeries.deleteMany({ where: { marketId, itemId: { in: batch } } });
+  }
+  for (const batch of chunks(series, SERIES_BATCH)) {
+    await tx.itemSeries.createMany({
+      data: batch.map((row) => ({
+        marketId,
+        itemId: row.itemId,
+        firstAt: row.firstAt,
+        lastAt: row.lastAt,
+        pointCount: row.pointCount,
+        points: seriesToArrays(row.points) as unknown as Prisma.InputJsonValue
+      }))
+    });
+  }
+}
+
 export async function writeGeneration(
   tx: Prisma.TransactionClient,
   marketId: string,
@@ -95,21 +119,7 @@ export async function writeGeneration(
       }))
     });
   }
-  for (const batch of chunks(plan.series.map((row) => row.itemId), ID_CHUNK)) {
-    await tx.itemSeries.deleteMany({ where: { marketId, itemId: { in: batch } } });
-  }
-  for (const batch of chunks(plan.series, SERIES_BATCH)) {
-    await tx.itemSeries.createMany({
-      data: batch.map((row) => ({
-        marketId,
-        itemId: row.itemId,
-        firstAt: row.firstAt,
-        lastAt: row.lastAt,
-        pointCount: row.pointCount,
-        points: seriesToArrays(row.points) as unknown as Prisma.InputJsonValue
-      }))
-    });
-  }
+  await replaceSeries(tx, marketId, plan.series);
   for (const batch of chunks(decisions, DECISION_BATCH)) {
     await tx.decision.createMany({
       data: batch.map((row) => ({

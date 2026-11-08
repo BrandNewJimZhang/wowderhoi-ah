@@ -255,6 +255,35 @@ export function mergeSeries(
   return retainSeries(ordered, nowSeconds, maxPoints);
 }
 
+export function groupSeriesPoints(points: readonly AddonSeriesPoint[]): Map<number, SeriesPoint[]> {
+  const byItem = new Map<number, SeriesPoint[]>();
+  for (const point of points) {
+    const list = byItem.get(point.itemId) ?? [];
+    list.push(point);
+    byItem.set(point.itemId, list);
+  }
+  return byItem;
+}
+
+// The import and the migration both ask "what is this market's series for
+// the items I know about?". Grouping and the per-item merge live here once.
+export function mergeSeriesByItem(
+  existing: ReadonlyArray<{ itemId: number; points: readonly SeriesPoint[] }>,
+  incoming: readonly AddonSeriesPoint[],
+  nowSeconds: number,
+  maxPoints = DEFAULT_MAX_POINTS
+): Map<number, SeriesPoint[]> {
+  const incomingByItem = groupSeriesPoints(incoming);
+  const existingById = new Map(existing.map((row) => [row.itemId, row.points]));
+  const merged = new Map<number, SeriesPoint[]>();
+  const ids = new Set<number>([...existingById.keys(), ...incomingByItem.keys()]);
+  for (const itemId of ids) {
+    const points = mergeSeries(existingById.get(itemId) ?? [], incomingByItem.get(itemId) ?? [], nowSeconds, maxPoints);
+    if (points.length > 0) merged.set(itemId, points);
+  }
+  return merged;
+}
+
 export function seriesToArrays(points: readonly SeriesPoint[]): SeriesArrays {
   return {
     t: points.map((point) => point.t),

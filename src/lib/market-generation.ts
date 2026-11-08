@@ -11,7 +11,7 @@ import type { CoreOutput, OwnSales } from "@/lib/core/types";
 import { decisionIdFor } from "@/lib/decision-id";
 import { buildPriceIndex, type PriceIndex } from "@/lib/deflator";
 import {
-  mergeSeries,
+  mergeSeriesByItem,
   scanSeriesPoints,
   type AddonSeries,
   type SeriesPoint
@@ -139,36 +139,12 @@ export function buildGenerationPlan(input: GenerationInput): GenerationPlan {
   const phase = input.phaseOverride ?? resolvePhase(ageHours(scan.scannedAt, phaseAnchor), breadth);
 
   // The addon series is global; the current scan contributes one more point
-  // per priced item. Group once, then merge per item.
-  const incomingByItem = new Map<number, SeriesPoint[]>();
-  for (const point of input.series?.points ?? []) {
-    const list = incomingByItem.get(point.itemId) ?? [];
-    list.push(point);
-    incomingByItem.set(point.itemId, list);
-  }
-  for (const point of scanSeriesPoints(scan)) {
-    const list = incomingByItem.get(point.itemId) ?? [];
-    list.push(point);
-    incomingByItem.set(point.itemId, list);
-  }
-
-  // Only a priced row replaces the item's current book. A demand-only row
-  // in the newest scan leaves the last priced book to be carried as stale.
+  // per priced item. Only a priced row replaces the item's current book: a
+  // demand-only row leaves the last priced book to be carried as stale.
   const currentIds = new Set(scan.items.filter((item) => item.priced).map((item) => item.itemId));
   const staleCandidates = (input.previous?.quotes ?? []).filter((row) => !currentIds.has(row.item.itemId));
-  const existingById = new Map(input.existingSeries.map((row) => [row.itemId, row.points]));
-  const seriesIds = new Set<number>([...incomingByItem.keys(), ...staleCandidates.map((row) => row.item.itemId)]);
-  for (const itemId of seriesIds) {
-    // A scan-only demand row has no price point; an existing series can
-    // still describe it, so it is only dropped when both sides are empty.
-    if (!incomingByItem.has(itemId) && !existingById.has(itemId)) seriesIds.delete(itemId);
-  }
-
-  const merged = new Map<number, SeriesPoint[]>();
-  for (const itemId of seriesIds) {
-    const points = mergeSeries(existingById.get(itemId) ?? [], incomingByItem.get(itemId) ?? [], scanSeconds);
-    if (points.length > 0) merged.set(itemId, points);
-  }
+  const incomingPoints = [...(input.series?.points ?? []), ...scanSeriesPoints(scan)];
+  const merged = mergeSeriesByItem(input.existingSeries, incomingPoints, scanSeconds);
 
   const priceIndex = buildPriceIndex(
     Array.from(merged.entries()).map(([itemId, points]) => ({ itemId, points }))

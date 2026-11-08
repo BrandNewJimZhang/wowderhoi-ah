@@ -4,25 +4,147 @@
 // SavedVariables file is available, and materialises one generation from
 // each market's newest snapshot.
 //
-// Idempotent: a market that already has a generation at its newest
-// snapshot keeps it; the series is rebuilt from the same sources and the
-// same merge.
+// The legacy tables are read through raw SQL: they no longer exist in the
+// Prisma schema, but an old database still needs this path once. A database
+// that never had them is simply the no-op case.
 import { readFileSync } from "node:fs";
 import { prisma } from "@/lib/prisma";
 import { parseSavedVariables, type AddonScan, type AddonScanItem } from "@/lib/addon-scan";
 import { placeholderItemName } from "@/lib/item-name";
-import { arraysToSeries, parseAddonSeries, mergeSeries, seriesToArrays, type AddonSeries, type SeriesPoint } from "@/lib/item-series";
+import { arraysToSeries, parseAddonSeries, mergeSeries, mergeSeriesByItem, type AddonSeries, type SeriesPoint } from "@/lib/item-series";
 import { buildGenerationPlan } from "@/lib/market-generation";
-import { writeGeneration, chunks } from "@/lib/import-store";
+import { writeGeneration, replaceSeries } from "@/lib/import-store";
 import { getLedgerRevision, getOwnSales, getPositions } from "@/lib/repositories";
 import { resolveBudgetCopper } from "@/lib/config";
 import type { MarketScope } from "@/lib/market-scope";
 
 process.loadEnvFile();
 
+type LegacySnapshot = {
+  itemId: number;
+  timestamp: Date;
+  priced: boolean;
+  minPrice: number;
+  marketPrice: number;
+  sellPrice: number;
+  p5Price: number;
+  quantity: number;
+  numAuctions: number;
+  sellerCount: number;
+  sellersInvisible: boolean;
+  ownerVisible: boolean;
+  observationVersion: number | null;
+  sellerHHI: number | null;
+  topSellerShare: number | null;
+  marketType: string | null;
+  bidOnlyCount: number;
+  highestBid: number;
+  soldProxyLow: number;
+  soldProxyHigh: number;
+  flowObserved: boolean;
+  supplyGrowth: number;
+  historySamples: number | null;
+  historySpanHours: number | null;
+  tierTruncated: boolean;
+  topTiers: unknown;
+  expiring: unknown;
+};
+
+type LegacyDaily = {
+  itemId: number;
+  date: Date;
+  closePrice: number;
+  lowPrice: number;
+  volume: number;
+};
+
 function utcDay(t: number): number {
   const date = new Date(t * 1000);
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) / 1000;
+}
+
+function numberOr(value: unknown, fallback = 0): number {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function booleanOf(value: unknown): boolean {
+  return Number(value) === 1 || value === true;
+}
+
+function jsonOf(value: unknown): unknown {
+  if (typeof value !== "string") return value ?? null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+async function tableExists(name: string): Promise<boolean> {
+  const rows = await prisma.$queryRawUnsafe<Array<{ name: string }>>(
+    `SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`,
+    name
+  );
+  return rows.length > 0;
+}
+
+async function loadSnapshots(marketId: string): Promise<LegacySnapshot[]> {
+  if (!(await tableExists("AuctionSnapshot"))) return [];
+  const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+    `SELECT item_id, timestamp, priced, min_price, market_price, sell_price, p5_price, quantity,
+            num_auctions, seller_count, sellers_invisible, owner_visible, observation_version,
+            seller_hhi, top_seller_share, market_type, bid_only_count, highest_bid, sold_proxy_low,
+            sold_proxy_high, flow_observed, supply_growth, history_samples, history_span_hours,
+            tier_truncated, top_tiers, expiring
+     FROM "AuctionSnapshot" WHERE market_id = ? ORDER BY timestamp ASC`,
+    marketId
+  );
+  return rows.map((row) => ({
+    itemId: Number(row.item_id),
+    timestamp: new Date(numberOr(row.timestamp)),
+    priced: booleanOf(row.priced),
+    minPrice: numberOr(row.min_price),
+    marketPrice: numberOr(row.market_price),
+    sellPrice: numberOr(row.sell_price),
+    p5Price: numberOr(row.p5_price),
+    quantity: numberOr(row.quantity),
+    numAuctions: numberOr(row.num_auctions),
+    sellerCount: numberOr(row.seller_count),
+    sellersInvisible: booleanOf(row.sellers_invisible),
+    ownerVisible: booleanOf(row.owner_visible),
+    observationVersion: row.observation_version === null ? null : numberOr(row.observation_version),
+    sellerHHI: row.seller_hhi === null ? null : numberOr(row.seller_hhi),
+    topSellerShare: row.top_seller_share === null ? null : numberOr(row.top_seller_share),
+    marketType: typeof row.market_type === "string" ? row.market_type : null,
+    bidOnlyCount: numberOr(row.bid_only_count),
+    highestBid: numberOr(row.highest_bid),
+    soldProxyLow: numberOr(row.sold_proxy_low),
+    soldProxyHigh: numberOr(row.sold_proxy_high),
+    flowObserved: booleanOf(row.flow_observed),
+    supplyGrowth: numberOr(row.supply_growth),
+    historySamples: row.history_samples === null ? null : numberOr(row.history_samples),
+    historySpanHours: row.history_span_hours === null ? null : numberOr(row.history_span_hours),
+    tierTruncated: booleanOf(row.tier_truncated),
+    topTiers: jsonOf(row.top_tiers),
+    expiring: jsonOf(row.expiring)
+  }));
+}
+
+async function loadDailies(marketId: string): Promise<LegacyDaily[]> {
+  if (!(await tableExists("DailySummary"))) return [];
+  const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+    `SELECT item_id, date, close_price, low_price, volume
+     FROM "DailySummary" WHERE market_id = ? ORDER BY date ASC`,
+    marketId
+  );
+  return rows.map((row) => ({
+    itemId: Number(row.item_id),
+    date: new Date(numberOr(row.date)),
+    closePrice: numberOr(row.close_price),
+    lowPrice: numberOr(row.low_price),
+    volume: numberOr(row.volume)
+  }));
 }
 
 function tiersOf(raw: unknown): AddonScanItem["tiers"] {
@@ -69,11 +191,8 @@ async function main() {
   let seriesRows = 0;
 
   for (const market of markets) {
-    const snapshots = await prisma.auctionSnapshot.findMany({
-      where: { marketId: market.id },
-      orderBy: { timestamp: "asc" }
-    });
-    const dailies = await prisma.dailySummary.findMany({ where: { marketId: market.id } });
+    const snapshots = await loadSnapshots(market.id);
+    const dailies = await loadDailies(market.id);
     const existingRows = await prisma.itemSeries.findMany({ where: { marketId: market.id } });
     if (snapshots.length === 0 && dailies.length === 0 && existingRows.length === 0) continue;
 
@@ -113,22 +232,16 @@ async function main() {
     }
 
     const incoming = addonSeries.get(`${market.realm}|${market.faction}`);
-    const incomingByItem = new Map<number, SeriesPoint[]>();
-    for (const point of incoming?.points ?? []) {
-      const list = incomingByItem.get(point.itemId) ?? [];
-      list.push(point);
-      incomingByItem.set(point.itemId, list);
+    const base = new Map<number, SeriesPoint[]>();
+    for (const row of existingRows) base.set(row.itemId, arraysToSeries(row.points));
+    for (const [itemId, points] of legacy) {
+      base.set(itemId, mergeSeries(base.get(itemId) ?? [], points, latestSeconds));
     }
-
-    const existingById = new Map(existingRows.map((row) => [row.itemId, row.points]));
-    const merged = new Map<number, SeriesPoint[]>();
-    const ids = new Set<number>([...legacy.keys(), ...existingById.keys(), ...incomingByItem.keys()]);
-    for (const itemId of ids) {
-      const existing = existingById.has(itemId) ? arraysToSeries(existingById.get(itemId)) : [];
-      const first = mergeSeries(existing, legacy.get(itemId) ?? [], latestSeconds);
-      const points = mergeSeries(first, incomingByItem.get(itemId) ?? [], latestSeconds);
-      if (points.length > 0) merged.set(itemId, points);
-    }
+    const merged = mergeSeriesByItem(
+      Array.from(base.entries()).map(([itemId, points]) => ({ itemId, points })),
+      incoming?.points ?? [],
+      latestSeconds
+    );
     seriesRows += merged.size;
     // The addon series names items that no imported scan ever carried (they
     // were listed earlier and dropped out). The series row has a foreign key
@@ -260,19 +373,13 @@ async function main() {
       // series on its own so a rerun still repairs history.
       await prisma.$transaction(async (tx) => {
         if (placeholderRows.length > 0) await tx.item.createMany({ data: placeholderRows });
-        await tx.itemSeries.deleteMany({ where: { marketId: market.id } });
-        for (const batch of chunks(Array.from(merged.entries()), 500)) {
-          await tx.itemSeries.createMany({
-            data: batch.map(([itemId, points]) => ({
-              marketId: market.id,
-              itemId,
-              firstAt: new Date(points[0].t * 1000),
-              lastAt: new Date(points[points.length - 1].t * 1000),
-              pointCount: points.length,
-              points: seriesToArrays(points)
-            }))
-          });
-        }
+        await replaceSeries(tx, market.id, Array.from(merged.entries()).map(([itemId, points]) => ({
+          itemId,
+          firstAt: new Date(points[0].t * 1000),
+          lastAt: new Date(points[points.length - 1].t * 1000),
+          pointCount: points.length,
+          points
+        })));
       });
     }
   }
@@ -282,7 +389,22 @@ async function main() {
     UPDATE "Item" SET vendor_price = NULL
     WHERE catalog_source = 'scan' AND category = 'unknown' AND vendor_price = 0
   `;
-  console.log(`Wrote ${generations} generations and ${seriesRows} item series; relabelled ${Number(relabelled)} unknown vendor prices.`);
+  const dropped = await dropLegacyTables();
+  console.log(
+    `Wrote ${generations} generations and ${seriesRows} item series; `
+    + `relabelled ${Number(relabelled)} unknown vendor prices; dropped ${dropped} legacy tables.`
+  );
+}
+
+async function dropLegacyTables(): Promise<number> {
+  let dropped = 0;
+  for (const table of ["AuctionSnapshot", "DailySummary"]) {
+    if (await tableExists(table)) {
+      await prisma.$executeRawUnsafe(`DROP TABLE "${table}"`);
+      dropped += 1;
+    }
+  }
+  return dropped;
 }
 
 void main()

@@ -4,9 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { normalizeAddonScan, type AddonScan } from "@/lib/addon-scan";
 import { ensureScanItems } from "@/lib/scan-import";
 import { placeholderItemName } from "@/lib/item-name";
-import { parseAddonSeries } from "@/lib/item-series";
+import { mergeSeriesByItem, parseAddonSeries, scanSeriesPoints } from "@/lib/item-series";
 import { buildGenerationPlan, type DecisionRow } from "@/lib/market-generation";
-import { replaceDecisions, writeGeneration } from "@/lib/import-store";
+import { replaceDecisions, replaceSeries, writeGeneration } from "@/lib/import-store";
 import { buildCoreInput } from "@/lib/core/from-market";
 import { runCore } from "@/lib/core/run-core";
 import type { CoreOutput } from "@/lib/core/types";
@@ -227,6 +227,41 @@ export async function POST(request: Request) {
     }
     const market = await prisma.market.findUnique({ where: { id: duplicate.marketId } });
     if (!market) throw new Error(`Market ${duplicate.marketId} disappeared during import`);
+    // A duplicate is also the "watcher restarted" path: the addon may carry
+    // history the generation does not. Merging is idempotent, and the next
+    // scan rebuilds the signals from the longer series.
+    const scanSeconds = Math.round(scan.scannedAt.getTime() / 1000);
+    const seriesIds = new Set<number>();
+    for (const item of scan.items) if (item.priced) seriesIds.add(item.itemId);
+    for (const point of series?.points ?? []) seriesIds.add(point.itemId);
+    const existingSeries = await getSeriesForItems(market.id, Array.from(seriesIds));
+    const mergedSeries = mergeSeriesByItem(
+      existingSeries,
+      [...(series?.points ?? []), ...scanSeriesPoints(scan)],
+      scanSeconds
+    );
+    const seriesRows = Array.from(mergedSeries.entries()).map(([itemId, points]) => ({
+      itemId,
+      firstAt: new Date(points[0].t * 1000),
+      lastAt: new Date(points[points.length - 1].t * 1000),
+      pointCount: points.length,
+      points
+    }));
+    const seriesPointCount = seriesRows.reduce((sum, row) => sum + row.pointCount, 0);
+    const knownItemIds = new Set(
+      (await prisma.item.findMany({ select: { itemId: true } })).map((row) => row.itemId)
+    );
+    const seriesItemCreates = seriesRows
+      .filter((row) => !knownItemIds.has(row.itemId))
+      .map((row) => ({
+        itemId: row.itemId,
+        name: placeholderItemName(row.itemId),
+        quality: "unknown",
+        category: "unknown",
+        subCategory: "unknown",
+        vendorPrice: null,
+        catalogSource: "scan"
+      }));
     const [storedRows, storedQuotes] = await Promise.all([
       getGenerationSignals(duplicate.id),
       getGenerationQuotes(duplicate.id)
@@ -286,18 +321,25 @@ export async function POST(request: Request) {
         }
       });
       await replaceDecisions(tx, duplicate.id, market.id, scan.scannedAt, duplicate.phase, rows);
+      if (seriesItemCreates.length > 0) await tx.item.createMany({ data: seriesItemCreates });
+      await replaceSeries(tx, market.id, seriesRows);
+      const seriesFirst = series?.firstScanAt ? new Date(series.firstScanAt * 1000) : null;
+      if (seriesFirst && (!market.firstScanAt || seriesFirst < market.firstScanAt)) {
+        await tx.market.update({ where: { id: market.id }, data: { firstScanAt: seriesFirst } });
+      }
       const statements = journalStatements(tx, replay, market.id, adopted);
       for (const statement of statements) await statement;
     }, { timeout: 60_000 });
     await recordRun({
       marketId: market.id, scannedAt: scan.scannedAt, source, scanItems: scan.items.length,
-      seriesPoints: series?.points.length ?? 0, quotes: 0, journalEvents,
+      seriesPoints: seriesPointCount, quotes: 0, journalEvents,
       journalErrors: replay.errors.length, durationMs: Date.now() - startedAt, status: "duplicate"
     });
     return NextResponse.json({
       duplicate: true,
       journalUpdated: true,
       skippedItems: scan.skippedItems,
+      seriesPoints: seriesPointCount,
       scannedAt: scan.scannedAt.toISOString(),
       marketId: market.id,
       positions: Object.keys(replay.positions).length,
