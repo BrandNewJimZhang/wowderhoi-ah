@@ -4,7 +4,7 @@
 // history and is the only affordable way to deliver scans the watcher missed.
 import { SCAN_PIPELINE_VERSION } from "@/lib/market-rules";
 
-export type SeriesPoint = {
+type SeriesPoint = {
   timestamp: number; // epoch seconds, the scan that produced the point
   itemId: number;
   minPrice: number;
@@ -115,7 +115,7 @@ export function parseAddonSeries(
   };
 }
 
-export type SeriesDayAggregate = {
+type SeriesDayAggregate = {
   itemId: number;
   date: Date; // UTC midnight
   openPrice: number;
@@ -165,7 +165,7 @@ export function aggregateSeriesDays(points: SeriesPoint[], currentScanAt: Date):
   return Array.from(byKey.values());
 }
 
-export type SeriesBackfill = {
+type SeriesBackfill = {
   // Oldest first, so daily OHLC folds in causal order.
   points: SeriesPoint[];
   timestamps: number[];
