@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { createSavedvarsImporter, type ImportResponse } from "@/lib/watcher/savedvars-watcher";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it, vi } from "vitest";
+import { createSavedvarsImporter, startSavedvarsWatcher, type ImportResponse } from "@/lib/watcher/savedvars-watcher";
 
 function savedVariables(options: { scannedAt?: number; events?: number; dropped?: number } = {}): string {
   const events = Array.from({ length: options.events ?? 0 }, (_, index) =>
@@ -95,6 +98,39 @@ describe("createSavedvarsImporter", () => {
     expect(await instance.tick()).toBe("duplicate");
     expect(await instance.tick()).toBe("idle");
     expect(calls).toBe(1);
+  });
+
+  it("retries a failed POST without waiting for the file to change", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "wah-watcher-"));
+    const path = join(dir, "WoWderhoiAH.lua");
+    writeFileSync(path, savedVariables({ events: 1 }));
+    let calls = 0;
+    const fetchMock = vi.fn(async () => {
+      calls += 1;
+      return calls === 1
+        ? { status: 500, json: async () => ({ error: "boom" }) }
+        : { status: 200, json: async () => ({ imported: 1, positions: 0, trades: 0 }) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const handle = startSavedvarsWatcher({ path, importUrl: "http://test/import", intervalMs: 20 });
+    try {
+      const deadline = Date.now() + 2000;
+      while (fetchMock.mock.calls.length < 2 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      // The file never changed, so the second POST can only come from the
+      // retry after the failed import.
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+      expect(calls).toBeGreaterThanOrEqual(2);
+    } finally {
+      handle.stop();
+      vi.unstubAllGlobals();
+      log.mockRestore();
+      error.mockRestore();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("ignores a file without a scan or from another pipeline", async () => {

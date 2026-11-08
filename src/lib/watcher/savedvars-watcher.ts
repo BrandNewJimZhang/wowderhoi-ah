@@ -112,11 +112,33 @@ export function startSavedvarsWatcher(options: {
     warn: (message) => console.warn(message)
   });
   let inFlight = false;
+  // A failed POST leaves the watermark where it was, so the same scan must
+  // be retried. Watching the file alone would only retry when the game
+  // writes again — after the next scan at the earliest. Retry on a backoff
+  // instead, so a server that was down for a moment catches up by itself.
+  const baseDelay = options.intervalMs ?? 5000;
+  let retryDelay = baseDelay;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
   const tick = () => {
     if (inFlight) return;
     inFlight = true;
     void importer.tick()
-      .catch((error) => console.error(error))
+      .then(() => {
+        retryDelay = baseDelay;
+        if (retryTimer) {
+          clearTimeout(retryTimer);
+          retryTimer = null;
+        }
+      })
+      .catch((error) => {
+        console.error(error);
+        if (retryTimer) return;
+        retryTimer = setTimeout(() => {
+          retryTimer = null;
+          tick();
+        }, retryDelay);
+        retryDelay = Math.min(retryDelay * 2, 60_000);
+      })
       .finally(() => { inFlight = false; });
   };
   console.log(`Watching ${options.path}`);
@@ -124,5 +146,13 @@ export function startSavedvarsWatcher(options: {
   tick();
   const listener = () => tick();
   watchFile(options.path, { interval: options.intervalMs ?? 5000 }, listener);
-  return { stop: () => unwatchFile(options.path, listener) };
+  return {
+    stop: () => {
+      unwatchFile(options.path, listener);
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+    }
+  };
 }
