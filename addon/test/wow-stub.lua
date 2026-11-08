@@ -185,6 +185,15 @@ local function tooltipShowItem(tooltip, source, itemId, itemName)
   tooltip:Show()
 end
 
+-- Bag contents are seeded by a test; the slot number is what the client's
+-- bag buttons pass, so the tooltip source names the slot a player hovered.
+bed.bagItems = {}
+function GameTooltip:SetBagItem(bag, slot)
+  local item = bed.bagItems[slot]
+  if not item then error("no bag item at slot " .. tostring(slot)) end
+  tooltipShowItem(self, "bag:" .. tostring(slot), item.itemId, item.name)
+end
+
 function GameTooltip:SetHyperlink(link)
   local text = tostring(link)
   if text:find("item:", 1, true) then

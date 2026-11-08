@@ -163,58 +163,48 @@ describe("time-series chart", () => {
   });
 });
 
-describe("chart lifetime", () => {
-  // The chart sits beside an item tooltip, so hiding the tooltip used to
-  // hide the chart -- and its mode/window buttons -- before the pointer
-  // could reach them. These drive the pointer path the player takes.
-  function detached(): WowLua {
-    const lua = chartPage([9000, 10000, 11000]);
-    // Outside the auction house the chart is anchored to the tooltip, so
-    // closing the house arms the hide path under test.
-    lua.exec("WowTest.fireEvent('AUCTION_HOUSE_CLOSED')");
-    lua.exec("WoWderhoiAH_UpdateChart(4338)");
-    lua.exec("GameTooltip:Show()");
-    return lua;
-  }
+describe("chart placement", () => {
+  // The chart is a panel, not a tooltip ornament. It docks beside the
+  // auction house or the trader page and stays there, so its mode/window
+  // buttons never race the tooltip's hide. With neither panel open it has
+  // no home and must not appear next to a bag item's tooltip.
 
-  it("outlives the tooltip long enough to click a window button", () => {
-    const lua = detached();
+  it("stays beside the trader page after the tooltip closes", () => {
+    const lua = chartPage([9000, 10000, 11000]);
+    lua.exec("GameTooltip:Show()");
     lua.exec("GameTooltip:Hide()");
-    // Not hidden synchronously: the pointer may still be crossing the gap.
+    expect(lua.text("WowTest.ns.chartState().mode")).toBe("time");
     expect(lua.text("WoWderhoiAHChart:IsShown()")).toBe("true");
-    lua.exec("WowTest.runTimers()");
+    // A window button in the persistent panel still works after the
+    // tooltip is gone, which is the whole point of docking it.
+    lua.exec("WowTest.clickButton('6时')");
+    expect(lua.number("WowTest.ns.chartState().window")).toBe(6);
+  });
+
+  it("moves to the auction house when the trader page closes", () => {
+    const lua = chartPage([9000, 10000, 11000]);
+    lua.exec("WoWderhoiAHTrade:Hide()");
+    expect(lua.eval("WoWderhoiAHChart._points.TOPLEFT.to == AuctionHouseFrame")).toBe(true);
+    expect(lua.text("WoWderhoiAHChart:IsShown()")).toBe("true");
+    lua.exec("WowTest.clickButton('6时')");
+    expect(lua.number("WowTest.ns.chartState().window")).toBe(6);
+  });
+
+  it("hides when the last panel closes", () => {
+    const lua = chartPage([9000, 10000, 11000]);
+    lua.exec("WowTest.fireEvent('AUCTION_HOUSE_CLOSED')");
     expect(lua.text("WoWderhoiAHChart:IsShown()")).toBe("false");
   });
 
-  it("keeps its spot when a button re-renders it after the tooltip closed", () => {
+  it("does not float beside a bag item tooltip", () => {
     const lua = chartPage([9000, 10000, 11000]);
     lua.exec("WowTest.fireEvent('AUCTION_HOUSE_CLOSED')");
-    lua.exec("GameTooltip:Show()");
-    lua.exec("WoWderhoiAH_UpdateChart(4338)");
-    expect(lua.eval("WoWderhoiAHChart._points.TOPRIGHT.to == GameTooltip")).toBe(true);
-    lua.exec("GameTooltip:Hide()");
-    lua.exec("WoWderhoiAHChart._scripts.OnEnter(WoWderhoiAHChart)");
-    lua.exec("WowTest.runTimers()");
-    lua.exec("WowTest.ns.setChartWindow(6)");
-    // The chart was opened beside the tooltip; re-rendering must not relink
-    // it to the middle of the screen now that the tooltip is gone, or the
-    // frame jumps away from the pointer that just clicked it.
-    expect(lua.eval("WoWderhoiAHChart._points.CENTER == nil")).toBe(true);
-    expect(lua.eval("WoWderhoiAHChart._points.TOPRIGHT.to == GameTooltip")).toBe(true);
-    expect(lua.text("WoWderhoiAHChart:IsShown()")).toBe("true");
-  });
-
-  it("stays while the pointer is on it and a click re-renders it", () => {
-    const lua = detached();
-    lua.exec("GameTooltip:Hide()");
-    lua.exec("WoWderhoiAHChart._scripts.OnEnter(WoWderhoiAHChart)");
-    lua.exec("WowTest.runTimers()");
-    expect(lua.text("WoWderhoiAHChart:IsShown()")).toBe("true");
-    // The window button the pointer just reached keeps working.
-    lua.exec("WowTest.ns.setChartWindow(6)");
-    expect(lua.number("WowTest.ns.chartState().window")).toBe(6);
-    lua.exec("WoWderhoiAHChart._scripts.OnLeave(WoWderhoiAHChart)");
-    lua.exec("WowTest.runTimers()");
+    lua.exec(`
+      WowTest.bagItems[1] = { itemId = 4338, name = "Mageweave Cloth" }
+      GameTooltip:SetBagItem(0, 1)
+    `);
+    // The tooltip still carries the price block; the chart does not follow.
+    expect(lua.tooltipText()).toContain("最低价");
     expect(lua.text("WoWderhoiAHChart:IsShown()")).toBe("false");
   });
 });

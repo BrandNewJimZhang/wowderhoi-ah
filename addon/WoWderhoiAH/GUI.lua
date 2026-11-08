@@ -53,40 +53,19 @@ local function ladderText(entry)
   return table.concat(parts, " |cff666666/|r ")
 end
 
--- Trader tooltip section: everywhere an item tooltip renders
--- (bags, AH, chat links, bank).
+-- Trader tooltip section: everywhere an item tooltip renders -- bags, bank,
+-- equipped slots, merchants, the auction house and chat item links. Spell,
+-- unit and battle-pet links never carry it: the client shares one
+-- GameTooltip, and only a link that is itself an item may inherit the panel.
+--
+-- Hover is read-only. The chart is a panel that lives beside the auction
+-- house or the trader page, where its mode and window buttons stay put and
+-- can be clicked; it never floats after a tooltip.
 local lastTooltipItemId = nil
 local chart = nil
 
--- The chart is anchored beside an item tooltip, and the tooltip hides the
--- moment the pointer leaves the item. Hiding the chart with it made the
--- mode and window buttons unreachable: they disappeared before the pointer
--- could cross the gap. Instead the chart survives a short grace period and
--- stays while the pointer is on it, so its buttons can actually be clicked.
-local CHART_HIDE_DELAY = 0.6
-local chartHideToken = 0
-
-local function cancelChartHide()
-  chartHideToken = chartHideToken + 1
-end
-
-local function scheduleChartHide()
-  cancelChartHide()
-  local token = chartHideToken
-  C_Timer.After(CHART_HIDE_DELAY, function()
-    if token ~= chartHideToken then return end
-    if not chart or not chart:IsShown() then return end
-    if chart.wahHovered or GameTooltip:IsShown() then return end
-    chart:Hide()
-  end)
-end
-
 local function hideChart()
-  cancelChartHide()
-  if chart then
-    chart.wahHovered = nil
-    chart:Hide()
-  end
+  if chart then chart:Hide() end
 end
 
 local function appendTraderSection(tooltip, hyperlink)
@@ -162,17 +141,9 @@ local function appendTraderSection(tooltip, hyperlink)
 end
 
 GameTooltip:HookScript("OnTooltipCleared", function(tooltip) tooltip.wahAppended = nil end)
-GameTooltip:HookScript("OnHide", function(tooltip)
-  tooltip.wahAppended = nil
-  if not chart then return end
-  -- With the auction house open the chart is anchored to the panel, not to
-  -- the tooltip, and stays as it always has. Otherwise it lingers for a
-  -- moment -- cancelled by moving onto it -- so the buttons are reachable.
-  local auctionHouse = WAH.ahFrame and WAH.ahFrame()
-  if auctionHouse and auctionHouse:IsShown() then return end
-  if chart.wahHovered then return end
-  scheduleChartHide()
-end)
+-- Hiding the tooltip says nothing about the chart: the chart belongs to the
+-- auction house or trader page, not to the tooltip.
+GameTooltip:HookScript("OnHide", function(tooltip) tooltip.wahAppended = nil end)
 
 if TooltipDataProcessor and Enum and Enum.TooltipDataType then
   -- The post-call passes (tooltip, tooltipData); wrap it so the data table
@@ -492,7 +463,48 @@ local function renderTime(entry, windowHours)
   })
 end
 
+local chartAnchor
+
+-- Opening or closing either panel decides which one owns the chart. The
+-- OnHide path also covers the last panel closing: the chart then has no
+-- home and must not linger over the world.
+local function trackChartPanel(panel)
+  if not panel or panel.wahChartTracked then return end
+  panel.wahChartTracked = true
+  panel:HookScript("OnShow", function()
+    if lastTooltipItemId then WoWderhoiAH_UpdateChart(lastTooltipItemId) end
+  end)
+  panel:HookScript("OnHide", function()
+    if chartAnchor() then
+      if lastTooltipItemId then WoWderhoiAH_UpdateChart(lastTooltipItemId) end
+    else
+      hideChart()
+    end
+  end)
+end
+
+-- The chart has two possible homes, both persistent: the WAH trader page
+-- when it is open, otherwise the auction house. With neither open there is
+-- no chart -- a 320px panel with buttons has no business riding a tooltip
+-- that disappears as soon as the pointer moves.
+function chartAnchor()
+  local tradePage = WAH.tradeFrame and WAH.tradeFrame()
+  local auctionHouse = WAH.ahFrame and WAH.ahFrame()
+  trackChartPanel(tradePage)
+  trackChartPanel(auctionHouse)
+  if tradePage and tradePage:IsShown() then return tradePage end
+  if auctionHouse and auctionHouse:IsShown() then return auctionHouse end
+  return nil
+end
+
+local function dockChart(anchor)
+  chart:ClearAllPoints()
+  chart:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 4, -12)
+end
+
 local function renderChart(itemId)
+  local anchor = chartAnchor()
+  if not anchor then hideChart() return end
   local entry = currentItem(itemId)
   -- Read the whole retained series and let the selected window filter what
   -- is drawn. Fetching the phase window here made the 24h/7d/all buttons
@@ -500,28 +512,7 @@ local function renderChart(itemId)
   local window = chartWindow or phaseWindow()
   local history = historyFor(itemId, ALL_HOURS)
   if not entry and not history then hideChart() return end
-  local auctionHouse = WAH.ahFrame and WAH.ahFrame()
-  local tradePage = WAH.tradeFrame and WAH.tradeFrame()
-  -- Keep the frame where the player found it. A window/mode click happens
-  -- after the tooltip has already closed, so re-anchoring to the screen
-  -- centre then would make the chart jump out from under the pointer.
-  if tradePage and tradePage:IsShown() then
-    chart:ClearAllPoints()
-    chart:SetPoint("TOPLEFT", tradePage, "TOPRIGHT", 4, -12)
-    chart.wahAnchor = "trade"
-  elseif auctionHouse and auctionHouse:IsShown() then
-    chart:ClearAllPoints()
-    chart:SetPoint("TOPLEFT", auctionHouse, "TOPRIGHT", 4, -12)
-    chart.wahAnchor = "auction"
-  elseif GameTooltip:IsShown() then
-    chart:ClearAllPoints()
-    chart:SetPoint("TOPRIGHT", GameTooltip, "TOPLEFT", -4, 0)
-    chart.wahAnchor = "tooltip"
-  elseif chart.wahAnchor ~= "tooltip" then
-    chart:ClearAllPoints()
-    chart:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-    chart.wahAnchor = "center"
-  end
+  dockChart(anchor)
   local name = getItemInfo(itemId) or ("item:" .. itemId)
   chart.title:SetText(name)
 
@@ -547,8 +538,6 @@ local function renderChart(itemId)
     button:SetShown(mode == "time")
     button:SetText(button.hours == window and ("|cffffd100" .. button.label .. "|r") or button.label)
   end
-  -- A new item or a button press re-renders: any pending hide is stale.
-  cancelChartHide()
   chart:Show()
 end
 
@@ -614,17 +603,6 @@ local function createChart()
   chart.segments = {}
   chart.bars = {}
   chart.dots = {}
-  -- Mouse-enabled so moving onto the chart can cancel the tooltip's hide
-  -- timer; without it the buttons could never be reached.
-  chart:EnableMouse(true)
-  chart:SetScript("OnEnter", function(self)
-    self.wahHovered = true
-    cancelChartHide()
-  end)
-  chart:SetScript("OnLeave", function(self)
-    self.wahHovered = nil
-    if not GameTooltip:IsShown() then scheduleChartHide() end
-  end)
   chart:Hide()
 end
 
@@ -633,8 +611,12 @@ function WoWderhoiAH_UpdateChart(itemId)
     hideChart()
     return
   end
-  if not chart then createChart() end
   lastTooltipItemId = itemId
+  if not chartAnchor() then
+    hideChart()
+    return
+  end
+  if not chart then createChart() end
   renderChart(itemId)
 end
 

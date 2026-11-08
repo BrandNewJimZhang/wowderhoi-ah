@@ -27,6 +27,16 @@ describe("trader tooltip section", () => {
     expect(lua.tooltipText()).toContain("建议卖价");
   });
 
+  it("appends the market block to an item in the bags", () => {
+    const lua = auctionPage();
+    lua.exec(`
+      WowTest.bagItems[1] = { itemId = 4338, name = "Mageweave Cloth" }
+      GameTooltip:SetBagItem(0, 1)
+    `);
+    expect(lua.tooltipText()).toContain("WoWderhoi AHelper");
+    expect(lua.tooltipText()).toContain("建议卖价");
+  });
+
   it("does not inherit the last item when the hyperlink is a spell", () => {
     const lua = auctionPage();
     // A previously hovered item leaves its link in the shared tooltip. The

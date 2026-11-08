@@ -81,6 +81,12 @@
 
 ### Changed
 
+- The item-hover price chart no longer follows the tooltip. It docks beside
+  the auction house or the WAH trader page, stays while that panel is open,
+  and its mode/window buttons are always clickable. Hovering an item still
+  updates which item the chart shows, and the text block still appears on
+  bag, bank, equipped, merchant, auction and chat item tooltips; spell,
+  unit and battle-pet links stay clean.
 - `execQty`, `netProfit`, `netPerUnit` and `ladderPrice` are now
   `candidateQty`, `candidateNet`, `candidateNetPerUnit` and
   `candidateUnitPrice`; `allocQty`/`allocNet` remain the funded layer.
