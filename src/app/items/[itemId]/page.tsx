@@ -96,7 +96,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
     : 0.35;
 
   return (
-    <AppShell active="C:/Program Files/Git/market">
+    <AppShell active="/market">
       <main className="terminal-grid min-h-screen bg-terminal-bg p-3 text-slate-200">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border border-terminal-border bg-terminal-panel px-4 py-3">
         <div>

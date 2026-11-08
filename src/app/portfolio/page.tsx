@@ -39,7 +39,7 @@ export default async function PortfolioPage() {
   const cash = scope?.cash ?? 0;
 
   return (
-    <AppShell active="C:/Program Files/Git/portfolio">
+    <AppShell active="/portfolio">
       <main className="terminal-grid min-h-screen bg-terminal-bg p-3 text-slate-200">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border border-terminal-border bg-terminal-panel px-4 py-3">
         <div>

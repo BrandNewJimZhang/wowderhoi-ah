@@ -5,7 +5,9 @@ import { ensureSavedvarsWatcher } from "@/lib/watcher/autostart";
 // One navigation surface for every page. Desktop gets a persistent rail;
 // mobile gets a horizontal strip. The badge counts come from the latest
 // materialised generation, not from a second market evaluation.
-export async function AppShell({ active, children }: { active: string; children: React.ReactNode }) {
+export type AppShellSection = "/" | "/market" | "/portfolio" | "/review" | "/recipes" | "/health";
+
+export async function AppShell({ active, children }: { active: AppShellSection; children: React.ReactNode }) {
   // The first server render is the app's Node lifecycle point.
   ensureSavedvarsWatcher();
   const badges = await getNavigationBadges();

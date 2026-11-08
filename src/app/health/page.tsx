@@ -47,7 +47,7 @@ export default async function HealthPage() {
   const gapWarning = bundle.gapMinutes !== null && bundle.gapMinutes > 2 * SCAN_INTERVAL_MINUTES;
 
   return (
-    <AppShell active="C:/Program Files/Git/health">
+    <AppShell active="/health">
       <main className="terminal-grid min-h-screen bg-terminal-bg p-3 text-slate-200">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border border-terminal-border bg-terminal-panel px-4 py-3">
         <div>
