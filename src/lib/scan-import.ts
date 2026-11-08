@@ -4,7 +4,7 @@
 // it in when the client later loads the record. The distinction is carried
 // by `catalogSource`, never by guessing from an empty field.
 import type { AddonScanItem } from "@/lib/addon-scan";
-import { CATALOG_SOURCE } from "@/lib/item-catalog";
+import { CATALOG_SOURCE, SCAN_SOURCE } from "@/lib/item-catalog";
 import { placeholderItemName } from "@/lib/item-name";
 
 type ExistingItemRow = {
@@ -26,6 +26,21 @@ type ScanItemCreate = {
   vendorPrice: number | null;
   catalogSource: string;
 };
+
+// The placeholder a scan or series row creates for an item the catalogue
+// does not know. One constructor keeps the live import and the migration
+// from drifting on the fields a placeholder must carry.
+export function scanPlaceholderItem(itemId: number): ScanItemCreate {
+  return {
+    itemId,
+    name: placeholderItemName(itemId),
+    quality: "unknown",
+    category: "unknown",
+    subCategory: "unknown",
+    vendorPrice: null,
+    catalogSource: SCAN_SOURCE
+  };
+}
 
 type ScanItemUpdateData = {
   name: string;
@@ -54,7 +69,7 @@ export function ensureScanItems(items: AddonScanItem[], existing: ExistingItemRo
         // Unresolved means "not read yet" (null); a resolved zero means the
         // item is genuinely unsellable to vendors.
         vendorPrice: unresolved ? null : item.vendorPrice,
-        catalogSource: "scan"
+        catalogSource: SCAN_SOURCE
       });
       continue;
     }

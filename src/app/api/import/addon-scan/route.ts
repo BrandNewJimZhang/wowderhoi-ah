@@ -2,10 +2,9 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { normalizeAddonScan, type AddonScan } from "@/lib/addon-scan";
-import { ensureScanItems } from "@/lib/scan-import";
-import { placeholderItemName } from "@/lib/item-name";
-import { mergeSeriesByItem, parseAddonSeries, scanSeriesPoints } from "@/lib/item-series";
-import { buildGenerationPlan, type DecisionRow } from "@/lib/market-generation";
+import { ensureScanItems, scanPlaceholderItem } from "@/lib/scan-import";
+import { mergeSeriesByItem, parseAddonSeries, scanSeriesPoints, type AddonSeries } from "@/lib/item-series";
+import { buildGenerationPlan, seriesRowsFrom, type DecisionRow } from "@/lib/market-generation";
 import { replaceDecisions, replaceSeries, writeGeneration } from "@/lib/import-store";
 import { buildCoreInput } from "@/lib/core/from-market";
 import { runCore } from "@/lib/core/run-core";
@@ -57,6 +56,30 @@ function signalItem(row: {
     vendorPrice: row.vendorPrice,
     iconId: row.iconId
   };
+}
+
+// Every item whose series the import must load or replace: this scan's
+// priced rows, the addon series, plus whatever the caller already needs.
+function collectSeriesItemIds(scan: AddonScan, series: AddonSeries | null, extra: readonly number[] = []): Set<number> {
+  const ids = new Set<number>(extra);
+  for (const item of scan.items) if (item.priced) ids.add(item.itemId);
+  for (const point of series?.points ?? []) ids.add(point.itemId);
+  return ids;
+}
+
+// Confirmed auction sales from the replay, the same projection the database
+// path uses in getOwnSales.
+function ownSalesOf(replay: ReplayState) {
+  return ownSalesFromRows(
+    replay.trades
+      .filter((trade) => trade.channel === "auction" && !trade.inferred && trade.itemId !== null)
+      .map((trade) => ({
+        itemId: trade.itemId as number,
+        qty: trade.qty,
+        realizedAt: new Date(trade.t * 1000),
+        listedAt: trade.listedAt ? new Date(trade.listedAt * 1000) : null
+      }))
+  );
 }
 
 function decisionRows(
@@ -231,37 +254,21 @@ export async function POST(request: Request) {
     // history the generation does not. Merging is idempotent, and the next
     // scan rebuilds the signals from the longer series.
     const scanSeconds = Math.round(scan.scannedAt.getTime() / 1000);
-    const seriesIds = new Set<number>();
-    for (const item of scan.items) if (item.priced) seriesIds.add(item.itemId);
-    for (const point of series?.points ?? []) seriesIds.add(point.itemId);
+    const seriesIds = collectSeriesItemIds(scan, series);
     const existingSeries = await getSeriesForItems(market.id, Array.from(seriesIds));
     const mergedSeries = mergeSeriesByItem(
       existingSeries,
       [...(series?.points ?? []), ...scanSeriesPoints(scan)],
       scanSeconds
     );
-    const seriesRows = Array.from(mergedSeries.entries()).map(([itemId, points]) => ({
-      itemId,
-      firstAt: new Date(points[0].t * 1000),
-      lastAt: new Date(points[points.length - 1].t * 1000),
-      pointCount: points.length,
-      points
-    }));
+    const seriesRows = seriesRowsFrom(mergedSeries);
     const seriesPointCount = seriesRows.reduce((sum, row) => sum + row.pointCount, 0);
     const knownItemIds = new Set(
       (await prisma.item.findMany({ select: { itemId: true } })).map((row) => row.itemId)
     );
     const seriesItemCreates = seriesRows
       .filter((row) => !knownItemIds.has(row.itemId))
-      .map((row) => ({
-        itemId: row.itemId,
-        name: placeholderItemName(row.itemId),
-        quality: "unknown",
-        category: "unknown",
-        subCategory: "unknown",
-        vendorPrice: null,
-        catalogSource: "scan"
-      }));
+      .map((row) => scanPlaceholderItem(row.itemId));
     const [storedRows, storedQuotes] = await Promise.all([
       getGenerationSignals(duplicate.id),
       getGenerationQuotes(duplicate.id)
@@ -278,16 +285,7 @@ export async function POST(request: Request) {
           previousAt: row.previousAt === null ? null : new Date(row.previousAt * 1000)
         };
       });
-    const ownSales = ownSalesFromRows(
-      replay.trades
-        .filter((trade) => trade.channel === "auction" && !trade.inferred && trade.itemId !== null)
-        .map((trade) => ({
-          itemId: trade.itemId as number,
-          qty: trade.qty,
-          realizedAt: new Date(trade.t * 1000),
-          listedAt: trade.listedAt ? new Date(trade.listedAt * 1000) : null
-        }))
-    );
+    const ownSales = ownSalesOf(replay);
     const core = runCore(buildCoreInput(pairs, {
       now: duplicate.scannedAt,
       phase: duplicate.phase as MarketPhase,
@@ -405,25 +403,14 @@ export async function POST(request: Request) {
       return { item, quote: row.quote };
     });
 
-    const seriesIds = new Set<number>();
-    for (const item of scan.items) if (item.priced) seriesIds.add(item.itemId);
-    for (const point of series?.points ?? []) seriesIds.add(point.itemId);
-    for (const row of previousQuotes) seriesIds.add(row.itemId);
     // The addon series can name items that were never in an imported scan
     // (they were listed earlier in the day and dropped out). The series row
     // has a foreign key to Item, so those ids need a placeholder before the
     // history can land. They stay scan-owned and are never signalled.
+    const seriesIds = collectSeriesItemIds(scan, series, previousQuotes.map((row) => row.itemId));
     for (const itemId of seriesIds) {
       if (itemsById.has(itemId)) continue;
-      const create = {
-        itemId,
-        name: placeholderItemName(itemId),
-        quality: "unknown",
-        category: "unknown",
-        subCategory: "unknown",
-        vendorPrice: null,
-        catalogSource: "scan"
-      };
+      const create = scanPlaceholderItem(itemId);
       itemDiff.creates.push(create);
       itemsById.set(itemId, signalItem({ ...create, iconId: null }));
     }
@@ -431,18 +418,7 @@ export async function POST(request: Request) {
 
     const scope = scopeOf(market);
     const positions = replay ? replay.positions : await getPositions(scope);
-    const ownSales = replay
-      ? ownSalesFromRows(
-          replay.trades
-            .filter((trade) => trade.channel === "auction" && !trade.inferred && trade.itemId !== null)
-            .map((trade) => ({
-              itemId: trade.itemId as number,
-              qty: trade.qty,
-              realizedAt: new Date(trade.t * 1000),
-              listedAt: trade.listedAt ? new Date(trade.listedAt * 1000) : null
-            }))
-        )
-      : await getOwnSales(scope);
+    const ownSales = replay ? ownSalesOf(replay) : await getOwnSales(scope);
     const ledgerRevision = replay ? replayLedgerRevision(replay) : await getLedgerRevision(scope);
 
     const plan = buildGenerationPlan({

@@ -7,6 +7,7 @@ import { ownSalesFromRows } from "@/lib/own-sales";
 import { ledgerRevisionOf } from "@/lib/ledger-revision";
 import type { OwnSales } from "@/lib/core/types";
 import { fillRules } from "@/lib/market-rules";
+import { CATALOG_SOURCE, SCAN_SOURCE } from "@/lib/item-catalog";
 import type { MarketScope } from "@/lib/market-scope";
 
 const GENERATION_SELECT = {
@@ -222,8 +223,8 @@ export async function getImportRuns(marketId: string, limit = 20) {
 export async function getCatalogueStats() {
   const [total, catalogue, scanOwned, placeholders, withIcon] = await Promise.all([
     prisma.item.count(),
-    prisma.item.count({ where: { catalogSource: "wuxianwow.com" } }),
-    prisma.item.count({ where: { catalogSource: "scan" } }),
+    prisma.item.count({ where: { catalogSource: CATALOG_SOURCE } }),
+    prisma.item.count({ where: { catalogSource: SCAN_SOURCE } }),
     prisma.item.count({ where: { name: { startsWith: "#" } } }),
     prisma.item.count({ where: { iconId: { not: null } } })
   ]);

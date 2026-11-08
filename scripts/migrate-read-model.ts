@@ -10,9 +10,10 @@
 import { readFileSync } from "node:fs";
 import { prisma } from "@/lib/prisma";
 import { parseSavedVariables, type AddonScan, type AddonScanItem } from "@/lib/addon-scan";
-import { placeholderItemName } from "@/lib/item-name";
 import { arraysToSeries, parseAddonSeries, mergeSeries, mergeSeriesByItem, type AddonSeries, type SeriesPoint } from "@/lib/item-series";
-import { buildGenerationPlan } from "@/lib/market-generation";
+import { buildGenerationPlan, seriesRowsFrom } from "@/lib/market-generation";
+import { scanPlaceholderItem } from "@/lib/scan-import";
+import { SCAN_SOURCE } from "@/lib/item-catalog";
 import { writeGeneration, replaceSeries } from "@/lib/import-store";
 import { getLedgerRevision, getOwnSales, getPositions } from "@/lib/repositories";
 import { resolveBudgetCopper } from "@/lib/config";
@@ -248,15 +249,7 @@ async function main() {
     // to Item, so create the same placeholder the live import would.
     const placeholderRows = Array.from(merged.keys())
       .filter((itemId) => !knownItemIds.has(itemId))
-      .map((itemId) => ({
-        itemId,
-        name: placeholderItemName(itemId),
-        quality: "unknown",
-        category: "unknown",
-        subCategory: "unknown",
-        vendorPrice: null,
-        catalogSource: "scan"
-      }));
+      .map((itemId) => scanPlaceholderItem(itemId));
     for (const row of placeholderRows) knownItemIds.add(row.itemId);
 
     const generationExists = await prisma.marketGeneration.findFirst({
@@ -373,13 +366,7 @@ async function main() {
       // series on its own so a rerun still repairs history.
       await prisma.$transaction(async (tx) => {
         if (placeholderRows.length > 0) await tx.item.createMany({ data: placeholderRows });
-        await replaceSeries(tx, market.id, Array.from(merged.entries()).map(([itemId, points]) => ({
-          itemId,
-          firstAt: new Date(points[0].t * 1000),
-          lastAt: new Date(points[points.length - 1].t * 1000),
-          pointCount: points.length,
-          points
-        })));
+        await replaceSeries(tx, market.id, seriesRowsFrom(merged));
       });
     }
   }
@@ -387,7 +374,7 @@ async function main() {
   // Legacy scan-owned rows conflated "not loaded" with "unsellable".
   const relabelled = await prisma.$executeRaw`
     UPDATE "Item" SET vendor_price = NULL
-    WHERE catalog_source = 'scan' AND category = 'unknown' AND vendor_price = 0
+    WHERE catalog_source = ${SCAN_SOURCE} AND category = 'unknown' AND vendor_price = 0
   `;
   const dropped = await dropLegacyTables();
   console.log(

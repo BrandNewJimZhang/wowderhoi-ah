@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { formatPercent } from "@/lib/utils";
 import { Coins } from "@/components/coins";
 import { qualityColorClass, qualityLabel } from "@/lib/quality";
+import { CATALOG_SOURCE } from "@/lib/item-catalog";
 import { ItemIcon } from "@/components/item-icon";
 import { describeFreshness } from "@/lib/freshness";
 import { fillRules, SCAN_INTERVAL_MINUTES } from "@/lib/market-rules";
@@ -124,7 +125,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
       <div className="grid gap-3 xl:grid-cols-[1fr_360px]">
         <div className="space-y-3">
           <Panel>
-            <PanelHeader title="目录事实" action={<span className="font-mono text-xs text-terminal-muted">来源 {item.catalogSource === "wuxianwow.com" ? "无限图鉴" : "扫描占位"}</span>} />
+            <PanelHeader title="目录事实" action={<span className="font-mono text-xs text-terminal-muted">来源 {item.catalogSource === CATALOG_SOURCE ? "无限图鉴" : "扫描占位"}</span>} />
             <div className="grid grid-cols-2 gap-3 p-3 font-mono text-xs sm:grid-cols-4">
               <div><div className="text-terminal-muted">品类</div><div className="text-slate-200">{item.category}{item.subCategory !== item.category ? ` · ${item.subCategory}` : ""}</div></div>
               <div><div className="text-terminal-muted">品质</div><div className={qualityColorClass(item.quality)}>{qualityLabel(item.quality)}</div></div>

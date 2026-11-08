@@ -78,6 +78,21 @@ export type GenerationInput = {
   phaseOverride: MarketPhase | null;
 };
 
+// The stored shape of a merged series. The live import, its duplicate
+// path and the migration all write this table, so they build the rows in
+// one place instead of three hand-copied maps.
+export function seriesRowsFrom(merged: ReadonlyMap<number, readonly SeriesPoint[]>): SeriesRow[] {
+  return Array.from(merged.entries())
+    .sort(([left], [right]) => left - right)
+    .map(([itemId, points]) => ({
+      itemId,
+      firstAt: new Date(points[0].t * 1000),
+      lastAt: new Date(points[points.length - 1].t * 1000),
+      pointCount: points.length,
+      points: [...points]
+    }));
+}
+
 function ageHours(now: Date, anchor: Date | null): number {
   if (!anchor) return 0;
   return Math.max(0, (now.getTime() - anchor.getTime()) / (60 * 60 * 1000));
@@ -248,15 +263,7 @@ export function buildGenerationPlan(input: GenerationInput): GenerationPlan {
     });
   }
 
-  const series: SeriesRow[] = Array.from(merged.entries())
-    .sort(([left], [right]) => left - right)
-    .map(([itemId, points]) => ({
-      itemId,
-      firstAt: new Date(points[0].t * 1000),
-      lastAt: new Date(points[points.length - 1].t * 1000),
-      pointCount: points.length,
-      points
-    }));
+  const series = seriesRowsFrom(merged);
 
   return {
     scannedAt: scan.scannedAt,

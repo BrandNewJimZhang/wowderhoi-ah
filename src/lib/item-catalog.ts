@@ -5,6 +5,10 @@
 import { itemTaxonomy, qualityName } from "@/lib/item-taxonomy";
 
 export const CATALOG_SOURCE = "wuxianwow.com";
+// Rows the catalogue does not own stay scan-owned: the scanner may create a
+// placeholder and fill it from the client later, but it can never overwrite
+// a catalogue fact.
+export const SCAN_SOURCE = "scan";
 
 export type CatalogItem = {
   itemId: number;
