@@ -292,6 +292,10 @@ end
 -- and the page rebuilds on open anyway.
 WAH.refreshRadar = function()
   if not (trade and trade:IsShown()) then return end
+  -- A player reading search results keeps that view: a scan landing mid-
+  -- search must not re-render the result table or print radar messages. The
+  -- radar tabs rebuild on their next click anyway.
+  if mode == "results" then return end
   refreshRadar()
   -- The list may have shrunk under the scroll position; keep the view valid
   -- and repaint with the new book.

@@ -78,6 +78,19 @@ describe("buy plan price cap", () => {
 });
 
 describe("scan refresh", () => {
+  it("leaves a search result view alone when a scan lands", () => {
+    const lua = openPlan();
+    primeBook(lua, 9000);
+    lua.buyRow(1); // the action's FIND click opens the result table
+    expect(lua.names().length).toBeGreaterThan(0);
+    // The new book is flat, so a radar refresh would announce "no
+    // opportunity" over the table the player is reading.
+    lua.runScan([{ itemId: 4338, name: "Clean Spread", count: 10, buyout: 8000 }]);
+    lua.advance(1);
+    expect(lua.anyChat("当前没有满足本阶段门槛的可执行机会")).toBe(false);
+    expect(lua.names().length).toBeGreaterThan(0);
+  });
+
   it("rebuilds the visible radar when a scan lands", () => {
     const lua = loadAddon();
     lua.setScan([{
