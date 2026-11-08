@@ -102,9 +102,10 @@ export function createMarketSignalSource(fetchers: SignalFetchers) {
 
       const universe = await fetchers.getMarketUniverse(scope);
       const earliestSnapshotAt = await fetchers.getEarliestSnapshotTime(scope);
-      // The addon's configured opening time beats the oldest scan: a fresh
-      // terminal install (or a pruned database) must not reset the phase.
-      const anchorAt = scope?.openedAt ?? earliestSnapshotAt ?? null;
+      // The configured opening time beats the persisted first observation,
+      // which beats the oldest surviving snapshot: a fresh terminal install
+      // or a pruned database must not reset a mature market to ignition.
+      const anchorAt = scope?.openedAt ?? scope?.firstScanAt ?? earliestSnapshotAt ?? null;
       // Breadth counts the items the newest scan actually listed, matching
       // WAH.currentPhase's scan.items loop. An item that dropped out of the
       // book keeps its history but no longer counts toward market breadth.
@@ -128,7 +129,9 @@ export function createMarketSignalSource(fetchers: SignalFetchers) {
       const input = buildCoreInput(pairs, {
         now,
         phase,
-        firstScanAt: earliestSnapshotAt ?? undefined,
+        // The same anchor the phase was resolved from: the core must not
+        // re-derive an age from whatever snapshots this bundle carried.
+        firstScanAt: anchorAt ?? undefined,
         positions,
         ownSales,
         budgetCopper: resolveBudgetCopper(),

@@ -98,8 +98,12 @@ export function buildCoreInput(
       tierTruncated: signal.tierTruncated,
       // The scan-time stamp is the history definition both runtimes share;
       // sellSamples is the terminal's own fallback for older rows.
+      // The scanner owns the history series and stamps the count; the
+      // terminal's 48-snapshot page is a display window, not a sample
+      // authority. Falling back to it let the two runtimes judge the same
+      // scan on different sample counts.
       history: {
-        samples: signal.historySamples ?? signal.sellSamples,
+        samples: signal.historySamples ?? 0,
         // Null means the row predates the span stamp; the core then applies
         // the sample floor alone instead of fabricating a coverage of zero.
         ...(signal.historySpanHours === null ? {} : { spanHours: signal.historySpanHours })

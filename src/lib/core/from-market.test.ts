@@ -160,11 +160,13 @@ describe("buildCoreInput", () => {
     expect(buildCoreInput(stamped, { now: LATEST, phase: "wave" }).market.items[1].history)
       .toEqual({ samples: 42 });
 
+    // Without the stamp there is no sample authority. The terminal's own
+    // sell-sample count is a display window, not a substitute.
     const legacy = pairs(1);
     legacy[0].signal.historySamples = null;
     legacy[0].signal.sellSamples = 7;
     expect(buildCoreInput(legacy, { now: LATEST, phase: "wave" }).market.items[1].history)
-      .toEqual({ samples: 7 });
+      .toEqual({ samples: 0 });
   });
 
   it("prefers the store's first snapshot time when the caller knows it", () => {

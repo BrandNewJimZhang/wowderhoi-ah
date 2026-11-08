@@ -15,6 +15,10 @@ export type MarketScope = {
   // it when set, so a fresh terminal install does not look like a new server.
   // Optional only for test fixtures; the market row always carries it.
   openedAt?: Date | null;
+  // Earliest observation ever imported for this market. Persisted so pruning
+  // old snapshot rows cannot make the market look younger (and its gates
+  // looser). openedAt still takes precedence when configured.
+  firstScanAt?: Date | null;
   // Free bag slots at the latest scan. Null/absent means the import never
   // reported them, so the shared core keeps its planning fallback.
   bagSlots?: number | null;

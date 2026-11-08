@@ -23,6 +23,10 @@ model Market {
   // Server opening time (epoch seconds from the addon). Phase age is measured
   // from here when set; otherwise from the earliest scan.
   openedAt  DateTime? @map("opened_at")
+  // First observation of this market, persisted so phase age cannot move
+  // backwards when old snapshot rows are pruned. openedAt still wins when
+  // the player configured it.
+  firstScanAt DateTime? @map("first_scan_at")
   // Free bag slots at the latest scan. Null for imports from addons that did
   // not report the field; the shared core then keeps its planning fallback.
   bagSlots  Int?      @map("bag_slots")

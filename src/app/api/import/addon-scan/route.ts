@@ -108,6 +108,20 @@ export async function POST(request: Request) {
     });
   }
 
+  // The market's first observation only moves earlier. Persisting it keeps
+  // phase age stable when retention later deletes the oldest snapshots.
+  const existingMarket = await prisma.market.findUnique({
+    where: { realm_faction: { realm: scan.server, faction: scan.faction } },
+    select: { firstScanAt: true }
+  });
+  const firstScanAt = [
+    existingMarket?.firstScanAt,
+    series?.firstScanAt ? new Date(series.firstScanAt * 1000) : null,
+    scan.scannedAt
+  ]
+    .filter((value): value is Date => value instanceof Date)
+    .reduce((earliest, value) => (value < earliest ? value : earliest));
+
   const market = await prisma.market.upsert({
     where: { realm_faction: { realm: scan.server, faction: scan.faction } },
     create: {
@@ -116,6 +130,7 @@ export async function POST(request: Request) {
       cash: scan.cash,
       character: scan.character ?? "",
       openedAt: scan.openedAt ? new Date(scan.openedAt * 1000) : null,
+      firstScanAt,
       bagSlots: scan.bagSlots
     },
     // A scan-only import carries no character, so it must not erase the one
@@ -129,6 +144,7 @@ export async function POST(request: Request) {
       ...(scan.openedAt === null ? {} : {
         openedAt: scan.openedAt > 0 ? new Date(scan.openedAt * 1000) : null
       }),
+      firstScanAt,
       // Null means an older addon that did not report bags; keep the last
       // known capacity rather than resetting the core to its fallback.
       ...(scan.bagSlots === null ? {} : { bagSlots: scan.bagSlots })

@@ -36,15 +36,17 @@ function historyItem(itemId: number, sellPrice: number, timestamp: Date = LATEST
   } as unknown as MarketHistory;
 }
 
-function fetchers(universe: MarketHistory[], latest: Date = LATEST) {
+function fetchers(universe: MarketHistory[], latest: Date = LATEST, scope: Record<string, unknown> = {}) {
   return {
-    getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 500000, character: "Tester" }),
+    getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 500000, character: "Tester", ...scope }),
     getLatestSnapshotTime: async () => latest,
     getEarliestSnapshotTime: async () => universe.length > 0 ? universe[0].snapshots[0].timestamp : null,
     getMarketUniverse: async () => universe,
     getPositions: async () => ({}),
     getOwnSales: async () => ({}),
-    getLedgerRevision: async () => "0"
+    getLedgerRevision: async () => "0",
+    // Fixed clock so age comes from the fixture, not the day the suite runs.
+    now: () => LATEST
   };
 }
 
@@ -64,6 +66,19 @@ describe("createMarketSignalSource", () => {
     expect(second.signals).toBe(first.signals);
     expect(first.signals[0].itemId).toBe(1);
     expect(first.latestSnapshotAt?.toISOString()).toBe("2026-07-20T10:00:00.000Z");
+  });
+
+  it("anchors phase age on the persisted first observation, not the oldest surviving row", async () => {
+    // Retention deletes old snapshots. If the anchor moved with them, a
+    // mature market would slide back toward ignition and its loosest gates.
+    const universe = Array.from({ length: 801 }, (_, index) => historyItem(index + 1, 200));
+    const firstScanAt = new Date(LATEST.getTime() - 200 * 3600 * 1000);
+    const anchored = await createMarketSignalSource(
+      fetchers(universe, LATEST, { firstScanAt })
+    ).getMarketSignals();
+    expect(anchored.phase).toBe("steady");
+    const unanchored = await createMarketSignalSource(fetchers(universe)).getMarketSignals();
+    expect(unanchored.phase).toBe("ignition");
   });
 
   it("runs the shared decision core and returns executable rows", async () => {
