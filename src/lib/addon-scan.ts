@@ -2,9 +2,7 @@
 // Single validation authority for addon-sourced scans: the watcher and the
 // import route both rely on normalizeAddonScan, never on ad-hoc checks.
 import { SCAN_PIPELINE_VERSION } from "@/lib/market-rules";
-
-// Quality index -> name mapping shared with the perf fixtures generator.
-export const QUALITY_NAMES = ["poor", "common", "uncommon", "rare", "epic", "legendary"] as const;
+import { qualityName } from "@/lib/quality";
 
 type AddonTier = { p: number; q: number };
 
@@ -345,7 +343,7 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
     items.push({
       itemId,
       name: entry.name,
-      quality: QUALITY_NAMES[qualityIndex] ?? "unknown",
+      quality: qualityName(qualityIndex),
       category: typeof entry.itemClass === "string" && entry.itemClass !== "" ? entry.itemClass : "unknown",
       subCategory: typeof entry.itemSubClass === "string" && entry.itemSubClass !== "" ? entry.itemSubClass : "unknown",
       marketType: priced ? normalizeMarketType(entry.marketType, key) : null,

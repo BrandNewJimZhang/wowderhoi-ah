@@ -1,13 +1,23 @@
 // Canonical WoW item-quality colors as Tailwind classes (declared in
 // tailwind.config.ts under colors.wow).
 
+// The client quality index is the same number in a scan's GetItemInfo
+// result and in the catalogue export. One table keeps index 6 from being
+// "unknown" in one path and "artifact" in the other.
+export const QUALITY_BY_INDEX = ["poor", "common", "uncommon", "rare", "epic", "legendary", "artifact"] as const;
+
+export function qualityName(index: number): string {
+  return QUALITY_BY_INDEX[index] ?? "unknown";
+}
+
 const classByQuality: Record<string, string> = {
   poor: "text-wow-poor",
   common: "text-wow-common",
   uncommon: "text-wow-uncommon",
   rare: "text-wow-rare",
   epic: "text-wow-epic",
-  legendary: "text-wow-legendary"
+  legendary: "text-wow-legendary",
+  artifact: "text-wow-artifact"
 };
 
 export function qualityColorClass(quality: string): string {

@@ -2,7 +2,6 @@
 // seeded random walks with occasional bait listings (min far below market),
 // mirroring the non-Gaussian shape real scans have, so median/percentile
 // code paths are exercised honestly. Same seed -> identical market.
-import { QUALITY_NAMES } from "@/lib/addon-scan";
 import { SCAN_PIPELINE_VERSION } from "@/lib/market-rules";
 
 type SnapshotPoint = {
@@ -95,10 +94,6 @@ export function generateMarket(opts: { itemCount: number; depth: number; seed?: 
     });
   }
   return { items };
-}
-
-export function qualityName(qualityIndex: number): string {
-  return QUALITY_NAMES[qualityIndex] ?? "unknown";
 }
 
 // The derived book shape for one walk point. The addon-payload generator and

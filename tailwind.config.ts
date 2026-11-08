@@ -24,6 +24,7 @@ const config: Config = {
           rare: "#0070dd",
           epic: "#a335ee",
           legendary: "#ff8000",
+          artifact: "#e6cc80",
           gold: "#ffd100",
           silver: "#c7c7cf",
           copper: "#eda55f"

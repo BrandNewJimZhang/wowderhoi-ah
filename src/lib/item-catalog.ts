@@ -2,7 +2,8 @@
 // facts. Scans observe the market; they do not decide what an item is.
 // This module validates the committed dataset and plans the writes, so the
 // fetch script, the import script and their tests share one parser.
-import { itemTaxonomy, qualityName } from "@/lib/item-taxonomy";
+import { itemTaxonomy } from "@/lib/item-taxonomy";
+import { qualityName } from "@/lib/quality";
 
 export const CATALOG_SOURCE = "wuxianwow.com";
 // Rows the catalogue does not own stay scan-owned: the scanner may create a

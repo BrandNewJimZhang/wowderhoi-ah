@@ -19,8 +19,7 @@ import { phaseDescription, phaseLabels } from "@/lib/phase";
 import { resolveBudgetCopper } from "@/lib/config";
 import { valuePositions } from "@/lib/position-valuation";
 import { formatPercent } from "@/lib/utils";
-import { qualityColorClass } from "@/lib/quality";
-import { QUALITY_NAMES } from "@/lib/addon-scan";
+import { qualityColorClass, qualityName as qualityNameByIndex } from "@/lib/quality";
 import { Coins } from "@/components/coins";
 import { ItemIcon } from "@/components/item-icon";
 import { WatchStar } from "@/components/watch-star";
@@ -33,7 +32,7 @@ export const dynamic = "force-dynamic";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const qualityName = (value: number | string | undefined) =>
-  typeof value === "number" ? QUALITY_NAMES[value] ?? "unknown" : value ?? "unknown";
+  typeof value === "number" ? qualityNameByIndex(value) : value ?? "unknown";
 
 export default async function Home() {
   const bundle = await getMarketBundle();

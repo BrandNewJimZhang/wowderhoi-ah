@@ -101,6 +101,22 @@ describe("normalizeAddonScan", () => {
     expect(scan.items.map((item) => item.itemId)).toEqual([2770]);
   });
 
+  it("maps the client quality index through the one shared table", () => {
+    const scan = normalizeAddonScan({
+      dataVersion: 4,
+      scannedAt: 1721700000,
+      server: "Anniversary",
+      faction: "Alliance",
+      items: {
+        "1": {
+          name: "神器", quality: 6, minPrice: 100, sellP: 120, marketPrice: 110,
+          quantity: 1, numAuctions: 1
+        }
+      }
+    });
+    expect(scan.items[0].quality).toBe("artifact");
+  });
+
   it("normalizes a parsed scan into snapshot-ready rows", () => {
     const scan = normalizeAddonScan(rawScan());
     expect(scan.scannedAt).toEqual(new Date(1721700000 * 1000));

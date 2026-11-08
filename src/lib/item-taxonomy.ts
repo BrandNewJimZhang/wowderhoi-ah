@@ -145,9 +145,3 @@ export function itemTaxonomy(input: CatalogClassInput): ItemTaxonomy {
       return { category, subCategory: "其它" };
   }
 }
-
-export const QUALITY_BY_INDEX = ["poor", "common", "uncommon", "rare", "epic", "legendary", "artifact"] as const;
-
-export function qualityName(index: number): string {
-  return QUALITY_BY_INDEX[index] ?? "unknown";
-}

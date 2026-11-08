@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { itemTaxonomy, qualityName } from "@/lib/item-taxonomy";
+import { itemTaxonomy } from "@/lib/item-taxonomy";
+import { qualityName } from "@/lib/quality";
 import { parseCatalogDataset } from "@/lib/item-catalog";
 
 describe("itemTaxonomy", () => {
@@ -24,6 +25,7 @@ describe("itemTaxonomy", () => {
   it("names qualities by the client index", () => {
     expect(qualityName(0)).toBe("poor");
     expect(qualityName(4)).toBe("epic");
+    expect(qualityName(6)).toBe("artifact");
     expect(qualityName(9)).toBe("unknown");
   });
 });
