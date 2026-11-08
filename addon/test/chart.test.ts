@@ -310,6 +310,23 @@ describe("chart placement", () => {
     expect(lua.number("WowTest.ns.chartState().window")).toBe(6);
   });
 
+  // The trader page is movable. A page dragged to the right edge must not
+  // push the chart's title, scale or buttons off screen.
+  it("docks to the left when the anchor has no room on its right", () => {
+    const lua = chartPage([9000, 10000, 11000]);
+    lua.exec(`
+      UIParent.GetWidth = function() return 1024 end
+      AuctionHouseFrame.GetRight = function() return 900 end
+      WoWderhoiAHTrade:Hide()
+    `);
+    expect(lua.eval("WoWderhoiAHChart._points.TOPRIGHT.to == AuctionHouseFrame")).toBe(true);
+  });
+
+  it("clamps the chart panel to the screen", () => {
+    const lua = chartPage([9000, 10000, 11000]);
+    expect(lua.eval("WoWderhoiAHChart._clamped")).toBe(true);
+  });
+
   it("hides when the last panel closes", () => {
     const lua = chartPage([9000, 10000, 11000]);
     lua.exec("WowTest.fireEvent('AUCTION_HOUSE_CLOSED')");

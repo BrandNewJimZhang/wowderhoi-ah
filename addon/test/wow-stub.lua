@@ -122,6 +122,7 @@ function frameMeta:GetHeight() return self._height end
 function frameMeta:SetWordWrap(wrap) self._wordWrap = wrap end
 function frameMeta:EnableMouse(enabled) self._mouse = enabled end
 function frameMeta:SetBackdrop(backdrop) self._backdrop = backdrop end
+function frameMeta:SetClampedToScreen(clamped) self._clamped = clamped end
 
 -- SetPoint has three shapes in the real API. Normalizing them here is what
 -- lets a test resolve where a frame actually lands, which is the only way

@@ -821,7 +821,16 @@ if WAH.ahFrame() then registerChartHost(WAH.ahFrame(), 0) end
 
 local function dockChart(anchor)
   chart:ClearAllPoints()
-  chart:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 4, -12)
+  -- The trader page is movable. When it sits at the right edge there is no
+  -- room for a 320px panel beside it, so dock on its left instead of
+  -- pushing the title and buttons off screen.
+  local screenWidth = UIParent and UIParent.GetWidth and UIParent:GetWidth()
+  local anchorRight = anchor.GetRight and anchor:GetRight()
+  if screenWidth and anchorRight and anchorRight + 4 + CHART_WIDTH > screenWidth then
+    chart:SetPoint("TOPRIGHT", anchor, "TOPLEFT", -4, -12)
+  else
+    chart:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 4, -12)
+  end
 end
 
 local function renderChart(itemId)
@@ -869,6 +878,7 @@ end
 local function createChart()
   chart = CreateFrame("Frame", "WoWderhoiAHChart", UIParent, "BackdropTemplate")
   chart:SetSize(CHART_WIDTH, CHART_HEIGHT)
+  chart:SetClampedToScreen(true)
   chart:SetFrameStrata("TOOLTIP")
   chart:SetBackdrop({
     bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
