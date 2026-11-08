@@ -40,7 +40,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
     && bundle.latestSnapshotAt !== null
     && quote.timestamp.getTime() < bundle.latestSnapshotAt.getTime();
   const signal = storedSignal?.signal
-    ?? (quote
+    ?? (quote?.priced
       ? buildMarketSignal(
           {
             item: {

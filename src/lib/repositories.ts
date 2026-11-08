@@ -103,7 +103,7 @@ async function latestQuoteForItem(itemId: number, marketId: string | undefined) 
     orderBy: { generation: { scannedAt: "desc" } },
     include: { generation: { select: { scannedAt: true } } }
   });
-  return row ? toQuote(row, row.generation.scannedAt) : null;
+  return row ? { generationId: row.generationId, quote: toQuote(row, row.generation.scannedAt) } : null;
 }
 
 async function demandQuoteForItem(itemId: number, marketId: string | undefined) {
@@ -117,23 +117,27 @@ async function demandQuoteForItem(itemId: number, marketId: string | undefined) 
 
 export async function getItemDetail(itemId: number, scope: MarketScope | null) {
   const marketId = scope?.id;
-  const [item, quote, demandQuote, seriesRow, signalRow] = await Promise.all([
+  const [item, quoteRow, demandQuote, seriesRow] = await Promise.all([
     prisma.item.findUnique({ where: { itemId } }),
     latestQuoteForItem(itemId, marketId),
     demandQuoteForItem(itemId, marketId),
     marketId
       ? prisma.itemSeries.findUnique({ where: { marketId_itemId: { marketId, itemId } }, select: { points: true } })
-      : Promise.resolve(null),
-    prisma.marketSignalRow.findFirst({
-      where: { itemId, ...(marketId ? { generation: { marketId } } : {}) },
-      orderBy: { generation: { scannedAt: "desc" } },
-      select: { data: true }
-    })
+      : Promise.resolve(null)
   ]);
   if (!item) return null;
+  // A signal belongs to the generation that produced its quote. Looking it
+  // up by item alone could pair the newest book with an older generation's
+  // prices, which the page would then render as current.
+  const signalRow = quoteRow
+    ? await prisma.marketSignalRow.findUnique({
+        where: { generationId_itemId: { generationId: quoteRow.generationId, itemId } },
+        select: { data: true }
+      })
+    : null;
   return {
     item,
-    quote,
+    quote: quoteRow?.quote ?? null,
     demandQuote,
     series: seriesRow ? arraysToSeries(seriesRow.points) : [],
     signal: signalRow ? decodeSignalRow(signalRow.data) : null
