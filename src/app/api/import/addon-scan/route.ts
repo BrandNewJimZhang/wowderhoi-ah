@@ -110,8 +110,11 @@ async function buildBackfillStatements(
       p5Price: 0,
       quantity: point.quantity,
       numAuctions: point.numAuctions,
+      // The series carries no seller identity. Marking the count invisible
+      // is the same convention the addon uses for a hidden-owner book:
+      // sellerCount is the listing count, not a claim about distinct sellers.
       sellerCount: point.numAuctions,
-      sellersInvisible: false,
+      sellersInvisible: true,
       ownerVisible: false,
       observationVersion: null,
       marketType: null,
@@ -223,7 +226,19 @@ export async function POST(request: Request) {
     const backfill = await buildBackfillStatements(
       scan, series, duplicate.marketId, new Set(existingItemIds.map((row) => row.itemId))
     );
+    // An upgrade imports the already-present scan through this branch before
+    // any new scan arrives. Persist the series' first observation now so the
+    // phase anchor does not wait for the next scan to become truthful.
+    const marketAnchor = await prisma.market.findUnique({
+      where: { id: duplicate.marketId },
+      select: { firstScanAt: true }
+    });
+    const seriesFirst = series?.firstScanAt ? new Date(series.firstScanAt * 1000) : null;
+    const anchorUpdates = seriesFirst && (!marketAnchor?.firstScanAt || seriesFirst < marketAnchor.firstScanAt)
+      ? [prisma.market.update({ where: { id: duplicate.marketId }, data: { firstScanAt: seriesFirst } })]
+      : [];
     await prisma.$transaction([
+      ...anchorUpdates,
       ...backfill.statements,
       ...journalStatements(replay, duplicate.marketId)
     ]);
@@ -314,9 +329,10 @@ export async function POST(request: Request) {
   // (tooling) leaves the ledger untouched.
   const replay = journalPresent ? replayJournal(book?.events ?? []) : null;
 
-  // One transaction for the whole import: the snapshot, the backfilled
-  // history, the derived daily rows and the journal projection land
-  // all-or-nothing.
+  // The snapshot, the backfilled history, the derived daily rows and the
+  // journal projection land all-or-nothing. The market row was upserted
+  // first because its id keys every statement below; it is idempotent and
+  // a retry of the same scan advances it again.
   const statements: Prisma.PrismaPromise<unknown>[] = [
     ...(itemDiff.creates.length > 0 ? [prisma.item.createMany({ data: itemDiff.creates })] : []),
     ...backfill.statements,

@@ -60,15 +60,18 @@ async function importLatestScan() {
   }
   lastImportedScanAt = Math.max(lastImportedScanAt, scan.scannedAt);
   lastJournalRevision = revision;
+  // A watcher restart replays the latest scan through the duplicate branch;
+  // that replay is exactly when the missed scans are backfilled, so the
+  // journal message must report it too.
+  const backfillNote = body.backfilled > 0
+    ? `; backfilled ${body.backfilled} missed scan(s) from the addon series${body.backfillSkipped > 0 ? `, ${body.backfillSkipped} left for a later import` : ""}`
+    : "";
   console.log(
     response.status === 409
       ? `Scan ${new Date(scan.scannedAt * 1000).toISOString()} already imported, skipping.`
       : body.journalUpdated
-        ? `Journal for scan ${body.scannedAt} updated without a new scan: ${body.positions} positions, ${body.trades} trades.`
-        : `Imported ${body.imported} items, ${body.positions} positions and ${body.trades} trades from scan ${body.scannedAt}` +
-          (body.backfilled > 0
-            ? `; backfilled ${body.backfilled} missed scan(s) from the addon series${body.backfillSkipped > 0 ? `, ${body.backfillSkipped} left for a later import` : ""}.`
-            : ".")
+        ? `Journal for scan ${body.scannedAt} updated without a new scan: ${body.positions} positions, ${body.trades} trades${backfillNote}.`
+        : `Imported ${body.imported} items, ${body.positions} positions and ${body.trades} trades from scan ${body.scannedAt}${backfillNote || "."}`
   );
   // Replay errors mean the projected ledger is not the book the player sees:
   // a truncated lot, a sale whose posting is missing, or an event kind the

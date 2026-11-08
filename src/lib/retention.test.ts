@@ -18,12 +18,19 @@ beforeAll(async () => {
   await prisma.$executeRawUnsafe(
     `CREATE TABLE "AuctionSnapshot" ("id" TEXT PRIMARY KEY, "market_id" TEXT, "item_id" INTEGER, "timestamp" DATETIME)`
   );
+  await prisma.$executeRawUnsafe(
+    `CREATE TABLE "Market" ("id" TEXT PRIMARY KEY, "first_scan_at" DATETIME)`
+  );
+  await prisma.$executeRawUnsafe(`INSERT INTO "Market" VALUES ('m1', NULL)`);
   const rows: string[] = [];
   for (let timestamp = 1; timestamp <= 100; timestamp += 1) {
     rows.push(`('a${timestamp}', 'm1', 1, ${timestamp})`);
   }
+  // This item's points start later, so after the prune the oldest surviving
+  // snapshot is 5; a first_scan_at of 1 proves the anchor was captured
+  // before the deletion.
   for (let timestamp = 1; timestamp <= 10; timestamp += 1) {
-    rows.push(`('b${timestamp}', 'm1', 2, ${timestamp})`);
+    rows.push(`('b${timestamp}', 'm1', 2, ${timestamp + 100})`);
   }
   await prisma.$executeRawUnsafe(`INSERT INTO "AuctionSnapshot" VALUES ${rows.join(", ")}`);
 });
@@ -46,6 +53,12 @@ describe("pruneSnapshots", () => {
       `SELECT COUNT(*) AS count FROM "AuctionSnapshot" WHERE item_id = 2`
     );
     expect(Number(itemTwo[0].count)).toBe(10);
+    // The phase anchor was persisted from the pre-prune oldest snapshot, so
+    // retention cannot make the market look younger than it is.
+    const market = await prisma.$queryRawUnsafe<Array<{ first_scan_at: number | null }>>(
+      `SELECT first_scan_at FROM "Market" WHERE id = 'm1'`
+    );
+    expect(Number(market[0].first_scan_at)).toBe(1);
   });
 
   it("is idempotent", async () => {

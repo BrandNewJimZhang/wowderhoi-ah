@@ -16,6 +16,17 @@ export async function pruneSnapshots(
   if (!Number.isInteger(keep) || keep <= 0) {
     throw new Error(`pruneSnapshots: keep must be a positive integer, got ${keep}`);
   }
+  // Retention must not destroy the phase anchor's only source. Markets
+  // imported before `firstScanAt` existed have NULL there; persist the oldest
+  // surviving observation before the first row is deleted.
+  await prisma.$executeRaw`
+    UPDATE "Market"
+    SET first_scan_at = (
+      SELECT MIN(timestamp) FROM "AuctionSnapshot" WHERE market_id = "Market".id
+    )
+    WHERE first_scan_at IS NULL
+      AND EXISTS (SELECT 1 FROM "AuctionSnapshot" WHERE market_id = "Market".id)
+  `;
   let deleted = 0;
   for (;;) {
     // The window function ranks each item's rows newest first; everything
