@@ -180,7 +180,9 @@ Upgrading an existing `prisma/dev.db` from the snapshot read model: run
 snapshots and daily summaries, merges the addon series when the
 SavedVariables file is configured, materialises one generation per market
 and drops the two legacy tables. It is idempotent. A new database does not
-need it.
+need it. When the schema has dropped a column since your last pull, push it
+first with `npm run db:push -- --accept-data-loss`; Prisma refuses a
+destructive push without the flag, and the backfill needs the new shape.
 
 ### Recipe data
 

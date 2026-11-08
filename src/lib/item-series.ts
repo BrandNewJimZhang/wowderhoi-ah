@@ -302,11 +302,15 @@ export function arraysToSeries(raw: unknown): SeriesPoint[] {
     throw new Error("Item series points must be an object");
   }
   const arrays = raw as SeriesArrays;
-  const length = arrays.t.length;
   if (
     !Array.isArray(arrays.t) || !Array.isArray(arrays.min) || !Array.isArray(arrays.sell)
     || !Array.isArray(arrays.q) || !Array.isArray(arrays.n) || !Array.isArray(arrays.e)
-    || arrays.min.length !== length || arrays.sell.length !== length
+  ) {
+    throw new Error("Item series arrays must be arrays");
+  }
+  const length = arrays.t.length;
+  if (
+    arrays.min.length !== length || arrays.sell.length !== length
     || arrays.q.length !== length || arrays.n.length !== length || arrays.e.length !== length
   ) {
     throw new Error("Item series arrays are not parallel");

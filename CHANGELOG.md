@@ -120,6 +120,9 @@
   parser in `item-series.ts` is the single implementation.
 - The never-passed `stackSize` override in the core input builder. Both
   planners fix a stack at 20, so the builder now states that value.
+- The write-only `MarketGeneration.ledgerRevision` column and its module,
+  plus `Trade.matchKind`: nothing read either. A trade's attribution is its
+  `decisionId`; the review derives window matches at read time.
 
 ### Changed
 
@@ -170,6 +173,27 @@
   accepted the `GameTooltip` global. It now appends to the frame the client
   names and resolves the item through `TooltipUtil.GetDisplayedItem`, so
   bags, clicked chat links and the auction house all carry the block.
+- Replaying a scan no longer erases trade attribution. A duplicate import
+  rebuilds every trade from the journal; it now loads stored adoptions
+  regardless of scan age, and the decision prune keeps rows a permanent
+  trade still cites. Previously a stripped generation (no materialised
+  core) or an adoption older than the query window left the rebuilt trades
+  with no `decisionId` and no way to recover it.
+- The item page dates a price by the last series point, so a newest scan
+  that saw the item bid-only shows the stale banner and the last priced
+  book instead of presenting the demand capture's time as the price's age.
+  A pruned generation's fallback signal is computed at that observation
+  time, not at wall-clock now.
+- Fill calibration anchors phase age on `Market.firstScanAt`, not on the
+  oldest retained generation; pruning a day of scans no longer relabels a
+  mature market's observations as ignition or wave. The legacy migration
+  persists that anchor the way a live import does.
+- The shell's action badge follows the dashboard's gating: a stale scan or
+  a moved phase hides the action count, and the dashboard's "预算内分配"
+  panel is withheld for the same reason. The badge previously advertised
+  actions the page refused to render.
+- Decoding a corrupt `ItemSeries` row reports which field is not an array
+  instead of throwing a `TypeError` from reading its length.
 - Terminal search ranks a buyable book above a delisted row at the same
   relevance, matching the in-game box. The terminal never passed the
   ranker's `booked` flag, so a delisted row with a large last-listed

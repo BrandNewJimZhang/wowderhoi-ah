@@ -163,6 +163,12 @@ describe("series arrays", () => {
     const arrays = seriesToArrays([point(1000, 100)]);
     expect(() => arraysToSeries({ ...arrays, sell: [] })).toThrow(/parallel/);
   });
+
+  it("rejects a field that is not an array with a decode error, not a TypeError", () => {
+    // A truncated JSON column can leave one field missing altogether;
+    // reading its length before proving it is an array hides the real cause.
+    expect(() => arraysToSeries({ t: 1 })).toThrow(/arrays/);
+  });
 });
 
 describe("series statistics", () => {

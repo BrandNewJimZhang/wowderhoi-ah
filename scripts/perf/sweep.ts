@@ -26,7 +26,7 @@ run("npm", ["run", "build"]);
 
 for (const cell of CELLS) {
   const label = `sweep-items${cell.itemsX}x-depth${cell.depthX}x`;
-  console.log(`\n=== ${label}: ${BASE_ITEMS * cell.itemsX} items x ${BASE_DEPTH * cell.depthX} snapshots ===`);
+  console.log(`\n=== ${label}: ${BASE_ITEMS * cell.itemsX} items x ${BASE_DEPTH * cell.depthX} depth ===`);
   run("npm", [
     "run", "perf:seed", "--",
     "--items", String(BASE_ITEMS * cell.itemsX),

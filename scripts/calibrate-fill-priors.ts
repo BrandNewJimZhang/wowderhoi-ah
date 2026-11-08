@@ -12,7 +12,7 @@ async function main() {
   const scope = process.env.AQT_MARKET?.split("|");
   const markets = await prisma.market.findMany({
     where: scope ? { realm: scope[0], faction: scope[1] } : undefined,
-    select: { id: true, realm: true, faction: true, openedAt: true }
+    select: { id: true, realm: true, faction: true, openedAt: true, firstScanAt: true }
   });
   if (markets.length === 0) throw new Error("no imported market; run a scan import first");
   for (const market of markets) {
@@ -57,7 +57,10 @@ async function main() {
         .map((entry) => [scannedAtById.get(entry.generationId)?.getTime(), entry._count._all] as const)
         .filter((entry): entry is [number, number] => entry[0] !== undefined)
     );
-    const earliest = { _min: { timestamp: generations[0]?.scannedAt ?? null } };
+    // The market's persisted first observation, not the oldest retained
+    // generation: pruning one day of scans must not make a mature market
+    // look young and label its observations with the wrong phase.
+    const firstScanAt = market.firstScanAt ?? generations[0]?.scannedAt ?? null;
     const observations = calibrationObservations(
       rows.map((row) => ({
         itemId: row.itemId,
@@ -76,7 +79,7 @@ async function main() {
         scanMinutes: SCAN_INTERVAL_MINUTES,
         marketOpenedAt: market.openedAt,
         breadthByScan,
-        marketFirstScanAt: earliest._min.timestamp
+        marketFirstScanAt: firstScanAt
       }
     );
     console.log(`\n${market.realm}|${market.faction}: ${rows.length} clean rows, ${observations.length} observations`);

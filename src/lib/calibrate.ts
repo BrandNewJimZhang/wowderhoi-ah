@@ -10,7 +10,7 @@
 // lower edge is zero by construction, which is missing data, not evidence
 // that nothing sold.
 import { median } from "@/lib/median";
-import { resolvePhase } from "@/lib/phase";
+import { ageHours, resolvePhase } from "@/lib/phase";
 import { OBSERVATION_VERSION, type MarketPhase, type MarketType } from "@/lib/market-rules";
 
 export type CalibrationRow = {
@@ -86,11 +86,11 @@ export function calibrationObservations(
       // denominator, its disappearance the numerator. Age and breadth come
       // from that scan's whole market, not from this item's own history:
       // an item that first appeared late is not a young market.
-      const ageHours = Math.max(0, (latestAt - (anchor ?? latestAt)) / (60 * 60 * 1000));
+      const age = ageHours(new Date(latestAt), anchor === null ? null : new Date(anchor));
       observations.push({
         itemId: latest.itemId,
         marketType: latest.marketType as MarketType,
-        phase: resolvePhase(ageHours, options.breadthByScan.get(latestAt) ?? 0),
+        phase: resolvePhase(age, options.breadthByScan.get(latestAt) ?? 0),
         hazard: latest.soldLow / (latest.supply * elapsedHours)
       });
     }

@@ -51,6 +51,7 @@ export default async function HealthPage() {
     ? Math.max(1, Math.round((series.lastAt.getTime() - series.firstAt.getTime()) / (24 * 60 * 60 * 1000)))
     : 0;
   const gapWarning = bundle.gapMinutes !== null && bundle.gapMinutes > 2 * SCAN_INTERVAL_MINUTES;
+  const database = databaseSize();
 
   return (
     <AppShell active="/health">
@@ -62,7 +63,7 @@ export default async function HealthPage() {
           <p className="font-mono text-xs text-terminal-muted">
             {scope ? `${scope.realm} · ${scope.faction} · ${scope.character || "未知角色"}` : "未导入市场"}
             {" · "}{phaseLabels[bundle.phase]} · 数据更新于 {freshness.label}
-            {databaseSize() ? ` · 数据库 ${databaseSize()}` : ""}
+            {database ? ` · 数据库 ${database}` : ""}
           </p>
         </div>
         <div className="flex gap-3 font-mono text-xs">

@@ -128,9 +128,9 @@ async function main() {
     if (!importResponse.ok) {
       throw new Error(`Import failed with ${importResponse.status}: ${await importResponse.text()}`);
     }
-    // The first homepage render after a scan rebuilds the signal cache;
-    // measure it as its own stage so S2 sees steady-state reads and the
-    // rebuild cost stays visible under its own budget.
+    // The first homepage render after a scan reads the new generation and
+    // its materialised signals; measure it as its own stage so S2 sees
+    // steady-state reads and the cold read stays visible under its budget.
     const rebuildSample = await measure(`${baseUrl}/`);
     const postImportRebuildMs = rebuildSample.ok ? rebuildSample.ms : requestTimeoutMs;
 
@@ -146,9 +146,9 @@ async function main() {
     void contentionImport.finally(() => { importSettled = true; });
     while (!importSettled) stalls.push((await measure(`${baseUrl}/`)).ms);
     await contentionImport;
-    // The final request overlaps the import's commit and pays the next
-    // generation's cache rebuild — that cost has its own stage above, so
-    // it is excluded from the during-import stall metric.
+    // The final request overlaps the import's commit and reads the next
+    // generation — that cold read has its own stage above, so it is
+    // excluded from the during-import stall metric.
     stalls.pop();
 
     const report: PerfReport = {

@@ -17,8 +17,8 @@ export const gateBudgets = {
   homepageBytes: 500_000,
   itemPageP95Ms: 300,
   importMs: 5000,
-  // First homepage render after a scan lands rebuilds the signal cache;
-  // it pays the full universe read once per scan generation.
+  // First homepage render after a scan lands decodes the new generation's
+  // materialised signals; it must not pay a full universe read.
   postImportRebuildMs: 5000,
   contentionStallMs: 2000
 } as const;
