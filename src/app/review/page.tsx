@@ -34,12 +34,13 @@ export default async function ReviewPage() {
       orderBy: { at: "desc" },
       take: 2000
     }),
-    // The outcome set is every confirmed sale inside the calibration window,
-    // not the newest 100 rows the summary card shows: a busy commodity day
-    // would otherwise drop the fills of older decisions.
+    // The outcome set is every sale inside the calibration window, not the
+    // newest 100 rows the summary card shows: a busy commodity day would
+    // otherwise drop the fills of older decisions. The policy estimate reads
+    // the same rows, so coverage and calibration describe one sample.
     prisma.trade.findMany({
       where: { ...marketWhere, realizedAt: { gte: calibrationSince } },
-      select: { itemId: true, realizedAt: true, inferred: true, channel: true, decisionId: true }
+      select: { itemId: true, pnl: true, realizedAt: true, inferred: true, channel: true, decisionId: true }
     }),
     getPositions(scope)
   ]);
@@ -52,14 +53,14 @@ export default async function ReviewPage() {
   // but never treated as a clean label.
   const confirmedTrades = trades.filter((trade) => !trade.inferred);
   const summary = summarizeTrades(trades);
-  const realizedTrades = confirmedTrades.map((trade) => ({
+  const decayTrades = confirmedTrades.map((trade) => ({
     itemId: trade.itemId,
     pnl: trade.pnl,
     realizedAt: trade.realizedAt,
     inferred: false,
     decisionId: trade.decisionId
   }));
-  const decay = alphaDecay(realizedTrades);
+  const decay = alphaDecay(decayTrades);
   const loggedDecisions = decisions.map((decision) => ({
     id: decision.id,
     itemId: decision.itemId,
@@ -67,7 +68,16 @@ export default async function ReviewPage() {
     at: decision.at,
     decisionId: decision.decisionId
   }));
-  const policyEstimate = evaluatePolicy(loggedDecisions, realizedTrades, () => true);
+  const policyTrades = calibrationTrades
+    .filter((trade) => !trade.inferred)
+    .map((trade) => ({
+      itemId: trade.itemId,
+      pnl: trade.pnl,
+      realizedAt: trade.realizedAt,
+      inferred: false,
+      decisionId: trade.decisionId
+    }));
+  const policyEstimate = evaluatePolicy(loggedDecisions, policyTrades, () => true);
   const adoptedCount = decisions.filter((decision) => decision.adoptedAt !== null).length;
   // Predicted fill chance vs confirmed sells, bucketed. A decision counts
   // as filled when a confirmed sale of the same item lands inside its
