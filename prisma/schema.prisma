@@ -7,12 +7,16 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Money is copper, stored as Float (SQLite REAL). The 无限 economy lists
+// above INT_MAX (2^31-1 copper ≈ 214k gold), and JavaScript computes in
+// float64, which represents integers exactly up to 2^53.
+
 // One row per realm+faction. Scans, positions and trades are scoped to it.
 model Market {
   id        String   @id @default(cuid())
   realm     String
   faction   String
-  cash      Int       @default(0) // latest scan's player cash, copper
+  cash      Float    @default(0) // latest scan's player cash, copper
   // Character whose scan (and journal) produced cash, positions and trades.
   // Empty for scan-only imports that carry no character.
   character String   @default("")
@@ -40,7 +44,7 @@ model Item {
   quality          String
   category         String
   subCategory      String            @map("sub_category")
-  vendorPrice      Int               @default(0) @map("vendor_price") // NPC sell price in copper; 0 = unsellable
+  vendorPrice      Float             @default(0) @map("vendor_price") // NPC sell price in copper; 0 = unsellable
   snapshots        AuctionSnapshot[]
   dailySummaries   DailySummary[]
   alerts           AlertRule[]
@@ -61,10 +65,10 @@ model AuctionSnapshot {
   // so every price column is zero and only `bidOnlyCount`/`highestBid` are
   // meaningful. Price consumers must filter on `priced`.
   priced           Boolean  @default(true)
-  minPrice         Int      @map("min_price")
-  marketPrice      Int      @map("market_price") // P10; a statistic, not a decision anchor
-  sellPrice        Int      @default(0) @map("sell_price")
-  p5Price          Int      @default(0) @map("p5_price")
+  minPrice         Float      @map("min_price")
+  marketPrice      Float      @map("market_price") // P10; a statistic, not a decision anchor
+  sellPrice        Float      @default(0) @map("sell_price")
+  p5Price          Float      @default(0) @map("p5_price")
   quantity         Int
   numAuctions      Int      @map("num_auctions")
   sellerCount      Int      @default(0) @map("seller_count")
@@ -85,9 +89,9 @@ model AuctionSnapshot {
   // existed; consumers fall back to the core's derivation for those.
   marketType       String?  @map("market_type")
   bidOnlyCount     Int      @default(0) @map("bid_only_count")
-  highestBid       Int      @default(0) @map("highest_bid")
-  soldProxyLow     Int      @default(0) @map("sold_proxy_low") // left an owner: sales + cancels
-  soldProxyHigh    Int      @default(0) @map("sold_proxy_high") // left a price key: also repricing
+  highestBid       Float      @default(0) @map("highest_bid")
+  soldProxyLow     Float      @default(0) @map("sold_proxy_low") // left an owner: sales + cancels
+  soldProxyHigh    Float      @default(0) @map("sold_proxy_high") // left a price key: also repricing
   // False when the scan had no previous capture of this item (first scan
   // after an upgrade, or the item was just listed): the zero interval is
   // missing data, not an observed zero. True for rows imported before the
@@ -116,10 +120,10 @@ model DailySummary {
   itemId     Int      @map("item_id")
   marketId   String   @map("market_id")
   date       DateTime
-  openPrice  Int      @map("open_price")
-  closePrice Int      @map("close_price")
-  highPrice  Int      @map("high_price")
-  lowPrice   Int      @map("low_price")
+  openPrice  Float      @map("open_price")
+  closePrice Float      @map("close_price")
+  highPrice  Float      @map("high_price")
+  lowPrice   Float      @map("low_price")
   volume     Int
   item       Item     @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
   market     Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
@@ -135,7 +139,7 @@ model Position {
   marketId  String   @map("market_id")
   itemId    Int      @map("item_id")
   qty       Int
-  costBasis Int      @map("cost_basis")
+  costBasis Float    @map("cost_basis")
   updatedAt DateTime @updatedAt @map("updated_at")
   market    Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
 
@@ -150,9 +154,9 @@ model Trade {
   marketId   String   @map("market_id")
   itemId     Int      @map("item_id")
   qty        Int
-  price      Int
-  fee        Int      @default(0)
-  pnl        Int
+  price      Float
+  fee        Float    @default(0)
+  pnl        Float
   channel    String // auction | vendor | disenchant | ...
   inferred   Boolean  @default(false) // labelled: the client exposes no sale event
   // When the goods were listed. `realizedAt` is when the sale was observed;
@@ -179,7 +183,7 @@ model Decision {
   reason     String?
   // What the recommendation expected, so the review page can compare the
   // prediction with confirmed sales instead of only describing it.
-  expectedNet    Int?    @map("expected_net")
+  expectedNet    Float?  @map("expected_net")
   fillProb       Float?  @map("fill_prob")
   fillBasis      String? @map("fill_basis")
   allocQty       Int?    @map("alloc_qty")
