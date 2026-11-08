@@ -154,3 +154,38 @@ describe("modern tooltip pipeline", () => {
     expect(lua.tooltipText()).not.toContain("WoWderhoi AHelper");
   });
 });
+
+describe("tooltip pipeline diagnostics", () => {
+  // A failed hook registration must not take the rest of the file down.
+  // /wahtip is registered before any hook so the command survives, and the
+  // failure is recorded instead of vanishing into a silent load abort.
+  it("keeps /wahtip available when a hook registration raises", () => {
+    const lua = loadAddon({ prelude: "hooksecurefunc = function() error('hook boom') end" });
+    expect(lua.eval("type(SlashCmdList['WOWDERHOIAHTIP'])")).toBe("function");
+    lua.exec("SlashCmdList['WOWDERHOIAHTIP']('')");
+    expect(lua.anyChat("hook boom")).toBe(true);
+  });
+
+  // The mixed pipeline: the processor exists, but a native setter-rendered
+  // tooltip never reaches it. The setter hook alone must still append.
+  it("appends through the setter when the processor never fires", () => {
+    const lua = loadAddon({ prelude: "TooltipDataProcessor.AddTooltipPostCall = function() end" });
+    lua.setScan(SCAN);
+    lua.exec(`
+      WowTest.bagItems[1] = { itemId = 4338, name = "Mageweave Cloth" }
+      GameTooltip:SetBagItem(0, 1)
+    `);
+    expect(lua.tooltipText()).toContain("建议卖价");
+  });
+
+  it("names the pipeline facts and the last events", () => {
+    const lua = auctionPage();
+    lua.exec(`
+      WowTest.bagItems[1] = { itemId = 4338, name = "Mageweave Cloth" }
+      GameTooltip:SetBagItem(0, 1)
+      SlashCmdList["WOWDERHOIAHTIP"]("")
+    `);
+    expect(lua.anyChat("processor=true")).toBe(true);
+    expect(lua.anyChat("appended")).toBe(true);
+  });
+});

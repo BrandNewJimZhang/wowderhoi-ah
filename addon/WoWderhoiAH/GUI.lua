@@ -200,6 +200,7 @@ end
 -- errors are commonly disabled.
 local tipEvents = {}
 local tipReported = 0
+local hookFailures = {}
 
 local function recordTip(text)
   tipEvents[#tipEvents + 1] = text
@@ -211,6 +212,72 @@ local function reportTip(text)
   if tipReported >= 3 then return end
   tipReported = tipReported + 1
   DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WoWderhoiAH|r tip: " .. text)
+end
+
+local function noteHookFailure(label, err)
+  local text = string.format("hook %s failed: %s", label,
+    isSecret(err) and "secret value" or tostring(err))
+  hookFailures[#hookFailures + 1] = text
+  reportTip(text)
+end
+
+-- A registration that raises must cost exactly that one entry point. The
+-- rest of the file -- including /wahtip -- has to keep working, or a client
+-- quirk turns into a silent load abort with no way to diagnose it.
+local function installMethodHook(label, frame, method, handler)
+  if not (frame and frame[method]) then return false end
+  local ok, err = pcall(hooksecurefunc, frame, method, handler)
+  if not ok then noteHookFailure(label .. "/" .. method, err) end
+  return ok
+end
+
+local function installScriptHook(label, frame, script, handler)
+  if not (frame and frame.HookScript) then return false end
+  if frame.HasScript and not frame:HasScript(script) then return false end
+  local ok, err = pcall(frame.HookScript, frame, script, handler)
+  if not ok then noteHookFailure(label .. "/" .. script, err) end
+  return ok
+end
+
+local function pipelineFacts()
+  local postcall = TooltipDataProcessor ~= nil
+    and type(TooltipDataProcessor.AddTooltipPostCall) == "function"
+  return string.format(
+    "loaded=GUI processor=%s postcall=%s util=%s primary=%s setItem=%s bag=%s hyperlink=%s",
+    tostring(TooltipDataProcessor ~= nil),
+    tostring(postcall),
+    tostring(TooltipUtil ~= nil and type(TooltipUtil.GetDisplayedItem) == "function"),
+    tostring(type(GameTooltip.GetPrimaryTooltipData) == "function"),
+    tostring(GameTooltip.HasScript and GameTooltip:HasScript("OnTooltipSetItem")),
+    tostring(GameTooltip.SetBagItem ~= nil),
+    tostring(GameTooltip.SetHyperlink ~= nil))
+end
+
+-- Registered before any hook on purpose: a failed registration later in the
+-- file must not take the diagnostic command with it.
+SLASH_WOWDERHOIAHTIP1 = "/wahtip"
+SlashCmdList["WOWDERHOIAHTIP"] = function()
+  DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WoWderhoiAH|r " .. pipelineFacts())
+  local scan = WAH.currentScan and WAH.currentScan()
+  local market = WAH.seriesMarket and WAH.seriesMarket()
+  local historyCount = 0
+  if market then
+    for _ in pairs(market.items or {}) do historyCount = historyCount + 1 end
+  end
+  DEFAULT_CHAT_FRAME:AddMessage(string.format(
+    "|cff33ff99WoWderhoiAH|r data: hasScan=%s hasHistory=%d scanAge=%s",
+    tostring(scan ~= nil), historyCount,
+    tostring(WAH.scanAgeMinutes and WAH.scanAgeMinutes() or "n/a")))
+  if #hookFailures == 0 then
+    DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WoWderhoiAH|r hooks: all registered")
+  else
+    for _, failure in ipairs(hookFailures) do
+      DEFAULT_CHAT_FRAME:AddMessage("|cffff5555WoWderhoiAH|r " .. failure)
+    end
+  end
+  for _, event in ipairs(tipEvents) do
+    DEFAULT_CHAT_FRAME:AddMessage("  " .. event)
+  end
 end
 
 -- explicit: the call named its item through arguments. A nil link on such a
@@ -335,26 +402,22 @@ end
 
 local function hookTooltipFrame(frame)
   if not frame then return end
-  if frame.HasScript and frame:HasScript("OnTooltipSetItem") then
-    frame:HookScript("OnTooltipSetItem", function(self)
-      runTraderSection("OnTooltipSetItem", self)
-    end)
-  end
+  installScriptHook("OnTooltipSetItem", frame, "OnTooltipSetItem", function(self)
+    runTraderSection("OnTooltipSetItem", self)
+  end)
   -- The tooltip data table carries its own hyperlink. This fires on the
   -- render call itself, so it still names the item when the post-call
   -- registration is present but does not fire on this client.
-  if frame.ProcessInfo then
-    hooksecurefunc(frame, "ProcessInfo", function(self, data)
-      local link = type(data) == "table" and data.hyperlink
-      if readableString(link) then
-        runTraderSection("ProcessInfo", self, link, true)
-      end
-    end)
-  end
+  installMethodHook("ProcessInfo", frame, "ProcessInfo", function(self, data)
+    local link = type(data) == "table" and data.hyperlink
+    if readableString(link) then
+      runTraderSection("ProcessInfo", self, link, true)
+    end
+  end)
   for method, linkFrom in pairs(SETTER_LINKS) do
     if frame[method] then
       local hookedMethod, resolve = method, linkFrom
-      hooksecurefunc(frame, hookedMethod, function(self, ...)
+      installMethodHook("setter", frame, hookedMethod, function(self, ...)
         runTraderSection(hookedMethod, self, resolve(self, ...),
           not LINKLESS_SETTER[hookedMethod])
       end)
@@ -365,37 +428,21 @@ end
 -- The processor registration is one path among several, never a substitute
 -- for the others: on this client it can exist without firing for a native
 -- setter-rendered tooltip.
-if TooltipDataProcessor and Enum and Enum.TooltipDataType
-  and TooltipDataProcessor.AddTooltipPostCall then
-  TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip)
-    runTraderSection("postcall", tooltip)
-  end)
+local function registerPostCall()
+  if not (TooltipDataProcessor and Enum and Enum.TooltipDataType
+    and TooltipDataProcessor.AddTooltipPostCall) then return end
+  local ok, err = pcall(TooltipDataProcessor.AddTooltipPostCall,
+    Enum.TooltipDataType.Item, function(tooltip)
+      runTraderSection("postcall", tooltip)
+    end)
+  if not ok then noteHookFailure("postcall/AddTooltipPostCall", err) end
 end
+registerPostCall()
 
 hookTooltipFrame(GameTooltip)
 hookTooltipFrame(ItemRefTooltip)
 if GameTooltipTooltip and GameTooltipTooltip ~= GameTooltip then
   hookTooltipFrame(GameTooltipTooltip)
-end
-
--- /wahtip prints the pipeline facts and the last eight tooltip events, so a
--- hover that still shows no block names the entry point that missed.
-SLASH_WOWDERHOIAHTIP1 = "/wahtip"
-SlashCmdList["WOWDERHOIAHTIP"] = function()
-  local facts = string.format(
-    "processor=%s postcall=%s util=%s primary=%s setItem=%s bag=%s hyperlink=%s",
-    tostring(TooltipDataProcessor ~= nil),
-    tostring(TooltipDataProcessor ~= nil
-      and type(TooltipDataProcessor.AddTooltipPostCall) == "function"),
-    tostring(TooltipUtil ~= nil and type(TooltipUtil.GetDisplayedItem) == "function"),
-    tostring(type(GameTooltip.GetPrimaryTooltipData) == "function"),
-    tostring(GameTooltip.HasScript and GameTooltip:HasScript("OnTooltipSetItem")),
-    tostring(GameTooltip.SetBagItem ~= nil),
-    tostring(GameTooltip.SetHyperlink ~= nil))
-  DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WoWderhoiAH|r " .. facts)
-  for _, event in ipairs(tipEvents) do
-    DEFAULT_CHAT_FRAME:AddMessage("  " .. event)
-  end
 end
 
 -- ============================== Chart ===============================
@@ -877,6 +924,8 @@ guiFrame:SetScript("OnEvent", function(_, event)
     end
     DEFAULT_CHAT_FRAME:AddMessage(string.format(
       "|cff33ff99WoWderhoi AHelper|r " .. L.LOADED, count))
+    -- One line proves which build is running and which pipelines it found.
+    DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WoWderhoiAH|r tooltip pipeline: " .. pipelineFacts())
     if WAH.Ledger then WAH.Ledger.rebuild() end
     return
   end

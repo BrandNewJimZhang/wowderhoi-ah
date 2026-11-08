@@ -28,7 +28,7 @@ export { toLua };
 
 export type WowLua = ReturnType<typeof loadAddon>;
 
-export function loadAddon(options?: { locale?: string; legacyTooltips?: boolean }) {
+export function loadAddon(options?: { locale?: string; legacyTooltips?: boolean; prelude?: string }) {
   const state = lauxlib.luaL_newstate();
   lualib.luaL_openlibs(state);
 
@@ -54,6 +54,10 @@ export function loadAddon(options?: { locale?: string; legacyTooltips?: boolean 
   if (lua.lua_pcall(state, 0, 0, 0) !== lua.LUA_OK) fail("stub failed to load");
   if (options?.locale) exec(`WowTest.locale = ${toLua(options.locale)}`);
   if (options?.legacyTooltips) exec("WowTest.useLegacyTooltips()");
+  // Tests that need the client environment shaped before the addon files
+  // load -- a processor that exists but never fires, a hook API that raises
+  // -- inject that shape here rather than waiting for a post-load override.
+  if (options?.prelude) exec(options.prelude);
 
   // Each file gets the two varargs the client passes: the addon name and
   // the shared namespace table every file writes into.
