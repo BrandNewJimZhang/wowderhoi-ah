@@ -42,10 +42,13 @@ const ESTATE_VERSION = 1;
 
 const LOCATIONS = new Set(["carried", "bank", "account_bank", "mail", "listed", "keyring"]);
 // The coverage map names the locations the publisher actually looked at.
-// An unknown key would be silently downgraded to `unobserved` and hide a
+// Each scope owns a disjoint set: the account bank and own postings are
+// account-scoped, so a character row that claimed them would be an unread
+// second copy. An unknown key or value would be silently dropped and hide a
 // document the terminal does not understand; the version field exists for
 // that change.
-const COVERAGE_KEYS = new Set(["carried", "keyring", "bank", "mail", "account_bank", "listed", "money"]);
+const CHARACTER_COVERAGE_KEYS = new Set(["carried", "keyring", "bank", "mail", "money"]);
+const ACCOUNT_COVERAGE_KEYS = new Set(["account_bank", "listed"]);
 
 function numeric(value: unknown, field: string): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -59,16 +62,22 @@ function optionalNumber(value: unknown, field: string): number | null {
   return numeric(value, field);
 }
 
-function coverageMap(value: unknown, scope: string): Record<string, string> {
+function coverageMap(value: unknown, scope: string): Record<string, "observed" | "unobserved"> {
   if (typeof value !== "object" || value === null) {
     throw new Error(`State payload: estate scope ${scope} must carry a coverage map`);
   }
-  const out: Record<string, string> = {};
+  const allowed = scope === "account" ? ACCOUNT_COVERAGE_KEYS : CHARACTER_COVERAGE_KEYS;
+  const out: Record<string, "observed" | "unobserved"> = {};
   for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-    if (!COVERAGE_KEYS.has(key)) {
+    if (!allowed.has(key)) {
       throw new Error(`State payload: estate scope ${scope} has unknown coverage key ${key}`);
     }
-    out[key] = entry === "observed" ? "observed" : "unobserved";
+    if (entry !== "observed" && entry !== "unobserved") {
+      throw new Error(
+        `State payload: estate scope ${scope} coverage ${key} must be observed or unobserved, got ${JSON.stringify(entry)}`
+      );
+    }
+    out[key] = entry;
   }
   return out;
 }
@@ -88,9 +97,10 @@ export async function applyEstate(
   if (typeof estate.scopes !== "object" || estate.scopes === null) {
     throw new Error("State payload: estate.scopes must be an object");
   }
-  const observedAt = typeof estate.observedAt === "number"
-    ? new Date(estate.observedAt * 1000)
-    : new Date();
+  // The observation time orders revisions across reinstalls, so a document
+  // without one cannot be placed in time. The server clock is not a
+  // substitute: it would let a stale document overwrite fresher state.
+  const observedAt = new Date(numeric(estate.observedAt, "estate.observedAt") * 1000);
   let changed = false;
   let highestRevision = 0;
   for (const [scope, value] of Object.entries(estate.scopes)) {
@@ -100,7 +110,10 @@ export async function applyEstate(
     if (typeof value !== "object" || value === null) {
       throw new Error(`State payload: estate scope ${scope} must be an object`);
     }
-    const revision = numeric(value.revision ?? estate.revision ?? 0, `${scope}.revision`);
+    // No default: a document that names no revision cannot be ordered
+    // against the stored one, and treating it as 0 would let a re-send or a
+    // stale copy pass as the seed.
+    const revision = numeric(value.revision ?? estate.revision, `${scope}.revision`);
     highestRevision = Math.max(highestRevision, revision);
     const existing = await tx.estate.findUnique({
       where: { marketId_scope: { marketId, scope } },
@@ -731,20 +744,33 @@ export async function applyPlan(
   raw: unknown,
   phase: string
 ): Promise<{ created: boolean; revision: string | null }> {
-  if (typeof raw !== "object" || raw === null) return { created: false, revision: null };
+  if (typeof raw !== "object" || raw === null) {
+    throw new Error(`State payload: plan must be an object, got ${JSON.stringify(raw)}`);
+  }
   const plan = raw as AddonPlan;
   if (typeof plan.revision !== "string" || plan.revision === "") {
-    return { created: false, revision: null };
+    throw new Error(`State payload: plan revision ${JSON.stringify(plan.revision)} must be a non-empty string`);
   }
   if (plan.character !== undefined && typeof plan.character !== "string") {
     throw new Error(`State payload: plan character must be a string, got ${JSON.stringify(plan.character)}`);
+  }
+  // A plan without its own clock would be ordered by the import time, so a
+  // delayed document could supersede the plan the player is looking at.
+  const at = new Date(numeric(plan.observedAt, "plan.observedAt") * 1000);
+  // These two name the state and the rule set the prediction was sized
+  // under. Defaulting them would store a plan the page can never treat as
+  // current while it still supersedes the one that is.
+  const estateRevision = numeric(plan.estateRevision, "plan.estateRevision");
+  if (typeof plan.configRevision !== "string" || plan.configRevision === "") {
+    throw new Error(
+      `State payload: plan configRevision ${JSON.stringify(plan.configRevision)} must be a non-empty string`
+    );
   }
   const existing = await tx.plan.findUnique({
     where: { marketId_revision: { marketId, revision: plan.revision } },
     select: { id: true }
   });
   if (existing) return { created: false, revision: plan.revision };
-  const at = typeof plan.observedAt === "number" ? new Date(plan.observedAt * 1000) : new Date();
   // A delayed old plan must not supersede a newer one. Store it for the
   // history and mark it superseded immediately.
   const newer = await tx.plan.findFirst({
@@ -756,8 +782,8 @@ export async function applyPlan(
       marketId,
       revision: plan.revision,
       character: typeof plan.character === "string" ? plan.character : "",
-      estateRevision: plan.estateRevision ?? 0,
-      configRevision: plan.configRevision ?? "",
+      estateRevision,
+      configRevision: plan.configRevision,
       steps: (plan.steps ?? []) as unknown as Prisma.InputJsonValue,
       resources: (plan.resources ?? {}) as unknown as Prisma.InputJsonValue,
       unplanned: (plan.unplanned ?? []) as unknown as Prisma.InputJsonValue,

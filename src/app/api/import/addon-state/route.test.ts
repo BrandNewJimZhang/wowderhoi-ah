@@ -154,6 +154,39 @@ describe("POST /api/import/addon-state", () => {
     expect(body.error).toMatch(/unknown coverage key/);
   });
 
+  it("rejects a coverage value the terminal does not understand", async () => {
+    // A typo is not "unobserved": downgrading it silently would hide a
+    // publisher bug behind a plausible-looking coverage map.
+    const payload = estate(9, 1);
+    (payload.scopes["character:Tester"].coverage as unknown as Record<string, string>).carried = "visible";
+    const response = await post("state", { server: "A", faction: "Alliance", estate: payload });
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: string };
+    expect(body.error).toMatch(/must be observed or unobserved/);
+  });
+
+  it("rejects an estate document that does not say when it was observed", async () => {
+    // Falling back to the server clock would let a stale document replace
+    // fresher state; the observation time orders revisions across reinstalls.
+    const payload = estate(9, 1) as unknown as Record<string, unknown>;
+    delete payload.observedAt;
+    const response = await post("state", { server: "A", faction: "Alliance", estate: payload });
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: string };
+    expect(body.error).toMatch(/observedAt/);
+  });
+
+  it("rejects an estate scope that names no revision", async () => {
+    const payload = estate(9, 1);
+    delete (payload as unknown as Record<string, unknown>).revision;
+    delete (payload.scopes["character:Tester"] as unknown as Record<string, unknown>).revision;
+    delete (payload.scopes.account as unknown as Record<string, unknown>).revision;
+    const response = await post("state", { server: "A", faction: "Alliance", estate: payload });
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: string };
+    expect(body.error).toMatch(/revision/);
+  });
+
   it("ignores an estate revision that does not advance", async () => {
     const response = await post("state", { server: "A", faction: "Alliance", estate: estate(1, 99) });
     expect(response.status).toBe(200);
@@ -591,6 +624,9 @@ describe("POST /api/import/addon-state", () => {
       server: "A", faction: "Alliance",
       plan: {
         revision,
+        character: "Adopter",
+        estateRevision: 1,
+        configRevision: "test",
         observedAt: NOW,
         steps: [{ kind: "sell", itemId: 2589, qty: 1, expectedNet: 100 }],
         resources: {},
@@ -606,6 +642,9 @@ describe("POST /api/import/addon-state", () => {
       server: "A", faction: "Alliance",
       plan: {
         revision: "A|Alliance|invalid:1:1",
+        character: "Tester",
+        estateRevision: 1,
+        configRevision: "test",
         observedAt: NOW,
         steps: [{ kind: "transfer", itemId: 2589, qty: 1 }],
         resources: {},
@@ -618,12 +657,60 @@ describe("POST /api/import/addon-state", () => {
     expect(await prisma.plan.count({ where: { revision: "A|Alliance|invalid:1:1" } })).toBe(0);
   });
 
+  it("rejects a plan that does not say when it was minted", async () => {
+    // The observation time decides whether a plan is current or history.
+    // Falling back to the server clock would let an undated document
+    // supersede the plan the player is actually looking at.
+    const response = await post("state", {
+      server: "A", faction: "Alliance",
+      plan: {
+        revision: "A|Alliance|undated:1:1",
+        character: "Tester",
+        estateRevision: 1,
+        configRevision: "test",
+        steps: [],
+        resources: {},
+        unplanned: []
+      }
+    });
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: string };
+    expect(body.error).toMatch(/observedAt/);
+    expect(await prisma.plan.count({ where: { revision: "A|Alliance|undated:1:1" } })).toBe(0);
+  });
+
+  it("rejects a plan that does not name the pipeline that minted it", async () => {
+    const response = await post("state", {
+      server: "A", faction: "Alliance",
+      plan: {
+        revision: "A|Alliance|unstamped:1:1",
+        character: "Tester",
+        estateRevision: 1,
+        observedAt: NOW,
+        steps: [],
+        resources: {},
+        unplanned: []
+      }
+    });
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: string };
+    expect(body.error).toMatch(/configRevision/);
+  });
+
+  it("rejects a plan object with no identity instead of ignoring it", async () => {
+    const response = await post("state", { server: "A", faction: "Alliance", plan: { observedAt: NOW } });
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: string };
+    expect(body.error).toMatch(/revision/);
+  });
+
   it("stores a plan once and writes its decisions immutably", async () => {
     const revision = `A|Alliance|${NOW}:1:2`;
     const plan = {
       revision,
       character: "Tester",
       estateRevision: 1,
+      configRevision: "test",
       observedAt: NOW,
       steps: [{
         kind: "buy", itemId: 2589, qty: 5, allocQty: 5, allocUnitPrice: 800,
@@ -671,6 +758,9 @@ describe("POST /api/import/addon-state", () => {
     const first = "A|Alliance|same-second:1:1";
     const second = "A|Alliance|same-second:1:2";
     const base = {
+      character: "Tester",
+      estateRevision: 1,
+      configRevision: "test",
       observedAt: NOW,
       steps: [{ kind: "buy", itemId: 2589, qty: 1, expectedNet: 10 }],
       resources: {},
