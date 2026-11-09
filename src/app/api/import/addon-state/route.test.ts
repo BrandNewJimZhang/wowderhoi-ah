@@ -198,5 +198,20 @@ describe("POST /api/import/addon-state", () => {
     });
     const unchanged = await prisma.decision.findFirst({ where: { planRevision: revision } });
     expect(unchanged?.expectedNet).toBe(100);
+
+    // A delayed older plan is stored for history but never supersedes the
+    // plan the player is actually looking at.
+    await post("state", {
+      server: "A", faction: "Alliance",
+      plan: { ...plan, revision: "A|Alliance|older", observedAt: NOW - 100 }
+    });
+    const old = await prisma.plan.findUnique({
+      where: { marketId_revision: { marketId: market!.id, revision: "A|Alliance|older" } }
+    });
+    expect(old?.supersededAt).not.toBeNull();
+    const current = await prisma.plan.findUnique({
+      where: { marketId_revision: { marketId: market!.id, revision } }
+    });
+    expect(current?.supersededAt).toBeNull();
   });
 });

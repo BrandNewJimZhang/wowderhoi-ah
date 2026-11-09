@@ -481,6 +481,12 @@ export async function applyPlan(
   });
   if (existing) return { created: false, revision: plan.revision };
   const at = typeof plan.observedAt === "number" ? new Date(plan.observedAt * 1000) : new Date();
+  // A delayed old plan must not supersede a newer one. Store it for the
+  // history and mark it superseded immediately.
+  const newer = await tx.plan.findFirst({
+    where: { marketId, createdAt: { gt: at } },
+    select: { id: true }
+  });
   const row = await tx.plan.create({
     data: {
       marketId,
@@ -493,13 +499,16 @@ export async function applyPlan(
       resources: (plan.resources ?? {}) as unknown as Prisma.InputJsonValue,
       unplanned: (plan.unplanned ?? []) as unknown as Prisma.InputJsonValue,
       source: "addon",
-      createdAt: at
+      createdAt: at,
+      supersededAt: newer ? at : null
     }
   });
-  await tx.plan.updateMany({
-    where: { marketId, id: { not: row.id }, supersededAt: null },
-    data: { supersededAt: at }
-  });
+  if (!newer) {
+    await tx.plan.updateMany({
+      where: { marketId, id: { not: row.id }, supersededAt: null },
+      data: { supersededAt: at }
+    });
+  }
   const decisions: Prisma.DecisionCreateManyInput[] = [];
   for (const step of plan.steps ?? []) {
     if (!step.itemId || !step.kind) continue;
