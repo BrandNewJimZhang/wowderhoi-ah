@@ -39,6 +39,10 @@ local searching = nil -- "browse" | "list" | nil
 -- waiting is discarded, not opened.
 local browse = nil -- { query = string, queued = string|nil }
 local pendingPurchase = nil -- a purchase awaiting AUCTION_HOUSE_PURCHASE_COMPLETED
+-- A commodity purchase the request timeout booked before the client stated
+-- the fill. The later COMMODITY_PURCHASED is the authority on quantity and
+-- cost; it corrects that fact instead of booking a second purchase.
+local settledCommodity = nil
 
 local function chatMessage(text)
   DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WAH|r " .. text)
@@ -489,7 +493,7 @@ end
 -- COMPLETED is just an auctionID), so the booked quantity is the one the
 -- purchase recorded — the request for item auctions, and the client-reported
 -- fill for commodities.
-local function recordPurchase(purchase)
+local function recordPurchase(purchase, quiet)
   if WAH.Actions then
     if purchase.via == "commodity" then
       WAH.Actions.commodityPurchase(purchase.itemId, purchase.qty, purchase)
@@ -505,19 +509,25 @@ local function recordPurchase(purchase)
     })
   end
   -- The action may already have been booked by the event frame; the chat
-  -- line still belongs to this purchase.
-  chatMessage(string.format(L.BOUGHT, purchase.name, purchase.qty, coinString(purchase.cost)))
+  -- line still belongs to this purchase. A correction re-states a purchase
+  -- the player was already told about.
+  if not quiet then
+    chatMessage(string.format(L.BOUGHT, purchase.name, purchase.qty, coinString(purchase.cost)))
+  end
 end
 
 -- Settle a confirmed purchase: reprice the book the player is looking at and
--- re-run the search so the bought units drop off.
-local function completePurchase(purchase, filled)
+-- re-run the search so the bought units drop off. `correction` restates a
+-- purchase the request timeout already settled; the book was repriced from
+-- the requested quantity, so only the booked fact may change.
+local function completePurchase(purchase, filled, correction)
   if filled and filled > 0 then
     purchase.qty = filled
     local cost = purchase.tiers and WAH.Core.ladderCost(purchase.tiers, filled)
     if cost then purchase.cost = cost end
   end
-  recordPurchase(purchase)
+  recordPurchase(purchase, correction)
+  if correction then return end
   repriceAfterPurchase(purchase.row)
   C_Timer.After(0.6, function()
     if trade and trade:IsShown() and mode == "results" then runSearch() end
@@ -1050,6 +1060,7 @@ tradeEvents:SetScript("OnEvent", function(_, event, payload, extra)
     searchState = nil
     browse = nil
     pendingPurchase = nil
+    settledCommodity = nil
     return
   end
   if event == "AUCTION_HOUSE_BROWSE_FAILURE" then
@@ -1068,6 +1079,13 @@ tradeEvents:SetScript("OnEvent", function(_, event, payload, extra)
     if purchase and purchase.via == "commodity" and (payload == nil or payload == purchase.itemId) then
       pendingPurchase = nil
       completePurchase(purchase, extra)
+    elseif settledCommodity and (payload == nil or payload == settledCommodity.itemId) then
+      -- The timeout already booked this purchase from the request. The
+      -- client's fill is the authority, so restate that same fact rather
+      -- than appending a second buy.
+      local settled = settledCommodity
+      settledCommodity = nil
+      if extra ~= nil then completePurchase(settled, extra, true) end
     elseif payload ~= nil and extra ~= nil then
       -- A purchase made through the Blizzard UI has no local pending record.
       -- The event still names the item and the fill; book it with an
@@ -1082,11 +1100,16 @@ tradeEvents:SetScript("OnEvent", function(_, event, payload, extra)
       purchase.confirmed = true
       if purchase.via == "commodity" then
         -- Give COMMODITY_PURCHASED a moment to report the true fill before
-        -- booking the requested quantity.
+        -- booking the requested quantity. Keep the settled record so a fill
+        -- that arrives after this window corrects the fact it booked.
         C_Timer.After(0.5, function()
           if pendingPurchase ~= purchase then return end
           pendingPurchase = nil
+          settledCommodity = purchase
           completePurchase(purchase)
+          C_Timer.After(10, function()
+            if settledCommodity == purchase then settledCommodity = nil end
+          end)
         end)
       else
         pendingPurchase = nil

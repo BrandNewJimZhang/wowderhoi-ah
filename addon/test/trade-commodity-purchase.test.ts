@@ -57,4 +57,18 @@ describe("commodity purchase completion", () => {
     expect(lua.number("WowTest.ns.Journal.count()")).toBe(1);
     expect(lua.number("WowTest.ns.Ledger.positions()[2589].qty")).toBe(20);
   });
+
+  it("corrects the requested quantity when the authoritative fill arrives after the fallback", () => {
+    const lua = page();
+    lua.buyRow(1);
+    lua.exec("WowTest.fireEvent('AUCTION_HOUSE_PURCHASE_COMPLETED')");
+    // The 0.5s timeout books the request; the client then reports the real
+    // fill. That is the same purchase, so the fact is corrected, not doubled.
+    lua.exec("WowTest.advance(0.6)");
+    expect(lua.number("WowTest.ns.Journal.count()")).toBe(1);
+    lua.exec(`WowTest.fireEvent('COMMODITY_PURCHASED', ${LINEN}, 7)`);
+    expect(lua.number("WowTest.ns.Journal.count()")).toBe(1);
+    expect(lua.number("WowTest.ns.Ledger.positions()[2589].qty")).toBe(7);
+    expect(lua.number("WowTest.ns.Ledger.positions()[2589].cost")).toBe(700);
+  });
 });

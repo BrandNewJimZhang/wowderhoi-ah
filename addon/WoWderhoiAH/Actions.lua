@@ -191,8 +191,22 @@ local lastCommodity = nil
 
 function Actions.commodityPurchase(itemId, quantity, pending)
   if not itemId or not quantity or quantity <= 0 then return false end
-  if pending and pending.recorded then return false end
   local now = time()
+  -- The request timeout books the clicked quantity before the client states
+  -- the real fill. The same purchase record arriving again is the authority:
+  -- correct that fact in place instead of appending a second buy.
+  if pending and lastCommodity and lastCommodity.pending == pending then
+    local patch = {}
+    if lastCommodity.itemId ~= itemId then patch.itemId = itemId end
+    if lastCommodity.qty ~= quantity then patch.qty = quantity end
+    if pending.cost and pending.cost > 0 then patch.cost = pending.cost end
+    upgrade(lastCommodity.event, patch)
+    lastCommodity.itemId = itemId
+    lastCommodity.qty = quantity
+    lastCommodity.at = now
+    return false
+  end
+  if pending and pending.recorded then return false end
   if lastCommodity and lastCommodity.itemId == itemId and lastCommodity.qty == quantity
     and now - lastCommodity.at <= 1 then
     -- The event frame may have booked the fill with an estimate before the
@@ -217,7 +231,7 @@ function Actions.commodityPurchase(itemId, quantity, pending)
     cost = cost,
     priceSource = priceSource
   })
-  lastCommodity = { itemId = itemId, qty = quantity, at = now, event = event }
+  lastCommodity = { itemId = itemId, qty = quantity, at = now, event = event, pending = pending }
   return true
 end
 
