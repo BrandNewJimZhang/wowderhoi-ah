@@ -51,7 +51,6 @@ function Reconciler.run(snapshot)
   for itemId in pairs(itemIds) do
     local position = positions[itemId]
     local ledgerQty = position and position.qty or 0
-    local costBasis = position and position.cost or 0
     local carried = quantityAt(character, itemId, "carried")
     local keyring = quantityAt(character, itemId, "keyring")
     local bank = bankObserved and quantityAt(character, itemId, "bank") or 0
@@ -62,9 +61,6 @@ function Reconciler.run(snapshot)
     local knownQty = math.min(ledgerQty, totalQty)
     local unknownQty = math.max(0, totalQty - ledgerQty)
     local missingQty = allObserved and math.max(0, ledgerQty - totalQty) or 0
-    -- Only the units actually present carry the booked cost; the missing
-    -- units must not inflate the known unit cost a valuation reads.
-    local knownCost = ledgerQty > 0 and costBasis * knownQty / ledgerQty or 0
     -- Bag units are sellable now; when the bag holds none, the bank units
     -- are still a sell candidate that costs a trip.
     local bankQty = bank + accountBank
@@ -88,12 +84,6 @@ function Reconciler.run(snapshot)
       unknownQty = unknownQty,
       missingQty = missingQty,
       missingUnobserved = (not allObserved) and ledgerQty > totalQty or false,
-      -- The quantity is observed; the booked cost may still be partial
-      -- (short history or an estimated purchase). The sell page and the
-      -- core must not report realized profit from it.
-      costKnown = position == nil or position.costKnown ~= false,
-      costBasis = knownCost,
-      unitCost = knownQty > 0 and knownCost / knownQty or 0,
       sellableQty = sellableQty,
       requiresBank = requiresBank,
       coverage = {
