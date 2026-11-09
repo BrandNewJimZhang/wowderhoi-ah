@@ -247,7 +247,7 @@ Ledger 是 Journal 的纯投影：
   归因时写入。
 - `Decision`：由 `Plan` 写入一次（不是页面 GET），记录稳定 `decisionId`
   （`planRevision:item:kind`；`planRevision` 本身是
-  `realm|faction|genEpoch:estateRevision:ledgerRevision`，与插件 `/wahadopt`
+  `realm|faction|genEpoch:estateRevision:ledgerRevision:character`，与插件 `/wahadopt`
   同一公式；计划修订只存在这个身份字符串里，不另设重复列）、
   阶段、行动类型、物品、理由与时间，以及预期净利、成交概率、
   成交依据、分配数量与成交价。预测字段只插入不更新；旧计划只标

@@ -66,7 +66,7 @@ AQT_BUDGET_COPPER="500000"          # 终端计划预算上限；与 Estate 推�
     记下打印的单位成本，再到接收角色 `/wahtransfer … in <单位成本>`。
 11. 决定执行某条建议时输入 `/wahadopt <物品ID> buy|sell`（或完整决策 ID）；终端复盘
     按该决策归因之后的成交，未采纳的旧决策才退回同物品时间窗。`decisionId` 现在
-    绑定计划版本 `realm|faction|genEpoch:estateRevision:ledgerRevision`，同一版本的
+    绑定计划版本 `realm|faction|genEpoch:estateRevision:ledgerRevision:character`，同一版本的
     预测不会在两次扫描之间被改写。
 12. 读模型对最近 2 代保留 signal rows；盘口保留最近 96 代（约一天）供校准，更早的
     代际连同 quotes 删除。计划按 revision 不可变保存，旧计划只标 `supersededAt`；

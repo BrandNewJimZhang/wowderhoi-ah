@@ -11,10 +11,23 @@ describe("decision adoption", () => {
     // in _G in the game.
     lua.exec(`_G["WoWderhoiAH_ScanData"] = { server = "CN5 Realm 8 PvP", faction = "Alliance", scannedAt = 1794124697 }`);
     const revision = lua.text("WowTest.ns.planRevision()");
-    expect(revision).toMatch(/^CN5 Realm 8 PvP\|Alliance\|1794124697:\d+:\d+$/);
+    expect(revision).toMatch(/^CN5 Realm 8 PvP\|Alliance\|1794124697:\d+:\d+:Tester$/);
     lua.exec(`SlashCmdList["WOWDERHOIAHADOPT"]("2589 buy")`);
     lua.exec(`WowTest.adoptEvent = WowTest.ns.Journal.last("adopt")`);
     expect(lua.text("WowTest.adoptEvent.id")).toBe(`${revision}:2589:buy`);
+  });
+
+  it("scopes the identity to the character even when its counters match", () => {
+    const lua = loadAddon();
+    lua.exec(`_G["WoWderhoiAH_ScanData"] = { server = "A", faction = "Alliance", scannedAt = 100 }`);
+    const tester = lua.text("WowTest.ns.planRevision()");
+    // Estate and journal revisions are per character. A fresh alt can hold
+    // the same counters as the main; the identity must still differ or the
+    // terminal treats the second plan as a duplicate of the first.
+    lua.exec(`_G.UnitName = function() return "Alt" end`);
+    const alt = lua.text("WowTest.ns.planRevision()");
+    expect(alt).not.toBe(tester);
+    expect(alt).toMatch(/:Alt$/);
   });
 
   it("accepts a full id", () => {

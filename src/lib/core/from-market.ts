@@ -22,7 +22,7 @@ type CoreBuildOptions = {
   cashCopper?: number;
   bagSlots?: number;
   freeSlots?: number;
-  // realm|faction|genEpoch:estateRevision:ledgerRevision.
+  // realm|faction|genEpoch:estateRevision:ledgerRevision:character.
   planRevision?: string;
 };
 

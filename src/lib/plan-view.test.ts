@@ -4,6 +4,9 @@ import { planEpoch, planEstateRevision, planMatchesScan } from "@/lib/plan-view"
 describe("plan view", () => {
   it("reads the scan epoch from the plan revision", () => {
     expect(planEpoch("A|Alliance|1721700000:2:7")).toBe(1721700000);
+    // The character suffix keeps two characters' plans apart without
+    // moving the epoch the page matches on.
+    expect(planEpoch("A|Alliance|1721700000:2:7:Tester")).toBe(1721700000);
     expect(planEpoch("not-a-plan")).toBeNull();
   });
 
