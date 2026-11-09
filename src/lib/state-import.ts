@@ -730,7 +730,6 @@ export async function applyPlan(
     decisions.push({
       decisionId,
       planId: row.id,
-      planRevision: plan.revision,
       marketId,
       at,
       phase,

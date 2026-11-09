@@ -496,7 +496,7 @@ describe("POST /api/import/addon-state", () => {
     });
     expect(stored).not.toBeNull();
     expect(stored?.character).toBe("Tester");
-    const decision = await prisma.decision.findFirst({ where: { planRevision: revision } });
+    const decision = await prisma.decision.findFirst({ where: { decisionId: `${revision}:2589:buy` } });
     expect(decision?.decisionId).toBe(`${revision}:2589:buy`);
 
     // A re-sent plan does not rewrite the prediction.
@@ -504,7 +504,7 @@ describe("POST /api/import/addon-state", () => {
       server: "A", faction: "Alliance",
       plan: { ...plan, steps: [{ ...plan.steps[0], expectedNet: 999 }] }
     });
-    const unchanged = await prisma.decision.findFirst({ where: { planRevision: revision } });
+    const unchanged = await prisma.decision.findFirst({ where: { decisionId: `${revision}:2589:buy` } });
     expect(unchanged?.expectedNet).toBe(100);
 
     // A delayed older plan is stored for history but never supersedes the

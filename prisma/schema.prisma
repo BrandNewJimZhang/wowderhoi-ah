@@ -364,13 +364,12 @@ model Trade {
 model Decision {
   id             String   @id @default(cuid())
   // Stable identity shared with the addon: planRevision:item:kind, where
-  // planRevision begins realm|faction|genEpoch:estate:ledger. Null on rows
-  // written before the identity existed.
+  // planRevision begins realm|faction|genEpoch:estate:ledger. It is also
+  // the only place the plan revision is stored; a second column would be
+  // an unread copy that could drift. Null on rows written before the
+  // identity existed.
   decisionId     String?  @unique @map("decision_id")
   planId         String?  @map("plan_id")
-  // The plan revision the prediction belongs to. A decision is immutable:
-  // a new plan writes new rows, never edits the predicted fields.
-  planRevision   String?  @map("plan_revision")
   // Set when the in-game /wahadopt event names this decision.
   adoptedAt      DateTime? @map("adopted_at")
   marketId       String   @map("market_id")
@@ -391,7 +390,6 @@ model Decision {
 
   @@index([at])
   @@index([itemId])
-  @@index([planRevision])
 }
 
 // Forever recipe network, imported from data/recipes.forever.json.

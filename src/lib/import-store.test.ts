@@ -80,7 +80,7 @@ beforeAll(async () => {
     PRIMARY KEY ("market_id", "item_id"))`);
   await prisma.$executeRawUnsafe(`CREATE TABLE "Decision" (
     "id" TEXT PRIMARY KEY, "decision_id" TEXT UNIQUE,
-    "plan_id" TEXT, "plan_revision" TEXT,
+    "plan_id" TEXT,
     "adopted_at" DATETIME, "market_id" TEXT, "at" DATETIME, "phase" TEXT,
     "item_id" INTEGER, "kind" TEXT, "reason" TEXT, "expected_net" REAL,
     "fill_prob" REAL, "fill_basis" TEXT, "alloc_qty" INTEGER, "alloc_unit_price" REAL)`);

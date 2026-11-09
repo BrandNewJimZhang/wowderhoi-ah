@@ -248,8 +248,8 @@ Ledger 是 Journal 的纯投影：
 - `Decision`：由 `Plan` 写入一次（不是页面 GET），记录稳定 `decisionId`
   （`planRevision:item:kind`；`planRevision` 本身是
   `realm|faction|genEpoch:estateRevision:ledgerRevision`，与插件 `/wahadopt`
-  同一公式）、
-  `planRevision`、阶段、行动类型、物品、理由与时间，以及预期净利、成交概率、
+  同一公式；计划修订只存在这个身份字符串里，不另设重复列）、
+  阶段、行动类型、物品、理由与时间，以及预期净利、成交概率、
   成交依据、分配数量与成交价。预测字段只插入不更新；旧计划只标
   `supersededAt`。复盘优先按 `decisionId` 归因，未采纳的旧决策才退回同物品
   时间窗；校准用 `[listedAt, observedAt]` 做 censoring-aware 匹配，带成交
