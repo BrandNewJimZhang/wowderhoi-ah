@@ -297,6 +297,42 @@ describe("POST /api/import/addon-state", () => {
     expect((fact?.payload as { cost: number }).cost).toBe(4000);
   });
 
+  it("corrects a fact on the oldest edge of the addon's dedup window", async () => {
+    // Actions.upgrade scans back 200 events inclusively, so an event 201
+    // entries from the end is still correctable in game. The terminal tail
+    // must cover that same slot: one event less left the correction in the
+    // uploaded book but never applied to the fact a projection reads.
+    const target = { k: "buy", t: NOW - 100, seq: 1, itemId: 7778, qty: 5, cost: 5000 };
+    // Annotations with no id: they carry a sequence, so they fill the window,
+    // but they leave the ledger and the holdings untouched.
+    const fillers = Array.from({ length: 200 }, (_, index) => ({
+      k: "adopt",
+      t: NOW - 99 + index,
+      seq: index + 2
+    }));
+    const first = await post("state", {
+      server: "A", faction: "Alliance",
+      journal: book("Boundary", [target, ...fillers])
+    });
+    expect(first.status).toBe(200);
+    const market = await prisma.market.findUnique({ where: { realm_faction: { realm: "A", faction: "Alliance" } } });
+
+    const corrected = await post("state", {
+      server: "A", faction: "Alliance",
+      journal: book("Boundary", [{ ...target, cost: 4000 }, ...fillers])
+    });
+    expect(corrected.status).toBe(200);
+    expect((await corrected.json() as { changed: boolean }).changed).toBe(true);
+    const fact = await prisma.journalFact.findUnique({
+      where: { marketId_character_epoch_seq: { marketId: market!.id, character: "Boundary", epoch: 0, seq: 1 } }
+    });
+    expect((fact?.payload as { cost: number }).cost).toBe(4000);
+    const holding = await prisma.holding.findFirst({
+      where: { marketId: market!.id, character: "Boundary", itemId: 7778 }
+    });
+    expect(holding?.costBasis).toBe(4000);
+  });
+
   it("replays the newest book after SavedVariables is cleared", async () => {
     // Clearing SavedVariables restarts the sequence at 1. The epoch is the
     // book's identity: without it the terminal would match the new seq 1

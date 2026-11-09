@@ -537,10 +537,12 @@ function samePayload(left: unknown, right: unknown): boolean {
   );
 }
 
-// Actions.upgrade only ever rewrites a fact it can still find in the
-// addon's 200-event dedup window. Scanning the same tail is enough to carry
-// every correction without re-reading a full 5,000-event book on each POST.
-const CORRECTION_SCAN_EVENTS = 200;
+// Actions.upgrade only ever rewrites a fact it can still find by scanning
+// back up to 200 events from the last one. That loop is inclusive, so the
+// oldest fact it can correct is 201 entries from the end. Scanning exactly
+// that window carries every correction without re-reading a full 5,000-event
+// book on each POST.
+const CORRECTION_SCAN_EVENTS = 201;
 
 export async function applyJournal(
   tx: Prisma.TransactionClient,
