@@ -528,7 +528,7 @@ end
 -- and a 5% margin measured against a 95% loss is not a bet at any fill
 -- chance below certainty. The allocator reprices whatever quantity the
 -- fraction funds from the cheap end of the same ladder.
-function Core.sizePosition(row, deployable, rules)
+function Core.sizePosition(row, deployable, rules, heldCost)
   local portfolio = (rules and rules.portfolio) or {}
   local feeRate = (rules and rules.feeRate) or 0.05
   local unitCost = row.minPrice or row.candidateUnitPrice or 0
@@ -537,7 +537,9 @@ function Core.sizePosition(row, deployable, rules)
   local loss = math.max((row.sellP or row.listP or unitCost) - unitCost, 1)
   local fraction = Core.kellyFraction(row.fillProb or 0, win, loss)
     * (portfolio.kellyFraction or 0.25)
-  local itemCap = capital * (portfolio.maxItemExposure or 0.25)
+  -- Existing stock of the same item consumes the per-item exposure. Without
+  -- this, a character already holding 50 units was sized as if it held none.
+  local itemCap = math.max(0, capital * (portfolio.maxItemExposure or 0.25) - (heldCost or 0))
   local budget = math.min(capital * fraction, itemCap)
   return {
     budget = budget,
@@ -552,14 +554,22 @@ end
 -- the whole budget on its own, so two 60k opportunities could both be
 -- recommended to a 100k purse. Allocation only ever reduces a row's
 -- executable quantity; the market depth (candidateQty) stays as the ceiling.
-function Core.allocate(rows, deployable, rules)
+function Core.allocate(rows, deployable, rules, options)
   local portfolio = (rules and rules.portfolio) or {}
   local feeRate = (rules and rules.feeRate) or 0.05
+  local opts = options or {}
+  local stackSize = opts.stackSize or 20
+  -- Cash and bag space are both shared resources. The old allocator only
+  -- decremented copper, so every one of twelve buys could claim the whole
+  -- bag. `freeSlots == nil` keeps the previous unlimited behaviour for
+  -- callers that have no estate input.
+  local remainingSlots = opts.freeSlots and opts.freeSlots * stackSize or nil
+  local positions = opts.positions or {}
   local remaining = math.max(deployable or 0, 0) * (portfolio.dailyBudget or 0.5)
   -- Why a candidate got no copper. "The purse ran out" is actionable and
-  -- the old radar guessed it for every zero; a Kelly rejection or an
-  -- exposure cap is a different message.
-  local unfunded = { kelly = 0, exposure = 0, purse = 0, depth = 0 }
+  -- the old radar guessed it for every zero; a Kelly rejection, an
+  -- exposure cap or a full bag is a different message.
+  local unfunded = { kelly = 0, exposure = 0, purse = 0, depth = 0, slots = 0 }
   for _, row in ipairs(rows) do
     row.allocQty = 0
     row.allocNet = 0
@@ -573,10 +583,11 @@ function Core.allocate(rows, deployable, rules)
     -- The sample floor is a portfolio rule; the terminal must not re-derive
     -- the "exploratory" label from its own copy of the number.
     row.exploratory = false
+    local held = positions[row.itemId]
     local sized
     local itemCap
     if not row.vendor then
-      sized = Core.sizePosition(row, deployable, rules)
+      sized = Core.sizePosition(row, deployable, rules, held and held.cost or 0)
       row.exploratory = sized.exploratory
       itemCap = sized.budget
     end
@@ -587,6 +598,8 @@ function Core.allocate(rows, deployable, rules)
       row.unfunded = "kelly"
     elseif itemCap and itemCap <= 0 then
       row.unfunded = "exposure"
+    elseif remainingSlots ~= nil and remainingSlots < 1 then
+      row.unfunded = "slots"
     elseif unit <= 0 then
       row.unfunded = "depth"
     else
@@ -597,11 +610,15 @@ function Core.allocate(rows, deployable, rules)
       -- (ten units at 100, a hundred at 1,000) can fund ten units with the
       -- same cap that the average would turn into one. candidateQty stays the
       -- ceiling because the row's price limits were already applied to it.
+      local quantityCap = row.candidateQty or 0
+      if remainingSlots ~= nil then
+        quantityCap = math.min(quantityCap, math.max(0, math.floor(remainingSlots)))
+      end
       local qty, cost
       if row.tiers then
-        qty, cost = Core.executableQtySorted(row.tiers, nil, cap, row.candidateQty or 0)
+        qty, cost = Core.executableQtySorted(row.tiers, nil, cap, quantityCap)
       else
-        qty = math.min(row.candidateQty or 0, math.floor(cap / unit))
+        qty = math.min(quantityCap, math.floor(cap / unit))
         cost = qty * unit
       end
       if qty > 0 then
@@ -616,11 +633,12 @@ function Core.allocate(rows, deployable, rules)
         -- worth more than in four. Displayed by both cockpits.
         row.netPerMinute = round(row.allocNet / math.max(effortMinutes("buy"), 1))
         remaining = remaining - cost
-      -- Zero quantity after the ladder walk has two different causes: the
+        if remainingSlots ~= nil then remainingSlots = remainingSlots - qty end
+      -- Zero quantity after the ladder walk has different causes: the
       -- remaining share cannot reach one average unit (the purse ran out
-      -- mid-list), or the per-item exposure cap cannot. Only when both caps
-      -- clear the row's average yet no rung is affordable is the book itself
-      -- the limit.
+      -- mid-list), the per-item exposure cap cannot, or the bag is full.
+      elseif remainingSlots ~= nil and remainingSlots < 1 then
+        row.unfunded = "slots"
       elseif remaining < unit then
         row.unfunded = "purse"
       elseif itemCap and itemCap < unit then
@@ -695,6 +713,43 @@ function Core.evaluate(input)
   if requested <= 0 then requested = cash or 0 end
   local budget = cash ~= nil and math.min(requested, cash) or requested
 
+  -- A sale's proceeds are buy budget. The gate and Kelly sizing see cash
+  -- plus what the sellable stock can return; the plan walk later starts
+  -- from the real purse and promotes the sale before spending, so the
+  -- candidate can exist without pretending the coins are already there.
+  local function sellEconomics(itemId, position)
+    local quantity = position.sellableQty
+    if quantity == nil then quantity = position.qty end
+    local item = items[itemId]
+    if not (quantity and quantity > 0 and item and item.sellP) then return nil end
+    local sellPlan = Core.sellPlan(
+      { itemId = itemId, sellP = item.sellP, vendorP = item.vendorP },
+      { qty = quantity, cost = position.cost or 0 },
+      rules,
+      {}
+    )
+    local price = sellPlan and sellPlan.listP or Core.listPrice(item.sellP, item.vendorP or 0, rules)
+    local proceeds = price * quantity
+    local fee = round(proceeds * feeRate)
+    return {
+      quantity = quantity,
+      item = item,
+      sellPlan = sellPlan,
+      price = price,
+      proceeds = proceeds,
+      fee = fee,
+      netProceeds = round(proceeds - fee)
+    }
+  end
+  local plannedSellProceeds = 0
+  for itemId, position in pairs(positions) do
+    local economics = sellEconomics(itemId, position)
+    if economics and economics.netProceeds > 0 then
+      plannedSellProceeds = plannedSellProceeds + economics.netProceeds
+    end
+  end
+  local planningBudget = budget + plannedSellProceeds
+
   local rows = {}
   local excluded = {
     noBook = 0, thinBook = 0, noHistory = 0, spread = 0, net = 0,
@@ -730,7 +785,7 @@ function Core.evaluate(input)
       -- no spread window and no profit floor apply. Budget and bag space
       -- are the only limits.
       if vendorP > minPrice then
-        local qty, cost = Core.executableQtySorted(tiers, vendorP, budget, bagCapacity)
+        local qty, cost = Core.executableQtySorted(tiers, vendorP, planningBudget, bagCapacity)
         if qty > 0 then
           local net = (vendorP - cost / qty) * qty
           local row = {
@@ -781,7 +836,7 @@ function Core.evaluate(input)
         -- the trend, never the reference a spread is measured against.
         local spread = sellP and sellP > 0 and (sellP - minPrice) / sellP or 0
         local priceCap = unitPriceCap(listP, marketRules)
-        local qty, cost, average = Core.executableQtySorted(tiers, priceCap, budget, bagCapacity)
+        local qty, cost, average = Core.executableQtySorted(tiers, priceCap, planningBudget, bagCapacity)
         local net = qty > 0 and Core.netIfSold(listP, qty, cost / qty, feeRate) or 0
         if listings < ((marketRules and marketRules.minListings) or 1) then
           excluded.thinBook = excluded.thinBook + 1
@@ -844,7 +899,7 @@ function Core.evaluate(input)
             sellP = sellP,
             fillProb = point,
             samples = samples
-          }, budget, rules)
+          }, planningBudget, rules)
           if sized.fraction > 0 then
             local row = {
               itemId = itemId,
@@ -895,7 +950,16 @@ function Core.evaluate(input)
     if left.candidateNet ~= right.candidateNet then return left.candidateNet > right.candidateNet end
     return left.itemId < right.itemId
   end)
-  local _, unfunded = Core.allocate(rows, budget, rules)
+  local freeSlots = capacity.freeSlots
+  if freeSlots == nil then freeSlots = bagSlots end
+
+  -- The allocator sees the cash a sale can return, but the plan walk below
+  -- still starts from the real purse and promotes the sale before spending.
+  local _, unfunded = Core.allocate(rows, planningBudget, rules, {
+    freeSlots = freeSlots,
+    stackSize = stackSize,
+    positions = positions
+  })
   -- The funded layer. Every "buy this now" surface reads this list instead
   -- of re-filtering rows with its own copy of `allocQty > 0`.
   local opportunities = {}
@@ -906,89 +970,211 @@ function Core.evaluate(input)
   -- row would copy books the UIs already render from the scan.
   for _, row in ipairs(rows) do row.tiers = nil end
 
-  -- Conditional plans, not a bare action queue: each buy carries the
-  -- abort condition, and each held position carries its sell plan. The
-  -- quantity is the allocated one, not the market depth: the actions share
-  -- one purse.
-  local actions = {}
-  local planned = 0
-  for _, row in ipairs(opportunities) do
-    if planned >= 12 then break end
-    planned = planned + 1
-    if row.vendor then
-      actions[#actions + 1] = {
-        kind = "buy",
-        itemId = row.itemId,
-        name = row.name,
-        qty = row.allocQty,
-        maxUnitPrice = row.sellP,
-        unitPrice = row.allocUnitPrice,
-        expectedNet = row.allocNet,
-        netPerMinute = row.netPerMinute or 0,
-        fillProb = 1,
-        fillBasis = "vendor",
-        allocQty = row.allocQty,
-        allocUnitPrice = row.allocUnitPrice,
-        confidence = row.confidence,
-        exit = "vendor",
-        reason = row.reason
-      }
-    else
-      -- Whole copper, rounded down: paying one copper above the cap already
-      -- breaks the unit-profit floor the gate applied.
-      local abortPrice = math.floor(unitPriceCap(row.listP, typeRules[row.marketType] or typeRules.item))
-      actions[#actions + 1] = {
-        kind = "buy",
-        itemId = row.itemId,
-        name = row.name,
-        qty = row.allocQty,
-        maxUnitPrice = abortPrice,
-        unitPrice = row.allocUnitPrice,
-        expectedNet = row.allocNet,
-        netPerMinute = row.netPerMinute or 0,
-        fillProb = row.fillProb,
-        fillBasis = row.fillBasis,
-        allocQty = row.allocQty,
-        allocUnitPrice = row.allocUnitPrice,
-        confidence = row.confidence,
-        exit = "auction",
-        stop = {
-          kind = "abort",
-          ifPriceAbove = abortPrice
-        },
-        reason = row.reason
+  -- One plan, not two ranked lists. Sells and buys share one currency
+  -- (incremental copper per minute), and the walk starts from the actual
+  -- cash and free slots: a buy that cannot be paid for or stored promotes
+  -- a pending sale (which frees both) instead of silently exceeding the
+  -- bag, and an unaffordable remainder lands in `unplanned` with its cause.
+  local function slotCountOf(units)
+    return math.ceil(math.max(0, units) / math.max(stackSize, 1))
+  end
+
+  local sellCandidates = {}
+  for itemId, position in pairs(positions) do
+    local economics = sellEconomics(itemId, position)
+    if economics then
+      local costKnown = position.costKnown ~= false
+      sellCandidates[#sellCandidates + 1] = {
+        kind = "sell",
+        itemId = itemId,
+        name = economics.item.name,
+        qty = economics.quantity,
+        price = economics.price,
+        proceeds = economics.proceeds,
+        fees = economics.fee,
+        expectedNet = economics.netProceeds,
+        -- Net against the listing price, not the raw front: the undercut is
+        -- real money. The historical cost is reported but never subtracted
+        -- from the decision value -- it is sunk.
+        realizedPnl = costKnown and round(economics.netProceeds - (position.cost or 0)) or nil,
+        costKnown = costKnown,
+        durationHours = economics.sellPlan and economics.sellPlan.duration or 24,
+        fillProb = economics.sellPlan and economics.sellPlan.fillProb or 0,
+        -- A round trip plus the listing, not a buy.
+        netPerMinute = round(economics.netProceeds / math.max(effortMinutes("sell"), 1)),
+        requiresBank = position.requiresBank == true,
+        reason = position.requiresBank and "持仓卖出计划（需去银行取货）" or "持仓卖出计划"
       }
     end
   end
-  for itemId, position in pairs(positions) do
-    if position.qty and position.qty > 0 then
-      local item = items[itemId]
-      local sellP = item and item.sellP
-      if sellP then
-        -- Net against the price the listing will carry, not the raw front:
-        -- the undercut is real money and the two must not disagree.
-        local price = Core.listPrice(sellP, item and item.vendorP or 0, rules)
-        local expectedNet = round(Core.netIfSold(price, position.qty, position.cost / position.qty, feeRate))
-        actions[#actions + 1] = {
-          kind = "sell",
-          itemId = itemId,
-          name = item and item.name,
-          qty = position.qty,
-          price = price,
-          expectedNet = expectedNet,
-          -- The sell plan costs a round trip plus the listing, not a buy.
-          netPerMinute = round(expectedNet / math.max(effortMinutes("sell"), 1)),
-          reason = "持仓卖出计划"
+
+  local buyCandidates = {}
+  for _, row in ipairs(opportunities) do
+    local abortPrice = row.vendor
+      and row.sellP
+      or math.floor(unitPriceCap(row.listP, typeRules[row.marketType] or typeRules.item))
+    buyCandidates[#buyCandidates + 1] = {
+      kind = "buy",
+      row = row,
+      itemId = row.itemId,
+      name = row.name,
+      qty = row.allocQty,
+      unitPrice = row.allocUnitPrice,
+      cost = row.allocCost,
+      expectedNet = row.allocNet,
+      netPerMinute = row.netPerMinute or 0,
+      fillProb = row.vendor and 1 or row.fillProb,
+      fillBasis = row.vendor and "vendor" or row.fillBasis,
+      confidence = row.confidence,
+      vendor = row.vendor,
+      maxUnitPrice = abortPrice,
+      stop = row.vendor and nil or { kind = "abort", ifPriceAbove = abortPrice },
+      reason = row.reason
+    }
+  end
+
+  local combined = {}
+  for _, candidate in ipairs(sellCandidates) do combined[#combined + 1] = candidate end
+  for _, candidate in ipairs(buyCandidates) do combined[#combined + 1] = candidate end
+  table.sort(combined, function(left, right)
+    if left.netPerMinute ~= right.netPerMinute then return left.netPerMinute > right.netPerMinute end
+    if left.itemId ~= right.itemId then return left.itemId < right.itemId end
+    return left.kind < right.kind
+  end)
+
+  local steps = {}
+  local unplanned = {}
+  local placedSell = {}
+  local cash = budget
+  local slotUnits = freeSlots * stackSize
+
+  local function placeSell(candidate)
+    if placedSell[candidate.itemId] then return end
+    placedSell[candidate.itemId] = true
+    local cashBefore, slotsBefore = cash, slotCountOf(slotUnits)
+    cash = cash + candidate.expectedNet
+    -- Goods in the bank do not occupy bag slots until a bank trip; the
+    -- proceeds still fund later buys.
+    if not candidate.requiresBank then slotUnits = slotUnits + candidate.qty end
+    candidate.cashBefore = cashBefore
+    candidate.cashAfter = cash
+    candidate.slotsBefore = slotsBefore
+    candidate.slotsAfter = slotCountOf(slotUnits)
+    steps[#steps + 1] = candidate
+  end
+
+  local function nextUnplacedSell()
+    for _, candidate in ipairs(combined) do
+      if candidate.kind == "sell" and not placedSell[candidate.itemId] then return candidate end
+    end
+    return nil
+  end
+
+  for _, candidate in ipairs(combined) do
+    if candidate.kind == "sell" then
+      placeSell(candidate)
+    else
+      local row = candidate.row
+      local unitCost = candidate.unitPrice or 0
+      local function affordable()
+        if unitCost <= 0 then return 0 end
+        return math.floor(cash / unitCost)
+      end
+      local function fits()
+        return math.min(candidate.qty, affordable(), math.floor(slotUnits))
+      end
+      local quantity = fits()
+      local guard = 0
+      while quantity <= 0 and guard < #combined do
+        local sell = nextUnplacedSell()
+        if not sell then break end
+        -- The sale funds and frees the buy; the plan order changes, the
+        -- total value does not.
+        placeSell(sell)
+        quantity = fits()
+        guard = guard + 1
+      end
+      if quantity <= 0 then
+        unplanned[#unplanned + 1] = {
+          kind = "buy",
+          itemId = candidate.itemId,
+          reason = math.floor(slotUnits) < 1 and "slots" or "cash"
         }
+      else
+        local cashBefore, slotsBefore = cash, slotCountOf(slotUnits)
+        local cost = quantity * unitCost
+        local net
+        if row.vendor then
+          net = round((row.sellP - unitCost) * quantity)
+        else
+          net = round(Core.netIfSold(row.listP, quantity, unitCost, feeRate))
+        end
+        cash = cash - cost
+        slotUnits = slotUnits - quantity
+        steps[#steps + 1] = {
+          kind = "buy",
+          itemId = candidate.itemId,
+          name = candidate.name,
+          qty = quantity,
+          maxUnitPrice = candidate.maxUnitPrice,
+          unitPrice = unitCost,
+          cost = round(cost),
+          expectedNet = net,
+          netPerMinute = round(net / math.max(effortMinutes("buy"), 1)),
+          fillProb = candidate.fillProb,
+          fillBasis = candidate.fillBasis,
+          allocQty = quantity,
+          allocUnitPrice = unitCost,
+          confidence = candidate.confidence,
+          exit = row.vendor and "vendor" or "auction",
+          stop = candidate.stop,
+          cashBefore = cashBefore,
+          cashAfter = cash,
+          slotsBefore = slotsBefore,
+          slotsAfter = slotCountOf(slotUnits),
+          reason = candidate.reason
+        }
+        if quantity < candidate.qty then
+          unplanned[#unplanned + 1] = {
+            kind = "buy",
+            itemId = candidate.itemId,
+            reason = "cash",
+            note = quantity
+          }
+        end
       end
     end
   end
+
+  for _, row in ipairs(rows) do
+    if (row.allocQty or 0) <= 0 then
+      unplanned[#unplanned + 1] = {
+        kind = "buy",
+        itemId = row.itemId,
+        reason = row.unfunded or "unfunded"
+      }
+    end
+  end
+
+  local resources = {
+    cashBefore = budget,
+    cashAfter = cash,
+    slotsBefore = bagSlots,
+    slotsAfter = slotCountOf(slotUnits),
+    binding = (cash <= 0 and "cash") or (slotUnits < stackSize and "slots") or "none"
+  }
 
   return {
     phase = phase,
     rows = rows,
     opportunities = opportunities,
-    actions = actions,
+    actions = steps,
+    plan = {
+      revision = input.planRevision or "",
+      steps = steps,
+      resources = resources,
+      unplanned = unplanned
+    },
     -- Why rows fell out of the radar, keyed by gate, and why a candidate
     -- received no copper, keyed by cause. The UIs explain exclusions per
     -- row; the core's own tests read this table.

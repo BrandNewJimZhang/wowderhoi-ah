@@ -86,7 +86,13 @@ function emptyEvaluation(phase: MarketPhase): CoreOutput {
     rows: [],
     opportunities: [],
     actions: [],
-    diagnostics: { excluded: {}, unfunded: { kelly: 0, exposure: 0, purse: 0, depth: 0 } }
+    plan: {
+      revision: "",
+      steps: [],
+      resources: { cashBefore: 0, cashAfter: 0, slotsBefore: 0, slotsAfter: 0, binding: "none" },
+      unplanned: []
+    },
+    diagnostics: { excluded: {}, unfunded: { kelly: 0, exposure: 0, purse: 0, depth: 0, slots: 0 } }
   };
 }
 

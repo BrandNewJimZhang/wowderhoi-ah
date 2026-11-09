@@ -20,11 +20,23 @@ export const IMPORT_RUN_RETENTION_DAYS = 30;
 
 const EMPTY_DIAGNOSTICS: CoreOutput["diagnostics"] = {
   excluded: {},
-  unfunded: { kelly: 0, exposure: 0, purse: 0, depth: 0 }
+  unfunded: { kelly: 0, exposure: 0, purse: 0, depth: 0, slots: 0 }
 };
 
 function emptyCore(phase: MarketPhase): CoreOutput {
-  return { phase, rows: [], opportunities: [], actions: [], diagnostics: EMPTY_DIAGNOSTICS };
+  return {
+    phase,
+    rows: [],
+    opportunities: [],
+    actions: [],
+    plan: {
+      revision: "",
+      steps: [],
+      resources: { cashBefore: 0, cashAfter: 0, slotsBefore: 0, slotsAfter: 0, binding: "none" },
+      unplanned: []
+    },
+    diagnostics: EMPTY_DIAGNOSTICS
+  };
 }
 
 async function boundaryAfter(

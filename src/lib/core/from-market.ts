@@ -3,7 +3,7 @@
 // identical market, history, position and capital fields on both sides.
 import type { MarketSignal } from "@/lib/analytics";
 import { demandFor } from "@/lib/demand";
-import type { CoreInput, CoreMarketItem, OwnSales, Tier } from "@/lib/core/types";
+import type { CoreInput, CoreMarketItem, CorePosition, OwnSales, Tier } from "@/lib/core/types";
 import type { MarketQuote } from "@/lib/market-data";
 import { SCAN_INTERVAL_MINUTES, type MarketPhase } from "@/lib/market-rules";
 
@@ -13,13 +13,16 @@ type CoreBuildOptions = {
   // The market's first observation. The import resolves it once from the
   // store and the series; the core never re-derives it from a display window.
   firstScanAt?: Date;
-  positions?: Record<number, { qty: number; cost: number }>;
+  positions?: Record<number, CorePosition>;
   ownSales?: OwnSales;
   budgetCopper?: number;
   // Scanned cash (GetMoney at the last scan). Distinct from the planning
   // budget; the core falls back to cash only when no budget is supplied.
   cashCopper?: number;
   bagSlots?: number;
+  freeSlots?: number;
+  // realm|faction|genEpoch:estateRevision:ledgerRevision.
+  planRevision?: string;
 };
 
 // The addon's planner fixes a stack at 20 units; the terminal must send the
@@ -104,6 +107,7 @@ export function buildCoreInput(
   }
   return {
     now: options.now.getTime() / 1000,
+    ...(options.planRevision ? { planRevision: options.planRevision } : {}),
     // The caller resolves the phase once from the generation's stored
     // breadth and the market's true first observation; the core must not
     // re-derive it from whatever quotes this read happens to carry.
@@ -121,6 +125,7 @@ export function buildCoreInput(
     },
     capacity: {
       bagSlots: options.bagSlots ?? 20,
+      freeSlots: options.freeSlots ?? options.bagSlots ?? 20,
       stackSize: STACK_SIZE
     },
     positions: options.positions ?? {}

@@ -8,7 +8,13 @@ import { loadAddon, type WowLua } from "./wow-lua";
 function cockpit(withPosition: boolean) {
   const lua = loadAddon();
   if (withPosition) {
+    // The sell plan reads the bag snapshot, not the ledger alone: ten units
+    // booked by the journal are only sellable if they are actually carried.
+    lua.setBag([{ bag: 0, slot: 1, itemId: 4338, count: 10, name: "Clean Spread" }]);
+    lua.exec("WowTest.fireEvent('BAG_UPDATE_DELAYED')");
+    lua.advance(2);
     lua.exec("WowTest.ns.recordEvent({ k = 'buy', itemId = 4338, qty = 10, cost = 80000 })");
+    lua.exec("WowTest.ns.Reconciler.publish()");
   }
   lua.setScan([{
     itemId: 4338,

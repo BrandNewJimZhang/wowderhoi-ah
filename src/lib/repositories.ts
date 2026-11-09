@@ -4,7 +4,7 @@ import { arraysToSeries, type SeriesPoint } from "@/lib/item-series";
 import { decodeGeneration, type GenerationRecord } from "@/lib/generation-record";
 import { decodeSignalRow, type StoredSignalRow } from "@/lib/signal-row";
 import { ownSalesFromRows } from "@/lib/own-sales";
-import type { OwnSales } from "@/lib/core/types";
+import type { CorePosition, OwnSales } from "@/lib/core/types";
 import { fillRules } from "@/lib/market-rules";
 import { CATALOG_SOURCE, SCAN_SOURCE } from "@/lib/item-catalog";
 import type { MarketScope } from "@/lib/market-scope";
@@ -159,16 +159,25 @@ export async function getRecipes() {
 // The shared core's sellable quantity: what the character can list without
 // a bank trip. Listed units are already on the book and bank units need a
 // trip, so neither belongs in a sell action's quantity.
-export async function getPositions(scope: MarketScope | null): Promise<Record<number, { qty: number; cost: number }>> {
+export async function getPositions(scope: MarketScope | null): Promise<Record<number, CorePosition>> {
   if (!scope) return {};
   const rows = await prisma.holding.findMany({
     where: {
       marketId: scope.id,
       ...(scope.character ? { character: scope.character } : {})
     },
-    select: { itemId: true, carriedQty: true, costBasis: true }
+    select: {
+      itemId: true, qty: true, carriedQty: true, bankQty: true,
+      accountBankQty: true, unknownQty: true, costBasis: true
+    }
   });
-  return Object.fromEntries(rows.map((row) => [row.itemId, { qty: row.carriedQty, cost: row.costBasis }]));
+  return Object.fromEntries(rows.map((row) => [row.itemId, {
+    qty: row.qty,
+    cost: row.costBasis,
+    sellableQty: row.carriedQty,
+    costKnown: row.unknownQty === 0,
+    requiresBank: row.bankQty + row.accountBankQty > 0 && row.carriedQty === 0
+  }]));
 }
 
 export type StoredHolding = {

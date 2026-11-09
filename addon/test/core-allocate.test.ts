@@ -162,7 +162,7 @@ describe("shared capital allocation", () => {
     for (const action of output.actions) {
       if (action.kind === "buy") expect(funded.has(action.itemId)).toBe(true);
     }
-    expect(output.diagnostics.unfunded).toEqual({ kelly: 0, exposure: 0, purse: 0, depth: 0 });
+    expect(output.diagnostics.unfunded).toEqual({ kelly: 0, exposure: 0, purse: 0, depth: 0, slots: 0 });
   });
 
   it("prices the allocated quantity from the cheap end of the ladder", () => {

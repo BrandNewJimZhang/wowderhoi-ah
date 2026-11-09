@@ -8,7 +8,7 @@ type Confidence = "high" | "medium" | "low";
 export type FillBasis = "own" | "proxy" | "observed-zero" | "prior" | "vendor";
 // Why a candidate row received no copper. The core decides this; a UI must
 // not infer "the purse was too small" from a zero quantity.
-type UnfundedReason = "kelly" | "exposure" | "purse" | "depth";
+type UnfundedReason = "kelly" | "exposure" | "purse" | "depth" | "slots";
 
 // Clean fill labels per item: collected auction sales only, within a window.
 // `exposedHours` sums each listing's time on the book before its sale was
@@ -57,9 +57,24 @@ export type CoreMarketItem = {
   history?: { samples?: number; spanHours?: number };
 };
 
+export type CorePosition = {
+  qty: number;
+  cost: number;
+  // Units the player can list now (bag or reagent bag). Absent means the
+  // whole position is sellable, the pre-estate behaviour.
+  sellableQty?: number;
+  // False when some consumed lots have no booked cost; the sell action then
+  // reports realised P&L as unknown instead of pretending the basis is 0.
+  costKnown?: boolean;
+  requiresBank?: boolean;
+};
+
 export type CoreInput = {
   now: number;
   phaseOverride?: MarketPhase;
+  // The immutable identity this plan is evaluated under:
+  // realm|faction|genEpoch:estateRevision:ledgerRevision.
+  planRevision?: string;
   market: {
     // Only used when no phaseOverride is supplied; every production caller
     // resolves the phase from the store and hands it down.
@@ -69,8 +84,8 @@ export type CoreInput = {
   // The core reads cash (the scanned purse) and budget (the planning cap).
   // Mail and escrow are ledger facts, not decision inputs.
   capital?: { cash?: number; budget?: number };
-  capacity?: { bagSlots?: number; stackSize?: number };
-  positions?: Record<number, { qty: number; cost: number }>;
+  capacity?: { bagSlots?: number; stackSize?: number; freeSlots?: number };
+  positions?: Record<number, CorePosition>;
 };
 
 export type CoreRow = {
@@ -128,7 +143,7 @@ export type CoreRow = {
   score?: number;
 };
 
-type CoreAction =
+export type CoreAction =
   | {
       kind: "buy";
       itemId: number;
@@ -138,6 +153,7 @@ type CoreAction =
       // Average price of the allocated quantity: the price the action pays,
       // not the deep-ladder average the row was ranked from.
       unitPrice: number;
+      cost?: number;
       expectedNet: number;
       // Allocated net divided by the round-trip minutes a buy costs.
       netPerMinute: number;
@@ -148,6 +164,13 @@ type CoreAction =
       confidence: Confidence;
       exit: "vendor" | "auction";
       stop?: { kind: "abort"; ifPriceAbove: number };
+      // Resources after the preceding plan step, before and after this one.
+      // Optional so generations written before the plan contract still
+      // decode; the core always emits them.
+      cashBefore?: number;
+      cashAfter?: number;
+      slotsBefore?: number;
+      slotsAfter?: number;
       reason: string;
     }
   | {
@@ -156,11 +179,44 @@ type CoreAction =
       name?: string;
       qty: number;
       price: number;
+      proceeds?: number;
+      fees?: number;
       expectedNet: number;
+      // Historical cost is reported, never subtracted from the decision
+      // value; `realizedPnl` is null when the basis is unknown.
+      realizedPnl?: number | null;
+      costKnown?: boolean;
+      durationHours?: number;
+      fillProb?: number;
       // Net divided by the round-trip minutes a listing costs.
       netPerMinute: number;
+      requiresBank?: boolean;
+      cashBefore?: number;
+      cashAfter?: number;
+      slotsBefore?: number;
+      slotsAfter?: number;
       reason: string;
     };
+
+export type UnplannedStep = {
+  kind: "buy" | "sell";
+  itemId: number;
+  reason: string;
+  note?: number;
+};
+
+export type CorePlan = {
+  revision: string;
+  steps: CoreAction[];
+  resources: {
+    cashBefore: number;
+    cashAfter: number;
+    slotsBefore: number;
+    slotsAfter: number;
+    binding: "cash" | "slots" | "none";
+  };
+  unplanned: UnplannedStep[];
+};
 
 export type CoreOutput = {
   phase: MarketPhase;
@@ -170,12 +226,18 @@ export type CoreOutput = {
   // "buy this now" surface renders this list, so its quantity, price and
   // net all describe the same trade.
   opportunities: CoreRow[];
+  // The executable sequence: sells and buys in one order, each step carrying
+  // the resources before and after it. `actions` is the same list for the
+  // surfaces that already render it.
   actions: CoreAction[];
+  // Present on every evaluation written after the plan contract; optional
+  // so a generation stored before it still decodes.
+  plan?: CorePlan;
   // Why rows fell out of the radar, keyed by gate, and why a candidate got
   // no copper, keyed by cause.
   diagnostics: {
     excluded: Record<string, number>;
-    unfunded: Record<UnfundedReason, number>;
+    unfunded: Record<Exclude<UnfundedReason, "slots">, number> & { slots?: number };
   };
 };
 

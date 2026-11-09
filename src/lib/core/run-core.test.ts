@@ -128,7 +128,7 @@ describe("Core.evaluate through fengari", () => {
     const quietOutput = runCore(quiet);
     expect(quietOutput.rows).toHaveLength(0);
     expect(quietOutput.diagnostics.excluded.sizing).toBe(1);
-    expect(quietOutput.diagnostics.unfunded).toEqual({ kelly: 0, exposure: 0, purse: 0, depth: 0 });
+    expect(quietOutput.diagnostics.unfunded).toEqual({ kelly: 0, exposure: 0, purse: 0, depth: 0, slots: 0 });
 
     // The same book without the observed zero (owners hidden, so the phase
     // prior applies) clears the same risk test and is funded.
@@ -223,7 +223,9 @@ describe("Core.evaluate through fengari", () => {
 
   it("emits a conditional buy plan and a sell plan for a held position", () => {
     const input = commodityInput({ phase: "wave" });
-    input.positions = { 2589: { qty: 40, cost: 32000 } };
+    // Cost is below the per-item exposure cap, so the same item can still be
+    // bought while the existing units are sold.
+    input.positions = { 2589: { qty: 40, cost: 8000 } };
     const output = runCore(input);
     const buy = output.actions.find((action) => action.kind === "buy");
     const sell = output.actions.find((action) => action.kind === "sell");
@@ -235,9 +237,11 @@ describe("Core.evaluate through fengari", () => {
     expect(buy && buy.kind === "buy" && buy.maxUnitPrice).toBe(874);
     expect(buy && buy.kind === "buy" && buy.stop?.ifPriceAbove).toBe(874);
     expect(sell && sell.kind === "sell" && sell.price).toBe(999);
-    // The sell plan nets the price the listing will actually carry (the
-    // front minus the undercut), not the raw front.
-    expect(sell && sell.kind === "sell" && sell.expectedNet).toBe(Math.round(999 * 40 * 0.95 - 32000));
+    // The sell plan values the proceeds after fees; the historical cost is
+    // reported separately as realised P&L and never subtracted from the
+    // decision value.
+    expect(sell && sell.kind === "sell" && sell.expectedNet).toBe(Math.round(999 * 40 * 0.95));
+    expect(sell && sell.kind === "sell" && sell.realizedPnl).toBe(Math.round(999 * 40 * 0.95 - 8000));
   });
 
   it("ranks ignition opportunities by the structural demand prior", () => {

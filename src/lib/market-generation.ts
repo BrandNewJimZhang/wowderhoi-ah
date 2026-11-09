@@ -7,7 +7,7 @@ import type { AddonScan } from "@/lib/addon-scan";
 import { buildMarketSignal } from "@/lib/analytics";
 import { buildCoreInput } from "@/lib/core/from-market";
 import { runCore } from "@/lib/core/run-core";
-import type { CoreOutput, OwnSales } from "@/lib/core/types";
+import type { CoreOutput, CorePosition, OwnSales } from "@/lib/core/types";
 import { decisionIdFor } from "@/lib/decision-id";
 import { buildPriceIndex, type PriceIndex } from "@/lib/deflator";
 import {
@@ -77,10 +77,14 @@ export type GenerationInput = {
   previous: { scannedAt: Date; quotes: Array<{ item: SignalItem; quote: MarketQuote }> } | null;
   openedAt: Date | null;
   firstScanAt: Date | null;
-  positions: Record<number, { qty: number; cost: number }>;
+  positions: Record<number, CorePosition>;
   ownSales: OwnSales;
   budgetCopper: number;
   phaseOverride: MarketPhase | null;
+  freeSlots?: number;
+  // The plan identity the core stamps on its output:
+  // realm|faction|genEpoch:estateRevision:ledgerRevision.
+  planRevision?: string;
 };
 
 // The stored shape of a merged series. The live import, its duplicate
@@ -147,7 +151,7 @@ function signalItemOf(itemId: number, items: Map<number, SignalItem>): SignalIte
   return item;
 }
 
-type DecisionIdentity = { realm: string; faction: string; scannedAt: Date };
+type DecisionIdentity = { realm: string; faction: string; scannedAt: Date; planRevision?: string };
 
 // The core's actions are the only source of decisions, and the import writes
 // them from two paths: a fresh scan and the journal-only replay of an
@@ -158,10 +162,12 @@ export function decisionRowsFrom(core: CoreOutput, identity: DecisionIdentity): 
   const rows: DecisionRow[] = [];
   const seen = new Set<string>();
   for (const action of core.actions) {
+    const planRevision = core.plan?.revision || identity.planRevision;
     const decisionId = decisionIdFor({
       realm: identity.realm,
       faction: identity.faction,
       scannedAt: identity.scannedAt,
+      ...(planRevision ? { planRevision } : {}),
       itemId: action.itemId,
       kind: action.kind
     });
@@ -285,7 +291,9 @@ export function buildGenerationPlan(input: GenerationInput): GenerationPlan {
     ownSales: input.ownSales,
     budgetCopper: input.budgetCopper,
     cashCopper: scan.cash,
-    bagSlots: scan.bagSlots ?? undefined
+    bagSlots: scan.bagSlots ?? undefined,
+    freeSlots: input.freeSlots ?? scan.bagSlots ?? undefined,
+    planRevision: input.planRevision
   }));
   const coreByItem = new Map(core.rows.map((row) => [row.itemId, row]));
   for (const row of signals) {
