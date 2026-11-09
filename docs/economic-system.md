@@ -117,7 +117,10 @@ Journal 是追加式事实，按 `realm|faction|character` 分册，事件种类
 transfer_out / transfer_in / adopt`。
 每册维护单调序号 `seq`；事件同时记录 `eventTime`（能确定的游戏内时间）、
 `observedAt`（写入时刻）与 `censored`（两者不同时为 true）。序号是终端去重的
-唯一身份：同一册的 `(character, seq)` 只会写一次。
+唯一身份：同一册的 `(character, seq)` 只会写一次。分册另有内容修订 `rev`：
+追加事件和原地补全同一事件（例如原生事件先按估算价入账、随后拿到 UI 的精确成本
+或押金）都会推进它。watcher 用它判断“事实内容变了但没有新序号”，计划身份也把
+它当作账本修订。
 
 当前插件自动写入买、挂、撤、成交（邮箱确认）、流拍、竞价与制造；
 `vendor` 通过 `/wahcost` 手动补记（客户端没有逐笔卖店事件，只有一条本地化汇总行）；
@@ -229,8 +232,9 @@ Ledger 是 Journal 的纯投影：
   `account` 分区，每个分区带 `revision`、`observedAt`、`cash`、`freeSlots` 和
   `coverage`。`EstateItem.location` 区分 `carried / bank / account_bank / mail /
   listed / keyring`；未打开过的位置在 `coverage` 里是 `unobserved`，不是 0。
-- `JournalFact`：追加式事实，按 `(marketId, character, seq)` 唯一。导入只插入
-  尚未存在的序号，不删除已有行；同一分册的乱序重发是幂等的。
+- `JournalFact`：追加式事实，按 `(marketId, character, seq)` 唯一。导入插入
+  尚未存在的序号，并用同一序号的修正内容更新已存在的事实（不删除行）；同一
+  分册的乱序重发是幂等的。
 - `LedgerCheckpoint`：本地日志截断前的前缀压缩状态，按 `(marketId, character,
   throughSeq)` 唯一。持仓、开仓与资本 = 最新检查点 + 之后的事实。
 - `Holding`：按 `(marketId, character, itemId)` 的对账读模型，记录

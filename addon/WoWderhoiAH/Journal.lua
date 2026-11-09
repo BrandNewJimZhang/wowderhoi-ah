@@ -50,6 +50,9 @@ local function migrate(book)
     end
     book.nextSeq = nextSeq
   end
+  -- V2 added the content revision. A migrated book starts from the number
+  -- of events it already carries, so the token only moves forward.
+  if type(book.rev) ~= "number" then book.rev = book.nextSeq - 1 end
 end
 
 function Journal.ensure()
@@ -57,7 +60,7 @@ function Journal.ensure()
   local key = bookKey()
   local book = WoWderhoiAH_Journal.books[key]
   if not book then
-    book = { e = {}, dropped = 0, nextSeq = 1, cashAnchor = GetMoney and GetMoney() or nil }
+    book = { e = {}, dropped = 0, nextSeq = 1, rev = 0, cashAnchor = GetMoney and GetMoney() or nil }
     WoWderhoiAH_Journal.books[key] = book
   else
     migrate(book)
@@ -86,10 +89,20 @@ end
 
 -- Stable per-book revision. The plan identity reads it; the terminal uses
 -- it to tell a re-sent book from a new action without comparing event
--- tables.
+-- tables. It moves on an append and on an in-place correction, which keeps
+-- the same sequence but changes what the fact says.
 function Journal.revision()
   local book = Journal.ensure()
-  return book.nextSeq - 1
+  return book.rev
+end
+
+-- Mark the book as changed without appending an event. Actions.upgrade uses
+-- this when a later handler fills in the exact cost or deposit of a fact
+-- already written.
+function Journal.touch()
+  local book = Journal.ensure()
+  book.rev = (book.rev or 0) + 1
+  return book.rev
 end
 
 -- Fold the oldest prefix into a checkpoint. Returns true when it compacted.
@@ -128,6 +141,7 @@ function Journal.append(event)
   local now = time()
   event.seq = book.nextSeq
   book.nextSeq = book.nextSeq + 1
+  book.rev = (book.rev or 0) + 1
   event.eventTime = event.eventTime or event.t or now
   event.t = event.t or event.eventTime
   event.observedAt = event.observedAt or now

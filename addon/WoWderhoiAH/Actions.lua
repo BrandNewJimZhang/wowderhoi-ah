@@ -45,6 +45,10 @@ local function upgrade(event, patch)
     end
   end
   if changed then
+    -- The sequence did not move, so the revision must: the watcher only
+    -- uploads a book whose token changed, and the correction has to reach
+    -- the terminal's append-only facts.
+    if WAH.Journal and WAH.Journal.touch then WAH.Journal.touch() end
     if WAH.Ledger then WAH.Ledger.rebuild() end
     if WAH.Reconciler and WAH.Reconciler.publish then WAH.Reconciler.publish() end
     if WAH.requestFlush then WAH.requestFlush() end

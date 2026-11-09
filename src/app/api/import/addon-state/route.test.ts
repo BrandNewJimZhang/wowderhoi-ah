@@ -191,6 +191,53 @@ describe("POST /api/import/addon-state", () => {
     expect(await prisma.trade.count({ where: { marketId: market!.id, character: "Tester" } })).toBe(1);
   });
 
+  it("applies a corrected fact without appending a second one", async () => {
+    // The client books a purchase at an estimated price, then the UI path
+    // reports the exact cost for the same sequence. The terminal must update
+    // the fact in place: the holding and the trade are projections of it.
+    // A separate character and item keep the correction from changing the
+    // ledger the earlier tests assert on.
+    const events = [
+      { k: "buy", t: NOW - 100, seq: 20, itemId: 7777, qty: 5, cost: 5000 },
+      { k: "sold", t: NOW - 50, seq: 21, itemId: 7777, qty: 2, price: 1000, fee: 100, auctionID: 8 }
+    ];
+    const first = await post("state", {
+      server: "A", faction: "Alliance",
+      journal: book("Corrector", events, 22)
+    });
+    expect(first.status).toBe(200);
+    const market = await prisma.market.findUnique({ where: { realm_faction: { realm: "A", faction: "Alliance" } } });
+    const before = await prisma.trade.findFirst({
+      where: { marketId: market!.id, character: "Corrector", sourceFactId: "Corrector|seq|21" }
+    });
+    expect(before?.pnl).toBe(-100);
+
+    const corrected = await post("state", {
+      server: "A", faction: "Alliance",
+      journal: book("Corrector", [
+        { ...events[0], cost: 4000 },
+        events[1]
+      ], 22)
+    });
+    expect(corrected.status).toBe(200);
+    expect((await corrected.json() as { changed: boolean }).changed).toBe(true);
+    expect(await prisma.journalFact.count({
+      where: { marketId: market!.id, character: "Corrector", seq: 20 }
+    })).toBe(1);
+    const trade = await prisma.trade.findFirst({
+      where: { marketId: market!.id, character: "Corrector", sourceFactId: "Corrector|seq|21" }
+    });
+    expect(trade).toMatchObject({ qty: 2, fee: 100, pnl: 300, basisKnown: true });
+    const holding = await prisma.holding.findFirst({
+      where: { marketId: market!.id, character: "Corrector", itemId: 7777 }
+    });
+    expect(holding).toMatchObject({ knownQty: 3, costBasis: 2400 });
+    const fact = await prisma.journalFact.findUnique({
+      where: { marketId_character_seq: { marketId: market!.id, character: "Corrector", seq: 20 } }
+    });
+    expect((fact?.payload as { cost: number }).cost).toBe(4000);
+  });
+
   it("labels a trade the ledger could not price", async () => {
     const response = await post("state", {
       server: "A", faction: "Alliance",

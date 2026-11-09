@@ -85,12 +85,16 @@ describe("native auction actions", () => {
     auction(lua, 905, LINEN, 5, 5000);
     // The event fires first and books the posting without a deposit.
     lua.exec("WowTest.fireEvent('AUCTION_HOUSE_AUCTION_CREATED', 905)");
+    const before = lua.number("WowTest.ns.Journal.revision()");
     lua.exec(`WowTest.ns.Actions.post(905, {
       itemId = ${LINEN}, qty = 5, price = 1000, deposit = 100
     })`);
     expect(count(lua, "post")).toBe(1);
     expect(lua.number("WowTest.ns.Journal.last('post').deposit")).toBe(100);
     expect(lua.number("WowTest.ns.Ledger.capital().escrow")).toBe(100);
+    // An in-place correction must move the revision the watcher compares;
+    // otherwise the corrected cost never leaves the machine.
+    expect(lua.number("WowTest.ns.Journal.revision()")).toBe(before + 1);
   });
 
   it("upgrades a native purchase with the UI's exact cost", () => {

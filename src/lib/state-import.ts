@@ -475,6 +475,32 @@ type JournalApplyResult = {
   changed: boolean;
 };
 
+// Payload equality without depending on object key order: the client's
+// table serialiser is free to write an unchanged event's fields in another
+// order, and that must not look like a correction.
+function samePayload(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+    return left.every((value, index) => samePayload(value, right[index]));
+  }
+  if (typeof left !== "object" || left === null || typeof right !== "object" || right === null) {
+    return false;
+  }
+  const leftRow = left as Record<string, unknown>;
+  const rightRow = right as Record<string, unknown>;
+  const leftKeys = Object.keys(leftRow);
+  if (leftKeys.length !== Object.keys(rightRow).length) return false;
+  return leftKeys.every((key) =>
+    Object.prototype.hasOwnProperty.call(rightRow, key) && samePayload(leftRow[key], rightRow[key])
+  );
+}
+
+// Actions.upgrade only ever rewrites a fact it can still find in the
+// addon's 200-event dedup window. Scanning the same tail is enough to carry
+// every correction without re-reading a full 5,000-event book on each POST.
+const CORRECTION_SCAN_EVENTS = 200;
+
 export async function applyJournal(
   tx: Prisma.TransactionClient,
   marketId: string,
@@ -485,6 +511,7 @@ export async function applyJournal(
   let trades = 0;
   let errors = 0;
   let newFacts = 0;
+  let newCorrections = 0;
   let newCheckpoints = 0;
   const characters: string[] = [];
   for (const book of books) {
@@ -502,6 +529,7 @@ export async function applyJournal(
     const incomingSeq = book.events.reduce((max, event) => Math.max(max, event.seq ?? 0), 0);
     const incomingSeqCeiling = Math.max(incomingSeq, book.nextSeq - 1);
     const stale = existingSeq > 0 && incomingSeqCeiling < existingSeq;
+    const corrections: JournalEvent[] = [];
     if (book.events.length > 0) {
       // SQLite has no createMany skipDuplicates; filter the sequence
       // numbers already present. That is the same identity the unique key
@@ -524,12 +552,36 @@ export async function applyJournal(
       if (data.length > 0) await tx.journalFact.createMany({ data });
       events += data.length;
       newFacts += data.length;
+      // The client can refine a fact after writing it (a native purchase
+      // first carries an estimated cost, the UI path then knows the exact
+      // one). The sequence stays the same, so the append path would never
+      // see it. Replace the stored payload; the projections are rebuilt
+      // from these rows.
+      if (!stale) {
+        const tail = book.events.slice(-CORRECTION_SCAN_EVENTS);
+        const stored = await tx.journalFact.findMany({
+          where: { marketId, character, seq: { in: tail.map((event) => event.seq as number) } },
+          select: { seq: true, payload: true }
+        });
+        const bySeq = new Map(stored.map((row) => [row.seq, row.payload]));
+        for (const event of tail) {
+          const previous = bySeq.get(event.seq as number);
+          if (previous !== undefined && !samePayload(previous, event)) corrections.push(event);
+        }
+      }
     }
     if (stale) {
       // Adoptions are annotations, not projection state; a late delivery
       // still carries a player fact the review must see.
       await applyAdoptions(tx, marketId, character, book.events);
       continue;
+    }
+    for (const event of corrections) {
+      await tx.journalFact.update({
+        where: { marketId_character_seq: { marketId, character, seq: event.seq as number } },
+        data: { kind: event.k, payload: event as unknown as Prisma.InputJsonValue }
+      });
+      newCorrections += 1;
     }
     if (book.checkpoint) {
       const checkpointExisting = await tx.ledgerCheckpoint.findUnique({
@@ -582,7 +634,7 @@ export async function applyJournal(
     trades,
     errors,
     characters,
-    changed: newFacts > 0 || newCheckpoints > 0 || trades > 0
+    changed: newFacts > 0 || newCorrections > 0 || newCheckpoints > 0 || trades > 0
   };
 }
 

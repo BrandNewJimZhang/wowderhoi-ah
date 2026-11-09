@@ -298,6 +298,15 @@ describe("journalRevision", () => {
     expect(after).not.toBe(before);
   });
 
+  it("changes when the addon corrects an event in place", () => {
+    // An exact cost or deposit can arrive after the first event frame. The
+    // event count and sequence do not move, so the book's revision is the
+    // only token that tells the watcher the file changed.
+    const corrected = structuredClone(base);
+    (corrected.books["TestRealm|Alliance|Main"] as Record<string, unknown>).rev = 3;
+    expect(journalRevision(corrected)).not.toBe(journalRevision(base));
+  });
+
   it("changes when the oldest events are truncated", () => {
     const truncated = structuredClone(base);
     truncated.books["TestRealm|Alliance|Main"].dropped = 1;
@@ -343,6 +352,6 @@ describe("journal checkpoint parity", () => {
     expect(state.positions[2589]).toEqual({ qty: 3, cost: 200, costKnown: true });
     expect(state.capital.cashDelta).toBe(-200);
     expect(state.cashAnchor).toBe(1000);
-    expect(journalRevision(parsed.WoWderhoiAH_Journal)).toContain(":9:8");
+    expect(journalRevision(parsed.WoWderhoiAH_Journal)).toContain(":1:4:9:8:8");
   });
 });
