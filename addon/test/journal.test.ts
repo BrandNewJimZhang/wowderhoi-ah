@@ -97,8 +97,10 @@ describe("journal and ledger", () => {
     const lua = loadAddon();
     record(lua, { k: "sold", auctionID: 1, itemId: 2589, qty: 4, price: 1200, fee: 240 });
     expect(lua.number("WoWderhoiAH_Ledger.errors[1].kind == 'short_position' and 1 or 0")).toBe(1);
-    // No basis was invented: the whole revenue is realized.
+    // No basis was invented: the whole revenue is realized, but the trade
+    // says the profit is not a number the ledger can prove.
     expect(lua.number("WowTest.ns.Ledger.capital().realized")).toBe(4560);
+    expect(lua.number("WowTest.ns.Ledger.current().trades[1].basisKnown == false and 1 or 0")).toBe(1);
   });
 
   it("rejects an unknown event kind at the write boundary", () => {

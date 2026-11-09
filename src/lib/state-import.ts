@@ -296,6 +296,7 @@ async function applyTrades(
       price: trade.price,
       fee: trade.fee,
       pnl: trade.pnl,
+      basisKnown: trade.basisKnown,
       channel: trade.channel,
       inferred: trade.inferred,
       listedAt: trade.listedAt === undefined ? null : new Date(trade.listedAt * 1000),

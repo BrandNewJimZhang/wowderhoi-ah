@@ -17,12 +17,13 @@
 local ADDON_NAME, WAH = ...
 
 local Ledger = {}
--- Version 4: the journal carries stable sequence numbers and a checkpoint.
--- Replaying a checkpoint plus the surviving events must produce the same
--- positions, open postings and capital as replaying the full history.
--- (Version 3 introduced the auctionID on trades; version 2 the material
--- FIFO craft cost, partial fills and listing-time exposure.)
-Ledger.VERSION = 4
+-- Version 5: every trade states whether the ledger could price the units it
+-- consumed. A sale larger than the booked history realizes revenue with an
+-- unknown basis; reporting that as profit is a windfall, not a result.
+-- Version 4 added the stable sequence and the prefix checkpoint; version 3
+-- the auctionID on trades; version 2 the material FIFO craft cost, partial
+-- fills and listing-time exposure.
+Ledger.VERSION = 5
 
 local function round(value) return math.floor((value or 0) + 0.5) end
 
@@ -57,7 +58,12 @@ local function copyState(initial, market)
   for itemId, lots in pairs(initial.lots or {}) do
     local copy = {}
     for index, lot in ipairs(lots) do
-      copy[index] = { qty = lot.qty, unitCost = lot.unitCost, at = lot.at }
+      copy[index] = {
+        qty = lot.qty,
+        unitCost = lot.unitCost,
+        at = lot.at,
+        known = lot.known
+      }
     end
     state.lots[itemId] = copy
   end
@@ -87,29 +93,37 @@ local function copyState(initial, market)
   return state
 end
 
-local function addLot(state, itemId, quantity, unitCost, at)
+local function addLot(state, itemId, quantity, unitCost, at, known)
   if not itemId or quantity <= 0 then return end
   local lots = state.lots[itemId]
   if not lots then
     lots = {}
     state.lots[itemId] = lots
   end
-  lots[#lots + 1] = { qty = quantity, unitCost = unitCost or 0, at = at }
+  lots[#lots + 1] = {
+    qty = quantity,
+    unitCost = unitCost or 0,
+    at = at,
+    known = known ~= false
+  }
 end
 
--- FIFO consumption. Returns the cost basis of the consumed units. A sale
--- larger than the booked position can happen when the journal starts
--- mid-history (the addon was installed after the purchase); the shortfall
--- is consumed at zero basis and recorded, not hidden.
+-- FIFO consumption. Returns the cost basis of the consumed units and
+-- whether the ledger could price all of them. A sale larger than the booked
+-- position can happen when the journal starts mid-history (the addon was
+-- installed after the purchase); the shortfall is consumed at zero basis and
+-- recorded, not hidden, and any trade built from it is labelled unknown.
 local function consume(state, itemId, quantity, at)
   local lots = state.lots[itemId]
   local remaining = quantity or 0
   local basis = 0
+  local known = itemId ~= nil
   if lots then
     while remaining > 0 and #lots > 0 do
       local lot = lots[1]
       local take = math.min(remaining, lot.qty)
       basis = basis + take * lot.unitCost
+      if lot.known == false then known = false end
       lot.qty = lot.qty - take
       remaining = remaining - take
       if lot.qty <= 0 then table.remove(lots, 1) end
@@ -117,6 +131,7 @@ local function consume(state, itemId, quantity, at)
     if #lots == 0 then state.lots[itemId] = nil end
   end
   if remaining > 0 then
+    known = false
     state.errors[#state.errors + 1] = {
       t = at,
       kind = "short_position",
@@ -124,7 +139,7 @@ local function consume(state, itemId, quantity, at)
       missing = remaining
     }
   end
-  return basis
+  return basis, known
 end
 
 local function totalCost(lots)
@@ -155,13 +170,16 @@ function Ledger.replay(events, market, initial)
       -- cost. The capture side never prices the craft: the ledger is the
       -- only authority for what the consumed units were booked at.
       local basis = 0
+      local known = true
       for _, material in ipairs(event.mats or {}) do
-        basis = basis + consume(state, material.itemId, material.qty or 0, event.t)
+        local materialBasis, materialKnown = consume(state, material.itemId, material.qty or 0, event.t)
+        basis = basis + materialBasis
+        known = known and materialKnown
       end
       local quantity = event.qty or 0
-      addLot(state, event.itemId, quantity, quantity > 0 and basis / quantity or 0, event.t)
+      addLot(state, event.itemId, quantity, quantity > 0 and basis / quantity or 0, event.t, known)
     elseif kind == "vendor" then
-      local basis = consume(state, event.itemId, event.qty or 0, event.t)
+      local basis, known = consume(state, event.itemId, event.qty or 0, event.t)
       state.capital.realized = state.capital.realized + (event.paid or 0) - basis
       state.capital.cashDelta = state.capital.cashDelta + (event.paid or 0)
       -- Money is whole copper. A unit price can be fractional (a stack
@@ -171,7 +189,8 @@ function Ledger.replay(events, market, initial)
       state.trades[#state.trades + 1] = {
         t = event.t, itemId = event.itemId, qty = event.qty or 0,
         price = (event.qty or 0) > 0 and round((event.paid or 0) / event.qty) or 0,
-        fee = 0, basis = basis, pnl = round((event.paid or 0) - basis), channel = "vendor",
+        fee = 0, basis = basis, basisKnown = known,
+        pnl = round((event.paid or 0) - basis), channel = "vendor",
         inferred = false, observedAt = event.t, censored = false
       }
     elseif kind == "post" then
@@ -192,7 +211,7 @@ function Ledger.replay(events, market, initial)
       local price = event.price or (post and post.price) or 0
       local fee = event.fee or 0
       local itemId = event.itemId or (post and post.itemId)
-      local basis = consume(state, itemId, quantity, event.t)
+      local basis, known = consume(state, itemId, quantity, event.t)
       state.capital.realized = state.capital.realized + price * quantity - fee - basis
       state.capital.fees = state.capital.fees + fee
       state.capital.cashDelta = state.capital.cashDelta + price * quantity - fee
@@ -210,7 +229,7 @@ function Ledger.replay(events, market, initial)
       end
       state.trades[#state.trades + 1] = {
         t = event.t, itemId = itemId, qty = quantity,
-        price = round(price), fee = round(fee), basis = basis,
+        price = round(price), fee = round(fee), basis = basis, basisKnown = known,
         pnl = round(price * quantity - fee - basis), channel = "auction",
         auctionID = event.auctionID,
         inferred = event.inferred == true,
@@ -275,15 +294,17 @@ function Ledger.replay(events, market, initial)
       consume(state, event.itemId, event.qty or 0, event.t)
     elseif kind == "transfer_in" then
       local quantity = event.qty or 0
-      addLot(state, event.itemId, quantity, quantity > 0 and (event.cost or 0) / quantity or 0, event.t)
+      -- The sender prints the cost; a missing cost is unknown, not zero.
+      addLot(state, event.itemId, quantity,
+        quantity > 0 and (event.cost or 0) / quantity or 0, event.t, event.cost ~= nil)
     elseif kind == "de" or kind == "prospect" or kind == "mill" then
-      local basis = consume(state, event.itemId, event.qty or 0, event.t)
+      local basis, known = consume(state, event.itemId, event.qty or 0, event.t)
       local outputs = event.outputs or {}
       local outputQty = 0
       for _, output in ipairs(outputs) do outputQty = outputQty + (output.qty or 0) end
       local unitCost = outputQty > 0 and basis / outputQty or 0
       for _, output in ipairs(outputs) do
-        addLot(state, output.itemId, output.qty or 0, unitCost, event.t)
+        addLot(state, output.itemId, output.qty or 0, unitCost, event.t, known)
       end
     elseif kind == "bid" then
       -- A bid freezes money but does not consume goods. The win arrives as

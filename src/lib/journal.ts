@@ -56,7 +56,7 @@ type JournalBook = {
   checkpoint: JournalCheckpoint | null;
 };
 
-type JournalLot = { qty: number; unitCost: number; at: number };
+type JournalLot = { qty: number; unitCost: number; at: number; known?: boolean };
 
 export type JournalTrade = {
   t: number;
@@ -65,6 +65,11 @@ export type JournalTrade = {
   price: number;
   fee: number;
   basis: number;
+  // False when the consumed units had no booked cost (the journal starts
+  // mid-history or a craft ran short). The revenue is real, the profit is
+  // not: the terminal must report it separately instead of adding a
+  // zero-basis windfall to realized P&L and to the policy estimate.
+  basisKnown: boolean;
   pnl: number;
   channel: string;
   inferred: boolean;
@@ -190,7 +195,10 @@ function parseCheckpoint(raw: unknown): JournalCheckpoint | null {
       return {
         qty: toNumber(lot.qty),
         unitCost: toNumber(lot.unitCost),
-        at: toNumber(lot.at, index)
+        at: toNumber(lot.at, index),
+        // A checkpoint written before basis provenance existed was booked
+        // by definition: the shortfall cases were already recorded.
+        known: lot.known !== false
       };
     }).filter((lot) => lot.qty > 0);
   }
@@ -215,6 +223,7 @@ function parseCheckpoint(raw: unknown): JournalCheckpoint | null {
       fee: toNumber(trade.fee),
       basis: toNumber(trade.basis),
       pnl: toNumber(trade.pnl),
+      basisKnown: trade.basisKnown !== false,
       channel: typeof trade.channel === "string" ? trade.channel : "auction",
       inferred: trade.inferred === true,
       ...(typeof trade.auctionID === "number" || typeof trade.auctionID === "string"
@@ -285,23 +294,35 @@ export function replayJournal(events: JournalEvent[], checkpoint?: JournalCheckp
     cashAnchor = checkpoint.cashAnchor;
   }
 
-  const addLot = (itemId: number | undefined, quantity: number, unitCost: number, at: number) => {
+  const addLot = (
+    itemId: number | undefined,
+    quantity: number,
+    unitCost: number,
+    at: number,
+    known = true
+  ) => {
     if (!itemId || quantity <= 0) return;
     const list = lots.get(itemId) ?? [];
-    list.push({ qty: quantity, unitCost, at });
+    list.push({ qty: quantity, unitCost, at, known });
     lots.set(itemId, list);
   };
 
-  const consume = (itemId: number | undefined, quantity: number, at: number): number => {
-    if (!itemId) return 0;
+  const consume = (
+    itemId: number | undefined,
+    quantity: number,
+    at: number
+  ): { basis: number; known: boolean } => {
+    if (!itemId) return { basis: 0, known: false };
     const list = lots.get(itemId);
     let remaining = quantity;
     let basis = 0;
+    let known = true;
     if (list) {
       while (remaining > 0 && list.length > 0) {
         const lot = list[0];
         const take = Math.min(remaining, lot.qty);
         basis += take * lot.unitCost;
+        if (lot.known === false) known = false;
         lot.qty -= take;
         remaining -= take;
         if (lot.qty <= 0) list.shift();
@@ -309,9 +330,10 @@ export function replayJournal(events: JournalEvent[], checkpoint?: JournalCheckp
       if (list.length === 0) lots.delete(itemId);
     }
     if (remaining > 0) {
+      known = false;
       errors.push({ t: at, kind: "short_position", itemId, missing: remaining });
     }
-    return basis;
+    return { basis, known };
   };
 
   events.forEach((event, index) => {
@@ -329,15 +351,18 @@ export function replayJournal(events: JournalEvent[], checkpoint?: JournalCheckp
         // cost. The capture never prices the craft; the ledger is the only
         // authority for what the consumed units were booked at.
         let basis = 0;
+        let known = true;
         for (const material of event.mats ?? []) {
-          basis += consume(material.itemId, material.qty, at);
+          const consumed = consume(material.itemId, material.qty, at);
+          basis += consumed.basis;
+          known = known && consumed.known;
         }
         const quantity = event.qty ?? 0;
-        addLot(event.itemId, quantity, quantity > 0 ? basis / quantity : 0, at);
+        addLot(event.itemId, quantity, quantity > 0 ? basis / quantity : 0, at, known);
         break;
       }
       case "vendor": {
-        const basis = consume(event.itemId, event.qty ?? 0, at);
+        const { basis, known } = consume(event.itemId, event.qty ?? 0, at);
         const paid = event.paid ?? 0;
         capital.realized += paid - basis;
         capital.cashDelta += paid;
@@ -348,7 +373,7 @@ export function replayJournal(events: JournalEvent[], checkpoint?: JournalCheckp
         trades.push({
           t: at, itemId: event.itemId ?? null, qty: event.qty ?? 0,
           price: (event.qty ?? 0) > 0 ? round(paid / (event.qty ?? 1)) : 0,
-          fee: 0, basis, pnl: round(paid - basis), channel: "vendor", inferred: false,
+          fee: 0, basis, basisKnown: known, pnl: round(paid - basis), channel: "vendor", inferred: false,
           observedAt: at, censored: false
         });
         break;
@@ -372,7 +397,7 @@ export function replayJournal(events: JournalEvent[], checkpoint?: JournalCheckp
         const price = event.price ?? post?.price ?? 0;
         const fee = event.fee ?? 0;
         const itemId = event.itemId ?? post?.itemId;
-        const basis = consume(itemId, quantity, at);
+        const { basis, known } = consume(itemId, quantity, at);
         capital.realized += price * quantity - fee - basis;
         capital.fees += fee;
         capital.cashDelta += price * quantity - fee;
@@ -390,6 +415,7 @@ export function replayJournal(events: JournalEvent[], checkpoint?: JournalCheckp
         const listedAt = event.listedAt ?? post?.at;
         trades.push({
           t: at, itemId: itemId ?? null, qty: quantity, price: round(price), fee: round(fee), basis,
+          basisKnown: known,
           pnl: round(price * quantity - fee - basis), channel: "auction",
           ...(event.auctionID !== undefined ? { auctionID: event.auctionID } : {}),
           inferred: event.inferred === true,
@@ -461,17 +487,17 @@ export function replayJournal(events: JournalEvent[], checkpoint?: JournalCheckp
       }
       case "transfer_in": {
         const quantity = event.qty ?? 0;
-        addLot(event.itemId, quantity, quantity > 0 ? (event.cost ?? 0) / quantity : 0, at);
+        addLot(event.itemId, quantity, quantity > 0 ? (event.cost ?? 0) / quantity : 0, at, event.cost !== undefined);
         break;
       }
       case "de":
       case "prospect":
       case "mill": {
-        const basis = consume(event.itemId, event.qty ?? 0, at);
+        const { basis, known } = consume(event.itemId, event.qty ?? 0, at);
         const outputs = event.outputs ?? [];
         const outputQty = outputs.reduce((sum, output) => sum + (output.qty ?? 0), 0);
         const unitCost = outputQty > 0 ? basis / outputQty : 0;
-        for (const output of outputs) addLot(output.itemId, output.qty ?? 0, unitCost, at);
+        for (const output of outputs) addLot(output.itemId, output.qty ?? 0, unitCost, at, known);
         break;
       }
       case "bid": {

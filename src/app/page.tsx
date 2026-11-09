@@ -71,7 +71,7 @@ export default async function Home() {
     scopeId ? getSeriesStats(scopeId) : Promise.resolve({ items: 0, points: 0, firstAt: null, lastAt: null }),
     prisma.trade.findMany({
       where: { ...(scopeId ? { marketId: scopeId } : {}), realizedAt: { gte: new Date(now.getTime() - 7 * DAY_MS) } },
-      select: { pnl: true, inferred: true }
+      select: { pnl: true, inferred: true, basisKnown: true }
     }),
     // The readiness meter describes the sample the review can actually
     // calibrate: counting every decision ever written overstated it once
@@ -160,7 +160,11 @@ export default async function Home() {
   const nameById = new Map(signals.map((signal) => [signal.itemId, signal.name]));
   const valuation = valuePositions(positions, priceById, nameById);
   const confirmedWeek = recentTrades.filter((trade) => !trade.inferred);
-  const weekRealized = confirmedWeek.reduce((sum, trade) => sum + trade.pnl, 0);
+  // A confirmed sale without a booked basis proves revenue, not profit;
+  // adding it at zero cost would turn an installation gap into a windfall.
+  const basisKnownWeek = confirmedWeek.filter((trade) => trade.basisKnown);
+  const unknownBasisWeek = confirmedWeek.length - basisKnownWeek.length;
+  const weekRealized = basisKnownWeek.reduce((sum, trade) => sum + trade.pnl, 0);
   const inferredWeek = recentTrades.length - confirmedWeek.length;
 
   // A move on a 4-copper junk item is noise in a dashboard: keep the
@@ -230,7 +234,10 @@ export default async function Home() {
           <div className="border border-terminal-border bg-terminal-panel p-3">
             <div className="text-terminal-muted">7 日已实现（确认成交）</div>
             <div className={`mt-1 text-lg ${weekRealized >= 0 ? "text-terminal-green" : "text-terminal-red"}`}><Coins copper={weekRealized} /></div>
-            <div className="mt-1 text-[10px] text-terminal-muted">{confirmedWeek.length} 确认 · {inferredWeek} 推断未计入</div>
+            <div className="mt-1 text-[10px] text-terminal-muted">
+              {confirmedWeek.length} 确认 · {inferredWeek} 推断未计入
+              {unknownBasisWeek > 0 && ` · ${unknownBasisWeek} 笔成本未知未计入`}
+            </div>
           </div>
         </div>
 

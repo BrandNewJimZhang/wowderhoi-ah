@@ -16,9 +16,24 @@ describe("summarizeTrades", () => {
     expect(summary.inferredCount).toBe(1);
   });
 
+  it("keeps a confirmed sale with no booked basis out of profit and win rate", () => {
+    const summary = summarizeTrades([
+      { pnl: 1200, fee: 100, inferred: false },
+      { pnl: 4560, fee: 240, inferred: false, basisKnown: false }
+    ]);
+    expect(summary.confirmedRealized).toBe(1200);
+    expect(summary.confirmedFees).toBe(340);
+    expect(summary.confirmedCount).toBe(2);
+    expect(summary.confirmedWins).toBe(1);
+    expect(summary.unknownBasisCount).toBe(1);
+    expect(summary.unknownBasisRealized).toBe(4560);
+  });
+
   it("returns zeroes for an empty ledger", () => {
     expect(summarizeTrades([])).toEqual({
       confirmedRealized: 0,
+      unknownBasisRealized: 0,
+      unknownBasisCount: 0,
       inferredRealized: 0,
       confirmedFees: 0,
       confirmedCount: 0,

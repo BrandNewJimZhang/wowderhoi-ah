@@ -42,8 +42,8 @@ export default async function ReviewPage() {
     prisma.trade.findMany({
       where: { ...marketWhere, realizedAt: { gte: calibrationSince } },
       select: {
-        itemId: true, pnl: true, realizedAt: true, inferred: true, channel: true,
-        decisionId: true, listedAt: true, observedAt: true, censored: true
+        itemId: true, pnl: true, realizedAt: true, inferred: true, basisKnown: true,
+        channel: true, decisionId: true, listedAt: true, observedAt: true, censored: true
       }
     })
   ]);
@@ -56,8 +56,12 @@ export default async function ReviewPage() {
   // listing booked at its ask; it may be a cancellation, so it is displayed
   // but never treated as a clean label.
   const confirmedTrades = trades.filter((trade) => !trade.inferred);
+  // Profit needs a booked cost. A confirmed sale whose units the ledger
+  // could not price stays in the fill sample (a sale is a sale) but never
+  // enters the decay, channel or policy estimates.
+  const pricedTrades = confirmedTrades.filter((trade) => trade.basisKnown);
   const summary = summarizeTrades(trades);
-  const decayTrades = confirmedTrades.map((trade) => ({
+  const decayTrades = pricedTrades.map((trade) => ({
     itemId: trade.itemId,
     pnl: trade.pnl,
     realizedAt: trade.realizedAt,
@@ -73,7 +77,7 @@ export default async function ReviewPage() {
     decisionId: decision.decisionId
   }));
   const policyTrades = calibrationTrades
-    .filter((trade) => !trade.inferred)
+    .filter((trade) => !trade.inferred && trade.basisKnown)
     .map((trade) => ({
       itemId: trade.itemId,
       pnl: trade.pnl,
@@ -126,10 +130,10 @@ export default async function ReviewPage() {
     : freshness.stale
       ? "行情已过期，等下一次扫描后再设计实验。"
       : "持仓物品未出现在最近一次扫描中，没有可用的当前卖价来设计实验。";
-  const experimentRecovery = focusItemId !== null ? experimentResults(trades, focusItemId) : [];
+  const experimentRecovery = focusItemId !== null ? experimentResults(pricedTrades, focusItemId) : [];
   const nameById = new Map(signals.map((signal) => [signal.itemId, signal.name]));
   const byChannel = new Map<string, { count: number; pnl: number }>();
-  for (const trade of confirmedTrades) {
+  for (const trade of pricedTrades) {
     const bucket = byChannel.get(trade.channel) ?? { count: 0, pnl: 0 };
     bucket.count += 1;
     bucket.pnl += trade.pnl;
@@ -156,15 +160,22 @@ export default async function ReviewPage() {
         <div className="border border-terminal-border bg-terminal-panel p-3">
           <div className="text-terminal-muted">最近 100 笔已实现（确认成交）</div>
           <div className={`mt-1 text-lg ${summary.confirmedRealized >= 0 ? "text-terminal-green" : "text-terminal-red"}`}><Coins copper={summary.confirmedRealized} /></div>
+          {summary.unknownBasisCount > 0 && (
+            <div className="mt-1 text-[10px] text-terminal-amber">
+              {summary.unknownBasisCount} 笔成本未知（<Coins copper={summary.unknownBasisRealized} />）未计入
+            </div>
+          )}
         </div>
         <div className="border border-terminal-border bg-terminal-panel p-3">
           <div className="text-terminal-muted">成交笔数</div>
           <div className="mt-1 text-lg text-slate-100">{summary.confirmedCount} 确认 / {summary.inferredCount} 推断</div>
         </div>
         <div className="border border-terminal-border bg-terminal-panel p-3">
-          <div className="text-terminal-muted">胜率（确认成交）</div>
+          <div className="text-terminal-muted">胜率（成本已知的确认成交）</div>
           <div className="mt-1 text-lg text-slate-100">
-            {summary.confirmedCount > 0 ? `${((summary.confirmedWins / summary.confirmedCount) * 100).toFixed(0)}%` : "—"}
+            {summary.confirmedCount - summary.unknownBasisCount > 0
+              ? `${((summary.confirmedWins / (summary.confirmedCount - summary.unknownBasisCount)) * 100).toFixed(0)}%`
+              : "—"}
           </div>
         </div>
         <div className="border border-terminal-border bg-terminal-panel p-3">
@@ -183,6 +194,9 @@ export default async function ReviewPage() {
         </span>
         <span>有效样本 {policyEstimate.effectiveSampleSize.toFixed(1)}</span>
         <span>推断 {summary.inferredCount} 笔 · <Coins copper={summary.inferredRealized} /> 未计入</span>
+        {summary.unknownBasisCount > 0 && (
+          <span className="text-terminal-amber">成本未知 {summary.unknownBasisCount} 笔 · <Coins copper={summary.unknownBasisRealized} /> 未计入</span>
+        )}
         <span className="text-terminal-amber">描述性匹配，不是因果效应；要估计策略效果需要记录倾向并做探索。</span>
       </div>
 

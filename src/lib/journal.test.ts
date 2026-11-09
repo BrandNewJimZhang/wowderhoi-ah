@@ -63,6 +63,37 @@ describe("replayJournal", () => {
     expect(state.trades[0].pnl).toBe(90);
   });
 
+  it("labels a sale whose consumed units had no booked basis", () => {
+    // The addon was installed after the purchase: revenue is real, profit
+    // is not. The trade must say so instead of realizing a zero-basis
+    // windfall, and a later booked sale stays known.
+    const state = replayJournal([
+      { k: "sold", t: 1, itemId: 2589, qty: 4, price: 1200, fee: 240 },
+      { k: "buy", t: 2, itemId: 2589, qty: 2, cost: 2000 },
+      { k: "sold", t: 3, itemId: 2589, qty: 1, price: 1200, fee: 60 }
+    ]);
+    expect(state.trades[0].basisKnown).toBe(false);
+    expect(state.trades[1].basisKnown).toBe(true);
+    expect(state.errors[0]).toMatchObject({ kind: "short_position", missing: 4 });
+    // The Lua ledger agrees field for field, including the new label.
+    const fromLua = loadAddon().ledgerReplay([
+      { k: "sold", t: 1, itemId: 2589, qty: 4, price: 1200, fee: 240 },
+      { k: "buy", t: 2, itemId: 2589, qty: 2, cost: 2000 },
+      { k: "sold", t: 3, itemId: 2589, qty: 1, price: 1200, fee: 60 }
+    ]) as { trades: unknown };
+    expect(state.trades).toEqual(fromLua.trades);
+  });
+
+  it("carries unknown basis through a craft", () => {
+    // Crafting from short material history makes the product's cost a
+    // partial number; selling it must not claim the basis is known.
+    const state = replayJournal([
+      { k: "craft", t: 1, itemId: 2000, qty: 2, mats: [{ itemId: 1000, qty: 10 }] },
+      { k: "sold", t: 2, itemId: 2000, qty: 2, price: 500, fee: 50 }
+    ]);
+    expect(state.trades[0].basisKnown).toBe(false);
+  });
+
   it("books fractional unit prices as whole copper", () => {
     // Commodity tiers are buyout/count, so a sale can carry 100/3 copper.
     // The client posts in whole copper and the trade table stores integers:

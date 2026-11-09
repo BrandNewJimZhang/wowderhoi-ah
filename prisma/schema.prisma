@@ -329,6 +329,11 @@ model Trade {
   price      Float
   fee        Float     @default(0)
   pnl        Float
+  // False when the ledger could not price every consumed unit (the journal
+  // starts mid-history, or a craft ran short). Revenue is real; profit is
+  // not, so the terminal reports the row separately instead of adding a
+  // zero-basis windfall to realized P&L.
+  basisKnown Boolean   @default(true) @map("basis_known")
   channel    String // auction | vendor | disenchant | ...
   inferred   Boolean   @default(false) // labelled: the client exposes no sale event
   // When the goods were listed. `realizedAt` is when the sale was observed;

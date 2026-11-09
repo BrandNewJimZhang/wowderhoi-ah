@@ -94,6 +94,11 @@ export default async function PortfolioPage() {
           <div className="mt-1 text-[10px] text-terminal-muted">
             推断 {trades.inferredCount} 笔 · <Coins copper={trades.inferredRealized} /> 未计入
           </div>
+          {trades.unknownBasisCount > 0 && (
+            <div className="mt-1 text-[10px] text-terminal-amber">
+              成本未知 {trades.unknownBasisCount} 笔 · <Coins copper={trades.unknownBasisRealized} /> 未计入
+            </div>
+          )}
         </div>
       </div>
 
@@ -166,8 +171,12 @@ export default async function PortfolioPage() {
                     <td className="px-3 py-2 text-left text-slate-200">{nameById.get(trade.itemId) ?? `#${trade.itemId}`}</td>
                     <td className="px-3 py-2 text-right text-slate-300">{trade.qty}</td>
                     <td className="px-3 py-2 text-right"><Coins copper={trade.price} /></td>
-                    <td className={`px-3 py-2 text-right ${trade.pnl >= 0 ? "text-terminal-green" : "text-terminal-red"}`}><Coins copper={trade.pnl} /></td>
-                    <td className="px-3 py-2 text-right text-terminal-muted">{tradeChannelLabel(trade.channel)}{trade.inferred ? " · 推断" : ""}</td>
+                    <td className={`px-3 py-2 text-right ${trade.basisKnown === false ? "text-terminal-amber" : trade.pnl >= 0 ? "text-terminal-green" : "text-terminal-red"}`}>
+                      {trade.basisKnown === false ? "成本未知" : <Coins copper={trade.pnl} />}
+                    </td>
+                    <td className="px-3 py-2 text-right text-terminal-muted">
+                      {tradeChannelLabel(trade.channel)}{trade.inferred ? " · 推断" : ""}{trade.basisKnown === false ? " · 成本未知" : ""}
+                    </td>
                   </tr>
                 ))}
                 {allTrades.length === 0 && (

@@ -160,6 +160,22 @@ describe("POST /api/import/addon-state", () => {
     expect(await prisma.trade.count({ where: { marketId: market!.id, character: "Tester" } })).toBe(1);
   });
 
+  it("labels a trade the ledger could not price", async () => {
+    const response = await post("state", {
+      server: "A", faction: "Alliance",
+      journal: book("Tester", [
+        { k: "sold", t: NOW - 40, seq: 3, itemId: 9999, qty: 4, price: 1200, fee: 240, auctionID: 11 }
+      ], 4)
+    });
+    expect(response.status).toBe(200);
+    const market = await prisma.market.findUnique({ where: { realm_faction: { realm: "A", faction: "Alliance" } } });
+    const trade = await prisma.trade.findFirst({
+      where: { marketId: market!.id, character: "Tester", itemId: 9999 }
+    });
+    // The revenue is real, the profit is not: the row must say so.
+    expect(trade).toMatchObject({ qty: 4, pnl: 4560, basisKnown: false });
+  });
+
   it("rebuilds holdings when only the estate moves", async () => {
     const response = await post("state", {
       server: "A", faction: "Alliance",
