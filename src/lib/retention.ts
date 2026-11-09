@@ -32,7 +32,7 @@ function emptyCore(phase: MarketPhase): CoreOutput {
     plan: {
       revision: "",
       steps: [],
-      resources: { cashBefore: 0, cashAfter: 0, slotsBefore: 0, slotsAfter: 0, binding: "none" },
+      resources: { cashBefore: 0, cashAfter: 0, slotsBefore: 0, slotsAfter: 0 },
       unplanned: []
     },
     diagnostics: EMPTY_DIAGNOSTICS

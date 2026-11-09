@@ -57,7 +57,7 @@ export default async function Home() {
   const planSteps = (publishedPlan?.steps as CoreAction[] | undefined)
     ?? evaluation.plan?.steps
     ?? evaluation.actions;
-  const unplanned = (publishedPlan?.unplanned as Array<{ kind: string; itemId: number; reason: string }> | undefined)
+  const unplanned = (publishedPlan?.unplanned as Array<{ itemId: number; reason: string }> | undefined)
     ?? evaluation.plan?.unplanned
     ?? [];
   const planResources = (publishedPlan?.resources as {

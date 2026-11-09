@@ -110,9 +110,7 @@ describe("executable plan", () => {
     for (const reason of reasons) expect(typeof reason).toBe("string");
     // A row refused by the plan used to appear once in the refusal branch
     // and once again in the final funded/unfunded sweep.
-    const buyIds = output.plan!.unplanned
-      .filter((row) => row.kind === "buy")
-      .map((row) => row.itemId);
+    const buyIds = output.plan!.unplanned.map((row) => row.itemId);
     expect(new Set(buyIds).size).toBe(buyIds.length);
   });
 

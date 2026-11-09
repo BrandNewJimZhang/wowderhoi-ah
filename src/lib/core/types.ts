@@ -161,8 +161,6 @@ export type CoreAction =
       fillBasis: FillBasis;
       allocQty: number;
       allocUnitPrice: number;
-      confidence: Confidence;
-      exit: "vendor" | "auction";
       stop?: { kind: "abort"; ifPriceAbove: number };
       // Resources after the preceding plan step, before and after this one.
       // Optional so generations written before the plan contract still
@@ -179,14 +177,11 @@ export type CoreAction =
       name?: string;
       qty: number;
       price: number;
-      proceeds?: number;
-      fees?: number;
       expectedNet: number;
       // Historical cost is reported, never subtracted from the decision
       // value; `realizedPnl` is null when the basis is unknown.
       realizedPnl?: number | null;
       costKnown?: boolean;
-      durationHours?: number;
       fillProb?: number;
       fillBasis?: string;
       // Net divided by the round-trip minutes a listing costs.
@@ -200,10 +195,8 @@ export type CoreAction =
     };
 
 type UnplannedStep = {
-  kind: "buy" | "sell";
   itemId: number;
   reason: string;
-  note?: number;
 };
 
 type CorePlan = {
@@ -214,7 +207,6 @@ type CorePlan = {
     cashAfter: number;
     slotsBefore: number;
     slotsAfter: number;
-    binding: "cash" | "slots" | "none";
   };
   unplanned: UnplannedStep[];
 };

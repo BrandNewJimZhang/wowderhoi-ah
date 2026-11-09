@@ -1021,15 +1021,12 @@ function Core.evaluate(input)
         name = economics.item.name,
         qty = economics.quantity,
         price = economics.price,
-        proceeds = economics.proceeds,
-        fees = economics.fee,
         expectedNet = economics.netProceeds,
         -- Net against the listing price, not the raw front: the undercut is
         -- real money. The historical cost is reported but never subtracted
         -- from the decision value -- it is sunk.
         realizedPnl = costKnown and round(economics.netProceeds - economics.costForSale) or nil,
         costKnown = costKnown,
-        durationHours = economics.sellPlan and economics.sellPlan.duration or 24,
         -- The core has no deposit table, so sellPlan does not estimate a
         -- fill chance here. A made-up zero would enter the calibration log
         -- as a real prediction; leave it absent instead.
@@ -1060,7 +1057,6 @@ function Core.evaluate(input)
       netPerMinute = row.netPerMinute or 0,
       fillProb = row.vendor and 1 or row.fillProb,
       fillBasis = row.vendor and "vendor" or row.fillBasis,
-      confidence = row.confidence,
       vendor = row.vendor,
       maxUnitPrice = abortPrice,
       stop = row.vendor and nil or { kind = "abort", ifPriceAbove = abortPrice },
@@ -1177,8 +1173,6 @@ function Core.evaluate(input)
           fillBasis = candidate.fillBasis,
           allocQty = quantity,
           allocUnitPrice = unitCost,
-          confidence = candidate.confidence,
-          exit = row.vendor and "vendor" or "auction",
           stop = candidate.stop,
           cashBefore = cashBefore,
           cashAfter = cash,
@@ -1188,10 +1182,8 @@ function Core.evaluate(input)
         }
         if quantity < candidate.qty then
           unplanned[#unplanned + 1] = {
-            kind = "buy",
             itemId = candidate.itemId,
-            reason = cause,
-            note = quantity
+            reason = cause
           }
         end
       end
@@ -1202,7 +1194,6 @@ function Core.evaluate(input)
   for _, row in ipairs(rows) do
     if (row.allocQty or 0) <= 0 then
       unplanned[#unplanned + 1] = {
-        kind = "buy",
         itemId = row.itemId,
         reason = row.unfunded or "unfunded"
       }
@@ -1219,8 +1210,7 @@ function Core.evaluate(input)
     cashBefore = budget,
     cashAfter = cash,
     slotsBefore = freeSlots,
-    slotsAfter = slotCountOf(slotUnits),
-    binding = (cash <= 0 and "cash") or (slotUnits < stackSize and "slots") or "none"
+    slotsAfter = slotCountOf(slotUnits)
   }
   -- The allocator's causes describe the pre-plan purse; the plan may have
   -- reduced or refused a row afterwards. Re-derive the counts from the final

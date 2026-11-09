@@ -153,7 +153,7 @@ describe("decisionRowsFrom", () => {
       {
         kind: "buy", itemId: 1, name: "梦叶草", qty: 5, maxUnitPrice: 180, unitPrice: 170,
         expectedNet: 500, netPerMinute: 10, fillProb: 0.6, fillBasis: "proxy",
-        allocQty: 4, allocUnitPrice: 160, confidence: "medium", exit: "auction", reason: "价差"
+        allocQty: 4, allocUnitPrice: 160, reason: "价差"
       },
       {
         kind: "sell", itemId: 2, qty: 3, price: 400, expectedNet: 1200, netPerMinute: 20,
@@ -182,7 +182,7 @@ describe("decisionRowsFrom", () => {
     const buy = {
       kind: "buy" as const, itemId: 1, name: "梦叶草", qty: 1, maxUnitPrice: 10, unitPrice: 9,
       expectedNet: 1, netPerMinute: 1, fillProb: 0.5, fillBasis: "prior" as const,
-      allocQty: 1, allocUnitPrice: 9, confidence: "low" as const, exit: "auction" as const, reason: "x"
+      allocQty: 1, allocUnitPrice: 9, reason: "x"
     };
     expect(() => decisionRowsFrom(core([buy, buy]), identity)).toThrow(/Duplicate decision identity/);
   });

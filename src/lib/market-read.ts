@@ -91,7 +91,7 @@ function emptyEvaluation(phase: MarketPhase): CoreOutput {
     plan: {
       revision: "",
       steps: [],
-      resources: { cashBefore: 0, cashAfter: 0, slotsBefore: 0, slotsAfter: 0, binding: "none" },
+      resources: { cashBefore: 0, cashAfter: 0, slotsBefore: 0, slotsAfter: 0 },
       unplanned: []
     },
     diagnostics: { excluded: {}, unfunded: { kelly: 0, exposure: 0, purse: 0, depth: 0, slots: 0 } }

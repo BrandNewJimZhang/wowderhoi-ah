@@ -71,7 +71,7 @@ describe("plan publication", () => {
       revision = "A|Alliance|100:2:3",
       steps = { { kind = "buy", itemId = 2589, qty = 5 } },
       resources = { cashBefore = 1000, cashAfter = 500 },
-      unplanned = { { kind = "buy", itemId = 1, reason = "cash" } }
+      unplanned = { { itemId = 1, reason = "purse" } }
     })`);
     expect(lua.text("WoWderhoiAH_Plan.revision")).toBe("A|Alliance|100:2:3");
     expect(lua.text("WoWderhoiAH_Plan.character")).toBe("Tester");
