@@ -24,6 +24,15 @@ describe("decision adoption", () => {
     expect(lua.text("WowTest.adoptEvent.id")).toBe("A|Alliance|1721700000:2589:sell");
   });
 
+  it("adopts the published plan revision, not a fresh identity", () => {
+    const lua = loadAddon();
+    lua.exec(`_G["WoWderhoiAH_ScanData"] = { server = "A", faction = "Alliance", scannedAt = 100 }`);
+    lua.exec(`WowTest.ns.publishPlan({ revision = "A|Alliance|100:2:3", steps = {}, resources = {}, unplanned = {} })`);
+    lua.exec(`SlashCmdList["WOWDERHOIAHADOPT"]("2589 buy")`);
+    lua.exec(`WowTest.adoptEvent = WowTest.ns.Journal.last("adopt")`);
+    expect(lua.text("WowTest.adoptEvent.id")).toBe("A|Alliance|100:2:3:2589:buy");
+  });
+
   it("records nothing without a scan", () => {
     const lua = loadAddon();
     lua.exec(`_G["WoWderhoiAH_ScanData"] = nil`);

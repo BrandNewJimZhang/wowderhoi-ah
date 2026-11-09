@@ -267,7 +267,10 @@ export async function POST(request: Request) {
       for (const update of itemDiff.updates) {
         await tx.item.update({ where: { itemId: update.itemId }, data: update.data });
       }
-      await writeGeneration(tx, market.id, plan, plan.decisions);
+      // Decisions belong to the game's plan, not to the scan observation.
+      // Writing scan-time rows under the old timestamp identity would give
+      // the same recommendation two ids and let calibration count it twice.
+      await writeGeneration(tx, market.id, plan, []);
     }, { timeout: 120_000 });
 
     await pruneGenerations(market.id);
@@ -284,7 +287,7 @@ export async function POST(request: Request) {
       seriesPoints: plan.seriesPointCount,
       quotes: plan.quotes.length,
       signals: plan.signals.length,
-      decisions: plan.decisions.length,
+      decisions: 0,
       stale: plan.staleCount,
       phase: plan.phase,
       scannedAt: scan.scannedAt.toISOString(),

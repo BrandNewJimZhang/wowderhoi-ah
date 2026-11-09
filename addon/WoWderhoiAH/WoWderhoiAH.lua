@@ -1727,6 +1727,10 @@ end
 -- fields travel -- rows and books stay local.
 function WAH.publishPlan(plan)
   if not plan or type(plan.revision) ~= "string" or plan.revision == "" then return false end
+  -- A radar refresh that produced the same identity and steps does not need
+  -- another SavedVariables write.
+  local existing = WoWderhoiAH_Plan
+  if type(existing) == "table" and existing.revision == plan.revision then return false end
   WoWderhoiAH_Plan = {
     revision = plan.revision,
     estateRevision = WAH.Estate and WAH.Estate.revision() or 0,
@@ -1741,10 +1745,21 @@ function WAH.publishPlan(plan)
   return true
 end
 
+-- The plan the player is looking at, not a fresh identity computed after
+-- the estate moved. Adoption must name the version whose prediction was
+-- shown; the terminal stores that exact revision.
+function WAH.adoptedPlanRevision()
+  local plan = WoWderhoiAH_Plan
+  if type(plan) == "table" and type(plan.revision) == "string" and plan.revision ~= "" then
+    return plan.revision
+  end
+  return WAH.planRevision()
+end
+
 -- The terminal's stable decision identity, reproduced in game so /wahadopt
 -- can name one. It names the plan revision the recommendation belongs to.
 function WAH.decisionId(itemId, kind)
-  local revision = WAH.planRevision()
+  local revision = WAH.adoptedPlanRevision()
   if not revision then return nil end
   return string.format("%s:%d:%s", revision, tonumber(itemId) or 0, tostring(kind or ""))
 end

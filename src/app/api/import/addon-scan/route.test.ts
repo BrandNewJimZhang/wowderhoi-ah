@@ -113,6 +113,8 @@ describe("POST /api/import/addon-scan revision", () => {
     expect(scope?.cash).toBe(0);
     expect(scope?.character).toBe("Tester");
     expect(marketRevision(scope)).toBe(`${market.id}:1`);
+    // The scan stores the core output but the game's plan owns decisions.
+    expect(await prisma.decision.count({ where: { marketId: market.id } })).toBe(0);
   });
 
   it("does not move the version for a duplicate scan, even with a journal", async () => {

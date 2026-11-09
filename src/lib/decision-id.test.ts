@@ -36,7 +36,7 @@ describe("decisionIdFor", () => {
     const body = luaDecisionIdFunction();
     const format = body.match(/string\.format\("([^"]+)"/)?.[1];
     expect(format).toBe("%s:%d:%s");
-    expect(body).toContain("local revision = WAH.planRevision()");
+    expect(body).toContain("local revision = WAH.adoptedPlanRevision()");
     expect(body).toContain('tonumber(itemId) or 0, tostring(kind or "")');
 
     const planRevision = "CN5 Realm 8 PvP|Alliance|1700000000:3:7";
