@@ -57,6 +57,10 @@ describe("createSavedvarsImporter", () => {
     expect(await instance.tick()).toBe("imported");
     expect(bodies).toHaveLength(1);
     expect(stateBodies).toHaveLength(1);
+    // The state domain names its market and carries only state; the scan
+    // document is already delivered by the observation POST.
+    expect(stateBodies[0]).toMatchObject({ server: "A", faction: "Alliance" });
+    expect((stateBodies[0] as { scan?: unknown }).scan).toBeUndefined();
     expect(await instance.tick()).toBe("idle");
     expect(bodies).toHaveLength(1);
     expect(stateBodies).toHaveLength(1);

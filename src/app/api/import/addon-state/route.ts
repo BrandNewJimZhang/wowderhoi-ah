@@ -8,9 +8,10 @@ import { applyEstate, applyJournal, applyPlan, refreshHoldings } from "@/lib/sta
 
 export async function POST(request: Request) {
   const payload = (await request.json()) as Record<string, unknown>;
-  const scan = payload.scan as Record<string, unknown> | undefined;
-  const realm = typeof payload.server === "string" ? payload.server : scan?.server;
-  const faction = typeof payload.faction === "string" ? payload.faction : scan?.faction;
+  // State names its market directly. Reusing the scan document here moved
+  // the whole market observation on every bag or mailbox change.
+  const realm = typeof payload.server === "string" ? payload.server : undefined;
+  const faction = typeof payload.faction === "string" ? payload.faction : undefined;
   if (typeof realm !== "string" || realm === "" || typeof faction !== "string" || faction === "") {
     return NextResponse.json(
       { error: "State payload must name its server and faction" },

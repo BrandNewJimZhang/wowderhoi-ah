@@ -141,11 +141,10 @@ function signalItemOf(itemId: number, items: Map<number, SignalItem>): SignalIte
 
 type DecisionIdentity = { realm: string; faction: string; scannedAt: Date; planRevision?: string };
 
-// The core's actions are the only source of decisions, and the import writes
-// them from two paths: a fresh scan and the journal-only replay of an
-// existing generation. Both must name and size them identically, or a
-// replayed scan would attribute a sale to an identity the first import
-// never wrote.
+// Backfill helper: the live import leaves decisions to the game's plan, but
+// the migration and the perf seed rebuild an old generation's recommendations
+// from its stored core. They must name and size them exactly as the plan
+// path does.
 export function decisionRowsFrom(core: CoreOutput, identity: DecisionIdentity): DecisionRow[] {
   const rows: DecisionRow[] = [];
   const seen = new Set<string>();
@@ -172,8 +171,10 @@ export function decisionRowsFrom(core: CoreOutput, identity: DecisionIdentity): 
       kind: action.kind,
       reason: action.reason,
       expectedNet: action.expectedNet,
-      fillProb: action.kind === "buy" ? action.fillProb : null,
-      fillBasis: action.kind === "buy" ? action.fillBasis : null,
+      // A sell step carries a fill estimate only when the sell plan
+      // produced one; the plan importer reads the same fields.
+      fillProb: action.fillProb ?? null,
+      fillBasis: action.fillBasis ?? null,
       allocQty: action.kind === "buy" ? action.allocQty : action.qty,
       allocUnitPrice: action.kind === "buy" ? action.allocUnitPrice : action.price
     });

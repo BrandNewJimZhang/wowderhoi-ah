@@ -3,8 +3,10 @@
 // (realm|faction|genEpoch:estateRevision:ledgerRevision); the older
 // scannedAt-only form remains the formula for rows written before plans.
 type DecisionIdentity = {
-  realm: string;
-  faction: string;
+  // A plan revision already begins with realm|faction, so the identity that
+  // names one carries only the revision.
+  realm?: string;
+  faction?: string;
   scannedAt?: Date | number;
   planRevision?: string;
   itemId: number;
@@ -19,6 +21,9 @@ export function decisionIdFor(identity: DecisionIdentity): string {
   }
   if (identity.scannedAt === undefined) {
     throw new Error("decisionIdFor needs either a planRevision or a scannedAt");
+  }
+  if (!identity.realm || !identity.faction) {
+    throw new Error("decisionIdFor needs the market when it has no planRevision");
   }
   const epoch = typeof identity.scannedAt === "number"
     ? Math.round(identity.scannedAt)

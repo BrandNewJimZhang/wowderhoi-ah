@@ -16,6 +16,7 @@ import {
   type ReplayState
 } from "@/lib/journal";
 import { linkTrades } from "@/lib/decision-linking";
+import { decisionIdFor } from "@/lib/decision-id";
 
 type EstateItemInput = { qty: number };
 type EstateScopeInput = {
@@ -41,6 +42,11 @@ type AddonEstate = {
 const ESTATE_VERSION = 1;
 
 const LOCATIONS = new Set(["carried", "bank", "account_bank", "mail", "listed", "keyring"]);
+// The coverage map names the locations the publisher actually looked at.
+// An unknown key would be silently downgraded to `unobserved` and hide a
+// document the terminal does not understand; the version field exists for
+// that change.
+const COVERAGE_KEYS = new Set(["carried", "keyring", "bank", "mail", "account_bank", "listed", "money"]);
 
 function numeric(value: unknown, field: string): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -60,6 +66,9 @@ function coverageMap(value: unknown, scope: string): Record<string, string> {
   }
   const out: Record<string, string> = {};
   for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (!COVERAGE_KEYS.has(key)) {
+      throw new Error(`State payload: estate scope ${scope} has unknown coverage key ${key}`);
+    }
     out[key] = entry === "observed" ? "observed" : "unobserved";
   }
   return out;
@@ -86,6 +95,9 @@ export async function applyEstate(
   let changed = false;
   let highestRevision = 0;
   for (const [scope, value] of Object.entries(estate.scopes)) {
+    if (scope !== "account" && !scope.startsWith("character:")) {
+      throw new Error(`State payload: unknown estate scope ${scope}`);
+    }
     if (typeof value !== "object" || value === null) {
       throw new Error(`State payload: estate scope ${scope} must be an object`);
     }
@@ -654,10 +666,21 @@ export async function applyPlan(
   }
   const decisions: Prisma.DecisionCreateManyInput[] = [];
   for (const step of plan.steps ?? []) {
-    if (!step.itemId || !step.kind) continue;
-    // plan.revision is already realm|faction|...; prepending the realm
-    // again made the adoption id impossible to rebuild in game.
-    const decisionId = `${plan.revision}:${step.itemId}:${step.kind}`;
+    // The decision log is only useful when every row names a real action.
+    // A malformed step would otherwise enter the review as a "sell" with an
+    // id the game can never adopt.
+    if (step.kind !== "buy" && step.kind !== "sell") {
+      throw new Error(`State payload: plan step kind ${JSON.stringify(step.kind)} is not buy or sell`);
+    }
+    const itemId = step.itemId;
+    if (typeof itemId !== "number" || !Number.isInteger(itemId) || itemId <= 0) {
+      throw new Error(`State payload: plan step itemId ${JSON.stringify(itemId)} is not a positive item id`);
+    }
+    const decisionId = decisionIdFor({
+      planRevision: plan.revision,
+      itemId,
+      kind: step.kind
+    });
     decisions.push({
       decisionId,
       planId: row.id,
@@ -665,14 +688,15 @@ export async function applyPlan(
       marketId,
       at,
       phase,
-      itemId: step.itemId,
+      itemId,
       kind: step.kind,
       reason: step.reason ?? null,
       expectedNet: step.expectedNet ?? null,
       // Sell decisions carry the sell plan's fill estimate too; calibration
-      // covers both sides, not just buys.
+      // covers both sides, not just buys. The core only labels a sell when
+      // it actually estimated a probability, so a missing basis stays null.
       fillProb: step.fillProb ?? null,
-      fillBasis: step.fillBasis ?? (step.kind === "sell" ? "sell" : null),
+      fillBasis: step.fillBasis ?? null,
       allocQty: step.kind === "buy" ? step.allocQty ?? step.qty ?? null : step.qty ?? null,
       allocUnitPrice: step.kind === "buy"
         ? step.allocUnitPrice ?? step.unitPrice ?? null

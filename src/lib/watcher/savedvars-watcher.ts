@@ -127,10 +127,12 @@ export function createSavedvarsImporter(deps: ImporterDeps) {
           deps.warn?.("State changed but the SavedVariables document names no market; skipping until the next scan.");
           return outcome;
         }
+        // The state domain names its market; re-sending the whole scan on
+        // every bag or mailbox change would move the market observation
+        // bytes for a payload the route never reads.
         const result = await deps.postState({
           server: market.server,
           faction: market.faction,
-          scan,
           estate,
           journal,
           plan,

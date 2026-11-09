@@ -155,7 +155,10 @@ describe("decisionRowsFrom", () => {
         expectedNet: 500, netPerMinute: 10, fillProb: 0.6, fillBasis: "proxy",
         allocQty: 4, allocUnitPrice: 160, confidence: "medium", exit: "auction", reason: "价差"
       },
-      { kind: "sell", itemId: 2, qty: 3, price: 400, expectedNet: 1200, netPerMinute: 20, reason: "出清" }
+      {
+        kind: "sell", itemId: 2, qty: 3, price: 400, expectedNet: 1200, netPerMinute: 20,
+        fillProb: 0.4, fillBasis: "sell", reason: "出清"
+      }
     ]), identity);
     expect(rows[0]).toMatchObject({
       decisionId: decisionIdFor({ ...identity, itemId: 1, kind: "buy" }),
@@ -164,10 +167,12 @@ describe("decisionRowsFrom", () => {
       allocQty: 4,
       allocUnitPrice: 160
     });
-    // A sell carries no fill prediction: it is the sale, not an estimate.
+    // A sell prediction is part of the log too: calibration covers both
+    // sides, and the live plan importer reads the same fields.
     expect(rows[1]).toMatchObject({
       decisionId: decisionIdFor({ ...identity, itemId: 2, kind: "sell" }),
-      fillProb: null,
+      fillProb: 0.4,
+      fillBasis: "sell",
       allocQty: 3,
       allocUnitPrice: 400
     });

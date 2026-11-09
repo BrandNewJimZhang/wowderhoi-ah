@@ -118,6 +118,18 @@ describe("POST /api/import/addon-state", () => {
     expect(character.items[0]).toMatchObject({ itemId: 2589, location: "carried", qty: 5 });
   });
 
+  it("requires the state payload to name its market directly", async () => {
+    const response = await post("state", {
+      // A scan document is not the state domain's identity; the watcher
+      // sends server and faction as top-level fields.
+      scan: { server: "A", faction: "Alliance" },
+      estate: estate(1, 1)
+    });
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: string };
+    expect(body.error).toMatch(/must name its server and faction/);
+  });
+
   it("rejects an estate document from another format version", async () => {
     const response = await post("state", {
       server: "A", faction: "Alliance",
@@ -126,6 +138,15 @@ describe("POST /api/import/addon-state", () => {
     expect(response.status).toBe(400);
     const body = await response.json() as { error: string };
     expect(body.error).toMatch(/unsupported estate version/);
+  });
+
+  it("rejects a coverage map the terminal does not understand", async () => {
+    const payload = estate(9, 1);
+    (payload.scopes["character:Tester"].coverage as Record<string, string>).void_storage = "observed";
+    const response = await post("state", { server: "A", faction: "Alliance", estate: payload });
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: string };
+    expect(body.error).toMatch(/unknown coverage key/);
   });
 
   it("ignores an estate revision that does not advance", async () => {
@@ -345,10 +366,28 @@ describe("POST /api/import/addon-state", () => {
     expect(decision?.adoptedAt?.getTime()).toBe(NOW * 1000);
   });
 
+  it("rejects a plan step that is neither a buy nor a sell", async () => {
+    const response = await post("state", {
+      server: "A", faction: "Alliance",
+      plan: {
+        revision: "A|Alliance|invalid:1:1",
+        observedAt: NOW,
+        steps: [{ kind: "transfer", itemId: 2589, qty: 1 }],
+        resources: {},
+        unplanned: []
+      }
+    });
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: string };
+    expect(body.error).toMatch(/not buy or sell/);
+    expect(await prisma.plan.count({ where: { revision: "A|Alliance|invalid:1:1" } })).toBe(0);
+  });
+
   it("stores a plan once and writes its decisions immutably", async () => {
     const revision = `A|Alliance|${NOW}:1:2`;
     const plan = {
       revision,
+      character: "Tester",
       estateRevision: 1,
       ledgerRevision: 2,
       observedAt: NOW,
@@ -366,6 +405,7 @@ describe("POST /api/import/addon-state", () => {
       where: { marketId_revision: { marketId: market!.id, revision } }
     });
     expect(stored).not.toBeNull();
+    expect(stored?.character).toBe("Tester");
     const decision = await prisma.decision.findFirst({ where: { planRevision: revision } });
     expect(decision?.decisionId).toBe(`${revision}:2589:buy`);
 
