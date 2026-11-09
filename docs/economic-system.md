@@ -4,11 +4,18 @@
 
 ## 1. 本体与十条不变量
 
-系统的主语不是“物品价格”，而是**玩家的经济行动**：
+系统的主语不是“物品价格”，而是**玩家的经济行动**。数据流分成六层，层与层之间的时钟不同：
 
 ```text
-事件 → 状态 → 决策 → 行动 → 学习
+公共行情（拉取）   -> MarketGeneration   不可变观测，按扫描代际
+私有资产（推送）   -> Estate             按角色/账号；carried/bank/mail/listed；带 coverage
+动作事实（追加）   -> JournalFact + LedgerCheckpoint   稳定序号，永不删除已入账事实
+对账               -> Holding            数量、位置、已知/未知成本、差额
+计划               -> Plan               版本化、资源可行、买卖统一排序
+学习               -> Decision           不可变，绑定 plan revision
 ```
+
+市场盘口必须主动 `ReplicateItems` 才能拿到，只能按扫描代际更新；背包、银行、邮件、自有挂单和现金是客户端本地事件，必须实时推送。把两类数据塞进同一个扫描快照，会让终端在两次扫描之间用冻结的现金、空位和事件投影去回答“现在该做什么”。
 
 十条不变量：
 
@@ -22,6 +29,16 @@
 8. 决策核心只有一份，游戏内与桌面共用 `Core.lua`。
 9. 名义价格 deflate 到真实/相对价格。
 10. 运行可靠性：数据新鲜、失败降级、扫描不丢。
+
+在此之上，状态与计划必须满足七条结构不变量：
+
+1. **未观测 ≠ 零**：银行没打开、邮箱没开、在售没查询，状态是 `unobserved`，不是空集合。
+2. **状态不写回观测**：新状态产生新计划版本，旧代际与旧决策不被改写。
+3. **事实只追加**：终端不因一次导入删除历史成交与成本；本地日志截断由检查点承接。
+4. **对账显式**：\(\text{ledgerQty} + \text{unknownQty} = \text{carried} + \text{bank} + \text{mail} + \text{listed}\)；差额是界面状态，不是静默截断。
+5. **计划必须可执行**：任一步骤消耗的现金与空位，不得超过执行到该步时的可用量；卖出回款和释放的空位进入后续买入预算。
+6. **计划全序且与成本无关**：买卖用同一货币（金币/分钟）排序，`itemId` 兜底；历史成本只用于 `realizedPnl` 报告，不进入排序。
+7. **决策不可变**：同一个 `decisionId` 永远对应同一份预测；采纳事件引用确切的 `planRevision`。
 
 ## 2. 数据契约
 
@@ -96,12 +113,19 @@ t, min, sell, q, n, e
 ### 2.4 `WoWderhoiAH_Journal` 与 `WoWderhoiAH_Ledger`
 
 Journal 是追加式事实，按 `realm|faction|character` 分册，事件种类：
-`buy / post / cancel / sold / confirm / expire / craft / vendor / de / prospect / mill /
-transfer_out / transfer_in`。
-当前插件自动写入买、挂、撤、成交（邮箱确认或挂单消失推断）、流拍与制造；
+`buy / post / cancel / sold / confirm / expire / bid / craft / vendor / de / prospect / mill /
+transfer_out / transfer_in / adopt`。
+每册维护单调序号 `seq`；事件同时记录 `eventTime`（能确定的游戏内时间）、
+`observedAt`（写入时刻）与 `censored`（两者不同时为 true）。序号是终端去重的
+唯一身份：同一册的 `(character, seq)` 只会写一次。
+
+当前插件自动写入买、挂、撤、成交（邮箱确认）、流拍、竞价与制造；
 `vendor` 通过 `/wahcost` 手动补记（客户端没有逐笔卖店事件，只有一条本地化汇总行）；
 `de / prospect / mill` 有解析与重放路径但没有干净的客户端结果事件，采集器不接，
 导入端和界面也不假设它们一定存在。
+
+“从自有挂单列表消失”不再被推断为成交。取消、到期和成交都有客户端事件或邮件；
+无法归因的消失只记 `unobserved`，不记收入，也不产生已实现盈亏。
 
 跨角色转移用 `/wahtransfer <itemId> <数量> out` 在发送角色记录 FIFO 成本，
 再在接收角色用 `/wahtransfer <itemId> <数量> in <单位成本>` 记入同一成本；
@@ -123,9 +147,14 @@ Ledger 是 Journal 的纯投影：
 - 上架不消耗库存，押金进入 escrow；
 - 成交/撤单退还押金；流拍损失押金，货物退回；押金不重复扣；
 - 分解/勘探/研磨把输入成本按产出数量分摊到产出批次；
-- 账本缺失历史时记 `short_position`，不伪造成本；
-- 消失且无流拍事件的在售挂单记为“推断成交”，照常标注；终端的已实现、胜率、
-  Alpha 衰减与决策校准只使用确认成交，推断部分单列显示；
+- 账本缺失历史时记 `short_position`，不伪造成本；未入账数量在 `Holding` 里单独
+  标成 `unknownQty`，不按零成本混入；
+- 上架挂单从列表消失但既无成交事件也无邮件确认时，只标 `unobserved`，不记成交；
+  终端的已实现、胜率、Alpha 衰减与决策校准只使用确认成交；
+- 本地日志达到容量上限时，把最旧的前缀压缩成检查点（剩余批次、开仓挂单、
+  `capital`、`cashAnchor`、`throughSeq`），再截断事件。`replay(检查点 + 事件)`
+  必须与 `replay(全部事件)` 对持仓、开仓与资本给出相同结果；Lua 与 TypeScript
+  两套重放共用同一组 fixture 做 parity；
 - 金额是整数铜：商品的档位单价是 `总价 / 数量`，可以是小数，但挂单必须按整数铜
   上架（`Core.listPrice` 向下取整），账本投影里的成交单价、手续费与已实现盈亏也在
   两个运行时按同一规则取整，否则小数单价会让整次 Journal 导入在整数列上失败；
@@ -139,8 +168,16 @@ Ledger 是 Journal 的纯投影：
 
 客户端只在邮箱里报告拍卖成交。`Mail.lua` 在 `MAIL_SHOW` / `MAIL_INBOX_UPDATE` 时读取
 邮件表与拍卖发票（`GetInboxInvoiceInfo` 在 1.60 exe 中存在但未收录进生成文档，
-`/wahdiag mail` 会打印原始字段供实测），把成交翻译成 `sold` 事件，把带附件、无钱的
-退回邮件翻译成 `expire`：
+`/wahdiag mail` 会打印原始字段供实测）。分类器同时使用 `invoice.kind` 与
+“钱/物品”组合，区分成交、流拍、竞价赢得、取消返还和玩家邮件：
+
+- 成交（钱、无退回物品）→ `sold` / `confirm`；
+- 流拍（物、无钱、有发票）→ `expire`；
+- 竞价赢得（有物品、有发票、已付款）→ `buy`，成本取发票的成交价；
+- 取消返还（物品与押金同时退回）→ `cancel`（能定位原挂单时）或仅作为状态；
+- 玩家邮件 → 只进入 estate 的 `mail` 位置，不记账。
+
+成交翻译成 `sold` 事件，把带附件、无钱的退回邮件翻译成 `expire`：
 
 - 归因顺序：附件链接 → 发票物品名/主题匹配扫描物品名 → 按总买断价唯一定位开仓挂单；
   都匹配不到就只计数、不写事件、也不记为已处理，绝不把成交记到猜测的物品上，
@@ -163,15 +200,12 @@ Ledger 是 Journal 的纯投影：
 
 ### 2.6 SQLite / Prisma
 
-- `Market`：realm+faction，最近一次扫描的现金与角色（`character`，仅扫描的导入不改写角色），
-  以及可空的开服时刻 `openedAt`（`/wahopen` 写入；`/wahopen auto` 会清空它，
-  下一次扫描把这个清空同步到终端，而不是让终端继续沿用旧锚点）和可空的
-  `bagSlots`（最近一次扫描的背包空位；空值只出现在不上报该字段的旧插件导入，
-  此时共享核心才使用规划默认值）。持仓、成交和现金都来自同一个角色的
-  一次扫描，界面显示该角色名。`dataVersion` 是页面输入的提交令牌：导入事务
-  在写入现金、角色、锚点与新一代数据的同一提交里递增它，打开的页面只轮询
-  由它派生的版本号，因此失败的导入、没有 Journal 的重复扫描和被裁剪的
-  诊断行都不会让页面误刷新。
+- `Market`：只保留市场身份（realm+faction）、可空的开服时刻 `openedAt`
+  （`/wahopen` 写入；`/wahopen auto` 会清空它）和最早观测 `firstScanAt`。
+  现金、角色和背包空位不再属于市场，而是属于按角色分区的 `Estate`。
+  `dataVersion` 是页面输入的提交令牌：导入事务在写入观测、状态、账本和计划的
+  同一提交里递增它，打开的页面只轮询由它派生的版本号，因此失败的导入和
+  被裁剪的诊断行都不会让页面误刷新。
 - `MarketGeneration`：一次扫描一份不可变读模型，记录扫描时间、求值阶段、宽度、
   已下架数、`firstScanAt`、价格指数、共享核心输出与扫描缺口。页面只读这一代，
   不再在请求里重算市场。最近 2 代保留 signal rows 与核心输出供页面读取；盘口与扫描
@@ -189,20 +223,69 @@ Ledger 是 Journal 的纯投影：
   插件升级会重建自己的文件，所以长历史必须由终端持有。
 - `ImportRun`：每次导入一行（来源、扫描数、序列点数、quote 数、Journal 事件/错误、
   耗时、状态、错误信息）。健康页读最近 20 行；`/health` 也显示扫描缺口与序列覆盖。
-- `Position` / `Trade`：每次导入从 Journal 重建，整体替换，幂等。邮箱在两次扫描之间
-  落盘时，同一快照时间戳的导入只重放账户账本、重算该代际的核心输出并合并序列，
-  不新建代际，因此确认成交不必等下一次扫描。超出可读窗口的旧代际不重算核心
-  （它的物化信号已被裁剪），只合并序列与账本，避免用空求值覆盖历史决策。`Trade.listedAt` 保存挂单时间（可空），成交时间是观测时间，二者之差就是成交等待。
-- `Decision`：每次扫描代际由导入写入一次（不是页面 GET），记录稳定 `decisionId`
-  （`realm|faction|scannedAt:item:kind`，与插件 `/wahadopt` 同一公式）、阶段、行动类型、物品、理由与时间，以及
-  预期净利、成交概率、成交依据、分配数量与成交价；采纳时间来自插件的 `adopt` 事件，复盘优先按 `decisionId` 归因，未采纳的旧决策才退回同物品时间窗。复盘页按它做分桶预测校准
-  （在预测窗口 `fillRules.horizonHours` 内同物品的确认拍卖成交；卖店成交不是拍卖
-  成交，NPC 保底决策的成交率恒为 1、不参与校准），少于 10 条决策的桶只显示
-  “样本不足”。决策日志按 72 小时列出，那是列表窗口，不是预测窗口。
+- `Estate` / `EstateItem`：客户端推送的私有资产快照，按 `character:<name>` 或
+  `account` 分区，每个分区带 `revision`、`observedAt`、`cash`、`freeSlots` 和
+  `coverage`。`EstateItem.location` 区分 `carried / bank / account_bank / mail /
+  listed / keyring`；未打开过的位置在 `coverage` 里是 `unobserved`，不是 0。
+- `JournalFact`：追加式事实，按 `(marketId, character, seq)` 唯一。导入只插入
+  尚未存在的序号，不删除已有行；同一分册的乱序重发是幂等的。
+- `LedgerCheckpoint`：本地日志截断前的前缀压缩状态，按 `(marketId, character,
+  throughSeq)` 唯一。持仓、开仓与资本 = 最新检查点 + 之后的事实。
+- `Holding`：按 `(marketId, character, itemId)` 的对账读模型，记录
+  `qty / carriedQty / bankQty / accountBankQty / mailQty / listedQty /
+  knownQty / unknownQty / missingQty / costBasis`。它由 `Estate` + 检查点 +
+  `JournalFact` 派生，不是一次导入的整表替换。
+- `Trade`：由 `JournalFact` 投影，追加而不整体重建。`observedAt`、`censored`、
+  `timeLow/timeHigh` 随成交一起保存；`realizedAt` 是观测时间，区间
+  `[listedAt, observedAt]` 才是成交真正发生的时间范围。`decisionId` 只在采纳
+  归因时写入。
+- `Decision`：由 `Plan` 写入一次（不是页面 GET），记录稳定 `decisionId`
+  （`realm|faction|planRevision:item:kind`，与插件 `/wahadopt` 同一公式）、
+  `planRevision`、阶段、行动类型、物品、理由与时间，以及预期净利、成交概率、
+  成交依据、分配数量与成交价。预测字段只插入不更新；旧计划只标
+  `supersededAt`。复盘优先按 `decisionId` 归因，未采纳的旧决策才退回同物品
+  时间窗；校准用 `[listedAt, observedAt]` 做 censoring-aware 匹配，并把
+  `sell` 决策纳入。少于 10 条决策的桶只显示“样本不足”。
+- `Plan`：`Plan(generation, estate, ledger, config, now)` 的不可变输出，按
+  `(marketId, revision)` 唯一。`steps` 是资源可行的动作序列，`resources`
+  记录执行前后的现金与空位，`unplanned` 记录未纳入的动作及原因。游戏内是
+  计划的铸造者；终端只存副本、历史与学习。
 - `Recipe`：`data/recipes.forever.json` 的投影，导入时整体替换。
 - 需求日历：唯一来源是 `src/data/events.json`，由 `gen:lua-rules` 编译成
   `WAH.EVENTS` 参与排序，首页“版本日历”也读同一份文件。`startsAt = 0` 的条目是模板，
   永远不会命中；未写 `endsAt` 表示瞬时事件，结束时间取 `startsAt`。
+
+### 2.7 `WoWderhoiAH_Estate` 与对账
+
+`Estate.lua` 是私有状态的唯一发布者。它监听 `BAG_UPDATE_DELAYED`、`PLAYER_MONEY`、
+`BANKFRAME_OPENED` / `BANKFRAME_CLOSED`、`PLAYERBANKSLOTS_CHANGED`、
+`PLAYER_ACCOUNT_BANK_TAB_SLOTS_CHANGED`、`PLAYER_ENTERING_WORLD`、
+`OWNED_AUCTIONS_UPDATED` 与 `MAIL_INBOX_UPDATE`，把事件合并成 1–2 秒防抖后的一次
+重算，只有快照真正变化才递增 `revision`。它导出独立的 `WoWderhoiAH_Estate`，
+不塞进 `ScanData`：背包变化不应该伪造一次行情扫描。
+
+覆盖范围与语义：
+
+- 背包 0–4、材料包 5、钥匙链 -1、角色银行 6–14、账号银行 15–23；
+- `carried` 与 `money` 在登录后即可信；
+- 角色银行与账号银行只在 `BANKFRAME_OPENED` 之后标 `observed`；
+- 邮箱只在 `MAIL_INBOX_UPDATE` / `MAIL_SHOW` 之后标 `observed`；
+- 在售只在 `OWNED_AUCTIONS_UPDATED` 之后标 `observed`；
+- 未观测位置不参与 `missingQty` 判定。
+
+`Reconciler.lua` 在插件侧完成对账，因为只有插件同时拥有实时 estate、账本和
+在售列表：
+
+```text
+knownQty   = min(ledgerQty, totalQty)
+unknownQty = max(0, totalQty - ledgerQty)   -- 装插件前、拾取、邮件等未入账
+missingQty = max(0, ledgerQty - observedQty) -- 仅对已观测位置计算
+expectedCash = cashAnchor + cashDelta
+unexplained  = GetMoney() - expectedCash
+```
+
+`unknownQty` 的成本为空，不按 0 混入浮动盈亏；`sellable = carriedQty`，
+银行物品计入持仓但标 `requiresBank`，卖出计划需要显式的往返成本。
 
 ## 3. 算法
 
@@ -375,6 +458,19 @@ phase = ignition  if age < 6h  or breadth < 80
 
 NPC 套利永远第一：它没有市场风险，只有预算和背包约束。
 
+上述排序只决定候选行。计划层再把买入与卖出放进同一个货币（增量金币/分钟）做
+一次全序：
+
+- 买入：`增量 = 预期收入 − 成本 − 手续费`；
+- 卖出：`增量 = 回款 − 手续费`；历史成本**不进入排序**，只输出 `realizedPnl` 与
+  `costKnown`。成本未知的物品不会因为“零成本”被推到最前，亏损品也不会因为沉没
+  成本被排到最后；
+- 排序键为 `netPerMinute` 降序、`itemId` 升序、`kind` 兜底；同一物品在不同成本下
+  只要卖价相同，排序相同；
+- 计划从 `estate.cash` 与 `estate.freeSlots` 出发逐条排入；买入被现金或空位挡住时，
+  把尚未排入的卖出步骤提升到它前面，用回款和释放的空位继续。每一步记录执行前后的
+  现金与空位，不能出现“12 条买入各自占用整个背包”的不可行计划。
+
 ### 3.7 生产网络
 
 ```text
@@ -442,6 +538,12 @@ f* = p − (1 − p) / b,  b = 盈利 / 亏损
 `listP · (1 − fee)`。否则条件单会在价格上移后接受一个单位净利已跌破门槛的价位，
 计划与门槛就描述了两个不同的边际。
 
+背包容量与现金一样是共享资源：`Core.allocate` 的 `remainingSlots` 随每个买入行递减，
+每行拿到的数量同时受 `candidateQty`、剩余现金与剩余空位约束；同一物品的既有持仓
+（含成本未知部分）计入单物品敞口上限，避免“已经有 50 件还按全额现金再买一堆”。
+`bagSlots × stackSize` 只作容量上界的保守近似；物品自身栈大小优先从客户端读取，
+读不到才退回编译常量，并在输出里降低 `capacityConfidence`。
+
 ### 3.9 学习与校准
 
 - **离策略评估**：把决策与后续成交按物品和时间窗口匹配，按倾向加权，报告覆盖率与
@@ -506,3 +608,15 @@ p_real(t) = p(t) / P(t) · 100
     会被打开。
 15. `/wahdiag` 分别给出 wait / api / lua / finish / save 与各自占比。
 16. 扫描载荷门槛断言 SavedVariables 的真实 JSON 体积；收尾阶段分帧，单帧不超过预算。
+17. 原生 UI 的买入、上架、成交、取消、过期各记一次；取消不会产生假成交。
+18. 角色 A 与 B 的持仓、现金、成交同时存在；导入 B 不删除 A 的数据，也不拿 B 的
+    现金给 A 的计划定尺寸。
+19. 背包变化在防抖与 watcher 轮询预算内到达终端；游戏内雷达即时。
+20. 对账闭合：`knownQty + unknownQty + missingQty` 与各已观测位置数量一致；
+    未观测位置不被当成 0。
+21. 计划可行：每一步的现金与空位都来自前一步之后的可用量；卖出回款参与买入预算。
+22. 计划排序与成本无关：同一物品的成本 800、成本未知、成本 1200 三种情况下，
+    只要卖价相同，排序相同；`realizedPnl` 单列展示。
+23. 买入候选足够多时，卖出步骤仍可见且排在正确位置。
+24. 同一 `decisionId` 的预测不再变化；采纳指向确切的 `planRevision`；
+    延迟开邮箱的成交不会被排除在预测窗口外；卖出决策进入校准。
