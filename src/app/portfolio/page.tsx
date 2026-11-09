@@ -110,7 +110,7 @@ export default async function PortfolioPage() {
         <span>在售 {byLocation.listed}</span>
         <span className={unknownUnits > 0 ? "text-terminal-amber" : ""}>成本未知 {unknownUnits}</span>
         <span className={missingUnits > 0 ? "text-terminal-red" : ""}>账实不符 {missingUnits}</span>
-        {bundle.holdings.some((holding) => holding.unknownQty > 0) && (
+        {bundle.holdings.some((holding) => holding.unknownQty > 0 || !holding.costKnown) && (
           <span className="text-terminal-muted">成本未知的物品不进入浮动盈亏合计</span>
         )}
       </div>
