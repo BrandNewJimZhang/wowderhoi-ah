@@ -97,7 +97,7 @@ export default async function Home() {
       ? `本阶段门槛后有 ${sizingExcluded} 条机会被风险模型拒绝（成交率不足以覆盖价差），没有可执行交易。`
       : evaluation.rows.length === 0
         ? `当前没有满足${phaseLabels[phase]}门槛的可执行机会。`
-        : `通过门槛 ${evaluation.rows.length} 条，均未获资金：钱包不足 ${unfunded.purse} 条、单物品敞口 ${unfunded.exposure} 条、盘口 ${unfunded.depth} 条${sizingExcluded > 0 ? `；另有 ${sizingExcluded} 条被风险模型拒绝` : ""}。`;
+        : `通过门槛 ${evaluation.rows.length} 条，均未获资金：钱包不足 ${unfunded.purse} 条、单物品敞口 ${unfunded.exposure} 条、盘口 ${unfunded.depth} 条、背包不足 ${unfunded.slots ?? 0} 条${sizingExcluded > 0 ? `；另有 ${sizingExcluded} 条被风险模型拒绝` : ""}。`;
   const deployableCapital = resolveDeployableCopper(scope?.cash ?? null);
   const sizing = evaluation.opportunities
     .filter((row) => !row.vendor)
