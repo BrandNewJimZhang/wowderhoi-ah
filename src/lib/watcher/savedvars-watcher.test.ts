@@ -167,7 +167,23 @@ WoWderhoiAH_Plan = { ["revision"] = "A|Alliance|1:1:1" }
       () => savedVariables({ events: 1 }).replace('["dataVersion"] = 4', '["dataVersion"] = 3'),
       async () => ({ status: 200, body: {} })
     );
-    expect(await stale.instance.tick()).toBe("idle");
+    // The scan is ignored; the journal in the same file is not part of the
+    // scan document and still reaches the state route.
+    expect(await stale.instance.tick()).toBe("state");
     expect(stale.bodies).toHaveLength(0);
+  });
+
+  it("still delivers state when the scan on disk is from another pipeline", async () => {
+    // Upgrading the addon leaves the previous pipeline's ScanData on disk
+    // until the next /wahscan. The estate and journal are written by the
+    // running (new) addon, so a buy or a bag change in that window must
+    // reach the terminal instead of waiting for a rescan.
+    const stale = importer(
+      () => savedVariables({ events: 1 }).replace('["dataVersion"] = 4', '["dataVersion"] = 3'),
+      async () => ({ status: 200, body: {} })
+    );
+    expect(await stale.instance.tick()).toBe("state");
+    expect(stale.bodies).toHaveLength(0);
+    expect(stale.stateBodies).toHaveLength(1);
   });
 });

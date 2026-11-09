@@ -79,9 +79,13 @@ export function createSavedvarsImporter(deps: ImporterDeps) {
         deps.log?.("No WoWderhoiAH_ScanData in SavedVariables yet; waiting for the first /wahscan.");
         return "idle";
       }
-      if (scan.dataVersion !== SCAN_PIPELINE_VERSION) {
+      // The pipeline version describes the scan document only. State is
+      // written by the addon that is running now: after an upgrade the file
+      // still holds the previous pipeline's scan until the next /wahscan,
+      // and a buy or a bag change in that window must not be held back.
+      const scanCurrent = scan.dataVersion === SCAN_PIPELINE_VERSION;
+      if (!scanCurrent) {
         deps.log?.("Stale scan from an old addon version on disk — rescan in game (/wahscan) to produce current-pipeline data.");
-        return "idle";
       }
       const journal = parsed.WoWderhoiAH_Journal;
       const estate = parsed.WoWderhoiAH_Estate as SavedEstate | undefined;
@@ -92,7 +96,7 @@ export function createSavedvarsImporter(deps: ImporterDeps) {
         : "";
       const planRev = plan && typeof plan.revision === "string" ? plan.revision : "";
 
-      const scanChanged = scan.scannedAt > lastImportedScanAt;
+      const scanChanged = scanCurrent && scan.scannedAt > lastImportedScanAt;
       const stateChanged = journalRev !== lastJournalRevision
         || estateRev !== lastEstateRevision
         || planRev !== lastPlanRevision;
@@ -151,7 +155,6 @@ export function createSavedvarsImporter(deps: ImporterDeps) {
         );
         if (outcome === "idle") outcome = "state";
       }
-      if (!scanChanged && outcome === "idle" && stateChanged) outcome = "state";
       return outcome;
     }
   };
