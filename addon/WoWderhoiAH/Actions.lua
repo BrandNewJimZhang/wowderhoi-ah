@@ -134,8 +134,7 @@ function Actions.post(auctionID, pending)
     price = data.price or data.unitPrice or 0,
     -- A native posting does not expose the deposit; the cash reconciler
     -- reports the resulting drift instead of inventing a number.
-    deposit = data.deposit or 0,
-    depositUnknown = (pending == nil) and true or nil
+    deposit = data.deposit or 0
   })
   return true
 end
@@ -246,12 +245,15 @@ function Actions.expire(auctionID)
   return true
 end
 
-function Actions.bid(auctionID, amount)
+function Actions.bid(auctionID)
   -- Some builds publish a table for BIDS_UPDATED; a table is not an
   -- auction identity and cannot be deduplicated.
   if type(auctionID) ~= "number" and type(auctionID) ~= "string" then return false end
   if journalEvent("bid", auctionID) then return false end
-  WAH.recordEvent({ k = "bid", auctionID = auctionID, amount = amount or 0 })
+  -- The ledger does not need the amount: a bid freezes cash and consumes
+  -- nothing, and the winning mail books the cost. The identity is what
+  -- keeps a repeated event from writing twice.
+  WAH.recordEvent({ k = "bid", auctionID = auctionID })
   return true
 end
 
@@ -288,7 +290,7 @@ frame:SetScript("OnEvent", function(_, event, payload, extra)
     return
   end
   if event == "AUCTION_HOUSE_NEW_BID_RECEIVED" then
-    Actions.bid(payload, extra)
+    Actions.bid(payload)
     return
   end
 end)
