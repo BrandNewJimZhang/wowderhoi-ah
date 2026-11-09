@@ -137,9 +137,9 @@ function Journal.compact(book)
 end
 
 -- Append one event. `t` is stamped here so every caller records the same
--- clock; the caller owns every other field. `eventTime` is when the action
--- happened (the mailbox can only report it later), `observedAt` is when the
--- addon learned it, and `censored` says the two differ.
+-- clock; the caller owns every other field. `observedAt` is when the addon
+-- learned the fact (the mailbox can only report a sale later), and
+-- `censored` says the two differ.
 function Journal.append(event)
   if type(event) ~= "table" then
     error("Journal.append expects an event table, got " .. type(event))
@@ -152,10 +152,9 @@ function Journal.append(event)
   event.seq = book.nextSeq
   book.nextSeq = book.nextSeq + 1
   book.rev = (book.rev or 0) + 1
-  event.eventTime = event.eventTime or event.t or now
-  event.t = event.t or event.eventTime
+  event.t = event.t or now
   event.observedAt = event.observedAt or now
-  if event.censored == nil then event.censored = event.observedAt > event.eventTime end
+  if event.censored == nil then event.censored = event.observedAt > event.t end
   book.e[#book.e + 1] = event
   if #book.e > Journal.CAP and not Journal.compact(book) then
     while #book.e > Journal.CAP do

@@ -9,9 +9,8 @@ export type JournalEvent = {
   // Stable per-book sequence. A re-sent book is deduplicated by
   // (character, seq), never by comparing whole event tables.
   seq?: number;
-  // When the action happened and when the addon learned it. A mailbox sale
-  // is necessarily observed later than it happened.
-  eventTime?: number;
+  // When the addon learned the fact. A mailbox sale is necessarily observed
+  // later than it happened; `listedAt` is the interval's other bound.
   observedAt?: number;
   itemId?: number;
   qty?: number;
@@ -168,7 +167,7 @@ export function parseJournal(raw: unknown): JournalBook[] {
       for (const field of ["itemId", "qty", "cost", "paid", "price", "fee", "deposit", "refund", "lostDeposit"] as const) {
         if (typeof event[field] === "number") parsed[field] = event[field] as number;
       }
-      for (const field of ["seq", "eventTime", "observedAt"] as const) {
+      for (const field of ["seq", "observedAt"] as const) {
         if (typeof event[field] === "number") parsed[field] = event[field] as number;
       }
       // A journal written before the sequence existed is numbered in array

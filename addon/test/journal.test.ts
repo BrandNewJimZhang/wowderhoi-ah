@@ -18,6 +18,18 @@ describe("journal and ledger", () => {
     expect(lua.number("WowTest.ns.Journal.count()")).toBe(1);
   });
 
+  it("stamps the append clock and censors a later observation", () => {
+    const lua = loadAddon();
+    const now = lua.number("time()");
+    record(lua, { k: "sold", auctionID: 7, itemId: 2589, qty: 1, price: 100, observedAt: now + 60 });
+    expect(lua.number("WowTest.ns.Journal.last('sold').t")).toBe(now);
+    expect(lua.eval("WowTest.ns.Journal.last('sold').censored")).toBe(true);
+    // The append time is the only clock; the removed copy was never read.
+    expect(lua.eval("WowTest.ns.Journal.last('sold').eventTime")).toBeNull();
+    record(lua, { k: "buy", itemId: 2589, qty: 1, cost: 100 });
+    expect(lua.eval("WowTest.ns.Journal.last('buy').censored")).toBe(false);
+  });
+
   it("consumes lots FIFO and realizes profit against the consumed basis", () => {
     const lua = loadAddon();
     record(lua, { k: "buy", itemId: 2770, qty: 10, cost: 10000 });

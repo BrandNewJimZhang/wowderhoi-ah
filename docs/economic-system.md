@@ -115,8 +115,8 @@ t, min, sell, q, n, e
 Journal 是追加式事实，按 `realm|faction|character` 分册，事件种类：
 `buy / post / cancel / sold / confirm / expire / bid / craft / vendor / de / prospect / mill /
 transfer_out / transfer_in / adopt`。
-每册维护单调序号 `seq`；事件同时记录 `eventTime`（能确定的游戏内时间）、
-`observedAt`（写入时刻）与 `censored`（两者不同时为 true）。序号是终端去重的
+每册维护单调序号 `seq`；事件同时记录 `t`（写入时刻）、
+`observedAt`（插件确认该事实的时刻）与 `censored`（两者不同时为 true）。序号是终端去重的
 唯一身份：同一册的 `(character, epoch, seq)` 只会写一次。分册另有内容修订
 `rev`：追加事件和原地补全同一事件（例如原生事件先按估算价入账、随后拿到 UI 的
 精确成本或押金）都会推进它。watcher 用它判断“事实内容变了但没有新序号”，计划
