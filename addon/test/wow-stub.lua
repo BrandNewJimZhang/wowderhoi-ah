@@ -305,7 +305,8 @@ function date(format, when) return os.date(format, when or NOW) end
 function GetRealmName() return "TestRealm" end
 function UnitFactionGroup() return "Alliance" end
 function UnitName() return "Tester" end
-function GetMoney() return 1000000 end
+function GetMoney() return bed.money or 1000000 end
+function bed.setMoney(amount) bed.money = amount end
 function GetCursorInfo() return bed.cursorInfo and bed.cursorInfo[1], bed.cursorInfo and bed.cursorInfo[2] end
 
 function FauxScrollFrame_GetOffset(frame) return frame._offset or 0 end
