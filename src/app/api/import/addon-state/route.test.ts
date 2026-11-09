@@ -167,6 +167,46 @@ describe("POST /api/import/addon-state", () => {
     expect(alt?.knownQty).toBe(1);
   });
 
+  it("does not rebuild holdings from an older journal book", async () => {
+    await post("state", {
+      server: "A", faction: "Alliance",
+      journal: book("Alt", [{ k: "buy", t: NOW, seq: 2, itemId: 2770, qty: 2, cost: 1000 }], 3)
+    });
+    const older = await post("state", {
+      server: "A", faction: "Alliance",
+      journal: book("Alt", [{ k: "buy", t: NOW - 5, seq: 1, itemId: 2770, qty: 1, cost: 500 }], 2)
+    });
+    expect(older.status).toBe(200);
+    const market = await prisma.market.findUnique({ where: { realm_faction: { realm: "A", faction: "Alliance" } } });
+    const holding = await prisma.holding.findFirst({
+      where: { marketId: market!.id, character: "Alt", itemId: 2770 }
+    });
+    expect(holding?.qty).toBe(2);
+    // The stale delivery still contributes its missing fact.
+    expect(await prisma.journalFact.count({ where: { marketId: market!.id, character: "Alt" } })).toBe(2);
+  });
+
+  it("attaches an adoption that arrived before the plan", async () => {
+    const revision = "A|Alliance|adopt:1:1";
+    const decisionId = `${revision}:2589:sell`;
+    await post("state", {
+      server: "A", faction: "Alliance",
+      journal: book("Adopter", [{ k: "adopt", t: NOW, seq: 1, id: decisionId }])
+    });
+    await post("state", {
+      server: "A", faction: "Alliance",
+      plan: {
+        revision,
+        observedAt: NOW,
+        steps: [{ kind: "sell", itemId: 2589, qty: 1, expectedNet: 100 }],
+        resources: {},
+        unplanned: []
+      }
+    });
+    const decision = await prisma.decision.findFirst({ where: { decisionId } });
+    expect(decision?.adoptedAt?.getTime()).toBe(NOW * 1000);
+  });
+
   it("stores a plan once and writes its decisions immutably", async () => {
     const revision = `A|Alliance|${NOW}:1:2`;
     const plan = {

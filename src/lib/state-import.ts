@@ -351,6 +351,17 @@ export async function applyJournal(
     const character = book.key.split("|").pop() ?? "";
     if (!character) continue;
     characters.push(character);
+    // An empty or older book must not rebuild holdings from less history
+    // than the terminal already has. Out-of-order delivery still inserts
+    // any facts it carries; it just does not drive the projection.
+    const existingFact = await tx.journalFact.aggregate({
+      where: { marketId, character },
+      _max: { seq: true }
+    });
+    const existingSeq = existingFact._max.seq ?? 0;
+    const incomingSeq = book.events.reduce((max, event) => Math.max(max, event.seq ?? 0), 0);
+    const incomingSeqCeiling = Math.max(incomingSeq, book.nextSeq - 1);
+    const stale = existingSeq > 0 && incomingSeqCeiling < existingSeq;
     if (book.events.length > 0) {
       // SQLite has no createMany skipDuplicates; filter the sequence
       // numbers already present. That is the same identity the unique key
@@ -377,6 +388,7 @@ export async function applyJournal(
       events += data.length;
       newFacts += data.length;
     }
+    if (stale) continue;
     if (book.checkpoint) {
       const checkpointExisting = await tx.ledgerCheckpoint.findUnique({
         where: {
@@ -545,6 +557,26 @@ export async function applyPlan(
     const seen = new Set(existingIds.map((row) => row.decisionId));
     const fresh = decisions.filter((row) => !seen.has(row.decisionId as string));
     if (fresh.length > 0) await tx.decision.createMany({ data: fresh });
+  }
+  // The adopt event and the plan can arrive in either order. Facts are the
+  // durable record; when the plan lands second, its decisions inherit the
+  // adoption the player already made.
+  const adoptFacts = await tx.journalFact.findMany({
+    where: { marketId, kind: "adopt" },
+    select: { payload: true }
+  });
+  for (const fact of adoptFacts) {
+    const payload = fact.payload as Record<string, unknown>;
+    const decisionId = typeof payload.id === "string" ? payload.id : null;
+    if (!decisionId) continue;
+    const at = typeof payload.observedAt === "number"
+      ? payload.observedAt
+      : typeof payload.t === "number" ? payload.t : null;
+    if (at === null) continue;
+    await tx.decision.updateMany({
+      where: { decisionId, adoptedAt: null },
+      data: { adoptedAt: new Date(at * 1000) }
+    });
   }
   return { created: true, revision: plan.revision };
 }
