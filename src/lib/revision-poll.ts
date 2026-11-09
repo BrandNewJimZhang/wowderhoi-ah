@@ -1,10 +1,11 @@
 // One auto-refresh check, split from the browser so the decision is
-// testable: a poll either confirms the rendered revision, names a newer one,
-// or reports the check as offline. A failed check never counts as fresh —
-// the page keeps polling and the status line says the refresh is broken.
-export type RevisionPoll =
+// testable: a poll either confirms the rendered revision, reports that the
+// server has moved past it, or reports the check as offline. A failed check
+// never counts as fresh — the page keeps polling and the status line says
+// the refresh is broken.
+type RevisionPoll =
   | { outcome: "fresh" }
-  | { outcome: "stale"; revision: string }
+  | { outcome: "stale" }
   | { outcome: "offline"; error: unknown };
 
 export async function pollRevision(current: string, get: () => Promise<Response>): Promise<RevisionPoll> {
@@ -27,5 +28,5 @@ export async function pollRevision(current: string, get: () => Promise<Response>
   if (typeof revision !== "string") {
     return { outcome: "offline", error: new Error("revision response carries no revision") };
   }
-  return revision === current ? { outcome: "fresh" } : { outcome: "stale", revision };
+  return revision === current ? { outcome: "fresh" } : { outcome: "stale" };
 }

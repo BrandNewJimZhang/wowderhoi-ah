@@ -78,7 +78,9 @@ export function AutoRefresh({ revision, nextRefreshInMs }: {
       if (result.outcome === "stale") {
         reportedFailure.current = false;
         setOffline(false);
-        renderedRevision.current = result.revision;
+        // The baseline advances only when the refreshed render carries the
+        // new revision. Advancing it here would silence the retry if that
+        // render fails, leaving the page on old data until the next import.
         requestRefresh();
       } else if (result.outcome === "fresh") {
         reportedFailure.current = false;

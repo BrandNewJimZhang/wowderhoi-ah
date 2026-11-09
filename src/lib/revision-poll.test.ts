@@ -17,7 +17,7 @@ describe("pollRevision", () => {
 
   it("reports a newer revision", async () => {
     expect(await pollRevision("m1:run-1", async () => respond({ revision: "m1:run-2" })))
-      .toEqual({ outcome: "stale", revision: "m1:run-2" });
+      .toEqual({ outcome: "stale" });
   });
 
   it("reports offline on a failed response", async () => {
