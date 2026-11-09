@@ -31,7 +31,9 @@ export type JournalEvent = {
   listedAt?: number;
   censored?: boolean;
   // Where a purchase price came from when no client purchase event stated
-  // it (mail, estimated, manual).
+  // it (mail, estimated, manual). `estimated` marks a price inferred from
+  // the current book: the lot can be valued at it, but a later sale's
+  // profit is reported as unknown.
   priceSource?: string;
   // /wahadopt carries the terminal's stable decision identity. It is a
   // ledger annotation, not a trade: replay records it for attribution and
@@ -342,7 +344,8 @@ export function replayJournal(events: JournalEvent[], checkpoint?: JournalCheckp
       case "buy": {
         const quantity = event.qty ?? 0;
         const cost = event.cost ?? 0;
-        addLot(event.itemId, quantity, quantity > 0 ? cost / quantity : 0, at);
+        // An estimate from the current search results is not a receipt.
+        addLot(event.itemId, quantity, quantity > 0 ? cost / quantity : 0, at, event.priceSource !== "estimated");
         capital.cashDelta -= cost;
         break;
       }

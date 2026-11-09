@@ -84,6 +84,19 @@ describe("replayJournal", () => {
     expect(state.trades).toEqual(fromLua.trades);
   });
 
+  it("does not treat an estimated purchase price as proved basis", () => {
+    const events: JournalEvent[] = [
+      { k: "buy", t: 1, itemId: 1, qty: 2, cost: 2000, priceSource: "estimated" },
+      { k: "buy", t: 2, itemId: 2, qty: 2, cost: 2000, priceSource: "request" },
+      { k: "vendor", t: 3, itemId: 1, qty: 2, paid: 3000 },
+      { k: "vendor", t: 4, itemId: 2, qty: 2, paid: 3000 }
+    ];
+    const state = replayJournal(events);
+    expect(state.trades[0].basisKnown).toBe(false);
+    expect(state.trades[1].basisKnown).toBe(true);
+    expect(state.trades).toEqual((loadAddon().ledgerReplay(events) as { trades: unknown }).trades);
+  });
+
   it("carries unknown basis through a craft", () => {
     // Crafting from short material history makes the product's cost a
     // partial number; selling it must not claim the basis is known.

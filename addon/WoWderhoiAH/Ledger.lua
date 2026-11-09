@@ -163,7 +163,11 @@ function Ledger.replay(events, market, initial)
     if kind == "buy" then
       local quantity = event.qty or 0
       local cost = event.cost or 0
-      addLot(state, event.itemId, quantity, quantity > 0 and cost / quantity or 0, event.t)
+      -- An estimate from the current search results is not a receipt. The
+      -- lot carries it so positions can be valued, but a later sale must
+      -- report its profit as unknown rather than exact.
+      local known = event.priceSource ~= "estimated"
+      addLot(state, event.itemId, quantity, quantity > 0 and cost / quantity or 0, event.t, known)
       state.capital.cashDelta = state.capital.cashDelta - cost
     elseif kind == "craft" then
       -- A craft consumes its materials and adds the product at their FIFO

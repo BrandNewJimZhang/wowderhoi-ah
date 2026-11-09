@@ -202,7 +202,7 @@ export default async function ReviewPage() {
 
       <div className="grid gap-3 xl:grid-cols-[1fr_1fr]">
         <Panel>
-          <PanelHeader title="按渠道" action={<span className="font-mono text-xs text-terminal-muted">仅确认成交</span>} />
+          <PanelHeader title="按渠道" action={<span className="font-mono text-xs text-terminal-muted">仅成本已知的确认成交</span>} />
           <div className="space-y-2 p-3 font-mono text-xs">
             {Array.from(byChannel.entries()).map(([channel, bucket]) => (
               <div key={channel} className="flex items-center justify-between gap-2">

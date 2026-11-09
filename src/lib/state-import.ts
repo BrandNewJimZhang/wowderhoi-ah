@@ -366,8 +366,22 @@ async function replayForCharacter(
     orderBy: { throughSeq: "desc" }
   });
   const raw = (checkpointRow?.state ?? null) as Record<string, unknown> | null;
-  const checkpoint = raw
+  const stored = raw
     ? ((raw.state && typeof raw.state === "object" ? raw.state : raw) as unknown as JournalCheckpoint)
+    : null;
+  // A checkpoint stored before basis provenance existed has no label on
+  // its lots or trades; that history was booked by construction.
+  const checkpoint = stored
+    ? {
+        ...stored,
+        lots: Object.fromEntries(
+          Object.entries(stored.lots).map(([itemId, list]) => [
+            itemId,
+            list.map((lot) => ({ ...lot, known: lot.known !== false }))
+          ])
+        ),
+        trades: stored.trades.map((trade) => ({ ...trade, basisKnown: trade.basisKnown !== false }))
+      }
     : null;
   const facts = await tx.journalFact.findMany({
     where: {
