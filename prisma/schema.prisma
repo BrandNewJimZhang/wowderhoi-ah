@@ -363,7 +363,7 @@ model Trade {
   @@index([sourceFactId])
 }
 
-// What the system recommended and why. Written once per generation by the
+// What the system recommended and why. Written once per plan by the state
 // import, never by a page read, and read by the review page and the
 // calibration. Only the fields those consumers actually use are stored: a
 // candidate snapshot nobody reads is storage, not a decision log.

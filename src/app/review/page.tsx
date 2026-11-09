@@ -253,7 +253,7 @@ export default async function ReviewPage() {
                 <div className="text-[11px] text-terminal-muted">{decision.reason}</div>
               </div>
             ))}
-            {decisions.length === 0 && <div className="text-terminal-muted">决策日志在每次新扫描后写入；先导入一次扫描。</div>}
+            {decisions.length === 0 && <div className="text-terminal-muted">决策日志在游戏内计划导入时写入；先在游戏里打开一次雷达。</div>}
           </div>
         </Panel>
       </div>

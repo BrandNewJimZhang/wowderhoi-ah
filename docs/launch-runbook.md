@@ -21,7 +21,7 @@ npm run dev
 DATABASE_URL="file:./dev.db"
 AQT_SAVEDVARS_PATH="<游戏数据目录>\\WTF\\Account\\<账号ID>\\SavedVariables\\WoWderhoiAH.lua"
 AQT_IMPORT_URL="http://localhost:3000/api/import/addon-scan"
-AQT_BUDGET_COPPER="500000"          # 终端计划预算；与扫描里的现金分开
+AQT_BUDGET_COPPER="500000"          # 终端计划预算上限；与 Estate 推送的实时现金分开
 # AQT_PHASE="ignition"   # 可选：手动锁阶段
 # AQT_MARKET="服务器|阵营"   # 可选：默认跟随最新扫描的市场
 ```
@@ -42,7 +42,7 @@ AQT_BUDGET_COPPER="500000"          # 终端计划预算；与扫描里的现金
    - `CalculateCommodityDeposit` 的返回值；
    - `GetNumOwnedAuctions` 的结构；
    - `throttle ready`；
-   - `bags` 行：实时空位与扫描记录的空位是否一致（终端按扫描记录的数字规划可买数量）；
+   - `bags` 行：实时空位与扫描记录的空位是否一致（终端按 Estate 推送的实时空位规划；扫描值只在新角色尚未推送状态时兜底）；
    - 当前阶段。
 3. `/wahdiag mail`，确认 `GetInboxInvoiceInfo` 的字段顺序、物品链接与
    `CanCheckInbox`；邮箱为空时先挂一件低价物品卖出，再开箱复查。
