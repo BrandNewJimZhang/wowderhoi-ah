@@ -161,6 +161,9 @@ end
 function WAH.recordEvent(event)
   local recorded = Journal.append(event)
   if WAH.Ledger then WAH.Ledger.rebuild() end
+  -- The estate did not move, but what the ledger can prove did. Refresh the
+  -- reconciliation before the next save so the terminal sees both halves.
+  if WAH.Reconciler and WAH.Reconciler.publish then WAH.Reconciler.publish() end
   -- Every journal write is new ledger state; queue one save so the terminal
   -- sees a buy, a post or a craft without waiting for the next scan.
   if WAH.requestFlush then WAH.requestFlush() end

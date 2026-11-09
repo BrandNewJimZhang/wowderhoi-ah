@@ -18,6 +18,7 @@ WoWderhoiAH.lua
 Journal.lua
 Ledger.lua
 Estate.lua
+Reconciler.lua
 Mail.lua
 Craft.lua
 GUI.lua

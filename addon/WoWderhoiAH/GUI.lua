@@ -1218,6 +1218,9 @@ SlashCmdList["WOWDERHOIAHDIAG"] = function(input)
   if WAH.Mail then
     for _, line in ipairs(WAH.Mail.diagnostics()) do diagLine(line) end
   end
+  if WAH.Reconciler then
+    for _, line in ipairs(WAH.Reconciler.diagnostics()) do diagLine(line) end
+  end
   if WAH.Craft then
     for _, line in ipairs(WAH.Craft.diagnostics()) do diagLine(line) end
   end

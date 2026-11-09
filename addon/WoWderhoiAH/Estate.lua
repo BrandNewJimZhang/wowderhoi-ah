@@ -192,6 +192,10 @@ local function build()
       }
     }
   }
+  -- Reconciliation is derived from the snapshot and the ledger. Attaching
+  -- it here keeps one document for the terminal; Estate.same ignores it so
+  -- a ledger-only change does not move the estate revision.
+  if WAH.Reconciler then snapshot.reconciled = WAH.Reconciler.run(snapshot) end
   local existing = WoWderhoiAH_Estate
   local revision = existing and existing.revision or 0
   if not Estate.same(snapshot, existing) then revision = revision + 1 end
