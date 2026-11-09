@@ -1715,19 +1715,24 @@ end
 SLASH_WOWDERHOIAHCAPTURE1 = "/wahcapture"
 SlashCmdList["WOWDERHOIAHCAPTURE"] = setCapture
 
--- The plan identity: realm|faction|genEpoch:estateRevision:ledgerRevision.
+-- The plan identity:
+-- realm|faction|genEpoch:estateRevision:ledgerRevision:character.
 -- Epoch seconds, not an ISO date: this side already has the scan timestamp
 -- and Lua cannot format ISO without a second implementation. A new estate or
 -- journal revision produces a new plan identity, so a prediction is never
--- silently rewritten under the old name.
+-- silently rewritten under the old name. The character is part of the
+-- identity because both revisions are per-character counters: a fresh alt
+-- can hold the same values as the main, and without the name the terminal
+-- would treat its plan as a duplicate of the other character's.
 function WAH.planRevision()
   local scan = WoWderhoiAH_ScanData
   if type(scan) ~= "table" or type(scan.scannedAt) ~= "number" then return nil end
   local estate = WAH.Estate and WAH.Estate.revision() or 0
   local ledger = WAH.Journal and WAH.Journal.revision() or 0
-  return string.format("%s|%s|%d:%d:%d",
+  local character = (UnitName and UnitName("player")) or "Unknown"
+  return string.format("%s|%s|%d:%d:%d:%s",
     tostring(scan.server or ""), tostring(scan.faction or ""),
-    scan.scannedAt, estate, ledger)
+    scan.scannedAt, estate, ledger, tostring(character))
 end
 
 -- Publish the plan the radar just computed. The game is the plan authority;
