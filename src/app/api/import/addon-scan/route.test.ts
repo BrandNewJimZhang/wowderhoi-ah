@@ -106,7 +106,6 @@ function estateWithAccountBank(revision: number, character: string, qty: number)
     observedAt: scan.scannedAt,
     scopes: {
       [`character:${character}`]: {
-        kind: "character",
         revision,
         cash: 0,
         freeSlots: 10,
@@ -116,7 +115,6 @@ function estateWithAccountBank(revision: number, character: string, qty: number)
         items: {}
       },
       account: {
-        kind: "account",
         revision,
         coverage: { account_bank: "observed", listed: "unobserved" },
         items: { "2770": { account_bank: { qty, slots: 1 } } }

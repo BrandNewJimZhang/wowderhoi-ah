@@ -40,15 +40,13 @@ type AddonEstate = {
 // the wrong interpretation.
 const ESTATE_VERSION = 1;
 
-const LOCATIONS = new Set(["carried", "bank", "account_bank", "mail", "listed", "keyring"]);
-// The coverage map names the locations the publisher actually looked at.
-// Each scope owns a disjoint set: the account bank and own postings are
-// account-scoped, so a character row that claimed them would be an unread
-// second copy. An unknown key or value would be silently dropped and hide a
-// document the terminal does not understand; the version field exists for
-// that change.
+// The coverage and item locations each scope owns. The account bank and own
+// postings are account-scoped, so a character row that names them would be
+// an unread second copy of the same stock.
 const CHARACTER_COVERAGE_KEYS = new Set(["carried", "keyring", "bank", "mail", "money"]);
 const ACCOUNT_COVERAGE_KEYS = new Set(["account_bank", "listed"]);
+const CHARACTER_LOCATIONS = new Set(["carried", "bank", "mail", "keyring"]);
+const ACCOUNT_LOCATIONS = new Set(["account_bank", "listed"]);
 
 function numeric(value: unknown, field: string): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -177,14 +175,15 @@ export async function applyEstate(
         });
     await tx.estateItem.deleteMany({ where: { estateId: row.id } });
     const items: Prisma.EstateItemCreateManyInput[] = [];
+    const ownedLocations = scope === "account" ? ACCOUNT_LOCATIONS : CHARACTER_LOCATIONS;
     for (const [itemKey, locations] of Object.entries(value.items ?? {})) {
       const itemId = Number(itemKey);
       if (!Number.isInteger(itemId) || itemId <= 0) {
         throw new Error(`State payload: item key ${itemKey} is not a positive item id`);
       }
       for (const [location, entry] of Object.entries(locations)) {
-        if (!LOCATIONS.has(location)) {
-          throw new Error(`State payload: unknown estate location ${location}`);
+        if (!ownedLocations.has(location)) {
+          throw new Error(`State payload: estate scope ${scope} does not own location ${location}`);
         }
         const qty = numeric(entry?.qty, `${scope}.items.${itemId}.${location}.qty`);
         if (qty <= 0) continue;

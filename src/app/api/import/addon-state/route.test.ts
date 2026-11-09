@@ -44,7 +44,6 @@ function estate(revision: number, carried: number, observedAt = NOW, character =
     observedAt,
     scopes: {
       [`character:${character}`]: {
-        kind: "character",
         revision,
         cash: 10000,
         freeSlots: 10,
@@ -54,7 +53,6 @@ function estate(revision: number, carried: number, observedAt = NOW, character =
         items: { "2589": { carried: { qty: carried, slots: 1 } } }
       },
       account: {
-        kind: "account",
         revision,
         coverage: { account_bank: "unobserved", listed: "unobserved" },
         items: {} as Record<string, Record<string, { qty: number; slots: number }>>
@@ -174,6 +172,19 @@ describe("POST /api/import/addon-state", () => {
     expect(response.status).toBe(400);
     const body = await response.json() as { error: string };
     expect(body.error).toMatch(/observedAt/);
+  });
+
+  it("rejects a location the scope does not own", async () => {
+    // The publisher moves the account bank off the character partition
+    // before writing. A character row that claims it would be a second,
+    // unread copy of the same stock.
+    const payload = estate(9, 1);
+    (payload.scopes["character:Tester"].items as Record<string, Record<string, { qty: number; slots: number }>>)["2770"]
+      = { account_bank: { qty: 1, slots: 1 } };
+    const response = await post("state", { server: "A", faction: "Alliance", estate: payload });
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: string };
+    expect(body.error).toMatch(/does not own location account_bank/);
   });
 
   it("rejects an estate scope that names no revision", async () => {
