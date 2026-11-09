@@ -90,6 +90,9 @@ describe("estate collection", () => {
       sender = "Auction House", subject = "Won", money = 0, hasItem = true,
       attachments = { "|Hitem:${MAGEWEAVE}:0:0|h[Mageweave]|h" },
       invoice = { kind = 2, name = "Mageweave", bid = 700 }
+    }, {
+      sender = "Friend", subject = "COD", money = 0, cod = 500, hasItem = true,
+      attachments = { "|Hitem:2592:0:0|h[COD item]|h" }
     } })`);
     expect(lua.text(charScope("coverage.mail"))).toBe("unobserved");
     lua.exec("WowTest.fireEvent('MAIL_INBOX_UPDATE')");
@@ -97,6 +100,11 @@ describe("estate collection", () => {
     expect(lua.text(charScope("coverage.mail"))).toBe("observed");
     expect(lua.number(charScope("pendingCash"))).toBe(900);
     expect(lua.number(charScope(`items[${MAGEWEAVE}].mail.qty`))).toBe(1);
+    // A COD attachment is not owned until paid.
+    expect(lua.number(
+      `(function() local s = WowTest.ns.Estate.snapshot().scopes["character:Tester"]`
+      + ` return (s.items[2592] and s.items[2592].mail and s.items[2592].mail.qty) or 0 end)()`
+    )).toBe(0);
   });
 
   it("publishes own postings as account-level listed stock", () => {
