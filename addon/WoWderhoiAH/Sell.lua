@@ -270,34 +270,25 @@ end
 
 local function collectOwned()
   wipe(owned)
-  local count = C_AuctionHouse.GetNumOwnedAuctions and C_AuctionHouse.GetNumOwnedAuctions() or 0
-  for index = 1, count do
-    local info = C_AuctionHouse.GetOwnedAuctionInfo and C_AuctionHouse.GetOwnedAuctionInfo(index)
-    if info and info.auctionID then
-      local itemId = info.itemKey and info.itemKey.itemID
-      local quantity = info.quantity or 1
-      local buyout = info.buyoutAmount or info.bidAmount or 0
-      local unitPrice = quantity > 0 and buyout / quantity or 0
-      local scanned = WAH.currentScanItems()[itemId]
-      local sellP = scanned and scanned.sellP
-      local seconds = info.timeLeftSeconds
-      if not seconds and info.timeLeft and C_AuctionHouse.GetTimeLeftBandInfo then
-        local _, maxSeconds = C_AuctionHouse.GetTimeLeftBandInfo(info.timeLeft)
-        seconds = maxSeconds
-      end
-      local name = WAH.getItemInfo(itemId) or tostring(itemId)
-      owned[#owned + 1] = {
-        auctionID = info.auctionID,
-        itemId = itemId,
-        name = name,
-        quantity = quantity,
-        unitPrice = unitPrice,
-        buyout = buyout,
-        timeLeftSeconds = seconds,
-        undercut = sellP and sellP > 0 and unitPrice > sellP * (1 + UNDERCUT_WARN_RATIO) or false,
-        status = info.status
-      }
-    end
+  for _, row in ipairs(WAH.ownedAuctions and WAH.ownedAuctions() or {}) do
+    local quantity = row.quantity or 1
+    local buyout = row.buyout or 0
+    local unitPrice = quantity > 0 and buyout / quantity or 0
+    local scanned = WAH.currentScanItems()[row.itemId]
+    local sellP = scanned and scanned.sellP
+    local seconds = row.timeLeftSeconds
+    local name = WAH.getItemInfo(row.itemId) or tostring(row.itemId)
+    owned[#owned + 1] = {
+      auctionID = row.auctionID,
+      itemId = row.itemId,
+      name = name,
+      quantity = quantity,
+      unitPrice = unitPrice,
+      buyout = buyout,
+      timeLeftSeconds = seconds,
+      undercut = sellP and sellP > 0 and unitPrice > sellP * (1 + UNDERCUT_WARN_RATIO) or false,
+      status = row.status
+    }
   end
   table.sort(owned, function(left, right)
     if left.timeLeftSeconds == right.timeLeftSeconds then return left.auctionID < right.auctionID end

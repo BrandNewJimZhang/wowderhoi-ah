@@ -118,6 +118,28 @@ local function itemFromLink(index)
   return nil
 end
 
+-- The invoice type separates a sale from an expiry, a won bid and a
+-- cancellation. The client has shipped this field as both a number and a
+-- string across builds, so both are mapped here; an unknown value is kept
+-- as lower-case text instead of dropped.
+local INVOICE_KINDS = {
+  [0] = "sold", [1] = "expired", [2] = "won", [3] = "cancelled",
+  seller = "sold", sold = "sold",
+  expired = "expired", expiry = "expired",
+  won = "won", bidder = "won",
+  cancelled = "cancelled", canceled = "cancelled", cancel = "cancelled"
+}
+
+local function invoiceKind(invoice)
+  if not invoice then return nil end
+  local kind = invoice.kind
+  if type(kind) == "string" then
+    local text = kind:lower()
+    return INVOICE_KINDS[text] or text
+  end
+  return INVOICE_KINDS[kind]
+end
+
 -- Names are the fallback when the attachment is gone (sold mail carries
 -- money, not the goods). The scan's item names and the ids already open in
 -- the ledger cover everything the player can plausibly have listed.
@@ -177,6 +199,23 @@ local function matchPost(itemId, totalBuyout)
   return found
 end
 
+-- A returned or cancelled mail often carries no buyout to match against.
+-- When the item is known and exactly one posting for it is open, that
+-- posting is the mail's subject; two open postings are ambiguous and must
+-- not be guessed.
+local function uniquePostForItem(itemId)
+  if not itemId then return nil end
+  local ledger = WAH.Ledger and WAH.Ledger.current() or nil
+  local found
+  for auctionID, post in pairs(ledger and ledger.openPosts or {}) do
+    if post.itemId == itemId then
+      if found then return nil end
+      found = { auctionID = auctionID, post = post, quantity = post.qty }
+    end
+  end
+  return found
+end
+
 -- A sale the owned-list reconcile already booked as an inference, before
 -- the mailbox was opened. The mail is the confirmation of that same trade,
 -- so it must upgrade the label, not book the revenue again.
@@ -218,7 +257,7 @@ end
 
 Mail.scan = function()
   local stats = { available = Mail.available(), messages = 0, sold = 0, expired = 0,
-    unattributed = 0, duplicates = 0, reconfirmed = 0, cash = 0 }
+    won = 0, returned = 0, unattributed = 0, duplicates = 0, reconfirmed = 0, cash = 0 }
   Mail.last = stats
   if not stats.available then return stats end
   if WAH.settings and WAH.settings.mailCapture == false then return stats end
@@ -241,12 +280,28 @@ Mail.scan = function()
       local itemId = itemFromLink(message) or itemFromText(texts, index)
       -- Money without a returned item is a sale. The commission is not part
       -- of the classifier: a cheap sale can legitimately carry a zero cut,
-      -- and keying on it dropped those confirmed sales entirely.
+      -- and keying on it dropped those confirmed sales entirely. A returned
+      -- item with an invoice is either an expiry or a won bid; the invoice
+      -- kind tells them apart when the client provides it, and a seller's
+      -- returned item without a kind stays an expiry.
+      local kind = invoiceKind(invoice)
       local isSale = header.money > 0 and invoice ~= nil and not header.hasItem
-      local isExpiry = header.hasItem and header.money == 0 and invoice ~= nil
-      if isSale or isExpiry then
-        local total = isSale and (invoice.buyout > 0 and invoice.buyout or header.money) or (invoice.buyout or 0)
+      local isWon = invoice ~= nil and header.hasItem and kind == "won"
+      local isCancel = invoice ~= nil and header.hasItem and kind == "cancelled"
+      local isExpiry = invoice ~= nil and header.hasItem and not isWon and not isCancel
+      if isSale or isWon or isCancel or isExpiry then
+        local total
+        if isSale then
+          total = invoice.buyout > 0 and invoice.buyout or header.money
+        elseif isWon then
+          total = invoice.bid > 0 and invoice.bid or invoice.buyout or 0
+        else
+          total = invoice.buyout or 0
+        end
         local matched = matchPost(itemId, total)
+        if not matched and (isCancel or isExpiry) then
+          matched = uniquePostForItem(itemId)
+        end
         itemId = itemId or (matched and matched.post.itemId)
         local mark = fingerprint(header, invoice)
         if not itemId then
@@ -288,6 +343,36 @@ Mail.scan = function()
               })
               stats.sold = stats.sold + 1
             end
+          end
+        elseif isWon then
+          -- A won bid is a purchase: the client already took the bid amount
+          -- out of the purse, and the item only exists in the mailbox. Not
+          -- booking it left the bag and the ledger permanently disagreeing.
+          if firstUnbooked(store, tally, mark) then
+            WAH.recordEvent({
+              k = "buy",
+              itemId = itemId,
+              qty = 1,
+              cost = total,
+              auctionID = matched and matched.auctionID or nil,
+              priceSource = "mail",
+              censored = true
+            })
+            stats.won = stats.won + 1
+          else
+            stats.duplicates = stats.duplicates + 1
+          end
+        elseif isCancel then
+          -- The goods came back with the deposit. If the posting is still
+          -- open, close it; otherwise the return is already a state fact in
+          -- the estate and only needs counting.
+          if firstUnbooked(store, tally, mark) then
+            if matched then
+              WAH.recordEvent({ k = "cancel", auctionID = matched.auctionID })
+            end
+            stats.returned = stats.returned + 1
+          else
+            stats.duplicates = stats.duplicates + 1
           end
         elseif matched then
           -- An expired listing the addon never saw expire: the deposit is
@@ -334,8 +419,9 @@ Mail.diagnostics = function()
   line(string.format("mail: seen %d fingerprints", #seenStore().order))
   local last = Mail.last
   if last then
-    line(string.format("mail: last scan %d messages, %d sold, %d confirmed, %d expired, %d duplicates, %d unattributed",
-      last.messages, last.sold, last.reconfirmed, last.expired, last.duplicates, last.unattributed))
+    line(string.format("mail: last scan %d messages, %d sold, %d confirmed, %d expired, %d won, %d returned, %d duplicates, %d unattributed",
+      last.messages, last.sold, last.reconfirmed, last.expired, last.won or 0, last.returned or 0,
+      last.duplicates, last.unattributed))
   end
   return lines
 end

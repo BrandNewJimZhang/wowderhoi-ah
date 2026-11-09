@@ -268,30 +268,47 @@ end
 -- opens and when the client answers QueryOwnedAuctions.
 local ownedSnapshot = nil
 
--- Reads whatever the client currently holds. The event handler calls this
--- directly: QueryOwnedAuctions fires the event (synchronously on some
--- builds), so a refresh that queried again would recurse.
-local function captureOwnedSnapshot()
+-- One shape for every reader of the owned-auction list: the scan's
+-- self-exclusion, the sell page, the estate publisher and the reconciler
+-- must not each walk GetOwnedAuctionInfo with slightly different fields.
+function WAH.ownedAuctions()
+  local rows = {}
   if not (C_AuctionHouse.GetNumOwnedAuctions and C_AuctionHouse.GetOwnedAuctionInfo) then
-    ownedSnapshot = nil
-    return
+    return rows
   end
-  local byItem = {}
   local count = C_AuctionHouse.GetNumOwnedAuctions() or 0
   for index = 1, count do
     local info = C_AuctionHouse.GetOwnedAuctionInfo(index)
     local itemId = info and info.itemKey and info.itemKey.itemID
     if itemId then
-      local list = byItem[itemId]
-      if not list then
-        list = {}
-        byItem[itemId] = list
-      end
-      list[#list + 1] = {
+      rows[#rows + 1] = {
+        auctionID = info.auctionID,
+        itemId = itemId,
+        quantity = info.quantity or 1,
         buyout = info.buyoutAmount or info.bidAmount or 0,
-        count = info.quantity or 1
+        timeLeftSeconds = info.timeLeftSeconds,
+        status = info.status
       }
     end
+  end
+  return rows
+end
+
+-- Reads whatever the client currently holds. The event handler calls this
+-- directly: QueryOwnedAuctions fires the event (synchronously on some
+-- builds), so a refresh that queried again would recurse.
+local function captureOwnedSnapshot()
+  local byItem = {}
+  for _, row in ipairs(WAH.ownedAuctions()) do
+    local list = byItem[row.itemId]
+    if not list then
+      list = {}
+      byItem[row.itemId] = list
+    end
+    list[#list + 1] = {
+      buyout = row.buyout,
+      count = row.quantity
+    }
   end
   ownedSnapshot = byItem
 end

@@ -19,6 +19,8 @@ function scan(lua: WowLua) {
     unattributed: read("unattributed"),
     duplicates: read("duplicates"),
     reconfirmed: read("reconfirmed"),
+    won: read("won"),
+    returned: read("returned"),
     ignored: read("ignored")
   };
 }
@@ -271,5 +273,54 @@ describe("mailbox capture", () => {
     // the 15-minute scan floor.
     expect(lua.text("(function() return string.format('%.2f', WowTest.ns.Ledger.salesSince(86400)[2589].exposedHours) end)()"))
       .toBe("2.00");
+  });
+});
+
+describe("mail invoice kinds", () => {
+  it("books a won bid as a purchase with the paid amount as cost", () => {
+    const lua = loadAddon();
+    lua.exec('WowTest.itemInfo[2589] = { name = "亚麻布" }');
+    lua.exec(`WowTest.setMail({ {
+      subject = "Auction won: 亚麻布",
+      money = 0,
+      hasItem = true,
+      attachments = { "|Hitem:2589:0:0|h[亚麻布]|h" },
+      invoice = { kind = 2, name = "亚麻布", bid = 700, buyout = 900 }
+    } })`);
+    const result = scan(lua);
+    expect(result.won).toBe(1);
+    expect(lua.number("WowTest.ns.Journal.last('buy').cost")).toBe(700);
+    expect(lua.number("(WowTest.ns.Ledger.positions()[2589] or {}).qty or 0")).toBe(1);
+  });
+
+  it("closes an open posting on a returned cancelled mail", () => {
+    const lua = loadAddon();
+    lua.exec('WowTest.itemInfo[2589] = { name = "亚麻布" }');
+    record(lua, { k: "buy", itemId: 2589, qty: 10, cost: 8000 });
+    record(lua, { k: "post", auctionID: 7, itemId: 2589, qty: 10, price: 1200, deposit: 500 });
+    lua.exec(`WowTest.setMail({ {
+      subject = "Auction cancelled: 亚麻布",
+      money = 500,
+      hasItem = true,
+      attachments = { "|Hitem:2589:0:0|h[亚麻布]|h" },
+      invoice = { kind = "cancelled", name = "亚麻布", buyout = 0, deposit = 500 }
+    } })`);
+    const result = scan(lua);
+    expect(result.returned).toBe(1);
+    expect(lua.number("WowTest.ns.Journal.last('cancel') == nil and 0 or 1")).toBe(1);
+    expect(lua.number("WowTest.ns.Ledger.capital().escrow")).toBe(0);
+    // The goods came back and were never consumed.
+    expect(lua.number("WowTest.ns.Ledger.positions()[2589].qty")).toBe(10);
+  });
+
+  it("ignores a player mail with no invoice", () => {
+    const lua = loadAddon();
+    lua.exec(`WowTest.setMail({ {
+      subject = "thanks", money = 100, hasItem = true,
+      attachments = { "|Hitem:2589:0:0|h[Linen]|h" }
+    } })`);
+    const result = scan(lua);
+    expect(result.sold + result.won + result.returned + result.expired).toBe(0);
+    expect(lua.number("WowTest.ns.Journal.count()")).toBe(0);
   });
 });

@@ -123,14 +123,9 @@ end
 -- account scope and the character scope does not duplicate it.
 local function scanOwned(items)
   if not ownedObserved then return end
-  if not (C_AuctionHouse.GetNumOwnedAuctions and C_AuctionHouse.GetOwnedAuctionInfo) then return end
-  local count = C_AuctionHouse.GetNumOwnedAuctions() or 0
-  for index = 1, count do
-    local info = C_AuctionHouse.GetOwnedAuctionInfo(index)
-    local itemId = info and info.itemKey and info.itemKey.itemID
-    if itemId then
-      addItem(items, itemId, "listed", info.quantity or 1, 1)
-    end
+  if not WAH.ownedAuctions then return end
+  for _, row in ipairs(WAH.ownedAuctions()) do
+    addItem(items, row.itemId, "listed", row.quantity or 1, 1)
   end
 end
 
