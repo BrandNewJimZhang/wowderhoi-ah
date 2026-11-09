@@ -16,15 +16,6 @@ type LinkableTrade = TradeTimeBounds & {
   decisionId?: string | null;
 };
 
-// A stored decision row and the journal-derived adoption row have the same
-// shape; only the source differs.
-type StoredAdoption = {
-  decisionId: string | null;
-  itemId: number | null;
-  kind: string;
-  adoptedAt: Date | null;
-};
-
 // A sale inside the attribution window may belong to a sell recommendation
 // the player adopted; a buy recommendation is an acquisition, not a sale.
 // The window is wider than the fill horizon because the goods must first
@@ -61,43 +52,4 @@ export function linkTrades<T extends LinkableTrade>(
     }
     return match ? { ...trade, decisionId: match.decisionId } : trade;
   });
-}
-
-// The stored decision log is the durable record: it keeps an adoption even
-// when the scan that produced it has aged out of the generation window. The
-// journal's adopt events are fresher evidence for the same decisions, so
-// they overwrite the stored time. A decision that was never adopted is not
-// an attribution and must not link a sale.
-export function mergeAdoptedDecisions(
-  stored: readonly StoredAdoption[],
-  current: readonly StoredAdoption[],
-  adoptions: ReadonlyMap<string, Date>
-): AdoptedDecision[] {
-  const byId = new Map<string, AdoptedDecision>();
-  for (const row of stored) {
-    if (!row.decisionId || !(row.adoptedAt instanceof Date)) continue;
-    byId.set(row.decisionId, {
-      decisionId: row.decisionId,
-      itemId: row.itemId,
-      kind: row.kind,
-      adoptedAt: row.adoptedAt
-    });
-  }
-  for (const row of current) {
-    const adoptedAt = row.decisionId ? adoptions.get(row.decisionId) : undefined;
-    if (!row.decisionId || !adoptedAt) continue;
-    byId.set(row.decisionId, {
-      decisionId: row.decisionId,
-      itemId: row.itemId,
-      kind: row.kind,
-      adoptedAt
-    });
-  }
-  // A journal event is the freshest evidence for an id already known from
-  // either source; it can correct the stored adoption time.
-  for (const [decisionId, adoptedAt] of adoptions) {
-    const row = byId.get(decisionId);
-    if (row) byId.set(decisionId, { ...row, adoptedAt });
-  }
-  return Array.from(byId.values());
 }

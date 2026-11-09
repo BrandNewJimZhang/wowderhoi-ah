@@ -17,8 +17,6 @@ local ADDON_NAME, WAH = ...
 
 local Reconciler = {}
 
-local function round(value) return math.floor((value or 0) + 0.5) end
-
 local function observed(scope, key)
   return scope and scope.coverage and scope.coverage[key] == "observed"
 end
