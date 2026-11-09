@@ -1000,6 +1000,7 @@ function Core.evaluate(input)
         costKnown = costKnown,
         durationHours = economics.sellPlan and economics.sellPlan.duration or 24,
         fillProb = economics.sellPlan and economics.sellPlan.fillProb or 0,
+        fillBasis = "sell",
         -- A round trip plus the listing, not a buy.
         netPerMinute = round(economics.netProceeds / math.max(effortMinutes("sell"), 1)),
         requiresBank = position.requiresBank == true,
