@@ -204,7 +204,9 @@ export default async function Home() {
                 action={(
                   <span className="font-mono text-xs text-terminal-muted">
                     共享决策核心 · 资源可行序列
-                    {bundle.plan && ` · 计划 ${bundle.plan.createdAt.toISOString().slice(5, 16).replace("T", " ")}`}
+                    {bundle.plan
+                      ? ` · 计划 ${bundle.plan.createdAt.toISOString().slice(5, 16).replace("T", " ")}`
+                      : " · 游戏内计划未推送，以下为同口径估算"}
                   </span>
                 )}
               />
