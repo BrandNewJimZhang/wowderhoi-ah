@@ -244,7 +244,7 @@ export async function getNavigationBadges(): Promise<NavBadges> {
     getGenerationOnce(scope),
     getPositions(scope),
     prisma.plan.findFirst({
-      where: { marketId: scope.id },
+      where: { marketId: scope.id, supersededAt: null },
       orderBy: { createdAt: "desc" },
       select: { revision: true, estateRevision: true, configRevision: true, steps: true }
     })

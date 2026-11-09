@@ -351,4 +351,23 @@ describe("POST /api/import/addon-state", () => {
     });
     expect(current?.supersededAt).toBeNull();
   });
+
+  it("leaves exactly one current plan when two are minted in one second", async () => {
+    const first = "A|Alliance|same-second:1:1";
+    const second = "A|Alliance|same-second:1:2";
+    const base = {
+      observedAt: NOW,
+      steps: [{ kind: "buy", itemId: 2589, qty: 1, expectedNet: 10 }],
+      resources: {},
+      unplanned: []
+    };
+    await post("state", { server: "A", faction: "Alliance", plan: { ...base, revision: first } });
+    await post("state", { server: "A", faction: "Alliance", plan: { ...base, revision: second } });
+    const market = await prisma.market.findUnique({ where: { realm_faction: { realm: "A", faction: "Alliance" } } });
+    const rows = await prisma.plan.findMany({ where: { marketId: market!.id } });
+    // A delayed plan is stored for history, never as a second current one.
+    expect(rows.filter((row) => row.supersededAt === null)).toHaveLength(1);
+    const current = rows.find((row) => row.supersededAt === null);
+    expect(current?.revision).toBe(second);
+  });
 });

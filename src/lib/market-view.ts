@@ -84,8 +84,11 @@ export async function getMarketView(): Promise<MarketView> {
           pendingCash: true, coverage: true
         }
       }),
+      // Only one plan is current. A delayed or same-second plan can leave
+      // two rows at the top of a createdAt ordering; the superseded marker
+      // is the authority, not the timestamp tie.
       tx.plan.findFirst({
-        where: { marketId: scope.id },
+        where: { marketId: scope.id, supersededAt: null },
         orderBy: { createdAt: "desc" },
         select: {
           id: true, revision: true, estateRevision: true, ledgerRevision: true,

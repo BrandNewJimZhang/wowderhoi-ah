@@ -237,7 +237,7 @@ export async function getReconciliationStats(scope: MarketScope | null) {
     }),
     prisma.estate.findMany({ where: { marketId: scope.id }, select: { coverage: true } }),
     prisma.plan.findFirst({
-      where: { marketId: scope.id },
+      where: { marketId: scope.id, supersededAt: null },
       orderBy: { createdAt: "desc" },
       select: { revision: true }
     })
