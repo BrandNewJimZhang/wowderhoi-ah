@@ -145,7 +145,7 @@ export async function applyEstate(
             revision,
             observedAt,
             cash: optionalNumber(value.cash, `${scope}.cash`),
-            freeSlots: value.freeSlots === undefined ? null : optionalNumber(value.freeSlots, `${scope}.freeSlots`),
+            freeSlots: optionalNumber(value.freeSlots, `${scope}.freeSlots`),
             pendingCash: optionalNumber(value.pendingCash, `${scope}.pendingCash`),
             coverage: coverage as unknown as Prisma.InputJsonValue
           }
@@ -157,7 +157,7 @@ export async function applyEstate(
             revision,
             observedAt,
             cash: optionalNumber(value.cash, `${scope}.cash`),
-            freeSlots: value.freeSlots === undefined ? null : optionalNumber(value.freeSlots, `${scope}.freeSlots`),
+            freeSlots: optionalNumber(value.freeSlots, `${scope}.freeSlots`),
             pendingCash: optionalNumber(value.pendingCash, `${scope}.pendingCash`),
             coverage: coverage as unknown as Prisma.InputJsonValue
           }
