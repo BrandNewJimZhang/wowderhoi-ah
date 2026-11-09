@@ -305,12 +305,10 @@ model Plan {
   // when the player switches characters between scans.
   character      String   @default("")
   estateRevision Int      @default(0) @map("estate_revision")
-  ledgerRevision Int      @default(0) @map("ledger_revision")
   configRevision String   @default("") @map("config_revision")
   steps          Json
   resources      Json
   unplanned      Json
-  source         String   @default("addon")
   createdAt      DateTime @default(now()) @map("created_at")
   supersededAt   DateTime? @map("superseded_at")
   market         Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)

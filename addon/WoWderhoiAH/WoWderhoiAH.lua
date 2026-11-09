@@ -1746,7 +1746,6 @@ function WAH.publishPlan(plan)
     -- whoever scanned last.
     character = (UnitName and UnitName("player")) or "",
     estateRevision = WAH.Estate and WAH.Estate.revision() or 0,
-    ledgerRevision = WAH.Journal and WAH.Journal.revision() or 0,
     configRevision = tostring(WAH.PIPELINE_VERSION or ""),
     observedAt = time(),
     steps = plan.steps or {},

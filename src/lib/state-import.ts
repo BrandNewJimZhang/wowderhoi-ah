@@ -608,7 +608,6 @@ type AddonPlan = {
   revision?: string;
   character?: string;
   estateRevision?: number;
-  ledgerRevision?: number;
   configRevision?: string;
   observedAt?: number;
   steps?: PlanStep[];
@@ -648,12 +647,10 @@ export async function applyPlan(
       revision: plan.revision,
       character: typeof plan.character === "string" ? plan.character : "",
       estateRevision: plan.estateRevision ?? 0,
-      ledgerRevision: plan.ledgerRevision ?? 0,
       configRevision: plan.configRevision ?? "",
       steps: (plan.steps ?? []) as unknown as Prisma.InputJsonValue,
       resources: (plan.resources ?? {}) as unknown as Prisma.InputJsonValue,
       unplanned: (plan.unplanned ?? []) as unknown as Prisma.InputJsonValue,
-      source: "addon",
       createdAt: at,
       supersededAt: newer ? at : null
     }

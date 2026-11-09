@@ -433,7 +433,6 @@ describe("POST /api/import/addon-state", () => {
       revision,
       character: "Tester",
       estateRevision: 1,
-      ledgerRevision: 2,
       observedAt: NOW,
       steps: [{
         kind: "buy", itemId: 2589, qty: 5, allocQty: 5, allocUnitPrice: 800,

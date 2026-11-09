@@ -72,9 +72,9 @@ beforeAll(async () => {
     "coverage" TEXT, "updated_at" DATETIME)`);
   await prisma.$executeRawUnsafe(`CREATE TABLE "Plan" (
     "id" TEXT PRIMARY KEY, "market_id" TEXT, "revision" TEXT, "character" TEXT DEFAULT '',
-    "estate_revision" INTEGER DEFAULT 0, "ledger_revision" INTEGER DEFAULT 0,
+    "estate_revision" INTEGER DEFAULT 0,
     "config_revision" TEXT DEFAULT '', "steps" TEXT, "resources" TEXT, "unplanned" TEXT,
-    "source" TEXT DEFAULT 'addon', "created_at" DATETIME, "superseded_at" DATETIME)`);
+    "created_at" DATETIME, "superseded_at" DATETIME)`);
 
   for (const [id, at] of [["g-old", OLD], ["g-new", NEW]] as const) {
     await prisma.$executeRawUnsafe(
@@ -146,9 +146,8 @@ describe("getReconciliationStats", () => {
     );
     await prisma.$executeRawUnsafe(
       `INSERT INTO "Plan" ("id", "market_id", "revision", "character", "estate_revision",
-        "ledger_revision", "config_revision", "steps", "resources", "unplanned", "source",
-        "created_at", "superseded_at")
-       VALUES ('p1', 'm1', ?, 'Tester', 3, 7, '4', '[]', '{}', '[]', 'addon', ?, NULL)`,
+        "config_revision", "steps", "resources", "unplanned", "created_at", "superseded_at")
+       VALUES ('p1', 'm1', ?, 'Tester', 3, '4', '[]', '{}', '[]', ?, NULL)`,
       revision,
       NEW
     );
