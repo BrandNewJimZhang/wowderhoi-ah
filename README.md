@@ -135,12 +135,16 @@ an **inferred** sale at the posted price and labelled everywhere.
   catalogue/icon coverage, the last 20 import runs and Journal replay
   errors.
 
-Every open page polls `/api/market/revision` every 15 seconds. When an import
-lands — a new scan or a mailbox-flushed journal replay — the page re-renders
-through `router.refresh()` without a manual reload, keeping client state such
-as the market browser's filters, sort and page. The navigation rail shows
-whether auto-refresh is live, refreshing or offline; a hidden tab pauses
-polling and checks once when it returns.
+Every open page polls `/api/market/revision` every 15 seconds. The revision
+is the market's committed data version, advanced inside the import
+transaction, so a new scan or a mailbox-flushed journal replay reaches the
+screen without a manual reload while a failed or duplicate import never
+triggers one. Pages also re-render when the stale flag or the display phase
+crosses a boundary even if no import lands, and relative freshness labels
+tick in the browser at their own boundaries. `router.refresh()` keeps client
+state such as the market browser's filters, sort and page. The navigation
+rail shows whether auto-refresh is live, refreshing or offline; a hidden tab
+pauses polling and checks once when it returns.
 
 ## Data pipeline
 
@@ -318,7 +322,7 @@ an issue; see [CONTRIBUTING.md](CONTRIBUTING.md). Security notes in
 
 驾驶舱、行情（`/market`，客户端即时筛选排序）、物品页（盘口/成交概率/走势图/K 线/季节性）、组合、制造（2,595 条配方 + LP 影子价格）、复盘（决策匹配、预测分桶校准、alpha 衰减、实验设计）与数据健康（`/health`）。`npm run calibrate` 从洁净扫描给出成交率先验建议。
 
-每个打开的页面每 15 秒轮询 `/api/market/revision`。有新导入落库时（新扫描或邮箱触发的账本重放），页面通过 `router.refresh()` 就地重渲染，无需手动刷新，并保留行情浏览器的筛选、排序与页码等客户端状态。左侧导航显示自动刷新的实时状态；标签页隐藏时暂停轮询，回到前台立即检查一次。
+每个打开的页面每 15 秒轮询 `/api/market/revision`。版本号是当前市场已提交的数据版本，在导入事务内随页面输入一起推进：新扫描或邮箱触发的账本重放会自动到达屏幕，失败或重复的导入不会误触发刷新。即使没有新导入，页面也会在数据过期或阶段边界到来时重新渲染，相对时间标签由浏览器按边界自行跳动。刷新通过 `router.refresh()` 就地完成，保留行情浏览器的筛选、排序与页码等客户端状态；左侧导航显示自动刷新的实时状态，标签页隐藏时暂停轮询，回到前台立即检查一次。
 
 ### 数据管道
 
