@@ -63,6 +63,7 @@ function reader(options: {
       id: "m1", realm: "TestRealm", faction: "Alliance", cash: 500000, character: "Tester",
       ...(options.scope ?? {})
     }),
+    getMarketRevision: async (scope) => scope ? `${scope.id}:rev-1` : "none",
     getLatestGeneration: async () => options.record === undefined ? generation() : options.record,
     getSignals: async () => options.signals ?? [row(signal(1, 200))],
     now: () => options.now ?? LATEST
@@ -95,6 +96,7 @@ describe("getMarketContext", () => {
     let signalCalls = 0;
     const source = createMarketReader({
       getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0, character: "Tester" }),
+      getMarketRevision: async () => "m1:rev-1",
       getLatestGeneration: async () => generation(),
       getSignals: async () => {
         signalCalls += 1;
@@ -111,13 +113,38 @@ describe("getMarketContext", () => {
     expect(signalCalls).toBe(0);
   });
 
+  it("reads the data revision before the generation so a mid-request import still refreshes", async () => {
+    const order: string[] = [];
+    const source = createMarketReader({
+      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0, character: "Tester" }),
+      getMarketRevision: async () => {
+        order.push("revision");
+        return "m1:run-1";
+      },
+      getLatestGeneration: async () => {
+        order.push("generation");
+        return generation();
+      },
+      getSignals: async () => [],
+      now: () => LATEST
+    });
+    const context = await source.getMarketContext();
+    // An import that commits between the two reads must leave the embedded
+    // revision behind the polled one; the page then refreshes once more
+    // instead of hiding the new scan until the next import.
+    expect(order).toEqual(["revision", "generation"]);
+    expect(context.revision).toBe("m1:run-1");
+  });
+
   it("returns an empty context before the first generation", async () => {
     const context = await reader({ record: null }).getMarketContext();
     expect(context.scope?.id).toBe("m1");
     expect(context.latestScanAt).toBeNull();
     expect(context.signalCount).toBe(0);
     expect(context.phase).toBe("ignition");
+    expect(context.revision).toBe("m1:rev-1");
   });
+
 });
 
 describe("getMarketBundle", () => {
@@ -127,6 +154,7 @@ describe("getMarketBundle", () => {
     expect(bundle.latestScanAt).toBeNull();
     expect(bundle.phase).toBe("ignition");
     expect(bundle.phaseMismatch).toBe(false);
+    expect(bundle.revision).toBe("m1:rev-1");
   });
 
   it("serves the stored signals and core without rerunning the core", async () => {
@@ -162,6 +190,7 @@ describe("getMarketBundle", () => {
     const seen: string[] = [];
     const source = createMarketReader({
       getMarketScope: async () => ({ id: "m2", realm: "Other", faction: "Horde", cash: 0, character: "" }),
+      getMarketRevision: async (scope) => scope?.id ?? "none",
       getLatestGeneration: async (scope) => { seen.push(scope?.id ?? "none"); return null; },
       getSignals: async () => [],
       now: () => LATEST

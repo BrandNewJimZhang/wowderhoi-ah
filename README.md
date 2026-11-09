@@ -135,6 +135,13 @@ an **inferred** sale at the posted price and labelled everywhere.
   catalogue/icon coverage, the last 20 import runs and Journal replay
   errors.
 
+Every open page polls `/api/market/revision` every 15 seconds. When an import
+lands — a new scan or a mailbox-flushed journal replay — the page re-renders
+through `router.refresh()` without a manual reload, keeping client state such
+as the market browser's filters, sort and page. The navigation rail shows
+whether auto-refresh is live, refreshing or offline; a hidden tab pauses
+polling and checks once when it returns.
+
 ## Data pipeline
 
 ```powershell
@@ -310,6 +317,8 @@ an issue; see [CONTRIBUTING.md](CONTRIBUTING.md). Security notes in
 ### 桌面
 
 驾驶舱、行情（`/market`，客户端即时筛选排序）、物品页（盘口/成交概率/走势图/K 线/季节性）、组合、制造（2,595 条配方 + LP 影子价格）、复盘（决策匹配、预测分桶校准、alpha 衰减、实验设计）与数据健康（`/health`）。`npm run calibrate` 从洁净扫描给出成交率先验建议。
+
+每个打开的页面每 15 秒轮询 `/api/market/revision`。有新导入落库时（新扫描或邮箱触发的账本重放），页面通过 `router.refresh()` 就地重渲染，无需手动刷新，并保留行情浏览器的筛选、排序与页码等客户端状态。左侧导航显示自动刷新的实时状态；标签页隐藏时暂停轮询，回到前台立即检查一次。
 
 ### 数据管道
 

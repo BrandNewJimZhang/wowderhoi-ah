@@ -114,7 +114,7 @@ export default async function Home() {
   const seriesDays = seriesSpanDays(seriesStats.firstAt, seriesStats.lastAt);
 
   return (
-    <AppShell active="/">
+    <AppShell active="/" revision={bundle.revision}>
       <main className="terminal-grid min-h-screen p-3 text-slate-200">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border border-terminal-border bg-terminal-panel px-4 py-3">
           <div>

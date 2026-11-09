@@ -14,7 +14,7 @@ import { describeFreshness } from "@/lib/freshness";
 import { ageHours, resolvePhase } from "@/lib/phase";
 import type { MarketPhase } from "@/lib/market-rules";
 import type { StoredSignalRow } from "@/lib/signal-row";
-import { getGenerationSignals, getLatestGeneration, getPositions } from "@/lib/repositories";
+import { getGenerationSignals, getLatestGeneration, getMarketRevision, getPositions } from "@/lib/repositories";
 import { getMarketScope, type MarketScope } from "@/lib/market-scope";
 
 // Everything a page needs to describe the market, without its rows. The
@@ -22,6 +22,10 @@ import { getMarketScope, type MarketScope } from "@/lib/market-scope";
 // which meant reading thousands of signal documents to render one item.
 type MarketContext = {
   scope: MarketScope | null;
+  // Opaque token for the import the page rendered from; the browser polls
+  // the same token and refreshes when it moves. It is read before the
+  // generation so an import landing mid-request still counts as newer.
+  revision: string;
   latestScanAt: Date | null;
   // The phase right now, from wall-clock age and breadth.
   phase: MarketPhase;
@@ -46,15 +50,17 @@ export type MarketBundle = MarketContext & {
 
 type ReaderFetchers = {
   getMarketScope: () => Promise<MarketScope | null>;
+  getMarketRevision: (scope: MarketScope | null) => Promise<string>;
   getLatestGeneration: (scope: MarketScope | null) => Promise<GenerationRecord | null>;
   getSignals: (generationId: string) => Promise<StoredSignalRow[]>;
   // Injectable clock so phase-boundary behaviour is testable.
   now?: () => Date;
 };
 
-function emptyContext(phase: MarketPhase, scope: MarketScope | null = null): MarketContext {
+function emptyContext(phase: MarketPhase, scope: MarketScope | null, revision: string): MarketContext {
   return {
     scope,
+    revision,
     latestScanAt: null,
     phase,
     generationPhase: phase,
@@ -99,13 +105,24 @@ export function createMarketReader(fetchers: ReaderFetchers) {
   // twice could straddle an import that lands between the calls.
   const readGeneration = async () => {
     const scope = await fetchers.getMarketScope();
+    // The revision is read first: an import that commits between this read
+    // and the generation read leaves the embedded revision behind the
+    // polled one, so the page refreshes once more. Read the other way
+    // around, such an import would be invisible until the next one.
+    const revision = await fetchers.getMarketRevision(scope);
     const generation = await fetchers.getLatestGeneration(scope);
-    return { scope, generation };
+    return { scope, generation, revision };
   };
-  const contextOf = (scope: MarketScope | null, generation: GenerationRecord, now: Date): MarketContext => {
+  const contextOf = (
+    scope: MarketScope | null,
+    generation: GenerationRecord,
+    now: Date,
+    revision: string
+  ): MarketContext => {
     const phase = displayPhaseOf(scope, generation, now);
     return {
       scope,
+      revision,
       latestScanAt: generation.scannedAt,
       phase,
       generationPhase: generation.phase,
@@ -118,19 +135,19 @@ export function createMarketReader(fetchers: ReaderFetchers) {
   };
   return {
     async getMarketContext(): Promise<MarketContext> {
-      const { scope, generation } = await readGeneration();
-      if (!generation) return emptyContext(resolvePhaseOverride() ?? "ignition", scope);
-      return contextOf(scope, generation, nowOf());
+      const { scope, generation, revision } = await readGeneration();
+      if (!generation) return emptyContext(resolvePhaseOverride() ?? "ignition", scope, revision);
+      return contextOf(scope, generation, nowOf(), revision);
     },
     async getMarketBundle(): Promise<MarketBundle> {
-      const { scope, generation } = await readGeneration();
+      const { scope, generation, revision } = await readGeneration();
       if (!generation) {
         const phase = resolvePhaseOverride() ?? "ignition";
-        return { ...emptyContext(phase, scope), signals: [], evaluation: emptyEvaluation(phase) };
+        return { ...emptyContext(phase, scope, revision), signals: [], evaluation: emptyEvaluation(phase) };
       }
       const rows = await fetchers.getSignals(generation.id);
       return {
-        ...contextOf(scope, generation, nowOf()),
+        ...contextOf(scope, generation, nowOf(), revision),
         signals: rows.map((row) => row.signal),
         evaluation: generation.core
       };
@@ -140,6 +157,7 @@ export function createMarketReader(fetchers: ReaderFetchers) {
 
 const defaultReader = createMarketReader({
   getMarketScope,
+  getMarketRevision,
   getLatestGeneration,
   getSignals: getGenerationSignals
 });

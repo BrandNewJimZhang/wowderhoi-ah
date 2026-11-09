@@ -23,6 +23,13 @@
 - The app starts the SavedVariables watcher on its first server render;
   `ImportRun` records every import and `/health` shows freshness, gaps, series
   coverage, catalogue/icon coverage and journal replay errors.
+- Every open page polls `/api/market/revision` and refreshes when a new
+  import lands (a scan or a mailbox-flushed journal replay), so fresh prices
+  reach the screen without a manual reload; `router.refresh()` keeps client
+  state such as the market browser's filters and page. The revision is read
+  before the page data, so an import landing mid-request still triggers one
+  more refresh. The navigation rail shows live/refreshing/offline, and a
+  hidden tab pauses polling until it returns.
 - Recommendations have a stable `decisionId` shared with the addon.
   `/wahadopt <itemId> buy|sell` records adoption; a later matching sale is
   attributed by identity, and the review separates identity from window
