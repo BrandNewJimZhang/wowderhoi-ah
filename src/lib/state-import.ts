@@ -18,6 +18,7 @@ import {
 import { linkTrades } from "@/lib/decision-linking";
 import { decisionIdFor } from "@/lib/decision-id";
 import { currentCharacterState } from "@/lib/market-scope";
+import { marketPhases } from "@/lib/market-rules";
 
 type EstateItemInput = { qty: number };
 type EstateScopeInput = {
@@ -391,7 +392,9 @@ async function applyAdoptions(
   }
   const adopted = await tx.decision.findMany({
     where: { marketId, adoptedAt: { not: null } },
-    select: { decisionId: true, itemId: true, kind: true, adoptedAt: true }
+    select: {
+      decisionId: true, itemId: true, kind: true, adoptedAt: true
+    }
   });
   const unlinked = await tx.trade.findMany({
     where: { marketId, character, decisionId: null },
@@ -728,6 +731,7 @@ type PlanStep = {
 
 type AddonPlan = {
   revision?: string;
+  phase?: string;
   character?: string;
   estateRevision?: number;
   configRevision?: string;
@@ -750,6 +754,7 @@ export async function applyPlan(
   if (typeof plan.revision !== "string" || plan.revision === "") {
     throw new Error(`State payload: plan revision ${JSON.stringify(plan.revision)} must be a non-empty string`);
   }
+  const revision = plan.revision;
   if (plan.character !== undefined && typeof plan.character !== "string") {
     throw new Error(`State payload: plan character must be a string, got ${JSON.stringify(plan.character)}`);
   }
@@ -765,11 +770,19 @@ export async function applyPlan(
       `State payload: plan configRevision ${JSON.stringify(plan.configRevision)} must be a non-empty string`
     );
   }
+  // The plan names the phase its gates were taken from. A plan re-minted
+  // after a phase boundary describes a different rule set than the scan
+  // that precedes it, so the decision log must not stamp the scan's phase.
+  // Documents written before the field existed fall back to the caller's.
+  const planPhase = plan.phase ?? phase;
+  if (!(marketPhases as readonly string[]).includes(planPhase)) {
+    throw new Error(`State payload: plan phase ${JSON.stringify(plan.phase)} is not a market phase`);
+  }
   const existing = await tx.plan.findUnique({
-    where: { marketId_revision: { marketId, revision: plan.revision } },
+    where: { marketId_revision: { marketId, revision } },
     select: { id: true }
   });
-  if (existing) return { created: false, revision: plan.revision };
+  if (existing) return { created: false, revision };
   // A delayed old plan must not supersede a newer one. Store it for the
   // history and mark it superseded immediately.
   const newer = await tx.plan.findFirst({
@@ -779,7 +792,7 @@ export async function applyPlan(
   const row = await tx.plan.create({
     data: {
       marketId,
-      revision: plan.revision,
+      revision,
       character: typeof plan.character === "string" ? plan.character : "",
       estateRevision,
       configRevision: plan.configRevision,
@@ -818,7 +831,7 @@ export async function applyPlan(
       planId: row.id,
       marketId,
       at,
-      phase,
+      phase: planPhase,
       itemId,
       kind: step.kind,
       reason: step.reason ?? null,
@@ -863,5 +876,5 @@ export async function applyPlan(
       data: { adoptedAt: new Date(at * 1000) }
     });
   }
-  return { created: true, revision: plan.revision };
+  return { created: true, revision };
 }

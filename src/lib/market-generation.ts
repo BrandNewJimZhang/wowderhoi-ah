@@ -83,7 +83,7 @@ export type GenerationInput = {
   phaseOverride: MarketPhase | null;
   freeSlots?: number;
   // The plan identity the core stamps on its output:
-  // realm|faction|genEpoch:estateRevision:ledgerRevision:character.
+  // realm|faction|genEpoch:estateRevision:ledgerRevision:phase:character.
   planRevision?: string;
 };
 

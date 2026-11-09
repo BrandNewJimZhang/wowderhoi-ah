@@ -11,7 +11,7 @@ describe("decision adoption", () => {
     // in _G in the game.
     lua.exec(`_G["WoWderhoiAH_ScanData"] = { server = "CN5 Realm 8 PvP", faction = "Alliance", scannedAt = 1794124697 }`);
     const revision = lua.text("WowTest.ns.planRevision()");
-    expect(revision).toMatch(/^CN5 Realm 8 PvP\|Alliance\|1794124697:\d+:\d+:Tester$/);
+    expect(revision).toMatch(/^CN5 Realm 8 PvP\|Alliance\|1794124697:\d+:\d+:[a-z]+:Tester$/);
     lua.exec(`SlashCmdList["WOWDERHOIAHADOPT"]("2589 buy")`);
     lua.exec(`WowTest.adoptEvent = WowTest.ns.Journal.last("adopt")`);
     expect(lua.text("WowTest.adoptEvent.id")).toBe(`${revision}:2589:buy`);
@@ -28,6 +28,19 @@ describe("decision adoption", () => {
     const alt = lua.text("WowTest.ns.planRevision()");
     expect(alt).not.toBe(tester);
     expect(alt).toMatch(/:Alt$/);
+  });
+
+  it("names the phase the plan was sized under", () => {
+    const lua = loadAddon();
+    lua.exec(`_G["WoWderhoiAH_ScanData"] = { server = "A", faction = "Alliance", scannedAt = 100 }`);
+    const auto = lua.text("WowTest.ns.planRevision()");
+    lua.exec("WowTest.ns.settings.phaseOverride = 'wave'");
+    const wave = lua.text("WowTest.ns.planRevision()");
+    // The phase gates the core's thresholds and priors, so the same scan and
+    // state can size two different plans. Without it in the identity the
+    // second prediction would inherit the first one's name.
+    expect(wave).not.toBe(auto);
+    expect(wave.split(":")[3]).toBe("wave");
   });
 
   it("accepts a full id", () => {
@@ -65,6 +78,15 @@ describe("decision adoption", () => {
 });
 
 describe("plan publication", () => {
+  it("publishes the phase the plan was sized under", () => {
+    const lua = loadAddon();
+    lua.exec(`WowTest.ns.publishPlan({
+      revision = "A|Alliance|100:2:3:wave:Tester",
+      steps = {}, resources = {}, unplanned = {}
+    }, "wave")`);
+    expect(lua.text("WoWderhoiAH_Plan.phase")).toBe("wave");
+  });
+
   it("exports the plan identity and steps without the market rows", () => {
     const lua = loadAddon();
     lua.exec(`WowTest.ns.publishPlan({

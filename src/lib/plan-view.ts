@@ -1,6 +1,7 @@
 import { SCAN_PIPELINE_VERSION } from "@/lib/market-rules";
 
-// A plan revision begins realm|faction|genEpoch:estateRevision:ledgerRevision:character.
+// A plan revision begins
+// realm|faction|genEpoch:estateRevision:ledgerRevision:phase:character.
 // The epoch is the scan the plan was minted for; a page must not present a
 // plan from an older book as the current next step.
 export function planEpoch(revision: string): number | null {

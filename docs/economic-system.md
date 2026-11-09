@@ -256,7 +256,7 @@ Ledger 是 Journal 的纯投影：
   归因时写入。
 - `Decision`：由 `Plan` 写入一次（不是页面 GET），记录稳定 `decisionId`
   （`planRevision:item:kind`；`planRevision` 本身是
-  `realm|faction|genEpoch:estateRevision:ledgerRevision:character`，与插件 `/wahadopt`
+  `realm|faction|genEpoch:estateRevision:ledgerRevision:phase:character`，与插件 `/wahadopt`
   同一公式；计划修订只存在这个身份字符串里，不另设重复列）、
   阶段、行动类型、物品、理由与时间，以及预期净利、成交概率、
   成交依据、分配数量与成交价。预测字段只插入不更新；旧计划只标
@@ -268,8 +268,9 @@ Ledger 是 Journal 的纯投影：
   `(marketId, revision)` 唯一，并记录铸造它的角色。`estateRevision` 属于该
   角色的 estate 分区，换角色后终端仍按同一角色的修订判断计划是否过期。
   `steps` 是资源可行的动作序列，`resources` 记录执行前后的现金与空位，
-  `unplanned` 记录未纳入的动作及原因。游戏内是计划的铸造者；终端只存副本、
-  历史与学习。
+  `unplanned` 记录未纳入的动作及原因。计划还带铸造时的 `phase`：闸门和先验
+  随阶段变化，扫描之后越过边界的计划必须按自己的阶段记录决策，而不是按扫描
+  当时的阶段。游戏内是计划的铸造者；终端只存副本、历史与学习。
 - `Recipe`：`data/recipes.forever.json` 的投影，导入时整体替换。
 - 需求日历：唯一来源是 `src/data/events.json`，由 `gen:lua-rules` 编译成
   `WAH.EVENTS` 参与排序，首页“版本日历”也读同一份文件。`startsAt = 0` 的条目是模板，

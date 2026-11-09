@@ -1716,29 +1716,34 @@ SLASH_WOWDERHOIAHCAPTURE1 = "/wahcapture"
 SlashCmdList["WOWDERHOIAHCAPTURE"] = setCapture
 
 -- The plan identity:
--- realm|faction|genEpoch:estateRevision:ledgerRevision:character.
+-- realm|faction|genEpoch:estateRevision:ledgerRevision:phase:character.
 -- Epoch seconds, not an ISO date: this side already has the scan timestamp
 -- and Lua cannot format ISO without a second implementation. A new estate or
 -- journal revision produces a new plan identity, so a prediction is never
--- silently rewritten under the old name. The character is part of the
--- identity because both revisions are per-character counters: a fresh alt
--- can hold the same values as the main, and without the name the terminal
--- would treat its plan as a duplicate of the other character's.
+-- silently rewritten under the old name. The phase is part of it because it
+-- selects the gates and priors the plan was sized under: the same scan and
+-- state can produce two different plans either side of a phase boundary.
+-- The character is part of the identity because both revisions are
+-- per-character counters: a fresh alt can hold the same values as the main,
+-- and without the name the terminal would treat its plan as a duplicate of
+-- the other character's.
 function WAH.planRevision()
   local scan = WoWderhoiAH_ScanData
   if type(scan) ~= "table" or type(scan.scannedAt) ~= "number" then return nil end
   local estate = WAH.Estate and WAH.Estate.revision() or 0
   local ledger = WAH.Journal and WAH.Journal.revision() or 0
   local character = (UnitName and UnitName("player")) or "Unknown"
-  return string.format("%s|%s|%d:%d:%d:%s",
+  return string.format("%s|%s|%d:%d:%d:%s:%s",
     tostring(scan.server or ""), tostring(scan.faction or ""),
-    scan.scannedAt, estate, ledger, tostring(character))
+    scan.scannedAt, estate, ledger, tostring(WAH.currentPhase()), tostring(character))
 end
 
 -- Publish the plan the radar just computed. The game is the plan authority;
 -- the terminal stores this copy and its decisions. Only the plan-bearing
--- fields travel -- rows and books stay local.
-function WAH.publishPlan(plan)
+-- fields travel -- rows and books stay local. `phase` is the one the core
+-- evaluated under; it is already in the identity, and naming it explicitly
+-- keeps the decision log from stamping whatever phase the latest scan saw.
+function WAH.publishPlan(plan, phase)
   if not plan or type(plan.revision) ~= "string" or plan.revision == "" then return false end
   -- A radar refresh that produced the same identity and steps does not need
   -- another SavedVariables write.
@@ -1746,6 +1751,7 @@ function WAH.publishPlan(plan)
   if type(existing) == "table" and existing.revision == plan.revision then return false end
   WoWderhoiAH_Plan = {
     revision = plan.revision,
+    phase = phase or (WAH.currentPhase and WAH.currentPhase()) or "steady",
     -- The estate revision is this character's; naming it lets the terminal
     -- match the plan after a character switch instead of comparing with
     -- whoever scanned last.

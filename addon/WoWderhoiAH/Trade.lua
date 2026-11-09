@@ -254,7 +254,9 @@ local function refreshRadar()
   lastEvaluation = WAH.Core.evaluate(WAH.coreInput())
   -- The game is the plan authority. Publishing here means the desktop sees
   -- the same steps, resources and identity the player is looking at.
-  if lastEvaluation.plan and WAH.publishPlan then WAH.publishPlan(lastEvaluation.plan) end
+  if lastEvaluation.plan and WAH.publishPlan then
+    WAH.publishPlan(lastEvaluation.plan, lastEvaluation.phase)
+  end
   local considered = #lastEvaluation.rows
   -- The core already separated the funded layer: the radar promises an
   -- executable trade, so it renders that list rather than re-filtering the

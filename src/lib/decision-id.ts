@@ -1,6 +1,6 @@
 // One identity formula for a recommendation, shared by the terminal and
 // the addon's /wahadopt. A plan-bearing decision names its plan revision
-// (realm|faction|genEpoch:estateRevision:ledgerRevision:character); the older
+// (realm|faction|genEpoch:estateRevision:ledgerRevision:phase:character); the older
 // scannedAt-only form remains the formula for rows written before plans.
 type DecisionIdentity = {
   // A plan revision already begins with realm|faction, so the identity that

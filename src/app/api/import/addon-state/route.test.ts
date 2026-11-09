@@ -674,6 +674,50 @@ describe("POST /api/import/addon-state", () => {
     expect(decision?.adoptedAt?.getTime()).toBe(NOW * 1000);
   });
 
+  it("records the phase the plan was sized under, not the scan's", async () => {
+    const revision = `A|Alliance|${NOW}:1:1:wave:Tester`;
+    const response = await post("state", {
+      server: "A", faction: "Alliance",
+      plan: {
+        revision,
+        phase: "wave",
+        character: "Tester",
+        estateRevision: 1,
+        configRevision: "test",
+        observedAt: NOW,
+        steps: [{ kind: "buy", itemId: 2589, qty: 1, expectedNet: 10 }],
+        resources: {},
+        unplanned: []
+      }
+    });
+    expect(response.status).toBe(200);
+    const decision = await prisma.decision.findFirst({ where: { decisionId: `${revision}:2589:buy` } });
+    // The terminal used to stamp the latest scan's phase; a plan re-minted
+    // after a boundary would then describe a different gate set than the
+    // one it was actually sized under.
+    expect(decision?.phase).toBe("wave");
+  });
+
+  it("rejects a plan whose phase is not a market phase", async () => {
+    const response = await post("state", {
+      server: "A", faction: "Alliance",
+      plan: {
+        revision: `A|Alliance|${NOW}:1:1:sideways:Tester`,
+        phase: "sideways",
+        character: "Tester",
+        estateRevision: 1,
+        configRevision: "test",
+        observedAt: NOW,
+        steps: [{ kind: "buy", itemId: 2589, qty: 1 }],
+        resources: {},
+        unplanned: []
+      }
+    });
+    expect(response.status).toBe(400);
+    expect((await response.json() as { error: string }).error).toMatch(/phase/);
+  });
+
+
   it("rejects a plan step that is neither a buy nor a sell", async () => {
     const response = await post("state", {
       server: "A", faction: "Alliance",

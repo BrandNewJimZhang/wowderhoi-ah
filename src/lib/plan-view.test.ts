@@ -7,6 +7,7 @@ describe("plan view", () => {
     // The character suffix keeps two characters' plans apart without
     // moving the epoch the page matches on.
     expect(planEpoch("A|Alliance|1721700000:2:7:Tester")).toBe(1721700000);
+    expect(planEpoch("A|Alliance|1721700000:2:7:wave:Tester")).toBe(1721700000);
     expect(planEpoch("not-a-plan")).toBeNull();
   });
 
