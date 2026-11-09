@@ -16,5 +16,6 @@ if (!savedVarsPath) {
 
 startSavedvarsWatcher({
   path: savedVarsPath,
-  importUrl: process.env.AQT_IMPORT_URL ?? "http://localhost:3000/api/import/addon-scan"
+  importUrl: process.env.AQT_IMPORT_URL ?? "http://localhost:3000/api/import/addon-scan",
+  ...(process.env.AQT_STATE_URL ? { stateUrl: process.env.AQT_STATE_URL } : {})
 });

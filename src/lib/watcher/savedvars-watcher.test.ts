@@ -24,8 +24,13 @@ WoWderhoiAH_Journal = {
 `;
 }
 
-function importer(content: () => string, post: () => Promise<{ status: number; body: ImportResponse }>) {
+function importer(
+  content: () => string,
+  post: () => Promise<{ status: number; body: ImportResponse }>,
+  postState: () => Promise<{ status: number; body: ImportResponse }> = async () => ({ status: 200, body: { changed: true } })
+) {
   const bodies: unknown[] = [];
+  const stateBodies: unknown[] = [];
   const logs: string[] = [];
   const instance = createSavedvarsImporter({
     readFile: content,
@@ -33,41 +38,57 @@ function importer(content: () => string, post: () => Promise<{ status: number; b
       bodies.push(body);
       return await post();
     },
+    postState: async (body) => {
+      stateBodies.push(body);
+      return await postState();
+    },
     log: (message) => logs.push(message),
     warn: (message) => logs.push(message)
   });
-  return { instance, bodies, logs };
+  return { instance, bodies, stateBodies, logs };
 }
 
 describe("createSavedvarsImporter", () => {
-  it("posts a new scan once and then idles until something moves", async () => {
-    const { instance, bodies } = importer(
+  it("posts a new scan and its state once, then idles until something moves", async () => {
+    const { instance, bodies, stateBodies } = importer(
       () => savedVariables({ events: 1 }),
       async () => ({ status: 200, body: { imported: 1, positions: 0, trades: 0 } })
     );
     expect(await instance.tick()).toBe("imported");
     expect(bodies).toHaveLength(1);
+    expect(stateBodies).toHaveLength(1);
     expect(await instance.tick()).toBe("idle");
     expect(bodies).toHaveLength(1);
+    expect(stateBodies).toHaveLength(1);
   });
 
-  it("imports again when only the journal moved", async () => {
+  it("posts only state when the journal moves between scans", async () => {
     let events = 1;
-    let calls = 0;
-    const { instance, bodies } = importer(
+    const { instance, bodies, stateBodies } = importer(
       () => savedVariables({ events }),
-      async () => {
-        calls += 1;
-        return calls === 1
-          ? { status: 200, body: { imported: 1 } }
-          : { status: 200, body: { journalUpdated: true, positions: 0, trades: 0 } };
-      }
+      async () => ({ status: 200, body: { imported: 1 } })
     );
     expect(await instance.tick()).toBe("imported");
     events = 2;
-    expect(await instance.tick()).toBe("journal");
-    expect(bodies).toHaveLength(2);
+    expect(await instance.tick()).toBe("state");
+    expect(bodies).toHaveLength(1);
+    expect(stateBodies).toHaveLength(2);
     expect(await instance.tick()).toBe("idle");
+  });
+
+  it("posts state when the estate revision moves without a scan", async () => {
+    let revision = 1;
+    const { instance, stateBodies } = importer(
+      () => `${savedVariables({ events: 1 })}
+WoWderhoiAH_Estate = { ["revision"] = ${revision}, ["observedAt"] = 10, ["scopes"] = {} }
+WoWderhoiAH_Plan = { ["revision"] = "A|Alliance|1:1:1" }
+`,
+      async () => ({ status: 200, body: { imported: 1 } })
+    );
+    expect(await instance.tick()).toBe("imported");
+    revision = 2;
+    expect(await instance.tick()).toBe("state");
+    expect(stateBodies).toHaveLength(2);
   });
 
   it("does not advance the watermark when the POST fails", async () => {
