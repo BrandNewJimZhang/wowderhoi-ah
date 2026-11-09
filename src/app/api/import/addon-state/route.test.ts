@@ -856,4 +856,26 @@ describe("POST /api/import/addon-state", () => {
     const current = rows.find((row) => row.supersededAt === null);
     expect(current?.revision).toBe(second);
   });
+
+  it("does not let a delayed same-second plan supersede newer state", async () => {
+    const newer = `A|Alliance|${NOW}:2:2:steady:Tester`;
+    const older = `A|Alliance|${NOW}:1:1:steady:Tester`;
+    const base = {
+      character: "Tester",
+      configRevision: "test",
+      observedAt: NOW,
+      steps: [{ kind: "buy", itemId: 2589, qty: 1, expectedNet: 10 }],
+      resources: {},
+      unplanned: []
+    };
+    await post("state", { server: "A", faction: "Alliance", plan: { ...base, revision: newer, estateRevision: 2 } });
+    // The same clock second cannot order the two documents; the state they
+    // were sized from can. The older estate's plan is history, not current.
+    await post("state", { server: "A", faction: "Alliance", plan: { ...base, revision: older, estateRevision: 1 } });
+    const market = await prisma.market.findUnique({ where: { realm_faction: { realm: "A", faction: "Alliance" } } });
+    const rows = await prisma.plan.findMany({ where: { marketId: market!.id } });
+    const current = rows.find((row) => row.supersededAt === null);
+    expect(current?.revision).toBe(newer);
+    expect(rows.find((row) => row.revision === older)?.supersededAt).not.toBeNull();
+  });
 });

@@ -18,6 +18,7 @@ import {
 import { linkTrades } from "@/lib/decision-linking";
 import { decisionIdFor } from "@/lib/decision-id";
 import { currentCharacterState } from "@/lib/market-scope";
+import { comparePlanState } from "@/lib/plan-view";
 import { marketPhases } from "@/lib/market-rules";
 
 type EstateItemInput = { qty: number };
@@ -784,11 +785,17 @@ export async function applyPlan(
   });
   if (existing) return { created: false, revision };
   // A delayed old plan must not supersede a newer one. Store it for the
-  // history and mark it superseded immediately.
-  const newer = await tx.plan.findFirst({
-    where: { marketId, createdAt: { gt: at } },
-    select: { id: true }
+  // history and mark it superseded immediately. The clock alone cannot
+  // order two plans minted in the same second, so the state each identity
+  // names breaks the tie: one sized from an older scan, estate or ledger
+  // cannot have come later.
+  const newer = await tx.plan.findMany({
+    where: { marketId, createdAt: { gte: at } },
+    select: { revision: true, createdAt: true }
   });
+  const superseded = newer.some((row) =>
+    row.createdAt.getTime() > at.getTime() || comparePlanState(row.revision, revision) > 0
+  );
   const row = await tx.plan.create({
     data: {
       marketId,
@@ -800,10 +807,10 @@ export async function applyPlan(
       resources: (plan.resources ?? {}) as unknown as Prisma.InputJsonValue,
       unplanned: (plan.unplanned ?? []) as unknown as Prisma.InputJsonValue,
       createdAt: at,
-      supersededAt: newer ? at : null
+      supersededAt: superseded ? at : null
     }
   });
-  if (!newer) {
+  if (!superseded) {
     await tx.plan.updateMany({
       where: { marketId, id: { not: row.id }, supersededAt: null },
       data: { supersededAt: at }

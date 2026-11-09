@@ -5,8 +5,32 @@ import { SCAN_PIPELINE_VERSION } from "@/lib/market-rules";
 // The epoch is the scan the plan was minted for; a page must not present a
 // plan from an older book as the current next step.
 export function planEpoch(revision: string): number | null {
-  const epoch = Number((revision.split("|")[2] ?? "").split(":")[0]);
-  return Number.isFinite(epoch) && epoch > 0 ? epoch : null;
+  const epoch = planStateOf(revision)?.epoch ?? null;
+  return epoch !== null && epoch > 0 ? epoch : null;
+}
+
+// The state a plan was sized from. Two plans minted in one second cannot be
+// ordered by their clock, but they can by the scan, estate and ledger they
+// name: the one that saw less cannot have superseded the other. Parsing
+// tolerates the older forms without phase and character.
+function planStateOf(revision: string): { epoch: number; estate: number; ledger: number } | null {
+  const parts = (revision.split("|")[2] ?? "").split(":");
+  if (parts.length < 3) return null;
+  const [epoch, estate, ledger] = parts.slice(0, 3).map(Number);
+  if (![epoch, estate, ledger].every((value) => Number.isFinite(value))) return null;
+  return { epoch, estate, ledger };
+}
+
+// Positive when `left` was sized from later state than `right`, zero when
+// the two name the same state or either is unparseable.
+export function comparePlanState(left: string, right: string): number {
+  const a = planStateOf(left);
+  const b = planStateOf(right);
+  if (!a || !b) return 0;
+  for (const key of ["epoch", "estate", "ledger"] as const) {
+    if (a[key] !== b[key]) return a[key] - b[key];
+  }
+  return 0;
 }
 
 // The estate revision a plan must be compared against belongs to the
