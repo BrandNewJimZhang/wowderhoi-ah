@@ -369,8 +369,9 @@ model Trade {
 // candidate snapshot nobody reads is storage, not a decision log.
 model Decision {
   id             String   @id @default(cuid())
-  // Stable identity shared with the addon: realm|faction|scannedAt:item:kind.
-  // Null on rows written before the identity existed.
+  // Stable identity shared with the addon: planRevision:item:kind, where
+  // planRevision begins realm|faction|genEpoch:estate:ledger. Null on rows
+  // written before the identity existed.
   decisionId     String?  @unique @map("decision_id")
   planId         String?  @map("plan_id")
   // The plan revision the prediction belongs to. A decision is immutable:

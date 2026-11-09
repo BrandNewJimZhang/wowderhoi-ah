@@ -316,7 +316,7 @@ export default async function ReviewPage() {
         <PanelHeader title="预测校准" action={<span className="font-mono text-xs text-terminal-muted">预测成交率 vs 预测 {fillRules.horizonHours} 小时内确认拍卖成交</span>} />
         <div className="space-y-2 p-3 font-mono text-xs">
           {calibration.every((bucket) => bucket.decisions === 0) && (
-            <div className="text-terminal-muted">还没有带成交率预测的买入决策；先在新版本下导入一次扫描。</div>
+            <div className="text-terminal-muted">还没有带成交率预测的买卖决策；游戏内打开雷达推送计划后才会写入决策日志。</div>
           )}
           {calibration.filter((bucket) => bucket.decisions > 0).map((bucket) => (
             <div key={bucket.label} className="flex items-center justify-between gap-2">

@@ -28,9 +28,11 @@ events -> state -> decision -> action -> learning
   mailbox-confirmed sales, expiries and finished crafts. The journal also
   accepts vendor, disenchant, prospect and mill rows; those producers are
   not wired yet, so no UI assumes they will appear.
-- **State**: positions from a replayable journal, deployable capital,
-  real bag space, the server opening anchor, and beliefs about fill
-  probability and competition.
+- **State**: a client-pushed estate (bag, bank, mailbox, own postings, cash
+  and free slots, each location marked observed or unobserved), reconciled
+  against append-only journal facts that carry the FIFO cost and realized
+  history. The game mints a versioned plan from that state; the terminal
+  stores the copy, not a second authority.
 - **Decision**: one Lua decision core, `Core.lua`, runs in game and in the
   terminal through fengari. It prices the sell front, the ladder cost,
   executable quantity, net profit and fill probability under the current
@@ -297,7 +299,7 @@ an issue; see [CONTRIBUTING.md](CONTRIBUTING.md). Security notes in
 ```
 
 - **事件**：全量拍卖行扫描（盘口、卖家、到期、竞价需求，**已剔除自有挂单与自有买入**）+ 玩家自己的买/挂/撤/成交/流拍 + 制造（材料 FIFO 成本）+ 跨角色转移。卖店用 `/wahcost` 手动补记（客户端没有逐笔事件）；分解/勘探/研磨仍无干净事件，界面不假设它们会出现。
-- **状态**：可从 Journal 重放的头寸、可动用资金、在途金币、产能、成交概率与竞争信念。
+- **状态**：插件实时推送的 estate（背包、银行、邮箱、自有挂单、现金与空位，每个位置标 `observed` / `unobserved`），与追加式 Journal 事实对账：数量来自 estate，FIFO 成本与已实现历史来自 Journal。计划由游戏内按这份状态铸造并发布版本，终端只存副本。
 - **决策**：唯一一份 `Core.lua`，游戏内与桌面通过 fengari 运行同一份代码；按当前阶段门槛计算卖价前沿、阶梯成本、可执行数量、净利、成交率、卖家集中度与时间成本，并在单一预算下分配，卖出侧搜索价格 × 时长。
 - **行动**：游戏内驾驶舱（“下一步”条件买卖计划）+ 卖出页；桌面对应同一份行动清单。
 - **学习**：只有自己的成交是干净标签；公共消失是区间先验，且“零消失”按 Gamma–Poisson 收缩压低成交率——它是有信息量的观测，不是缺失。复盘页展示决策匹配、预测分桶校准、alpha 衰减与下一次受控实验。

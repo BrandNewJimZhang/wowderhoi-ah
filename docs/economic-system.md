@@ -51,7 +51,7 @@
 
 - 元数据：`dataVersion`、`observationVersion`（观测洁净度：2 表示推断消失量已剔除
   自有挂单与自有买入）、`scannedAt`、`server`、`faction`、`character`、`cash`、
-  `bagSlots`（扫描时的背包空位；终端读不到背包，缺这个字段就只能用规划默认值）、`total`。
+  `bagSlots`（扫描时的背包空位；终端的权威是 Estate 的实时 `freeSlots`，这个字段只作为尚未推送 estate 时的播种值）、`total`。
 - `items[itemId]`：名称、品质、物品类别、市场类型（`marketType`：`commodity` | `item`，
   扫描时按当时的物品记录判定一次，是两端唯一的分类来源）、NPC 价、最低价、建议卖价
   （深度感知）、P5、P10、在售量、挂单数、卖家数、卖家是否可见、`ownerVisible`、
