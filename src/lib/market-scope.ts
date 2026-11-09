@@ -4,9 +4,10 @@
 // the market of the newest generation unless AQT_MARKET=realm|faction pins it.
 //
 // Cash, character and free slots are not Market columns: they belong to the
-// character-scoped Estate. The scope derives them from the newest
-// generation's character and that character's estate so a page still reads
-// one object, but the private state has one authority.
+// character-scoped Estate. The scope derives them from the most recently
+// observed character estate (falling back to the newest scan's character),
+// so a page still reads one object while the private state keeps one
+// authority.
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
@@ -19,11 +20,11 @@ export type MarketScope = {
   id: string;
   realm: string;
   faction: string;
-  // Latest cash for the scanning character; null when that character has no
+  // Latest cash for the current character; null when that character has no
   // observed estate yet. The core keeps its planning fallback on null.
   cash: number | null;
-  // Character whose scan produced the newest generation; "" when the
-  // generation carried none.
+  // Character whose estate was observed most recently; falls back to the
+  // newest scan's character, and is "" when neither names one.
   character: string;
   // Free bag slots from the same estate; null means unobserved.
   bagSlots?: number | null;
@@ -60,18 +61,32 @@ async function scopeOfMarket(
     firstScanAt: Date | null; dataVersion: number;
   }
 ): Promise<MarketScope> {
-  const generation = await client.marketGeneration.findFirst({
-    where: { marketId: market.id },
-    orderBy: { scannedAt: "desc" },
-    select: { character: true }
-  });
-  const character = generation?.character ?? "";
-  const estate = character
+  // The header names the character whose state the player is looking at.
+  // That is the latest estate observation, not the latest scan: switching
+  // characters pushes a new estate while the market observation still
+  // belongs to the previous scan, and the purse on screen must follow the
+  // character, not the book.
+  const [generation, latestEstate] = await Promise.all([
+    client.marketGeneration.findFirst({
+      where: { marketId: market.id },
+      orderBy: { scannedAt: "desc" },
+      select: { character: true }
+    }),
+    client.estate.findFirst({
+      where: { marketId: market.id, scope: { startsWith: "character:" } },
+      orderBy: { observedAt: "desc" },
+      select: { scope: true, cash: true, freeSlots: true, revision: true }
+    })
+  ]);
+  const character = latestEstate
+    ? latestEstate.scope.slice("character:".length)
+    : (generation?.character ?? "");
+  const estate = latestEstate ?? (character
     ? await client.estate.findUnique({
         where: { marketId_scope: { marketId: market.id, scope: `character:${character}` } },
         select: { cash: true, freeSlots: true, revision: true }
       })
-    : null;
+    : null);
   return {
     id: market.id,
     realm: market.realm,
