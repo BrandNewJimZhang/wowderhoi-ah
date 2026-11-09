@@ -36,6 +36,7 @@ model Market {
   decisions      Decision[]
   estates        Estate[]
   journalFacts   JournalFact[]
+  journalBooks   JournalBook[]
   checkpoints    LedgerCheckpoint[]
   holdings       Holding[]
   plans          Plan[]
@@ -249,6 +250,19 @@ model JournalFact {
   market     Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
 
   @@unique([marketId, character, epoch, seq])
+}
+
+// One row per local book. A book can be empty right after SavedVariables is
+// cleared, so the facts alone cannot say which epoch is current; this marker
+// makes the newest book authoritative even before its first event.
+model JournalBook {
+  marketId  String   @map("market_id")
+  character String
+  epoch     Int
+  createdAt DateTime @default(now()) @map("created_at")
+  market    Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+
+  @@id([marketId, character, epoch])
 }
 
 // The prefix of a local journal folded into a replay state. Positions,

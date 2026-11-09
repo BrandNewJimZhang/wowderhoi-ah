@@ -310,6 +310,18 @@ describe("POST /api/import/addon-state", () => {
       where: { marketId: market!.id, character: "Reborn", sourceFactId: { contains: "epoch:200" } }
     });
     expect(newest).not.toBeNull();
+
+    // A new book can be empty right after the reset. Its existence must
+    // still switch the live ledger, or the terminal keeps showing the old
+    // book's positions until the first action.
+    const cleared = await post("state", {
+      server: "A", faction: "Alliance",
+      journal: book("Reborn", [], 1, 300)
+    });
+    expect(cleared.status).toBe(200);
+    expect(await prisma.holding.findFirst({
+      where: { marketId: market!.id, character: "Reborn", itemId: 9999 }
+    })).toBeNull();
   });
 
   it("labels a trade the ledger could not price", async () => {

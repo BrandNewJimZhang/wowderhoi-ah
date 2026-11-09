@@ -399,12 +399,17 @@ async function replayForCharacter(
 ): Promise<ReplayState> {
   // Only the newest book defines the live ledger. Clearing SavedVariables
   // starts a new epoch whose sequence begins at 1; the old epoch's facts
-  // stay as history but must not keep feeding positions.
-  const latest = await tx.journalFact.aggregate({
+  // stay as history but must not keep feeding positions. The marker answers
+  // this even for a book that has no events yet.
+  const bookRow = await tx.journalBook.findFirst({
+    where: { marketId, character },
+    orderBy: { epoch: "desc" },
+    select: { epoch: true }
+  });
+  const epoch = bookRow?.epoch ?? await tx.journalFact.aggregate({
     where: { marketId, character },
     _max: { epoch: true }
-  });
-  const epoch = latest._max.epoch ?? 0;
+  }).then((latest) => latest._max.epoch ?? 0);
   const checkpointRow = await tx.ledgerCheckpoint.findFirst({
     where: { marketId, character, epoch },
     orderBy: { throughSeq: "desc" }
@@ -445,8 +450,13 @@ async function charactersWithState(
   tx: Prisma.TransactionClient,
   marketId: string
 ): Promise<string[]> {
-  const [facts, holdings, estates] = await Promise.all([
+  const [facts, books, holdings, estates] = await Promise.all([
     tx.journalFact.findMany({
+      where: { marketId },
+      distinct: ["character"],
+      select: { character: true }
+    }),
+    tx.journalBook.findMany({
       where: { marketId },
       distinct: ["character"],
       select: { character: true }
@@ -463,6 +473,7 @@ async function charactersWithState(
   ]);
   const names = new Set<string>();
   for (const row of facts) if (row.character) names.add(row.character);
+  for (const row of books) if (row.character) names.add(row.character);
   for (const row of holdings) if (row.character) names.add(row.character);
   for (const row of estates) {
     const name = row.scope.slice("character:".length);
@@ -539,12 +550,25 @@ export async function applyJournal(
   let newFacts = 0;
   let newCorrections = 0;
   let newCheckpoints = 0;
+  let newBooks = 0;
   const characters: string[] = [];
   for (const book of books) {
     const character = book.key.split("|").pop() ?? "";
     if (!character) continue;
     const epoch = book.epoch;
     characters.push(character);
+    // The marker is the authority on which book is current, including an
+    // empty book created right after SavedVariables was cleared.
+    const knownBook = await tx.journalBook.findUnique({
+      where: { marketId_character_epoch: { marketId, character, epoch } },
+      select: { marketId: true }
+    });
+    if (!knownBook) newBooks += 1;
+    await tx.journalBook.upsert({
+      where: { marketId_character_epoch: { marketId, character, epoch } },
+      create: { marketId, character, epoch },
+      update: {}
+    });
     // An empty or older book must not rebuild holdings from less history
     // than the terminal already has. Out-of-order delivery still inserts
     // any facts it carries; it just does not drive the projection.
@@ -665,7 +689,7 @@ export async function applyJournal(
     trades,
     errors,
     characters,
-    changed: newFacts > 0 || newCorrections > 0 || newCheckpoints > 0 || trades > 0
+    changed: newFacts > 0 || newCorrections > 0 || newCheckpoints > 0 || newBooks > 0 || trades > 0
   };
 }
 

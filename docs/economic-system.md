@@ -124,7 +124,8 @@ transfer_out / transfer_in / adopt`。
 
 `epoch` 是分册创建时刻。清除 SavedVariables 或重装插件会让序号从 1 重新开始，
 `epoch` 让新分册的事实与旧分册分开；终端只用最新 `epoch` 的分册重放当前持仓，
-旧分册保留为历史与成交事实。
+旧分册保留为历史与成交事实。终端为每个 `(market, character, epoch)` 记一行
+`JournalBook`，因此重置后立即建立、还没有任何事件的空分册也能成为当前账本。
 
 当前插件自动写入买、挂、撤、成交（邮箱确认）、流拍、竞价与制造；
 `vendor` 通过 `/wahcost` 手动补记（客户端没有逐笔卖店事件，只有一条本地化汇总行）；
@@ -236,6 +237,8 @@ Ledger 是 Journal 的纯投影：
   `account` 分区，每个分区带 `revision`、`observedAt`、`cash`、`freeSlots` 和
   `coverage`。`EstateItem.location` 区分 `carried / bank / account_bank / mail /
   listed / keyring`；未打开过的位置在 `coverage` 里是 `unobserved`，不是 0。
+- `JournalBook`：每个 `(marketId, character, epoch)` 一行，记录本地分册存在。
+  当前账本由最大 `epoch` 的标记决定，空分册也算数。
 - `JournalFact`：追加式事实，按 `(marketId, character, epoch, seq)` 唯一。
   导入插入尚未存在的序号，并用同一序号的修正内容更新已存在的事实（不删除行）；
   同一分册的乱序重发是幂等的。`epoch` 是分册创建时刻，清除 SavedVariables 后
