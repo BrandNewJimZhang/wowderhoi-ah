@@ -307,7 +307,11 @@ Ledger 是 Journal 的纯投影：
 - 在售只在 `OWNED_AUCTIONS_UPDATED` 之后标 `observed`；
 - 银行或邮箱关闭后保留最后一次观测；之后的事件重建不会把不可读的容器当成空的，
   一次没有暴露账号银行页签的开银行也不会清掉上一次读到的账号银行；
-- 未观测位置不参与 `missingQty` 判定。
+- 未观测位置不参与 `missingQty` 判定；
+- 每个分区只保存自己负责的位置：`carried / bank / mail / keyring` 属于角色分区，
+  `account_bank / listed` 属于 `account` 分区。终端拒绝跨分区的条目、未知的
+  coverage 键或值，以及缺少 `observedAt` 或 `revision` 的文档——静默降级会把
+  发布端的错误藏进一个看似合理的状态里。
 
 `Reconciler.lua` 在插件侧为游戏内估值完成对账，因为只有插件同时拥有实时
 estate、账本和在售列表。终端导入 `Estate` 与 `JournalFact` 后用同一组规则重算
