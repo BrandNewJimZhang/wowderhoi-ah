@@ -52,9 +52,10 @@ export default async function ReviewPage() {
   // Experiments are priced from the newest scan's sell front; the ledger
   // itself is not, so the age labels the quote-derived sections only.
   const freshness = describeFreshness(bundle.latestScanAt, new Date());
-  // Calibration reads confirmed sales only. An inferred sale is a vanished
-  // listing booked at its ask; it may be a cancellation, so it is displayed
-  // but never treated as a clean label.
+  // Calibration reads confirmed sales only. An inferred row is legacy
+  // history: an older addon version booked a vanished listing at its ask,
+  // which may have been a cancellation. It stays visible but is never a
+  // clean label.
   const confirmedTrades = trades.filter((trade) => !trade.inferred);
   // Profit needs a booked cost. A confirmed sale whose units the ledger
   // could not price stays in the fill sample (a sale is a sale) but never
@@ -334,7 +335,7 @@ export default async function ReviewPage() {
         <PanelHeader title="校准纪律" />
         <div className="space-y-2 p-4 font-mono text-[11px] text-terminal-muted">
           <p>阈值只从自己的成交、撤单、流拍和实验里校准；公共挂单的消失是区间先验，不是成交量。</p>
-          <p>推断成交按挂单价与 5% 手续费记账，并在所有界面标注「推断」；它不是可以直接当作真实成交的标签。</p>
+          <p>旧版本按挂单价推断的成交仍保留并标注「推断」；它不是可以直接当作真实成交的标签，当前版本只从取消、过期与邮件事件记账。</p>
           <p>当策略的命中率下降时，先检查参照是否失效（价差变窄、供给增速上升、被压价），再调整参数。</p>
         </div>
       </Panel>

@@ -1,9 +1,9 @@
 // Realized P&L splits by evidence. A confirmed sale is a journal `sold`
-// event (or a collected fill); an inferred sale is a listing that vanished
-// without an expiry event and was booked at its posted price. Inferred rows
-// stay in the ledger and stay labelled, but they are guesses: counting them
-// as realized cash or as calibration labels overstates both the P&L and the
-// quality of the evidence.
+// event (or a collected fill). An inferred row is legacy history: an older
+// addon version booked a vanished listing at its posted price before cancel
+// and expiry events were captured. Those rows stay labelled and stay out of
+// realized cash and calibration: counting them as either would treat a
+// guess as both revenue and evidence.
 type TradeLike = {
   pnl: number;
   fee: number;
