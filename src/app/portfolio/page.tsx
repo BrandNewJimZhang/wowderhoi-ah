@@ -150,7 +150,7 @@ export default async function PortfolioPage() {
                   </tr>
                 ))}
                 {rows.length === 0 && (
-                  <tr><td colSpan={6} className="px-3 py-4 text-terminal-muted">还没有导入任何头寸。买入并确认后，下次扫描会带上 Journal。</td></tr>
+                  <tr><td colSpan={6} className="px-3 py-4 text-terminal-muted">还没有导入任何头寸。买入或拾取后，客户端状态会在一秒级防抖与 watcher 轮询内推送，不需要等下一次扫描。</td></tr>
                 )}
               </tbody>
             </table>
