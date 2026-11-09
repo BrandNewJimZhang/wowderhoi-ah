@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseSavedVariables } from "@/lib/addon-scan";
-import { bookForCharacter, checkpointOf, journalRevision, parseJournal, replayJournal, type JournalEvent } from "@/lib/journal";
+import { journalRevision, parseJournal, replayJournal, type JournalEvent } from "@/lib/journal";
 import { loadAddon } from "../../addon/test/wow-lua";
 
 const EVENTS: JournalEvent[] = [
@@ -260,34 +260,18 @@ describe("journalRevision", () => {
   });
 });
 
-describe("bookForCharacter", () => {
-  const books = [
-    {
-      key: "TestRealm|Alliance|Main",
-      events: [{ k: "buy", t: 1, itemId: 2589, qty: 4, cost: 400 }],
-      dropped: 0, nextSeq: 2, checkpoint: null
-    },
-    { key: "TestRealm|Alliance|Alt", events: [], dropped: 0, nextSeq: 1, checkpoint: null }
-  ];
-
-  it("returns the scanning character's own book", () => {
-    expect(bookForCharacter(books, "TestRealm|Alliance|Alt")?.key).toBe("TestRealm|Alliance|Alt");
-  });
-
-  it("never falls back to another character's book", () => {
-    // The market ledger pairs positions with the cash of the character that
-    // produced the scan. Replaying an alt's book next to this character's
-    // cash would report positions that character does not hold.
-    expect(bookForCharacter(books, "TestRealm|Alliance|New")).toBeNull();
-    expect(bookForCharacter(books, null)).toBeNull();
-  });
-});
-
 describe("journal checkpoint parity", () => {
   it("replays checkpoint plus suffix like the full history", () => {
     const full = replayJournal(EVENTS);
     const prefix = replayJournal(EVENTS.slice(0, 4));
-    const checkpoint = { ...checkpointOf(prefix), throughSeq: 4 };
+    const checkpoint = {
+      throughSeq: 4,
+      lots: prefix.lots,
+      openPosts: prefix.openPosts,
+      trades: prefix.trades,
+      capital: prefix.capital,
+      ...(prefix.cashAnchor === undefined ? {} : { cashAnchor: prefix.cashAnchor })
+    };
     const split = replayJournal(EVENTS.slice(4), checkpoint);
     expect(split.positions).toEqual(full.positions);
     expect(split.openPosts).toEqual(full.openPosts);

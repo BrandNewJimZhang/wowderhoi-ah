@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs";
 import { prisma } from "@/lib/prisma";
 import { parseSavedVariables, type AddonScan, type AddonScanItem } from "@/lib/addon-scan";
 import { arraysToSeries, parseAddonSeries, mergeSeries, mergeSeriesByItem, type AddonSeries, type SeriesPoint } from "@/lib/item-series";
-import { buildGenerationPlan, seriesRowsFrom } from "@/lib/market-generation";
+import { buildGenerationPlan, decisionRowsFrom, seriesRowsFrom } from "@/lib/market-generation";
 import { scanPlaceholderItem } from "@/lib/scan-import";
 import { SCAN_SOURCE } from "@/lib/item-catalog";
 import { writeGeneration, replaceSeries } from "@/lib/import-store";
@@ -433,14 +433,14 @@ async function main() {
         budgetCopper: resolveBudgetCopper(),
         phaseOverride: null
       });
+      const decisions = decisionRowsFrom(plan.core, {
+        realm: scan.server,
+        faction: scan.faction,
+        scannedAt: scan.scannedAt
+      }).map((row) => ({ ...row, adoptedAt: null }));
       await prisma.$transaction(async (tx) => {
         if (placeholderRows.length > 0) await tx.item.createMany({ data: placeholderRows });
-        await writeGeneration(
-          tx,
-          market.id,
-          plan,
-          plan.decisions.map((row) => ({ ...row, adoptedAt: null }))
-        );
+        await writeGeneration(tx, market.id, plan, decisions);
       }, { timeout: 120_000 });
       generations += 1;
       console.log(

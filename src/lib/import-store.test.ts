@@ -18,7 +18,7 @@ const ADOPTED_AT = new Date("2026-11-08T10:05:00Z");
 let prisma: typeof import("@/lib/prisma").prisma;
 let writeGeneration: typeof import("@/lib/import-store").writeGeneration;
 
-function plan(decisionId: string): GenerationPlan {
+function plan(): GenerationPlan {
   return {
     scannedAt: SCANNED_AT,
     phase: "settle",
@@ -37,19 +37,22 @@ function plan(decisionId: string): GenerationPlan {
     quotes: [],
     signals: [],
     series: [],
-    decisions: [{
-      decisionId,
-      itemId: 1,
-      kind: "buy",
-      reason: "test",
-      expectedNet: 100,
-      fillProb: 0.5,
-      fillBasis: "prior",
-      allocQty: 1,
-      allocUnitPrice: 100
-    }],
     seriesPointCount: 0
   };
+}
+
+function decisionRows(decisionId: string) {
+  return [{
+    decisionId,
+    itemId: 1,
+    kind: "buy",
+    reason: "test",
+    expectedNet: 100,
+    fillProb: 0.5,
+    fillBasis: "prior",
+    allocQty: 1,
+    allocUnitPrice: 100
+  }];
 }
 
 beforeAll(async () => {
@@ -110,7 +113,7 @@ afterAll(async () => {
 describe("writeGeneration", () => {
   it("writes a generation and its decisions", async () => {
     await prisma.$transaction((tx) =>
-      writeGeneration(tx, "m1", plan("R|A|1:1:buy"), plan("R|A|1:1:buy").decisions.map((row) => ({ ...row, adoptedAt: null })))
+      writeGeneration(tx, "m1", plan(), decisionRows("R|A|1:1:buy").map((row) => ({ ...row, adoptedAt: null })))
     );
     const decisions = await prisma.decision.findMany({ where: { marketId: "m1" } });
     expect(decisions).toHaveLength(1);
@@ -127,9 +130,9 @@ describe("writeGeneration", () => {
       ADOPTED_AT.getTime(),
       new Date("2026-11-06T10:00:00Z").getTime()
     );
-    const replay = plan("R|A|2:1:buy");
+    const replay = plan();
     await expect(prisma.$transaction((tx) =>
-      writeGeneration(tx, "m1", replay, replay.decisions.map((row) => ({ ...row, adoptedAt: null })))
+      writeGeneration(tx, "m1", replay, decisionRows("R|A|2:1:buy").map((row) => ({ ...row, adoptedAt: null })))
     )).resolves.toEqual(expect.any(String));
 
     const decisions = await prisma.decision.findMany({ where: { decisionId: "R|A|2:1:buy" } });

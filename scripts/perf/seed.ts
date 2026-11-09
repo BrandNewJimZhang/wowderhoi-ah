@@ -8,7 +8,7 @@ import { PrismaClient } from "@prisma/client";
 import { DEFAULT_BUDGET_COPPER, SCAN_INTERVAL_MINUTES } from "@/lib/market-rules";
 import { generateMarket, syntheticMarketType, syntheticSellers, syntheticTiers } from "./fixtures";
 import { qualityName } from "@/lib/quality";
-import { buildGenerationPlan } from "@/lib/market-generation";
+import { buildGenerationPlan, decisionRowsFrom } from "@/lib/market-generation";
 import { writeGeneration } from "@/lib/import-store";
 import type { AddonScan, AddonScanItem } from "@/lib/addon-scan";
 import type { SeriesPoint } from "@/lib/item-series";
@@ -170,8 +170,13 @@ async function main() {
     budgetCopper: DEFAULT_BUDGET_COPPER,
     phaseOverride: null
   });
+  const decisions = decisionRowsFrom(plan.core, {
+    realm: scan.server,
+    faction: scan.faction,
+    scannedAt: scan.scannedAt
+  }).map((row) => ({ ...row, adoptedAt: null }));
   await prisma.$transaction(async (tx) => {
-    await writeGeneration(tx, marketRow.id, plan, plan.decisions.map((row) => ({ ...row, adoptedAt: null })));
+    await writeGeneration(tx, marketRow.id, plan, decisions);
   }, { timeout: 120_000 });
 
   const counts = {

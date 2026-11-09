@@ -16,8 +16,9 @@ type CoreBuildOptions = {
   positions?: Record<number, CorePosition>;
   ownSales?: OwnSales;
   budgetCopper?: number;
-  // Scanned cash (GetMoney at the last scan). Distinct from the planning
-  // budget; the core falls back to cash only when no budget is supplied.
+  // Client cash (GetMoney, pushed by the estate). Distinct from the
+  // planning budget; the core falls back to cash only when no budget is
+  // supplied.
   cashCopper?: number;
   bagSlots?: number;
   freeSlots?: number;

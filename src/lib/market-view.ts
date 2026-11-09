@@ -4,11 +4,10 @@
 // reads cannot leave the page mixing two generations or two estate
 // revisions.
 import { prisma } from "@/lib/prisma";
-import type { Prisma } from "@prisma/client";
 import { decodeGeneration } from "@/lib/generation-record";
 import { decodeSignalRow } from "@/lib/signal-row";
 import { createMarketReader, type MarketBundle } from "@/lib/market-read";
-import { parseMarketPin, type MarketScope } from "@/lib/market-scope";
+import { resolveMarketScope } from "@/lib/market-scope";
 import { GENERATION_SELECT, type StoredHolding } from "@/lib/repositories";
 
 export type StoredPlan = {
@@ -41,55 +40,10 @@ export type MarketView = MarketBundle & {
   plan: StoredPlan | null;
 };
 
-type Tx = Prisma.TransactionClient;
-
-async function scopeFor(tx: Tx): Promise<MarketScope | null> {
-  const pin = parseMarketPin(process.env.AQT_MARKET);
-  let market = pin
-    ? await tx.market.findUnique({ where: { realm_faction: pin } })
-    : null;
-  if (pin && !market) {
-    throw new Error(`AQT_MARKET points at ${pin.realm}|${pin.faction}, but no such market has been imported`);
-  }
-  if (!market) {
-    const latest = await tx.marketGeneration.findFirst({
-      orderBy: { scannedAt: "desc" },
-      select: { marketId: true }
-    });
-    if (latest) market = await tx.market.findUnique({ where: { id: latest.marketId } });
-  }
-  if (!market) market = await tx.market.findFirst({ orderBy: { createdAt: "asc" } });
-  if (!market) return null;
-  const generation = await tx.marketGeneration.findFirst({
-    where: { marketId: market.id },
-    orderBy: { scannedAt: "desc" },
-    select: { character: true }
-  });
-  const character = generation?.character ?? "";
-  const estate = character
-    ? await tx.estate.findUnique({
-        where: { marketId_scope: { marketId: market.id, scope: `character:${character}` } },
-        select: { cash: true, freeSlots: true, revision: true }
-      })
-    : null;
-  return {
-    id: market.id,
-    realm: market.realm,
-    faction: market.faction,
-    cash: estate?.cash ?? null,
-    character,
-    bagSlots: estate?.freeSlots ?? null,
-    estateRevision: estate?.revision ?? 0,
-    openedAt: market.openedAt,
-    firstScanAt: market.firstScanAt,
-    dataVersion: market.dataVersion
-  };
-}
-
 export async function getMarketView(): Promise<MarketView> {
   return prisma.$transaction(async (tx) => {
     const reader = createMarketReader({
-      getMarketScope: () => scopeFor(tx),
+      getMarketScope: () => resolveMarketScope(tx),
       getLatestGeneration: async (scope) => {
         const row = await tx.marketGeneration.findFirst({
           where: scope ? { marketId: scope.id } : {},

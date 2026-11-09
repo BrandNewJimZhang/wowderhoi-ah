@@ -6,21 +6,21 @@
 import { DEFAULT_BUDGET_COPPER, marketPhases, type MarketPhase } from "@/lib/market-rules";
 
 // Planning budget for the shared decision core, position sizing and the
-// production LP. Separate from the cash reported by the last scan: the
-// addon derives its budget from GetMoney() at decision time, while the
-// terminal evaluates a hypothetical budget the user configures. The core
-// and the cockpit still bound the spend by the scanned cash, so this is an
-// upper cap, never a purse.
+// production LP. Separate from the cash in the client estate: the addon
+// derives its budget from GetMoney() at decision time, while the terminal
+// evaluates a hypothetical budget the user configures. The core and the
+// cockpit still bound the spend by the estate cash, so this is an upper
+// cap, never a purse.
 export function resolveBudgetCopper(): number {
   const value = Number(process.env.AQT_BUDGET_COPPER);
   return Number.isFinite(value) && value > 0 ? value : DEFAULT_BUDGET_COPPER;
 }
 
 // What a plan may actually spend: the configured cap, bounded by the purse
-// the last scan reported. The cockpit's "deployable" figure, the production
-// LP and the recipes page must quote one number, or they describe different
-// plans from the same scan. `null` means the balance was never reported; a
-// reported 0 is an empty purse and funds nothing.
+// the client estate reports. The cockpit's "deployable" figure, the
+// production LP and the recipes page must quote one number, or they
+// describe different plans from the same state. `null` means the balance
+// was never reported; a reported 0 is an empty purse and funds nothing.
 export function resolveDeployableCopper(cashCopper: number | null): number {
   const planned = resolveBudgetCopper();
   return cashCopper === null ? planned : Math.min(planned, cashCopper);

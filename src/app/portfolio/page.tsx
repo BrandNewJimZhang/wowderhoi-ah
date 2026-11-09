@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Wallet } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getMarketView } from "@/lib/market-view";
+import { summarizeHoldings } from "@/lib/holdings-summary";
 import { sellFrontByItem } from "@/lib/analytics";
 import { phaseLabels } from "@/lib/phase";
 import { describeFreshness } from "@/lib/freshness";
@@ -25,23 +26,7 @@ export default async function PortfolioPage() {
   const { signals, phase } = bundle;
   // The valuation uses the units the ledger can price. The estate and
   // reconciliation columns below carry the rest explicitly.
-  const positions = Object.fromEntries(
-    bundle.holdings
-      .filter((holding) => holding.knownQty > 0)
-      .map((holding) => [holding.itemId, { qty: holding.knownQty, cost: holding.costBasis }])
-  );
-  const unknownUnits = bundle.holdings.reduce((sum, holding) => sum + holding.unknownQty, 0);
-  const missingUnits = bundle.holdings.reduce((sum, holding) => sum + holding.missingQty, 0);
-  const byLocation = bundle.holdings.reduce(
-    (totals, holding) => ({
-      carried: totals.carried + holding.carriedQty,
-      keyring: totals.keyring + holding.keyringQty,
-      bank: totals.bank + holding.bankQty + holding.accountBankQty,
-      mail: totals.mail + holding.mailQty,
-      listed: totals.listed + holding.listedQty
-    }),
-    { carried: 0, keyring: 0, bank: 0, mail: 0, listed: 0 }
-  );
+  const { positions, unknownUnits, missingUnits, byLocation } = summarizeHoldings(bundle.holdings);
   // A position whose item left the newest scan has no current sell front:
   // value it as unpriced instead of carrying the last price it was seen at.
   const priceById = sellFrontByItem(signals);
@@ -55,6 +40,11 @@ export default async function PortfolioPage() {
   } = valuePositions(positions, priceById, nameById);
   const trades = summarizeTrades(allTrades);
   const cash = scope?.cash ?? 0;
+  // Mail money is earned but not spendable; it stays visibly separate from
+  // the purse the plan budgets with.
+  const pendingCash = scope?.character
+    ? bundle.estates.find((estate) => estate.scope === `character:${scope.character}`)?.pendingCash ?? null
+    : null;
   const freshness = describeFreshness(bundle.latestScanAt, new Date());
 
   return (
@@ -77,8 +67,11 @@ export default async function PortfolioPage() {
 
       <div className="mb-3 grid gap-3 font-mono text-xs sm:grid-cols-2 xl:grid-cols-4">
         <div className="border border-terminal-border bg-terminal-panel p-3">
-          <div className="text-terminal-muted">现金（上次扫描）</div>
+          <div className="text-terminal-muted">现金（客户端状态）</div>
           <div className="mt-1 text-lg text-terminal-amber"><Coins copper={cash} /></div>
+          {pendingCash !== null && pendingCash > 0 && (
+            <div className="mt-1 text-[10px] text-terminal-muted">邮箱在途 <Coins copper={pendingCash} /></div>
+          )}
         </div>
         <div className="border border-terminal-border bg-terminal-panel p-3">
           <div className="text-terminal-muted">持仓市值 / 成本（有报价）</div>

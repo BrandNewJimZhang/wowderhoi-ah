@@ -117,6 +117,28 @@ describe("POST /api/import/addon-scan revision", () => {
     expect(await prisma.decision.count({ where: { marketId: market.id } })).toBe(0);
   });
 
+  it("keeps the estate publisher's revision when a later scan updates cash", async () => {
+    const other = { ...scan, server: "B" };
+    expect((await post({ scan: other })).status).toBe(200);
+    const market = await prisma.market.findUnique({
+      where: { realm_faction: { realm: "B", faction: "Alliance" } }
+    });
+    const before = await prisma.estate.findUnique({
+      where: { marketId_scope: { marketId: market!.id, scope: "character:Tester" } }
+    });
+    expect(before?.revision).toBe(0);
+
+    expect((await post({
+      scan: { ...other, scannedAt: other.scannedAt + 60, cash: 5000 }
+    })).status).toBe(200);
+    const after = await prisma.estate.findUnique({
+      where: { marketId_scope: { marketId: market!.id, scope: "character:Tester" } }
+    });
+    // The scan observed a newer purse but did not mint a publisher revision.
+    expect(after?.cash).toBe(5000);
+    expect(after?.revision).toBe(0);
+  });
+
   it("does not move the version for a duplicate scan, even with a journal", async () => {
     const response = await post({ scan, journal: emptyJournal });
     expect(response.status).toBe(409);

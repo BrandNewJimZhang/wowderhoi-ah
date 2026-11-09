@@ -6,6 +6,7 @@ import { ensureScanItems, scanPlaceholderItem } from "@/lib/scan-import";
 import { parseAddonSeries, type AddonSeries } from "@/lib/item-series";
 import { buildGenerationPlan } from "@/lib/market-generation";
 import { writeGeneration } from "@/lib/import-store";
+import { refreshHoldings } from "@/lib/state-import";
 import { resolveBudgetCopper, resolvePhaseOverride } from "@/lib/config";
 import { pruneAgedRows, pruneGenerations } from "@/lib/retention";
 import {
@@ -65,8 +66,9 @@ async function recordRun(data: {
 
 // A scan observes cash and free slots but not the bag contents. It may
 // update the two fields it observed; it must never rewrite the coverage map
-// the estate publisher owns, or a scan would turn an opened bank back into
-// unobserved.
+// or the revision the estate publisher owns. Two writers incrementing one
+// counter would let the terminal drift ahead of the addon and ignore every
+// later push as "older".
 async function recordScanState(
   tx: Prisma.TransactionClient,
   marketId: string,
@@ -109,16 +111,18 @@ async function recordScanState(
     && (scan.bagSlots === null || existing.freeSlots === scan.bagSlots)) {
     return existing.revision;
   }
-  const updated = await tx.estate.update({
+  // The revision belongs to the estate publisher. A scan writes the two
+  // fields it observed and keeps the publisher's version, so a later push
+  // at the same revision is still compared against the same content.
+  await tx.estate.update({
     where: { id: existing.id },
     data: {
       cash: scan.cash,
       ...(scan.bagSlots === null ? {} : { freeSlots: scan.bagSlots }),
-      observedAt,
-      revision: { increment: 1 }
+      observedAt
     }
   });
-  return updated.revision;
+  return existing.revision;
 }
 
 export async function POST(request: Request) {
@@ -274,6 +278,9 @@ export async function POST(request: Request) {
       // Writing scan-time rows under the old timestamp identity would give
       // the same recommendation two ids and let calibration count it twice.
       await writeGeneration(tx, market.id, plan, []);
+      // The scan names the active character. Account bank and own postings
+      // move to that character's holding row and leave the previous one.
+      await refreshHoldings(tx, market.id);
     }, { timeout: 120_000 });
 
     await pruneGenerations(market.id);

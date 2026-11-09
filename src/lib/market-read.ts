@@ -6,6 +6,8 @@
 // recomputed per request. When it differs from the generation's phase the
 // UI must not apply the new gates to the old book.
 import { cache } from "react";
+import { prisma } from "@/lib/prisma";
+import { planMatchesScan } from "@/lib/plan-view";
 import type { MarketSignal } from "@/lib/analytics";
 import type { CoreOutput } from "@/lib/core/types";
 import type { PriceIndex } from "@/lib/deflator";
@@ -218,26 +220,45 @@ export function badgeCounts(
   generation: GenerationRecord | null,
   phase: MarketPhase,
   stale: boolean,
-  positionCount: number
+  positionCount: number,
+  // The game's published plan, when one was minted for this scan and
+  // estate. The badge must count the same steps the dashboard shows; the
+  // generation's own actions are only the fallback.
+  planActions?: number | null
 ): NavBadges {
   const actionable = generation !== null && !stale && phase === generation.phase;
   return {
-    actions: actionable ? generation.core.actions.length : 0,
+    actions: actionable ? planActions ?? generation.core.actions.length : 0,
     stale: generation?.staleCount ?? 0,
     positions: positionCount
   };
 }
 
-// The shell renders these on every page; they are two cheap reads plus one
-// count, not the full signal bundle.
+// The shell renders these on every page; they are a few cheap reads, not
+// the full signal bundle.
 export async function getNavigationBadges(): Promise<NavBadges> {
   const scope = await getScopeOnce();
   if (!scope) return { actions: 0, stale: 0, positions: 0 };
   const now = new Date();
-  const [generation, positions] = await Promise.all([
+  const [generation, positions, plan] = await Promise.all([
     getGenerationOnce(scope),
-    getPositions(scope)
+    getPositions(scope),
+    prisma.plan.findFirst({
+      where: { marketId: scope.id },
+      orderBy: { createdAt: "desc" },
+      select: { revision: true, estateRevision: true, steps: true }
+    })
   ]);
+  const currentPlan = planMatchesScan(plan, generation?.scannedAt ?? null, scope.estateRevision)
+    ? plan
+    : null;
+  const planActions = currentPlan && Array.isArray(currentPlan.steps) ? currentPlan.steps.length : null;
   const stale = describeFreshness(generation?.scannedAt ?? null, now).stale;
-  return badgeCounts(generation, displayPhaseOf(scope, generation, now), stale, Object.keys(positions).length);
+  return badgeCounts(
+    generation,
+    displayPhaseOf(scope, generation, now),
+    stale,
+    Object.keys(positions).length,
+    planActions
+  );
 }

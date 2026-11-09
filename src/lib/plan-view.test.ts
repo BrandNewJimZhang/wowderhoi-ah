@@ -14,4 +14,13 @@ describe("plan view", () => {
     expect(planMatchesScan(null, latest)).toBe(false);
     expect(planMatchesScan({ revision: "A|Alliance|1721700000:2:7" }, null)).toBe(false);
   });
+
+  it("rejects a plan sized from an older estate revision", () => {
+    const latest = new Date(1721700000 * 1000);
+    const plan = { revision: "A|Alliance|1721700000:2:7", estateRevision: 2 };
+    expect(planMatchesScan(plan, latest, 2)).toBe(true);
+    expect(planMatchesScan(plan, latest, 3)).toBe(false);
+    // Without a state revision to compare, the scan epoch is the guard.
+    expect(planMatchesScan(plan, latest)).toBe(true);
+  });
 });

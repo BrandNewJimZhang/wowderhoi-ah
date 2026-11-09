@@ -14,6 +14,7 @@ import { decisionLogSince, DECISION_LOG_WINDOW_HOURS } from "@/lib/decision-cali
 import { buildProductionPlan } from "@/lib/production-plan";
 import { recipeToLp } from "@/lib/recipes";
 import { getMarketView } from "@/lib/market-view";
+import { summarizeHoldings } from "@/lib/holdings-summary";
 import { describeFreshness, scanGapHint, staleScanHint } from "@/lib/freshness";
 import { seriesSpanDays } from "@/lib/item-series";
 import { fillBasisLabels } from "@/lib/fill";
@@ -28,7 +29,7 @@ import { WatchStar } from "@/components/watch-star";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { AppShell } from "@/components/app-shell";
 import { FreshnessLabel } from "@/components/freshness-label";
-import type { CoreAction } from "@/lib/core/types";
+import type { CoreAction, CoreRow } from "@/lib/core/types";
 import { planMatchesScan } from "@/lib/plan-view";
 
 export const dynamic = "force-dynamic";
@@ -43,11 +44,14 @@ export default async function Home() {
   const { scope, signals, latestScanAt, phase, evaluation } = bundle;
   const scopeId = scope?.id;
   const now = new Date();
-  // The game's published plan wins only if it was minted for this scan;
-  // a plan from an older book must not describe the current market. The
-  // generation's evaluation is the fallback. Neither is truncated: the old
-  // first-five cut hid every sell behind enough buy candidates.
-  const publishedPlan = planMatchesScan(bundle.plan, latestScanAt) ? bundle.plan : null;
+  // The game's published plan wins only if it was minted for this scan and
+  // this estate revision; a plan from an older book or an older purse must
+  // not describe the current market. The generation's evaluation is the
+  // fallback. Neither is truncated: the old first-five cut hid every sell
+  // behind enough buy candidates.
+  const publishedPlan = planMatchesScan(bundle.plan, latestScanAt, scope?.estateRevision)
+    ? bundle.plan
+    : null;
   const planSteps = (publishedPlan?.steps as CoreAction[] | undefined)
     ?? evaluation.plan?.steps
     ?? evaluation.actions;
@@ -59,13 +63,7 @@ export default async function Home() {
   } | undefined) ?? evaluation.plan?.resources;
   // The valuation reads only the units the ledger can price. Unknown-cost
   // units are shown separately instead of being valued at zero.
-  const positions = Object.fromEntries(
-    bundle.holdings
-      .filter((holding) => holding.knownQty > 0)
-      .map((holding) => [holding.itemId, { qty: holding.knownQty, cost: holding.costBasis }])
-  );
-  const unknownUnits = bundle.holdings.reduce((sum, holding) => sum + holding.unknownQty, 0);
-  const missingUnits = bundle.holdings.reduce((sum, holding) => sum + holding.missingQty, 0);
+  const { positions, unknownUnits, missingUnits } = summarizeHoldings(bundle.holdings);
   const [watchedIds, alertRules, recipeRows, seriesStats, recentTrades, decisionCount] = await Promise.all([
     getWatchedItemIds(),
     getAlertRules(),
@@ -91,31 +89,68 @@ export default async function Home() {
   const actionsBlocked = freshness.stale || bundle.phaseMismatch;
   const watchedSignals = signals.filter((signal) => watchedIds.has(signal.itemId));
   const triggeredAlerts = evaluateAlertRules(alertRules, signals.filter((signal) => !signal.stale));
-  const deals = evaluation.opportunities.slice(0, 12);
+  // The game's plan is sized from live cash and bag space. When it is
+  // current, the funded-buy panels must describe its quantities, not the
+  // scan-time allocation the plan already overrode.
+  type BuyStep = Extract<CoreAction, { kind: "buy" }>;
+  const rowById = new Map(evaluation.rows.map((row) => [row.itemId, row]));
+  const fundedBuys: Array<{ step: BuyStep; row: CoreRow }> | null = publishedPlan
+    ? (publishedPlan.steps as CoreAction[])
+        .filter((step): step is BuyStep => step.kind === "buy")
+        .flatMap((step) => {
+          const row = rowById.get(step.itemId);
+          return row ? [{ step, row }] : [];
+        })
+    : null;
+  const deals = fundedBuys
+    ? fundedBuys.slice(0, 12).map(({ step, row }) => ({
+        ...row,
+        allocQty: step.qty,
+        allocUnitPrice: step.unitPrice,
+        allocNet: step.expectedNet
+      }))
+    : evaluation.opportunities.slice(0, 12);
   const unfunded = evaluation.diagnostics.unfunded;
   const sizingExcluded = evaluation.diagnostics.excluded.sizing ?? 0;
   const emptyDealsMessage = signals.length === 0
     ? "暂无市场数据。进游戏 /wahscan 扫描。"
-    : evaluation.rows.length === 0 && sizingExcluded > 0
+    : publishedPlan && (fundedBuys?.length ?? 0) === 0
+      ? "游戏内计划当前没有可执行买入（受现金、空位或在售约束）。"
+      : evaluation.rows.length === 0 && sizingExcluded > 0
       ? `本阶段门槛后有 ${sizingExcluded} 条机会被风险模型拒绝（成交率不足以覆盖价差），没有可执行交易。`
       : evaluation.rows.length === 0
         ? `当前没有满足${phaseLabels[phase]}门槛的可执行机会。`
         : `通过门槛 ${evaluation.rows.length} 条，均未获资金：钱包不足 ${unfunded.purse} 条、单物品敞口 ${unfunded.exposure} 条、盘口 ${unfunded.depth} 条、背包不足 ${unfunded.slots ?? 0} 条${sizingExcluded > 0 ? `；另有 ${sizingExcluded} 条被风险模型拒绝` : ""}。`;
   const deployableCapital = resolveDeployableCopper(scope?.cash ?? null);
-  const sizing = evaluation.opportunities
-    .filter((row) => !row.vendor)
-    .slice(0, 12)
-    .map((row) => ({
-      itemId: row.itemId,
-      name: row.name,
-      qty: row.allocQty,
-      unitPrice: row.allocUnitPrice,
-      budget: row.allocCost,
-      expectedNet: row.allocNet,
-      fillProb: row.fillProb,
-      fillBasis: row.fillBasis,
-      exploration: row.exploratory
-    }));
+  const sizing = fundedBuys
+    ? fundedBuys
+        .filter(({ row }) => !row.vendor)
+        .slice(0, 12)
+        .map(({ step, row }) => ({
+          itemId: step.itemId,
+          name: step.name,
+          qty: step.qty,
+          unitPrice: step.unitPrice,
+          budget: step.cost ?? 0,
+          expectedNet: step.expectedNet,
+          fillProb: step.fillProb,
+          fillBasis: step.fillBasis,
+          exploration: row.exploratory
+        }))
+    : evaluation.opportunities
+        .filter((row) => !row.vendor)
+        .slice(0, 12)
+        .map((row) => ({
+          itemId: row.itemId,
+          name: row.name,
+          qty: row.allocQty,
+          unitPrice: row.allocUnitPrice,
+          budget: row.allocCost,
+          expectedNet: row.allocNet,
+          fillProb: row.fillProb,
+          fillBasis: row.fillBasis,
+          exploration: row.exploratory
+        }));
   const iconById = new Map(signals.map((signal) => [signal.itemId, signal.iconId]));
   const production = buildProductionPlan(signals, recipeRows.map(recipeToLp), scope?.cash ?? null);
 
@@ -174,7 +209,7 @@ export default async function Home() {
 
         <div className="mb-3 grid gap-3 font-mono text-xs sm:grid-cols-2 xl:grid-cols-4">
           <div className="border border-terminal-border bg-terminal-panel p-3">
-            <div className="text-terminal-muted">现金（上次扫描）</div>
+            <div className="text-terminal-muted">现金（客户端状态）</div>
             <div className="mt-1 text-lg text-terminal-amber"><Coins copper={scope?.cash ?? 0} /></div>
             <div className="mt-1 text-[10px] text-terminal-muted">可动用 <Coins copper={deployableCapital} /></div>
           </div>

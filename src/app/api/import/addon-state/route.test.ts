@@ -57,10 +57,17 @@ function estate(revision: number, carried: number) {
         kind: "account",
         revision,
         coverage: { account_bank: "unobserved", listed: "unobserved" },
-        items: {}
+        items: {} as Record<string, Record<string, { qty: number; slots: number }>>
       }
     }
   };
+}
+
+function estateWithAccount(revision: number, carried: number, listed: number) {
+  const payload = estate(revision, carried);
+  payload.scopes.account.coverage = { account_bank: "unobserved", listed: "observed" };
+  payload.scopes.account.items = { "2770": { listed: { qty: listed, slots: 1 } } };
+  return payload;
 }
 
 function book(character: string, events: unknown[], nextSeq = events.length + 1) {
@@ -180,6 +187,37 @@ describe("POST /api/import/addon-state", () => {
     expect(alt?.knownQty).toBe(1);
   });
 
+  it("moves account-scoped postings to the character whose scan is active", async () => {
+    const market = await prisma.market.findUnique({
+      where: { realm_faction: { realm: "A", faction: "Alliance" } }
+    });
+    // Tester is the active scan, so the account's posting belongs to its
+    // holding row.
+    await post("state", {
+      server: "A", faction: "Alliance",
+      estate: estateWithAccount(3, 8, 2)
+    });
+    const tester = await prisma.holding.findFirst({
+      where: { marketId: market!.id, character: "Tester", itemId: 2770 }
+    });
+    expect(tester?.listedQty).toBe(2);
+
+    // A scan by Alt makes Alt the active character. The posting must leave
+    // Tester's row, or the portfolio would count it twice.
+    const response = await post("scan", {
+      scan: { ...scan, scannedAt: NOW + 60, character: "Alt" }
+    });
+    expect(response.status).toBe(200);
+    const testerAfter = await prisma.holding.findFirst({
+      where: { marketId: market!.id, character: "Tester", itemId: 2770 }
+    });
+    expect(testerAfter?.listedQty ?? 0).toBe(0);
+    const alt = await prisma.holding.findFirst({
+      where: { marketId: market!.id, character: "Alt", itemId: 2770 }
+    });
+    expect(alt?.listedQty).toBe(2);
+  });
+
   it("does not rebuild holdings from an older journal book", async () => {
     await post("state", {
       server: "A", faction: "Alliance",
@@ -194,7 +232,10 @@ describe("POST /api/import/addon-state", () => {
     const holding = await prisma.holding.findFirst({
       where: { marketId: market!.id, character: "Alt", itemId: 2770 }
     });
-    expect(holding?.qty).toBe(2);
+    // Holdings replay the facts persisted for the character, not only the
+    // events in the incoming (possibly partial) book: seq 1 bought 1 and
+    // seq 2 bought 2.
+    expect(holding?.qty).toBe(3);
     // The stale delivery still contributes its missing fact.
     expect(await prisma.journalFact.count({ where: { marketId: market!.id, character: "Alt" } })).toBe(2);
   });

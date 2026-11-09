@@ -14,6 +14,7 @@ export function ensureSavedvarsWatcher(): void {
   const port = process.env.PORT ?? "3000";
   globalForWatcher.wahSavedvarsWatcher = startSavedvarsWatcher({
     path,
-    importUrl: process.env.AQT_IMPORT_URL ?? `http://localhost:${port}/api/import/addon-scan`
+    importUrl: process.env.AQT_IMPORT_URL ?? `http://localhost:${port}/api/import/addon-scan`,
+    ...(process.env.AQT_STATE_URL ? { stateUrl: process.env.AQT_STATE_URL } : {})
   });
 }

@@ -81,8 +81,8 @@ export type CoreInput = {
     firstScanAt?: number;
     items: Record<number, CoreMarketItem>;
   };
-  // The core reads cash (the scanned purse) and budget (the planning cap).
-  // Mail and escrow are ledger facts, not decision inputs.
+  // The core reads cash (the client estate's purse) and budget (the
+  // planning cap). Mail and escrow are ledger facts, not decision inputs.
   capital?: { cash?: number; budget?: number };
   capacity?: { bagSlots?: number; stackSize?: number; freeSlots?: number };
   positions?: Record<number, CorePosition>;

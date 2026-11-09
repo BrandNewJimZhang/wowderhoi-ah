@@ -79,9 +79,12 @@ describe("executable plan", () => {
     expect(sell(cheap)?.realizedPnl).toBeGreaterThan(sell(expensive)!.realizedPnl as number);
     expect(sell(unknown)?.costKnown).toBe(false);
     expect(sell(unknown)?.realizedPnl).toBeUndefined();
+    // Without a deposit table the core has no sell fill estimate; a zero
+    // here would be logged as a prediction the calibration could score.
+    expect(sell(cheap)?.fillProb).toBeUndefined();
   });
 
-  it("keeps unaffordable candidates with an explicit reason", () => {
+  it("keeps unaffordable candidates with an explicit reason, once each", () => {
     const input = twoItemInput();
     input.capital = { cash: 100000, budget: 100000 };
     input.capacity = { bagSlots: 3, freeSlots: 0, stackSize: 20 };
@@ -89,6 +92,21 @@ describe("executable plan", () => {
     const reasons = output.plan!.unplanned.map((row) => row.reason);
     expect(reasons).toContain("slots");
     for (const reason of reasons) expect(typeof reason).toBe("string");
+    // A row refused by the plan used to appear once in the refusal branch
+    // and once again in the final funded/unfunded sweep.
+    const buyIds = output.plan!.unplanned
+      .filter((row) => row.kind === "buy")
+      .map((row) => row.itemId);
+    expect(new Set(buyIds).size).toBe(buyIds.length);
+  });
+
+  it("offers bank-only stock as a sale that needs a bank trip", () => {
+    const input = commodityInput({ phase: "wave" });
+    input.positions = { 2589: { qty: 3, cost: 3000, sellableQty: 3, requiresBank: true } };
+    const sell = runCore(input).plan!.steps.find((step) => step.kind === "sell");
+    expect(sell?.qty).toBe(3);
+    expect(sell?.requiresBank).toBe(true);
+    expect(sell?.reason).toContain("银行");
   });
 });
 

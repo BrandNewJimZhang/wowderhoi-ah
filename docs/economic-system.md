@@ -236,17 +236,20 @@ Ledger 是 Journal 的纯投影：
   `qty / carriedQty / bankQty / accountBankQty / mailQty / listedQty /
   knownQty / unknownQty / missingQty / costBasis`。它由 `Estate` + 检查点 +
   `JournalFact` 派生，不是一次导入的整表替换。
-- `Trade`：由 `JournalFact` 投影，追加而不整体重建。`observedAt`、`censored`、
-  `timeLow/timeHigh` 随成交一起保存；`realizedAt` 是观测时间，区间
+- `Trade`：由 `JournalFact` 投影，追加而不整体重建。`observedAt`、`censored`
+  随成交一起保存；`realizedAt` 是观测时间，区间
   `[listedAt, observedAt]` 才是成交真正发生的时间范围。`decisionId` 只在采纳
   归因时写入。
 - `Decision`：由 `Plan` 写入一次（不是页面 GET），记录稳定 `decisionId`
-  （`realm|faction|planRevision:item:kind`，与插件 `/wahadopt` 同一公式）、
+  （`planRevision:item:kind`；`planRevision` 本身是
+  `realm|faction|genEpoch:estateRevision:ledgerRevision`，与插件 `/wahadopt`
+  同一公式）、
   `planRevision`、阶段、行动类型、物品、理由与时间，以及预期净利、成交概率、
   成交依据、分配数量与成交价。预测字段只插入不更新；旧计划只标
   `supersededAt`。复盘优先按 `decisionId` 归因，未采纳的旧决策才退回同物品
-  时间窗；校准用 `[listedAt, observedAt]` 做 censoring-aware 匹配，并把
-  `sell` 决策纳入。少于 10 条决策的桶只显示“样本不足”。
+  时间窗；校准用 `[listedAt, observedAt]` 做 censoring-aware 匹配，带成交
+  概率的 `sell` 决策同样进入分桶。核心没有押金表时不伪造卖出成交率，该步骤
+  只记录预期回款。少于 10 条决策的桶只显示“样本不足”。
 - `Plan`：`Plan(generation, estate, ledger, config, now)` 的不可变输出，按
   `(marketId, revision)` 唯一。`steps` 是资源可行的动作序列，`resources`
   记录执行前后的现金与空位，`unplanned` 记录未纳入的动作及原因。游戏内是
@@ -274,8 +277,9 @@ Ledger 是 Journal 的纯投影：
 - 在售只在 `OWNED_AUCTIONS_UPDATED` 之后标 `observed`；
 - 未观测位置不参与 `missingQty` 判定。
 
-`Reconciler.lua` 在插件侧完成对账，因为只有插件同时拥有实时 estate、账本和
-在售列表：
+`Reconciler.lua` 在插件侧为游戏内估值完成对账，因为只有插件同时拥有实时
+estate、账本和在售列表。终端导入 `Estate` 与 `JournalFact` 后用同一组规则重算
+`Holding`，让跨角色页面读到一个持久化结果：
 
 ```text
 knownQty   = min(ledgerQty, totalQty)
@@ -285,8 +289,9 @@ expectedCash = cashAnchor + cashDelta
 unexplained  = GetMoney() - expectedCash
 ```
 
-`unknownQty` 的成本为空，不按 0 混入浮动盈亏；`sellable = carriedQty`，
-银行物品计入持仓但标 `requiresBank`，卖出计划需要显式的往返成本。
+`unknownQty` 的成本为空，不按 0 混入浮动盈亏。`sellable = carriedQty`；背包为空
+而银行有货时，`sellable` 取银行数量并标 `requiresBank`，卖出计划把去银行取货
+作为该步骤的前置条件。在售单位（`listed`）仍属于持仓，但不再进入卖出数量。
 
 ## 3. 算法
 
@@ -325,8 +330,9 @@ Qcandidate = min(供给(p ≤ pCap), floor(预算 / 均价), 背包容量)
 同一行不允许数量取一层、净利取另一层。雷达的净利列、终端的“可执行机会”和
 “预算内分配”都遵循这条规则。
 
-预算本身以最近扫描的现金为上限：`effectiveBudget = min(规划预算, 扫描现金)`。
-只有扫描现金**未上报**（`nil`，例如旧载荷）时才完全使用规划预算；上报的 `0` 是空钱包，
+预算本身以客户端状态里的现金为上限：`effectiveBudget = min(规划预算, 现金)`。
+现金来自 Estate（实时推送，尚未推送时由最近扫描的 `cash` 播种）；只有现金
+**未上报**（`nil`，例如旧载荷）时才完全使用规划预算；上报的 `0` 是空钱包，
 不资助任何交易。终端把这个上限同样用于凯利仓位与制造 LP，所以“可执行机会”、
 “仓位建议”和“制造计划”不会引用两笔不同的本金。
 
@@ -481,8 +487,8 @@ max_x (pᵀA − cᵀ) x   s.t. Bx ≤ b, x ≥ 0
 - 变量：每条配方的制造次数；
 - 目标：成品建议卖价 × 数量 × (1 − 手续费) − 材料成本；材料按当前建议卖价计成本，
   没有在售行情的材料不猜价，该配方计入“缺少价格数据”；
-- 约束：每专业每日制造次数、材料在售量、预算（`min(规划预算, 扫描现金)`；
-  扫描现金为 0 时预算约束为 0，计划为空）；
+- 约束：每专业每日制造次数、材料在售量、预算（`min(规划预算, 现金)`；
+  现金为 0 时预算约束为 0，计划为空）；
 - 对偶变量：影子价格——多一个产能单位值多少金币；
 - 小规模稠密单纯形；候选先按单件净利截断到 120 条；LP 解向下取整，净利按整数
   计划重算；求解失败时回退到贪心并在界面标注。
@@ -621,4 +627,5 @@ p_real(t) = p(t) / P(t) · 100
     只要卖价相同，排序相同；`realizedPnl` 单列展示。
 23. 买入候选足够多时，卖出步骤仍可见且排在正确位置。
 24. 同一 `decisionId` 的预测不再变化；采纳指向确切的 `planRevision`；
-    延迟开邮箱的成交不会被排除在预测窗口外；卖出决策进入校准。
+    延迟开邮箱的成交不会被排除在预测窗口外；带成交概率的卖出决策进入校准，
+    没有押金数据时核心不伪造这个概率。

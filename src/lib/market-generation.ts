@@ -59,7 +59,6 @@ export type GenerationPlan = {
   quotes: Array<{ itemId: number; quote: QuoteRow }>;
   signals: Array<{ itemId: number; data: StoredSignalRow }>;
   series: SeriesRow[];
-  decisions: DecisionRow[];
   seriesPointCount: number;
 };
 
@@ -87,21 +86,9 @@ export type GenerationInput = {
   planRevision?: string;
 };
 
-// The stored shape of a merged series. The live import, its duplicate
-// path and the migration all write this table, so they build the rows in
-// one place instead of three hand-copied maps.
-// The stored signal rows carry the core's per-item projection so the item
-// page can read one row instead of searching the evaluation. A journal-only
-// replay recomputes the core in place; its projections must be rebuilt with
-// it, or the page would keep a fill estimate sized for the previous ledger.
-export function withCoreRows(
-  rows: readonly StoredSignalRow[],
-  core: CoreOutput
-): StoredSignalRow[] {
-  const byItem = new Map(core.rows.map((row) => [row.itemId, row]));
-  return rows.map((row) => ({ ...row, coreRow: byItem.get(row.signal.itemId) ?? null }));
-}
-
+// The stored shape of a merged series. The live import and the migration
+// both write this table, so they build the rows in one place instead of
+// two hand-copied maps.
 export function seriesRowsFrom(merged: ReadonlyMap<number, readonly SeriesPoint[]>): SeriesRow[] {
   return Array.from(merged.entries())
     .sort(([left], [right]) => left - right)
@@ -300,12 +287,6 @@ export function buildGenerationPlan(input: GenerationInput): GenerationPlan {
     row.data.coreRow = coreByItem.get(row.itemId) ?? null;
   }
 
-  const decisions = decisionRowsFrom(core, {
-    realm: scan.server,
-    faction: scan.faction,
-    scannedAt: scan.scannedAt
-  });
-
   const series = seriesRowsFrom(merged);
 
   return {
@@ -323,7 +304,6 @@ export function buildGenerationPlan(input: GenerationInput): GenerationPlan {
     quotes: Array.from(quoteById.entries()).map(([itemId, quote]) => ({ itemId, quote })),
     signals,
     series,
-    decisions,
     seriesPointCount: series.reduce((sum, row) => sum + row.pointCount, 0)
   };
 }

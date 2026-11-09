@@ -175,7 +175,7 @@ export default async function HealthPage() {
             <div className="space-y-2 p-3 font-mono text-[11px] text-terminal-muted">
               <p>物品静态事实：无限图鉴 wuxianwow.com，构建 {catalogue.build ?? "未导入"}。</p>
               <p>市场观测与历史序列：游戏内 WoWderhoiAH 插件。</p>
-              <p>账本：插件 Journal 重放；决策：共享 Core.lua 在导入时求值。</p>
+              <p>账本：追加式 Journal 事实重放；决策：游戏内发布的 Plan 导入后写入，扫描代际只保留当时的同口径估算。</p>
             </div>
           </Panel>
         </div>

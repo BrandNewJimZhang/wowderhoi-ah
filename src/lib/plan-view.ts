@@ -6,10 +6,16 @@ export function planEpoch(revision: string): number | null {
   return Number.isFinite(epoch) && epoch > 0 ? epoch : null;
 }
 
+// The plan identity also carries the estate revision it was sized from. A
+// plan minted before the bag or purse moved describes a state the player no
+// longer has; the page must fall back rather than present it as current.
 export function planMatchesScan(
-  plan: { revision: string } | null | undefined,
-  latestScanAt: Date | null | undefined
+  plan: { revision: string; estateRevision?: number } | null | undefined,
+  latestScanAt: Date | null | undefined,
+  estateRevision?: number
 ): boolean {
   if (!plan || !latestScanAt) return false;
-  return planEpoch(plan.revision) === Math.round(latestScanAt.getTime() / 1000);
+  if (planEpoch(plan.revision) !== Math.round(latestScanAt.getTime() / 1000)) return false;
+  if (estateRevision === undefined || plan.estateRevision === undefined) return true;
+  return plan.estateRevision === estateRevision;
 }

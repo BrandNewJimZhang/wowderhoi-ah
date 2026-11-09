@@ -2,8 +2,8 @@ import Link from "next/link";
 
 import { ClipboardCheck } from "lucide-react";
 import { prisma } from "@/lib/prisma";
-import { getMarketBundle } from "@/lib/market-read";
-import { getPositions } from "@/lib/repositories";
+import { getMarketView } from "@/lib/market-view";
+import { summarizeHoldings } from "@/lib/holdings-summary";
 import { alphaDecay, evaluatePolicy } from "@/lib/off-policy";
 import { designExperiment, experimentResults } from "@/lib/experiments";
 import { bucketPredictions, decisionLogSince } from "@/lib/decision-calibration";
@@ -21,14 +21,14 @@ export const dynamic = "force-dynamic";
 
 
 export default async function ReviewPage() {
-  const bundle = await getMarketBundle();
+  const bundle = await getMarketView();
   const scope = bundle.scope;
   const marketWhere = scope ? { marketId: scope.id } : {};
   // The prediction table compares every decision made in the calibration
   // window; ordering by time and taking a handful of rows turned the sample
   // into the newest two or three scans.
   const calibrationSince = decisionLogSince(new Date());
-  const [trades, decisions, calibrationTrades, positions] = await Promise.all([
+  const [trades, decisions, calibrationTrades] = await Promise.all([
     prisma.trade.findMany({ where: marketWhere, orderBy: { realizedAt: "desc" }, take: 100 }),
     prisma.decision.findMany({
       where: { ...marketWhere, at: { gte: calibrationSince } },
@@ -45,9 +45,9 @@ export default async function ReviewPage() {
         itemId: true, pnl: true, realizedAt: true, inferred: true, channel: true,
         decisionId: true, listedAt: true, observedAt: true, censored: true
       }
-    }),
-    getPositions(scope)
+    })
   ]);
+  const { positions } = summarizeHoldings(bundle.holdings);
   const { signals, phase } = bundle;
   // Experiments are priced from the newest scan's sell front; the ledger
   // itself is not, so the age labels the quote-derived sections only.

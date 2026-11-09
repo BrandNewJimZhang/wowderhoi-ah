@@ -39,18 +39,6 @@ async function insertSignals(
   }
 }
 
-// A journal-only replay recomputes the generation's core in place. Its
-// materialised signal rows must be replaced with it, exactly like the
-// decisions, so the item page and the cockpit read one evaluation.
-export async function replaceSignals(
-  tx: Prisma.TransactionClient,
-  generationId: string,
-  rows: readonly StoredSignalRow[]
-): Promise<void> {
-  await tx.marketSignalRow.deleteMany({ where: { generationId } });
-  await insertSignals(tx, generationId, rows.map((row) => ({ itemId: row.signal.itemId, data: row })));
-}
-
 function quoteCreateData(
   row: { itemId: number; quote: MarketQuote },
   generationId: string,
@@ -182,20 +170,4 @@ export async function writeGeneration(
   await replaceSeries(tx, marketId, plan.series);
   await replaceDecisionsByIdentity(tx, marketId, generation.id, plan.scannedAt, plan.phase, decisions);
   return generation.id;
-}
-
-export async function replaceDecisions(
-  tx: Prisma.TransactionClient,
-  generationId: string,
-  marketId: string,
-  scannedAt: Date,
-  phase: string,
-  decisions: StoredDecision[]
-): Promise<void> {
-  await tx.decision.deleteMany({ where: { generationId } });
-  for (const batch of chunks(decisions, DECISION_BATCH)) {
-    await tx.decision.createMany({
-      data: batch.map((row) => ({ ...row, marketId, generationId, at: scannedAt, phase }))
-    });
-  }
 }

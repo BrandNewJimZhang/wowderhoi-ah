@@ -28,7 +28,7 @@ type EstateScopeInput = {
   coverage?: Record<string, unknown>;
   items?: Record<string, Record<string, EstateItemInput>>;
 };
-export type AddonEstate = {
+type AddonEstate = {
   v?: number;
   revision?: number;
   observedAt?: number;
@@ -170,7 +170,7 @@ async function loadEstateItems(
   tx: Prisma.TransactionClient,
   marketId: string,
   scope: string
-): Promise<{ items: Map<number, Map<string, number>>; coverage: Record<string, unknown>; exists: boolean }> {
+): Promise<{ items: Map<number, Map<string, number>>; coverage: Record<string, unknown> }> {
   const estate = await tx.estate.findUnique({
     where: { marketId_scope: { marketId, scope } },
     include: { items: true }
@@ -183,8 +183,7 @@ async function loadEstateItems(
   }
   return {
     items,
-    coverage: (estate?.coverage ?? {}) as Record<string, unknown>,
-    exists: estate !== null
+    coverage: (estate?.coverage ?? {}) as Record<string, unknown>
   };
 }
 
@@ -204,13 +203,17 @@ async function recomputeHoldings(
     loadEstateItems(tx, marketId, characterScope),
     includeAccount
       ? loadEstateItems(tx, marketId, "account")
-      : Promise.resolve({ items: new Map<number, Map<string, number>>(), coverage: {}, exists: false })
+      : Promise.resolve({ items: new Map<number, Map<string, number>>(), coverage: {} })
   ]);
+  // A scan seeds cash and free slots but not the bag, so an estate row can
+  // exist while `carried` is still unobserved. The ledger is then the only
+  // evidence of bag stock and must not be treated as absent.
+  const carriedObserved = coverageObserved(characterEstate.coverage, "carried");
   const bankObserved = coverageObserved(characterEstate.coverage, "bank");
   const mailObserved = coverageObserved(characterEstate.coverage, "mail");
   const accountBankObserved = includeAccount && coverageObserved(accountEstate.coverage, "account_bank");
   const listedObserved = includeAccount && coverageObserved(accountEstate.coverage, "listed");
-  const allObserved = bankObserved && mailObserved
+  const allObserved = carriedObserved && bankObserved && mailObserved
     && (!includeAccount || (accountBankObserved && listedObserved));
 
   const itemIds = new Set<number>([
@@ -229,11 +232,13 @@ async function recomputeHoldings(
     const mailQty = mailObserved ? locationQty(characterEstate.items, itemId, "mail") : 0;
     const listedQty = listedObserved ? locationQty(accountEstate.items, itemId, "listed") : 0;
     const keyringQty = locationQty(characterEstate.items, itemId, "keyring");
-    // Without any estate document the ledger is the only evidence. Treating
-    // an unseen bag as an empty bag would mark every held unit missing.
+    // Without full coverage the ledger and the observed locations are two
+    // lower bounds on the same stock: an unopened bank may hold the ledger
+    // excess. Only a fully observed character can call the difference
+    // `missing`; an unobserved bag is not an empty one.
     const observedQty = carriedQty + bankQty + accountBankQty + mailQty + listedQty + keyringQty;
-    const qty = characterEstate.exists ? observedQty : ledgerQty;
-    const knownQty = characterEstate.exists ? Math.min(ledgerQty, qty) : ledgerQty;
+    const qty = allObserved ? observedQty : Math.max(observedQty, ledgerQty);
+    const knownQty = Math.min(ledgerQty, qty);
     // The booked cost belongs only to the units that are actually present;
     // spreading it over a larger ledger quantity would inflate unit cost.
     const knownCost = ledgerQty > 0 ? costBasis * (knownQty / ledgerQty) : 0;
@@ -242,15 +247,17 @@ async function recomputeHoldings(
       character,
       itemId,
       qty,
-      carriedQty: characterEstate.exists ? carriedQty : ledgerQty,
+      // Unobserved bag stock is not sellable: a sale would have to guess
+      // that the ledger units are in the bag rather than the bank.
+      carriedQty: carriedObserved ? carriedQty : 0,
       keyringQty,
       bankQty,
       accountBankQty,
       mailQty,
       listedQty,
       knownQty,
-      unknownQty: characterEstate.exists ? Math.max(0, qty - ledgerQty) : 0,
-      missingQty: characterEstate.exists && allObserved ? Math.max(0, ledgerQty - qty) : 0,
+      unknownQty: Math.max(0, qty - ledgerQty),
+      missingQty: allObserved ? Math.max(0, ledgerQty - qty) : 0,
       costBasis: knownCost
     });
   }
@@ -340,19 +347,11 @@ async function applyAdoptions(
   }
 }
 
-// Rebuild one character's holdings from the persisted facts and checkpoint.
-// An estate-only update needs this: the bag moved, but no journal event did.
-export async function refreshHoldings(
+async function replayForCharacter(
   tx: Prisma.TransactionClient,
-  marketId: string
-): Promise<void> {
-  const generation = await tx.marketGeneration.findFirst({
-    where: { marketId },
-    orderBy: { scannedAt: "desc" },
-    select: { character: true }
-  });
-  const character = generation?.character ?? "";
-  if (!character) return;
+  marketId: string,
+  character: string
+): Promise<ReplayState> {
   const checkpointRow = await tx.ledgerCheckpoint.findFirst({
     where: { marketId, character },
     orderBy: { throughSeq: "desc" }
@@ -371,11 +370,61 @@ export async function refreshHoldings(
     select: { payload: true }
   });
   const events = facts.map((fact) => fact.payload as unknown as JournalEvent);
-  const replay = replayJournal(events, checkpoint);
-  await recomputeHoldings(tx, marketId, character, replay, true);
+  return replayJournal(events, checkpoint);
 }
 
-export type JournalApplyResult = {
+async function charactersWithState(
+  tx: Prisma.TransactionClient,
+  marketId: string
+): Promise<string[]> {
+  const [facts, holdings, estates] = await Promise.all([
+    tx.journalFact.findMany({
+      where: { marketId },
+      distinct: ["character"],
+      select: { character: true }
+    }),
+    tx.holding.findMany({
+      where: { marketId },
+      distinct: ["character"],
+      select: { character: true }
+    }),
+    tx.estate.findMany({
+      where: { marketId, scope: { startsWith: "character:" } },
+      select: { scope: true }
+    })
+  ]);
+  const names = new Set<string>();
+  for (const row of facts) if (row.character) names.add(row.character);
+  for (const row of holdings) if (row.character) names.add(row.character);
+  for (const row of estates) {
+    const name = row.scope.slice("character:".length);
+    if (name) names.add(name);
+  }
+  return Array.from(names);
+}
+
+// Rebuild every character's holdings from the persisted facts, checkpoints
+// and estate. Account bank and own postings are account-scoped: only the
+// character whose scan names the current scope carries them. Recomputing
+// just the active character left the previous one holding a stale copy, so
+// the portfolio summed the same posting twice after a character switch.
+export async function refreshHoldings(
+  tx: Prisma.TransactionClient,
+  marketId: string
+): Promise<void> {
+  const generation = await tx.marketGeneration.findFirst({
+    where: { marketId },
+    orderBy: { scannedAt: "desc" },
+    select: { character: true }
+  });
+  const activeCharacter = generation?.character ?? "";
+  for (const character of await charactersWithState(tx, marketId)) {
+    const replay = await replayForCharacter(tx, marketId, character);
+    await recomputeHoldings(tx, marketId, character, replay, character === activeCharacter);
+  }
+}
+
+type JournalApplyResult = {
   events: number;
   trades: number;
   errors: number;
@@ -395,12 +444,6 @@ export async function applyJournal(
   let newFacts = 0;
   let newCheckpoints = 0;
   const characters: string[] = [];
-  const activeGeneration = await tx.marketGeneration.findFirst({
-    where: { marketId },
-    orderBy: { scannedAt: "desc" },
-    select: { character: true }
-  });
-  const activeCharacter = activeGeneration?.character ?? "";
   for (const book of books) {
     const character = book.key.split("|").pop() ?? "";
     if (!character) continue;
@@ -476,27 +519,24 @@ export async function applyJournal(
         },
         update: {}
       });
-      // The checkpoint object in SavedVariables is `{ throughSeq, state }`;
-      // the replay wants the nested state shape.
-      const checkpoint: JournalCheckpoint = {
-        ...book.checkpoint,
-        ...(book.checkpoint as unknown as { state?: Partial<JournalCheckpoint> }).state
-      };
-      const replay = replayJournal(book.events, checkpoint);
-      await recomputeHoldings(tx, marketId, character, replay, character === activeCharacter);
+      // `parseCheckpoint` already returns the flat journal shape; the
+      // replay wants exactly that, not the SavedVariables envelope.
+      const replay = replayJournal(book.events, book.checkpoint);
       const created = await applyTrades(tx, marketId, character, replay.trades);
       trades += created;
       await applyAdoptions(tx, marketId, character, book.events);
       errors += replay.errors.length;
     } else {
       const replay = replayJournal(book.events);
-      await recomputeHoldings(tx, marketId, character, replay, character === activeCharacter);
       const created = await applyTrades(tx, marketId, character, replay.trades);
       trades += created;
       await applyAdoptions(tx, marketId, character, book.events);
       errors += replay.errors.length;
     }
   }
+  // One rebuild for every character: the active scope may have moved, and
+  // an account-scoped posting belongs to exactly one holding row.
+  await refreshHoldings(tx, marketId);
   return {
     events,
     trades,
@@ -521,7 +561,7 @@ type PlanStep = {
   reason?: string;
 };
 
-export type AddonPlan = {
+type AddonPlan = {
   revision?: string;
   estateRevision?: number;
   ledgerRevision?: number;

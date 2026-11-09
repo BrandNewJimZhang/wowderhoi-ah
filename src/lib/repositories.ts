@@ -156,9 +156,10 @@ export async function getRecipes() {
   return prisma.recipe.findMany({ orderBy: [{ profession: "asc" }, { name: "asc" }] });
 }
 
-// The shared core's sellable quantity: what the character can list without
-// a bank trip. Listed units are already on the book and bank units need a
-// trip, so neither belongs in a sell action's quantity.
+// The shared core's sellable quantity. Bag units are sellable now; when the
+// character carries none, the bank units are still a real sell candidate,
+// flagged so the plan can add the bank trip. Listed units are already on
+// the book and never belong in a sell action's quantity.
 export async function getPositions(scope: MarketScope | null): Promise<Record<number, CorePosition>> {
   if (!scope) return {};
   const rows = await prisma.holding.findMany({
@@ -174,12 +175,14 @@ export async function getPositions(scope: MarketScope | null): Promise<Record<nu
   const out: Record<number, CorePosition> = {};
   for (const row of rows) {
     const current = out[row.itemId];
+    const bankQty = row.bankQty + row.accountBankQty;
+    const requiresBank = row.carriedQty === 0 && bankQty > 0;
     const next: CorePosition = {
       qty: row.qty,
       cost: row.costBasis,
-      sellableQty: row.carriedQty,
+      sellableQty: row.carriedQty > 0 ? row.carriedQty : bankQty,
       costKnown: row.unknownQty === 0,
-      requiresBank: row.bankQty + row.accountBankQty > 0 && row.carriedQty === 0
+      requiresBank
     };
     if (!current) {
       out[row.itemId] = next;

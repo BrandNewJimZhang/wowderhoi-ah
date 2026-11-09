@@ -242,28 +242,6 @@ function parseCheckpoint(raw: unknown): JournalCheckpoint | null {
   };
 }
 
-// The checkpoint form of a replay state. The Lua ledger exposes the same
-// shape; a parity fixture can check one against the other.
-export function checkpointOf(state: ReplayState): JournalCheckpoint {
-  return {
-    throughSeq: 0,
-    lots: state.lots,
-    openPosts: state.openPosts,
-    trades: state.trades,
-    capital: state.capital,
-    ...(state.cashAnchor === undefined ? {} : { cashAnchor: state.cashAnchor })
-  };
-}
-
-// The journal is per character, but the terminal's positions and trades are
-// market-scoped because they pair with that market's cash. Pick the book of
-// the character that produced the scan and never fall back to another one:
-// an alt's book would report positions the scanning character does not hold.
-export function bookForCharacter(books: JournalBook[], key: string | null): JournalBook | null {
-  if (!key) return null;
-  return books.find((book) => book.key === key) ?? null;
-}
-
 function postKey(event: JournalEvent, index: number): string {
   return String(event.auctionID ?? `event:${index}`);
 }

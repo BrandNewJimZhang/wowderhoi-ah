@@ -96,6 +96,9 @@ export async function POST(request: Request) {
       marketId: market.id
     });
   } catch (error) {
+    // A malformed document and a broken import both leave the same response
+    // shape, so the server log is the only place the failure class survives.
+    console.error("State import failed:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : String(error) },
       { status: 400 }

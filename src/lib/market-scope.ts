@@ -7,7 +7,13 @@
 // character-scoped Estate. The scope derives them from the newest
 // generation's character and that character's estate so a page still reads
 // one object, but the private state has one authority.
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+
+// The delegates a scope read needs. Both the shared client and a transaction
+// client satisfy this, so the page reader and the single-transaction view
+// resolve the scope with one implementation instead of two copies.
+type ScopeReader = Pick<Prisma.TransactionClient, "market" | "marketGeneration" | "estate">;
 
 export type MarketScope = {
   id: string;
@@ -47,18 +53,21 @@ export function parseMarketPin(value: string | undefined): { realm: string; fact
   return { realm: parts[0], faction: parts[1] };
 }
 
-async function scopeOfMarket(market: {
-  id: string; realm: string; faction: string; openedAt: Date | null;
-  firstScanAt: Date | null; dataVersion: number;
-}): Promise<MarketScope> {
-  const generation = await prisma.marketGeneration.findFirst({
+async function scopeOfMarket(
+  client: ScopeReader,
+  market: {
+    id: string; realm: string; faction: string; openedAt: Date | null;
+    firstScanAt: Date | null; dataVersion: number;
+  }
+): Promise<MarketScope> {
+  const generation = await client.marketGeneration.findFirst({
     where: { marketId: market.id },
     orderBy: { scannedAt: "desc" },
     select: { character: true }
   });
   const character = generation?.character ?? "";
   const estate = character
-    ? await prisma.estate.findUnique({
+    ? await client.estate.findUnique({
         where: { marketId_scope: { marketId: market.id, scope: `character:${character}` } },
         select: { cash: true, freeSlots: true, revision: true }
       })
@@ -77,22 +86,28 @@ async function scopeOfMarket(market: {
   };
 }
 
-export async function getMarketScope(): Promise<MarketScope | null> {
+// The one scope-resolution rule. `getMarketView` passes its transaction so
+// the scope, generation and holdings in one render come from one snapshot.
+export async function resolveMarketScope(client: ScopeReader): Promise<MarketScope | null> {
   const pin = parseMarketPin(process.env.AQT_MARKET);
   if (pin) {
-    const market = await prisma.market.findUnique({ where: { realm_faction: pin } });
+    const market = await client.market.findUnique({ where: { realm_faction: pin } });
     if (!market) throw new Error(`AQT_MARKET points at ${pin.realm}|${pin.faction}, but no such market has been imported`);
-    return scopeOfMarket(market);
+    return scopeOfMarket(client, market);
   }
   // Every generation belongs to a market, so the newest one names the scope.
-  const latest = await prisma.marketGeneration.findFirst({
+  const latest = await client.marketGeneration.findFirst({
     orderBy: { scannedAt: "desc" },
     select: { marketId: true }
   });
   if (latest) {
-    const market = await prisma.market.findUnique({ where: { id: latest.marketId } });
-    if (market) return scopeOfMarket(market);
+    const market = await client.market.findUnique({ where: { id: latest.marketId } });
+    if (market) return scopeOfMarket(client, market);
   }
-  const market = await prisma.market.findFirst({ orderBy: { createdAt: "asc" } });
-  return market ? scopeOfMarket(market) : null;
+  const market = await client.market.findFirst({ orderBy: { createdAt: "asc" } });
+  return market ? scopeOfMarket(client, market) : null;
+}
+
+export async function getMarketScope(): Promise<MarketScope | null> {
+  return resolveMarketScope(prisma);
 }
