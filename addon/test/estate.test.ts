@@ -196,8 +196,10 @@ describe("estate revision", () => {
 
   it("keeps the character and account scopes separate", () => {
     const lua = loadAddon();
-    expect(lua.text(charScope("kind"))).toBe("character");
-    expect(lua.text(accountScope("kind"))).toBe("account");
+    // The scope key is the character identity; coverage splits by scope:
+    // the bag is observed at load, the account's posting list is not.
     expect(lua.text("WowTest.ns.Estate.characterKey()")).toBe("character:Tester");
+    expect(lua.text(charScope("coverage.carried"))).toBe("observed");
+    expect(lua.text(accountScope("coverage.listed"))).toBe("unobserved");
   });
 });

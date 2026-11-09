@@ -17,11 +17,10 @@ import {
 } from "@/lib/journal";
 import { linkTrades } from "@/lib/decision-linking";
 import { decisionIdFor } from "@/lib/decision-id";
+import { currentCharacterState } from "@/lib/market-scope";
 
 type EstateItemInput = { qty: number };
 type EstateScopeInput = {
-  kind?: string;
-  name?: string;
   revision?: number;
   cash?: number | null;
   freeSlots?: number | null;
@@ -286,13 +285,17 @@ async function recomputeHoldings(
 }
 
 function tradeFactId(character: string, trade: JournalTrade, index: number): string {
+  // The event sequence is the sale's identity. An auctionID is not unique
+  // per trade: a commodity listing fills in pieces, so several sale mails
+  // share one posting and must stay separate rows.
+  if (trade.seq !== undefined) return `${character}|seq|${trade.seq}`;
+  // A checkpoint written before trades carried a sequence can still name the
+  // posting, which is stable across checkpoint pruning.
   if (trade.channel === "auction" && trade.auctionID !== undefined) {
     return `${character}|auction|${String(trade.auctionID)}`;
   }
-  // A checkpoint prunes trades by age, which shifts their array positions.
-  // The event sequence is the stable identity; the index is only a fallback
-  // for checkpoints written before trades carried one.
-  if (trade.seq !== undefined) return `${character}|seq|${trade.seq}`;
+  // The array position shifts when a checkpoint prunes a trade; this last
+  // form only covers checkpoints that carry neither identity.
   return `${character}|${trade.channel}|${trade.t}|${trade.itemId ?? 0}|${trade.qty}|${index}`;
 }
 
@@ -444,23 +447,20 @@ async function charactersWithState(
 
 // Rebuild every character's holdings from the persisted facts, checkpoints
 // and estate. Account bank and own postings are account-scoped: only the
-// character whose scan names the current scope carries them. Recomputing
-// just the active character left the previous one holding a stale copy, so
-// the portfolio summed the same posting twice after a character switch.
+// character whose private state is current carries them. Recomputing just
+// the active character left the previous one holding a stale copy, so the
+// portfolio summed the same posting twice after a character switch.
 //
 // A scan passes the character it is importing: the new generation is not
 // written yet, so the account-scoped rows must move before the plan reads
-// the sellable stock. Every other caller names the newest generation.
+// the sellable stock. Every other caller follows the same rule as the page
+// header: the most recently observed estate, then the newest scan.
 export async function refreshHoldings(
   tx: Prisma.TransactionClient,
   marketId: string,
   importingCharacter?: string
 ): Promise<void> {
-  const activeCharacter = importingCharacter ?? (await tx.marketGeneration.findFirst({
-    where: { marketId },
-    orderBy: { scannedAt: "desc" },
-    select: { character: true }
-  }))?.character ?? "";
+  const activeCharacter = importingCharacter ?? (await currentCharacterState(tx, marketId)).character;
   for (const character of await charactersWithState(tx, marketId)) {
     const replay = await replayForCharacter(tx, marketId, character);
     await recomputeHoldings(tx, marketId, character, replay, character === activeCharacter);

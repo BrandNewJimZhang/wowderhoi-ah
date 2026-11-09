@@ -16,6 +16,10 @@ import { prisma } from "@/lib/prisma";
 // resolve the scope with one implementation instead of two copies.
 type ScopeReader = Pick<Prisma.TransactionClient, "market" | "marketGeneration" | "estate">;
 
+// A character read needs no market lookup: holdings attribution asks the same
+// question without resolving a scope first.
+type CharacterReader = Pick<Prisma.TransactionClient, "marketGeneration" | "estate">;
+
 export type MarketScope = {
   id: string;
   realm: string;
@@ -54,6 +58,43 @@ export function parseMarketPin(value: string | undefined): { realm: string; fact
   return { realm: parts[0], faction: parts[1] };
 }
 
+// The character whose private state is current: the most recently observed
+// estate scope, falling back to the newest scan. Both the page header and
+// the holdings attribution use this one rule, so the cash on screen and the
+// character carrying account-scoped stock cannot name different characters.
+export async function currentCharacterState(
+  client: CharacterReader,
+  marketId: string
+): Promise<{
+  character: string;
+  estate: { cash: number | null; freeSlots: number | null; revision: number } | null;
+}> {
+  const [generation, latestEstate] = await Promise.all([
+    client.marketGeneration.findFirst({
+      where: { marketId },
+      orderBy: { scannedAt: "desc" },
+      select: { character: true }
+    }),
+    client.estate.findFirst({
+      where: { marketId, scope: { startsWith: "character:" } },
+      // Two characters observed in the same second would otherwise make the
+      // carrier depend on database order.
+      orderBy: [{ observedAt: "desc" }, { scope: "asc" }],
+      select: { scope: true, cash: true, freeSlots: true, revision: true }
+    })
+  ]);
+  const character = latestEstate
+    ? latestEstate.scope.slice("character:".length)
+    : (generation?.character ?? "");
+  const estate = latestEstate ?? (character
+    ? await client.estate.findUnique({
+        where: { marketId_scope: { marketId, scope: `character:${character}` } },
+        select: { cash: true, freeSlots: true, revision: true }
+      })
+    : null);
+  return { character, estate };
+}
+
 async function scopeOfMarket(
   client: ScopeReader,
   market: {
@@ -66,27 +107,7 @@ async function scopeOfMarket(
   // characters pushes a new estate while the market observation still
   // belongs to the previous scan, and the purse on screen must follow the
   // character, not the book.
-  const [generation, latestEstate] = await Promise.all([
-    client.marketGeneration.findFirst({
-      where: { marketId: market.id },
-      orderBy: { scannedAt: "desc" },
-      select: { character: true }
-    }),
-    client.estate.findFirst({
-      where: { marketId: market.id, scope: { startsWith: "character:" } },
-      orderBy: { observedAt: "desc" },
-      select: { scope: true, cash: true, freeSlots: true, revision: true }
-    })
-  ]);
-  const character = latestEstate
-    ? latestEstate.scope.slice("character:".length)
-    : (generation?.character ?? "");
-  const estate = latestEstate ?? (character
-    ? await client.estate.findUnique({
-        where: { marketId_scope: { marketId: market.id, scope: `character:${character}` } },
-        select: { cash: true, freeSlots: true, revision: true }
-      })
-    : null);
+  const { character, estate } = await currentCharacterState(client, market.id);
   return {
     id: market.id,
     realm: market.realm,

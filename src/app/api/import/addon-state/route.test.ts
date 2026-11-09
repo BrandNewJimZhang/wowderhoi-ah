@@ -37,11 +37,11 @@ function post(path: string, payload: unknown): Promise<Response> {
   }));
 }
 
-function estate(revision: number, carried: number) {
+function estate(revision: number, carried: number, observedAt = NOW) {
   return {
     v: 1,
     revision,
-    observedAt: NOW,
+    observedAt,
     scopes: {
       "character:Tester": {
         kind: "character",
@@ -63,8 +63,8 @@ function estate(revision: number, carried: number) {
   };
 }
 
-function estateWithAccount(revision: number, carried: number, listed: number) {
-  const payload = estate(revision, carried);
+function estateWithAccount(revision: number, carried: number, listed: number, observedAt = NOW) {
+  const payload = estate(revision, carried, observedAt);
   payload.scopes.account.coverage = { account_bank: "unobserved", listed: "observed" };
   payload.scopes.account.items = { "2770": { listed: { qty: listed, slots: 1 } } };
   return payload;
@@ -207,6 +207,29 @@ describe("POST /api/import/addon-state", () => {
     expect(trade).toMatchObject({ qty: 4, pnl: 4560, basisKnown: false });
   });
 
+  it("keeps every partial fill of one posting as its own trade", async () => {
+    const events = [
+      { k: "buy", t: NOW - 200, seq: 1, itemId: 2592, qty: 10, cost: 1000 },
+      { k: "post", t: NOW - 190, seq: 2, auctionID: 99, itemId: 2592, qty: 10, price: 200, deposit: 100 },
+      { k: "sold", t: NOW - 180, seq: 3, auctionID: 99, itemId: 2592, qty: 4, price: 200, fee: 0 },
+      { k: "sold", t: NOW - 170, seq: 4, auctionID: 99, itemId: 2592, qty: 6, price: 200, fee: 0 }
+    ];
+    const response = await post("state", {
+      server: "A", faction: "Alliance",
+      journal: book("Partial", events, 5)
+    });
+    expect(response.status).toBe(200);
+    // A commodity listing fills in pieces. Both mails name the same
+    // auctionID, so keying the trade by the posting overwrote the first fill.
+    expect((await response.json() as { trades: number }).trades).toBe(2);
+    const market = await prisma.market.findUnique({ where: { realm_faction: { realm: "A", faction: "Alliance" } } });
+    const rows = await prisma.trade.findMany({
+      where: { marketId: market!.id, character: "Partial" }
+    });
+    expect(rows).toHaveLength(2);
+    expect(rows.reduce((sum, row) => sum + row.qty, 0)).toBe(10);
+  });
+
   it("keeps a checkpoint trade's identity when older trades are pruned", async () => {
     // A checkpoint drops trades older than the retention window. If the
     // fact identity were the trade's array position, every surviving trade
@@ -321,6 +344,27 @@ describe("POST /api/import/addon-state", () => {
       where: { marketId: market!.id, character: "Alt", itemId: 2770 }
     });
     expect(alt?.listedQty).toBe(2);
+  });
+
+  it("attributes account-scoped stock to the character whose estate was observed last", async () => {
+    const market = await prisma.market.findUnique({
+      where: { realm_faction: { realm: "A", faction: "Alliance" } }
+    });
+    // The newest scan still belongs to Alt. Tester's estate arrives later
+    // without a scan; the account's posting must follow the character whose
+    // state the page header names, not the last scan.
+    await post("state", {
+      server: "A", faction: "Alliance",
+      estate: estateWithAccount(4, 8, 2, NOW + 120)
+    });
+    const tester = await prisma.holding.findFirst({
+      where: { marketId: market!.id, character: "Tester", itemId: 2770 }
+    });
+    expect(tester?.listedQty).toBe(2);
+    const alt = await prisma.holding.findFirst({
+      where: { marketId: market!.id, character: "Alt", itemId: 2770 }
+    });
+    expect(alt?.listedQty ?? 0).toBe(0);
   });
 
   it("does not rebuild holdings from an older journal book", async () => {

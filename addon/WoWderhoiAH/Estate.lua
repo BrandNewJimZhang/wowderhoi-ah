@@ -234,15 +234,12 @@ local function build()
     observedAt = now,
     scopes = {
       [characterScope()] = {
-        kind = "character",
-        name = characterName(),
         cash = GetMoney and GetMoney() or 0,
         -- One free-slot rule for the scan, the radar and the estate.
         freeSlots = WAH.freeBagSlots(),
         -- An unopened mailbox is not an empty one: nil keeps the "never
         -- observed" state distinct from a genuinely zero pending balance.
         pendingCash = mailCount ~= nil and pendingCash or nil,
-        mailCount = mailCount,
         coverage = {
           carried = "observed",
           keyring = "observed",
@@ -253,7 +250,6 @@ local function build()
         items = characterItems
       },
       account = {
-        kind = "account",
         coverage = {
           account_bank = coverage(accountBankObserved),
           listed = coverage(ownedObserved)
@@ -263,8 +259,10 @@ local function build()
     }
   }
   -- Reconciliation is derived from the snapshot and the ledger. Attaching
-  -- it here keeps one document for the terminal; Estate.same ignores it so
-  -- a ledger-only change does not move the estate revision.
+  -- it here lets the in-game reader use the summary without rebuilding the
+  -- containers; Estate.same ignores it so a ledger-only change does not
+  -- move the estate revision. The terminal recomputes `Holding` from the
+  -- same inputs and does not read this block.
   if WAH.Reconciler then snapshot.reconciled = WAH.Reconciler.run(snapshot) end
   local existing = WoWderhoiAH_Estate
   local revision = existing and existing.revision or 0
