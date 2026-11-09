@@ -1,0 +1,539 @@
+// Applies the pushed private state, append-only journal facts and the
+// game's plan. The scan route owns observations; this module owns
+// everything that changes between scans.
+//
+// Idempotency is structural: an estate revision that does not advance is
+// ignored, a journal fact is unique by (market, character, seq), and a plan
+// is unique by (market, revision). A re-sent document is a no-op.
+import { Prisma } from "@prisma/client";
+import {
+  adoptionTimes,
+  parseJournal,
+  replayJournal,
+  type JournalCheckpoint,
+  type JournalEvent,
+  type JournalTrade,
+  type ReplayState
+} from "@/lib/journal";
+import { linkTrades } from "@/lib/decision-linking";
+
+type EstateItemInput = { qty: number; slots?: number };
+type EstateScopeInput = {
+  kind?: string;
+  name?: string;
+  revision?: number;
+  cash?: number | null;
+  freeSlots?: number | null;
+  pendingCash?: number | null;
+  coverage?: Record<string, unknown>;
+  items?: Record<string, Record<string, EstateItemInput>>;
+};
+export type AddonEstate = {
+  v?: number;
+  revision?: number;
+  observedAt?: number;
+  scopes?: Record<string, EstateScopeInput>;
+};
+
+const LOCATIONS = new Set(["carried", "bank", "account_bank", "mail", "listed", "keyring"]);
+
+function numeric(value: unknown, field: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`State payload: ${field} must be a finite number, got ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
+function optionalNumber(value: unknown, field: string): number | null {
+  if (value === undefined || value === null) return null;
+  return numeric(value, field);
+}
+
+function coverageMap(value: unknown, scope: string): Record<string, string> {
+  if (typeof value !== "object" || value === null) {
+    throw new Error(`State payload: estate scope ${scope} must carry a coverage map`);
+  }
+  const out: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    out[key] = entry === "observed" ? "observed" : "unobserved";
+  }
+  return out;
+}
+
+export async function applyEstate(
+  tx: Prisma.TransactionClient,
+  marketId: string,
+  raw: unknown
+): Promise<{ changed: boolean; revision: number }> {
+  if (typeof raw !== "object" || raw === null) {
+    throw new Error("State payload: estate must be an object");
+  }
+  const estate = raw as AddonEstate;
+  if (typeof estate.scopes !== "object" || estate.scopes === null) {
+    throw new Error("State payload: estate.scopes must be an object");
+  }
+  const observedAt = typeof estate.observedAt === "number"
+    ? new Date(estate.observedAt * 1000)
+    : new Date();
+  let changed = false;
+  let highestRevision = 0;
+  for (const [scope, value] of Object.entries(estate.scopes)) {
+    if (typeof value !== "object" || value === null) {
+      throw new Error(`State payload: estate scope ${scope} must be an object`);
+    }
+    const revision = numeric(value.revision ?? estate.revision ?? 0, `${scope}.revision`);
+    highestRevision = Math.max(highestRevision, revision);
+    const existing = await tx.estate.findUnique({
+      where: { marketId_scope: { marketId, scope } },
+      select: { id: true, revision: true, coverage: true }
+    });
+    const coverage = coverageMap(value.coverage, scope);
+    if (existing && existing.revision > revision) continue;
+    // A scan seeds the row with cash and free slots but no item detail. At
+    // the same revision the pushed document still owns the contents; an
+    // already-observed row at the same revision is a re-send and a no-op.
+    const existingCoverage = (existing?.coverage ?? null) as Record<string, unknown> | null;
+    // The scan never creates an account scope, so an existing account row
+    // always came from the publisher; only a character row can be a
+    // cash/slot-only scan seed.
+    const seeded = !existingCoverage
+      ? true
+      : scope === "account"
+        ? false
+        : existingCoverage.carried !== "observed";
+    if (existing && existing.revision === revision && !seeded) continue;
+    const row = existing
+      ? await tx.estate.update({
+          where: { id: existing.id },
+          data: {
+            revision,
+            observedAt,
+            cash: optionalNumber(value.cash, `${scope}.cash`),
+            freeSlots: value.freeSlots === undefined ? null : optionalNumber(value.freeSlots, `${scope}.freeSlots`),
+            pendingCash: optionalNumber(value.pendingCash, `${scope}.pendingCash`),
+            coverage: coverage as unknown as Prisma.InputJsonValue
+          }
+        })
+      : await tx.estate.create({
+          data: {
+            marketId,
+            scope,
+            revision,
+            observedAt,
+            cash: optionalNumber(value.cash, `${scope}.cash`),
+            freeSlots: value.freeSlots === undefined ? null : optionalNumber(value.freeSlots, `${scope}.freeSlots`),
+            pendingCash: optionalNumber(value.pendingCash, `${scope}.pendingCash`),
+            coverage: coverage as unknown as Prisma.InputJsonValue
+          }
+        });
+    await tx.estateItem.deleteMany({ where: { estateId: row.id } });
+    const items: Prisma.EstateItemCreateManyInput[] = [];
+    for (const [itemKey, locations] of Object.entries(value.items ?? {})) {
+      const itemId = Number(itemKey);
+      if (!Number.isInteger(itemId) || itemId <= 0) {
+        throw new Error(`State payload: item key ${itemKey} is not a positive item id`);
+      }
+      for (const [location, entry] of Object.entries(locations)) {
+        if (!LOCATIONS.has(location)) {
+          throw new Error(`State payload: unknown estate location ${location}`);
+        }
+        const qty = numeric(entry?.qty, `${scope}.items.${itemId}.${location}.qty`);
+        if (qty <= 0) continue;
+        items.push({
+          estateId: row.id,
+          itemId,
+          location,
+          qty: Math.round(qty),
+          slotCount: entry.slots === undefined ? 0 : Math.round(numeric(entry.slots, `${scope}.items.${itemId}.${location}.slots`))
+        });
+      }
+    }
+    if (items.length > 0) await tx.estateItem.createMany({ data: items });
+    changed = true;
+  }
+  return { changed, revision: highestRevision };
+}
+
+function locationQty(
+  items: Map<number, Map<string, number>>,
+  itemId: number,
+  location: string
+): number {
+  return items.get(itemId)?.get(location) ?? 0;
+}
+
+function coverageObserved(coverage: Record<string, unknown> | null | undefined, key: string): boolean {
+  return coverage?.[key] === "observed";
+}
+
+async function loadEstateItems(
+  tx: Prisma.TransactionClient,
+  marketId: string,
+  scope: string
+): Promise<{ items: Map<number, Map<string, number>>; coverage: Record<string, unknown>; exists: boolean }> {
+  const estate = await tx.estate.findUnique({
+    where: { marketId_scope: { marketId, scope } },
+    include: { items: true }
+  });
+  const items = new Map<number, Map<string, number>>();
+  for (const row of estate?.items ?? []) {
+    const byLocation = items.get(row.itemId) ?? new Map<string, number>();
+    byLocation.set(row.location, (byLocation.get(row.location) ?? 0) + row.qty);
+    items.set(row.itemId, byLocation);
+  }
+  return {
+    items,
+    coverage: (estate?.coverage ?? {}) as Record<string, unknown>,
+    exists: estate !== null
+  };
+}
+
+async function recomputeHoldings(
+  tx: Prisma.TransactionClient,
+  marketId: string,
+  character: string,
+  replay: ReplayState
+): Promise<void> {
+  const characterScope = `character:${character}`;
+  const [characterEstate, accountEstate] = await Promise.all([
+    loadEstateItems(tx, marketId, characterScope),
+    loadEstateItems(tx, marketId, "account")
+  ]);
+  const bankObserved = coverageObserved(characterEstate.coverage, "bank");
+  const mailObserved = coverageObserved(characterEstate.coverage, "mail");
+  const accountBankObserved = coverageObserved(accountEstate.coverage, "account_bank");
+  const listedObserved = coverageObserved(accountEstate.coverage, "listed");
+  const allObserved = bankObserved && mailObserved && accountBankObserved && listedObserved;
+
+  const itemIds = new Set<number>([
+    ...Object.keys(replay.positions).map(Number),
+    ...characterEstate.items.keys(),
+    ...accountEstate.items.keys()
+  ]);
+  const rows: Prisma.HoldingCreateManyInput[] = [];
+  for (const itemId of itemIds) {
+    const position = replay.positions[itemId];
+    const ledgerQty = position?.qty ?? 0;
+    const costBasis = position?.cost ?? 0;
+    const carriedQty = locationQty(characterEstate.items, itemId, "carried");
+    const bankQty = bankObserved ? locationQty(characterEstate.items, itemId, "bank") : 0;
+    const accountBankQty = accountBankObserved ? locationQty(accountEstate.items, itemId, "account_bank") : 0;
+    const mailQty = mailObserved ? locationQty(characterEstate.items, itemId, "mail") : 0;
+    const listedQty = listedObserved ? locationQty(accountEstate.items, itemId, "listed") : 0;
+    const keyringQty = locationQty(characterEstate.items, itemId, "keyring");
+    // Without any estate document the ledger is the only evidence. Treating
+    // an unseen bag as an empty bag would mark every held unit missing.
+    const observedQty = carriedQty + bankQty + accountBankQty + mailQty + listedQty + keyringQty;
+    const qty = characterEstate.exists ? observedQty : ledgerQty;
+    rows.push({
+      marketId,
+      character,
+      itemId,
+      qty,
+      carriedQty: characterEstate.exists ? carriedQty : ledgerQty,
+      bankQty,
+      accountBankQty,
+      mailQty,
+      listedQty,
+      knownQty: characterEstate.exists ? Math.min(ledgerQty, qty) : ledgerQty,
+      unknownQty: characterEstate.exists ? Math.max(0, qty - ledgerQty) : 0,
+      missingQty: characterEstate.exists && allObserved ? Math.max(0, ledgerQty - qty) : 0,
+      costBasis
+    });
+  }
+  await tx.holding.deleteMany({ where: { marketId, character } });
+  if (rows.length > 0) await tx.holding.createMany({ data: rows });
+}
+
+function tradeFactId(character: string, trade: JournalTrade, index: number): string {
+  if (trade.channel === "auction" && trade.auctionID !== undefined) {
+    return `${character}|auction|${String(trade.auctionID)}`;
+  }
+  return `${character}|${trade.channel}|${trade.t}|${trade.itemId ?? 0}|${trade.qty}|${index}`;
+}
+
+async function applyTrades(
+  tx: Prisma.TransactionClient,
+  marketId: string,
+  character: string,
+  trades: JournalTrade[]
+): Promise<number> {
+  let created = 0;
+  for (let index = 0; index < trades.length; index += 1) {
+    const trade = trades[index];
+    if (trade.itemId === null) continue;
+    const sourceFactId = tradeFactId(character, trade, index);
+    const existing = await tx.trade.findUnique({
+      where: { marketId_sourceFactId: { marketId, sourceFactId } },
+      select: { id: true }
+    });
+    const realizedAt = new Date(trade.t * 1000);
+    const observedAt = new Date((trade.observedAt ?? trade.t) * 1000);
+    const data = {
+      character,
+      itemId: trade.itemId,
+      qty: trade.qty,
+      price: trade.price,
+      fee: trade.fee,
+      pnl: trade.pnl,
+      channel: trade.channel,
+      inferred: trade.inferred,
+      listedAt: trade.listedAt === undefined ? null : new Date(trade.listedAt * 1000),
+      realizedAt,
+      observedAt,
+      censored: trade.censored
+    };
+    await tx.trade.upsert({
+      where: { marketId_sourceFactId: { marketId, sourceFactId } },
+      create: { marketId, sourceFactId, ...data },
+      update: data
+    });
+    if (!existing) created += 1;
+  }
+  return created;
+}
+
+// Adoption events are annotations. They set the decision's adoptedAt and
+// then attribute later trades through the same window the review uses.
+async function applyAdoptions(
+  tx: Prisma.TransactionClient,
+  marketId: string,
+  character: string,
+  events: JournalEvent[]
+): Promise<void> {
+  const adoptions = adoptionTimes(events);
+  for (const [decisionId, at] of adoptions) {
+    await tx.decision.updateMany({
+      where: { decisionId, adoptedAt: null },
+      data: { adoptedAt: at }
+    });
+  }
+  const adopted = await tx.decision.findMany({
+    where: { marketId, adoptedAt: { not: null } },
+    select: { decisionId: true, itemId: true, kind: true, adoptedAt: true }
+  });
+  const unlinked = await tx.trade.findMany({
+    where: { marketId, character, decisionId: null },
+    select: { id: true, itemId: true, realizedAt: true }
+  });
+  const linked = linkTrades(
+    unlinked.map((trade) => ({ ...trade, decisionId: null as string | null })),
+    adopted.filter((row): row is typeof row & { decisionId: string } => row.decisionId !== null)
+  );
+  for (const trade of linked) {
+    if (trade.decisionId) {
+      await tx.trade.update({ where: { id: trade.id }, data: { decisionId: trade.decisionId } });
+    }
+  }
+}
+
+export type JournalApplyResult = {
+  events: number;
+  trades: number;
+  errors: number;
+  characters: string[];
+  changed: boolean;
+};
+
+export async function applyJournal(
+  tx: Prisma.TransactionClient,
+  marketId: string,
+  raw: unknown
+): Promise<JournalApplyResult> {
+  const books = parseJournal(raw);
+  let events = 0;
+  let trades = 0;
+  let errors = 0;
+  let newFacts = 0;
+  let newCheckpoints = 0;
+  const characters: string[] = [];
+  for (const book of books) {
+    const character = book.key.split("|").pop() ?? "";
+    if (!character) continue;
+    characters.push(character);
+    if (book.events.length > 0) {
+      // SQLite has no createMany skipDuplicates; filter the sequence
+      // numbers already present. That is the same identity the unique key
+      // enforces, just decided before the write.
+      const sequences = book.events.map((event) => event.seq as number);
+      const known = await tx.journalFact.findMany({
+        where: { marketId, character, seq: { in: sequences } },
+        select: { seq: true }
+      });
+      const seen = new Set(known.map((row) => row.seq));
+      const data: Prisma.JournalFactCreateManyInput[] = book.events
+        .filter((event) => !seen.has(event.seq as number))
+        .map((event) => ({
+          marketId,
+          character,
+          seq: event.seq as number,
+          kind: event.k,
+          eventTime: event.eventTime === undefined ? null : new Date(event.eventTime * 1000),
+          observedAt: new Date((event.observedAt ?? event.t) * 1000),
+          censored: event.censored === true,
+          payload: event as unknown as Prisma.InputJsonValue
+        }));
+      if (data.length > 0) await tx.journalFact.createMany({ data });
+      events += data.length;
+      newFacts += data.length;
+    }
+    if (book.checkpoint) {
+      const checkpointExisting = await tx.ledgerCheckpoint.findUnique({
+        where: {
+          marketId_character_throughSeq: {
+            marketId,
+            character,
+            throughSeq: book.checkpoint.throughSeq
+          }
+        },
+        select: { marketId: true }
+      });
+      if (!checkpointExisting) newCheckpoints += 1;
+      await tx.ledgerCheckpoint.upsert({
+        where: {
+          marketId_character_throughSeq: {
+            marketId,
+            character,
+            throughSeq: book.checkpoint.throughSeq
+          }
+        },
+        create: {
+          marketId,
+          character,
+          throughSeq: book.checkpoint.throughSeq,
+          state: book.checkpoint as unknown as Prisma.InputJsonValue
+        },
+        update: {}
+      });
+      // The checkpoint object in SavedVariables is `{ throughSeq, state }`;
+      // the replay wants the nested state shape.
+      const checkpoint: JournalCheckpoint = {
+        ...book.checkpoint,
+        ...(book.checkpoint as unknown as { state?: Partial<JournalCheckpoint> }).state
+      };
+      const replay = replayJournal(book.events, checkpoint);
+      await recomputeHoldings(tx, marketId, character, replay);
+      const created = await applyTrades(tx, marketId, character, replay.trades);
+      trades += created;
+      await applyAdoptions(tx, marketId, character, book.events);
+      errors += replay.errors.length;
+    } else {
+      const replay = replayJournal(book.events);
+      await recomputeHoldings(tx, marketId, character, replay);
+      const created = await applyTrades(tx, marketId, character, replay.trades);
+      trades += created;
+      await applyAdoptions(tx, marketId, character, book.events);
+      errors += replay.errors.length;
+    }
+  }
+  return {
+    events,
+    trades,
+    errors,
+    characters,
+    changed: newFacts > 0 || newCheckpoints > 0 || trades > 0
+  };
+}
+
+type PlanStep = {
+  kind?: string;
+  itemId?: number;
+  name?: string;
+  qty?: number;
+  price?: number;
+  unitPrice?: number;
+  allocQty?: number;
+  allocUnitPrice?: number;
+  expectedNet?: number;
+  fillProb?: number;
+  fillBasis?: string;
+  reason?: string;
+};
+
+export type AddonPlan = {
+  revision?: string;
+  estateRevision?: number;
+  ledgerRevision?: number;
+  configRevision?: string;
+  observedAt?: number;
+  steps?: PlanStep[];
+  resources?: unknown;
+  unplanned?: unknown;
+};
+
+export async function applyPlan(
+  tx: Prisma.TransactionClient,
+  marketId: string,
+  realm: string,
+  faction: string,
+  raw: unknown,
+  generationId: string | null,
+  phase: string
+): Promise<{ created: boolean; revision: string | null }> {
+  if (typeof raw !== "object" || raw === null) return { created: false, revision: null };
+  const plan = raw as AddonPlan;
+  if (typeof plan.revision !== "string" || plan.revision === "") {
+    return { created: false, revision: null };
+  }
+  const existing = await tx.plan.findUnique({
+    where: { marketId_revision: { marketId, revision: plan.revision } },
+    select: { id: true }
+  });
+  if (existing) return { created: false, revision: plan.revision };
+  const at = typeof plan.observedAt === "number" ? new Date(plan.observedAt * 1000) : new Date();
+  const row = await tx.plan.create({
+    data: {
+      marketId,
+      generationId,
+      revision: plan.revision,
+      estateRevision: plan.estateRevision ?? 0,
+      ledgerRevision: plan.ledgerRevision ?? 0,
+      configRevision: plan.configRevision ?? "",
+      steps: (plan.steps ?? []) as unknown as Prisma.InputJsonValue,
+      resources: (plan.resources ?? {}) as unknown as Prisma.InputJsonValue,
+      unplanned: (plan.unplanned ?? []) as unknown as Prisma.InputJsonValue,
+      source: "addon",
+      createdAt: at
+    }
+  });
+  await tx.plan.updateMany({
+    where: { marketId, id: { not: row.id }, supersededAt: null },
+    data: { supersededAt: at }
+  });
+  const decisions: Prisma.DecisionCreateManyInput[] = [];
+  for (const step of plan.steps ?? []) {
+    if (!step.itemId || !step.kind) continue;
+    // plan.revision is already realm|faction|...; prepending the realm
+    // again made the adoption id impossible to rebuild in game.
+    const decisionId = `${plan.revision}:${step.itemId}:${step.kind}`;
+    decisions.push({
+      decisionId,
+      planId: row.id,
+      planRevision: plan.revision,
+      marketId,
+      generationId,
+      at,
+      phase,
+      itemId: step.itemId,
+      kind: step.kind,
+      reason: step.reason ?? null,
+      expectedNet: step.expectedNet ?? null,
+      fillProb: step.kind === "buy" ? step.fillProb ?? null : null,
+      fillBasis: step.kind === "buy" ? step.fillBasis ?? null : null,
+      allocQty: step.kind === "buy" ? step.allocQty ?? step.qty ?? null : step.qty ?? null,
+      allocUnitPrice: step.kind === "buy"
+        ? step.allocUnitPrice ?? step.unitPrice ?? null
+        : step.price ?? null
+    });
+  }
+  if (decisions.length > 0) {
+    const existingIds = await tx.decision.findMany({
+      where: { decisionId: { in: decisions.map((row) => row.decisionId as string) } },
+      select: { decisionId: true }
+    });
+    const seen = new Set(existingIds.map((row) => row.decisionId));
+    const fresh = decisions.filter((row) => !seen.has(row.decisionId as string));
+    if (fresh.length > 0) await tx.decision.createMany({ data: fresh });
+  }
+  return { created: true, revision: plan.revision };
+}
