@@ -186,6 +186,21 @@ describe("POST /api/import/addon-state", () => {
     expect(trade).toMatchObject({ qty: 4, pnl: 4560, basisKnown: false });
   });
 
+  it("marks a holding whose cost was only estimated", async () => {
+    const response = await post("state", {
+      server: "A", faction: "Alliance",
+      journal: book("Tester", [
+        { k: "buy", t: NOW - 30, seq: 5, itemId: 8888, qty: 2, cost: 2000, priceSource: "estimated" }
+      ], 6)
+    });
+    expect(response.status).toBe(200);
+    const market = await prisma.market.findUnique({ where: { realm_faction: { realm: "A", faction: "Alliance" } } });
+    const holding = await prisma.holding.findFirst({
+      where: { marketId: market!.id, character: "Tester", itemId: 8888 }
+    });
+    expect(holding).toMatchObject({ knownQty: 2, unknownQty: 0, costKnown: false });
+  });
+
   it("rebuilds holdings when only the estate moves", async () => {
     const response = await post("state", {
       server: "A", faction: "Alliance",
@@ -206,7 +221,9 @@ describe("POST /api/import/addon-state", () => {
     });
     expect(response.status).toBe(200);
     const market = await prisma.market.findUnique({ where: { realm_faction: { realm: "A", faction: "Alliance" } } });
-    expect(await prisma.holding.count({ where: { marketId: market!.id, character: "Tester" } })).toBe(1);
+    expect(await prisma.holding.count({
+      where: { marketId: market!.id, character: "Tester", itemId: 2589 }
+    })).toBe(1);
     const alt = await prisma.holding.findFirst({
       where: { marketId: market!.id, character: "Alt", itemId: 2770 }
     });

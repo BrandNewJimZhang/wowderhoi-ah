@@ -17,6 +17,7 @@ function holding(partial: Partial<StoredHolding> & Pick<StoredHolding, "characte
     knownQty: 0,
     unknownQty: 0,
     missingQty: 0,
+    costKnown: true,
     costBasis: 0,
     ...partial
   };
@@ -52,6 +53,14 @@ describe("summarizeHoldings", () => {
     expect(summary.unknownUnits).toBe(2);
     expect(summary.missingUnits).toBe(1);
     expect(summary.byLocation).toEqual({ carried: 2, keyring: 1, bank: 5, mail: 1, listed: 1 });
+  });
+
+  it("does not value a booked quantity whose cost was never proved", () => {
+    const summary = summarizeHoldings([
+      holding({ character: "Main", itemId: 2589, qty: 2, knownQty: 2, costKnown: false, costBasis: 2000 })
+    ]);
+    expect(summary.positions[2589]).toBeUndefined();
+    expect(summary.unknownUnits).toBe(2);
   });
 
   it("does not value units the ledger cannot price", () => {

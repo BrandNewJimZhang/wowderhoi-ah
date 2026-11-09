@@ -197,7 +197,11 @@ local function planFor(itemId, duration, quantity)
   -- The bag may hold units the journal never booked; their profit is not
   -- a zero-basis windfall.
   local record = WAH.Reconciler and WAH.Reconciler.item(itemId) or nil
-  plan.costKnown = held ~= nil and qty <= held.qty and ((not record) or record.unknownQty == 0)
+  -- The position's own cost must be proved, and every sellable unit must be
+  -- booked; either failure makes the realized profit a guess.
+  plan.costKnown = held ~= nil and qty <= held.qty
+    and held.costKnown ~= false
+    and ((not record) or record.unknownQty == 0)
   return plan, nil, entry
 end
 

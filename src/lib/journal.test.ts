@@ -24,9 +24,9 @@ describe("replayJournal", () => {
     expect(state.capital.fees).toBe(1125);
     expect(state.capital.depositsLost).toBe(300);
     expect(state.capital.escrow).toBe(0);
-    expect(state.positions[2589]).toEqual({ qty: 2, cost: 4000 });
-    expect(state.positions[2000]).toEqual({ qty: 2, cost: 3333 });
-    expect(state.positions[2001]).toEqual({ qty: 1, cost: 1667 });
+    expect(state.positions[2589]).toEqual({ qty: 2, cost: 4000, costKnown: true });
+    expect(state.positions[2000]).toEqual({ qty: 2, cost: 3333, costKnown: true });
+    expect(state.positions[2001]).toEqual({ qty: 1, cost: 1667, costKnown: true });
     expect(state.trades).toHaveLength(2);
     expect(state.trades[0].inferred).toBe(false);
     expect(state.trades[0].listedAt).toBe(120);
@@ -39,7 +39,7 @@ describe("replayJournal", () => {
       { k: "buy", t: 1, itemId: 1000, qty: 10, cost: 1000 },
       { k: "craft", t: 2, itemId: 2000, qty: 2, cost: 99999, mats: [{ itemId: 1000, qty: 10 }] }
     ]);
-    expect(state.positions[2000]).toEqual({ qty: 2, cost: 1000 });
+    expect(state.positions[2000]).toEqual({ qty: 2, cost: 1000, costKnown: true });
   });
 
   it("keeps a posting open when a sale only fills part of it", () => {
@@ -95,6 +95,11 @@ describe("replayJournal", () => {
     expect(state.trades[0].basisKnown).toBe(false);
     expect(state.trades[1].basisKnown).toBe(true);
     expect(state.trades).toEqual((loadAddon().ledgerReplay(events) as { trades: unknown }).trades);
+    // The still-held estimate is a real quantity with an unproved cost.
+    const held = replayJournal([
+      { k: "buy", t: 1, itemId: 3, qty: 2, cost: 2000, priceSource: "estimated" }
+    ]);
+    expect(held.positions[3]).toEqual({ qty: 2, cost: 2000, costKnown: false });
   });
 
   it("carries unknown basis through a craft", () => {
@@ -158,7 +163,7 @@ describe("replayJournal", () => {
       { k: "craft", t: 2, itemId: 2000, qty: 2, cost: 10000, mats: [{ itemId: 1000, qty: 10 }] }
     ]);
     expect(state.positions[1000]).toBeUndefined();
-    expect(state.positions[2000]).toEqual({ qty: 2, cost: 10000 });
+    expect(state.positions[2000]).toEqual({ qty: 2, cost: 10000, costKnown: true });
     expect(state.errors).toHaveLength(0);
   });
 
@@ -198,14 +203,14 @@ describe("replayJournal", () => {
       { k: "transfer_out", t: 200, itemId: 2589, qty: 4, cost: 400 }
     ];
     const state = replayJournal(events);
-    expect(state.positions[2589]).toEqual({ qty: 6, cost: 600 });
+    expect(state.positions[2589]).toEqual({ qty: 6, cost: 600, costKnown: true });
     expect(state.trades).toHaveLength(0);
     expect(state.errors).toHaveLength(0);
 
     const received = replayJournal([
       { k: "transfer_in", t: 100, itemId: 2589, qty: 4, cost: 400 }
     ]);
-    expect(received.positions[2589]).toEqual({ qty: 4, cost: 400 });
+    expect(received.positions[2589]).toEqual({ qty: 4, cost: 400, costKnown: true });
     expect(received.errors).toHaveLength(0);
 
     const fromLua = loadAddon().ledgerReplay(events) as Record<string, unknown>;
@@ -332,7 +337,7 @@ describe("journal checkpoint parity", () => {
     expect(books[0].nextSeq).toBe(9);
     expect(books[0].checkpoint?.throughSeq).toBe(8);
     const state = replayJournal(books[0].events, books[0].checkpoint);
-    expect(state.positions[2589]).toEqual({ qty: 3, cost: 200 });
+    expect(state.positions[2589]).toEqual({ qty: 3, cost: 200, costKnown: true });
     expect(state.capital.cashDelta).toBe(-200);
     expect(state.cashAnchor).toBe(1000);
     expect(journalRevision(parsed.WoWderhoiAH_Journal)).toContain(":9:8");

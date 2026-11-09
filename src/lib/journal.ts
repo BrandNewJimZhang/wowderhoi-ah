@@ -94,7 +94,10 @@ type ReplayError = {
 };
 
 export type ReplayState = {
-  positions: Record<number, { qty: number; cost: number }>;
+  // False when some remaining units came from a lot the ledger could not
+  // price exactly (short history or an estimated purchase). The quantity is
+  // real; the cost attached to it is not a number the system can prove.
+  positions: Record<number, { qty: number; cost: number; costKnown: boolean }>;
   // The FIFO lots behind positions. They are not part of the page contract;
   // the checkpoint parity test and a later checkpoint need them.
   lots: Record<number, JournalLot[]>;
@@ -272,7 +275,7 @@ export function journalRevision(raw: unknown): string {
 
 export function replayJournal(events: JournalEvent[], checkpoint?: JournalCheckpoint | null): ReplayState {
   const lots = new Map<number, JournalLot[]>();
-  const positions: Record<number, { qty: number; cost: number }> = {};
+  const positions: ReplayState["positions"] = {};
   const openPosts: ReplayState["openPosts"] = {};
   const trades: JournalTrade[] = [];
   const errors: ReplayError[] = [];
@@ -522,8 +525,15 @@ export function replayJournal(events: JournalEvent[], checkpoint?: JournalCheckp
   for (const [itemId, list] of lots.entries()) {
     const quantity = list.reduce((sum, lot) => sum + lot.qty, 0);
     const cost = list.reduce((sum, lot) => sum + lot.qty * lot.unitCost, 0);
-    if (quantity <= 0) lots.delete(itemId);
-    else positions[itemId] = { qty: quantity, cost: round(cost) };
+    if (quantity <= 0) {
+      lots.delete(itemId);
+      continue;
+    }
+    positions[itemId] = {
+      qty: quantity,
+      cost: round(cost),
+      costKnown: list.every((lot) => lot.known !== false)
+    };
   }
 
   const lotRecord: Record<number, JournalLot[]> = {};

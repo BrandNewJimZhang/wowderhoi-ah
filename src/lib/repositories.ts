@@ -169,7 +169,7 @@ export async function getPositions(scope: MarketScope | null): Promise<Record<nu
     },
     select: {
       itemId: true, qty: true, carriedQty: true, keyringQty: true, bankQty: true,
-      accountBankQty: true, unknownQty: true, costBasis: true
+      accountBankQty: true, unknownQty: true, costKnown: true, costBasis: true
     }
   });
   const out: Record<number, CorePosition> = {};
@@ -181,7 +181,7 @@ export async function getPositions(scope: MarketScope | null): Promise<Record<nu
       qty: row.qty,
       cost: row.costBasis,
       sellableQty: row.carriedQty > 0 ? row.carriedQty : bankQty,
-      costKnown: row.unknownQty === 0,
+      costKnown: row.unknownQty === 0 && row.costKnown,
       requiresBank
     };
     if (!current) {
@@ -212,6 +212,7 @@ export type StoredHolding = {
   knownQty: number;
   unknownQty: number;
   missingQty: number;
+  costKnown: boolean;
   costBasis: number;
 };
 
@@ -222,11 +223,17 @@ export async function getReconciliationStats(scope: MarketScope | null) {
   if (!scope) {
     return { unknown: 0, missing: 0, holdings: 0, unobservedLocations: 0, planRevision: null as string | null };
   }
-  const [holding, estates, plan] = await Promise.all([
+  const [holding, unproved, estates, plan] = await Promise.all([
     prisma.holding.aggregate({
       where: { marketId: scope.id },
       _sum: { unknownQty: true, missingQty: true },
       _count: { _all: true }
+    }),
+    // Units the ledger booked but could not price exactly. They are present
+    // in the estate, so they are unknown cost, not missing stock.
+    prisma.holding.aggregate({
+      where: { marketId: scope.id, costKnown: false },
+      _sum: { knownQty: true }
     }),
     prisma.estate.findMany({ where: { marketId: scope.id }, select: { coverage: true } }),
     prisma.plan.findFirst({
@@ -243,7 +250,7 @@ export async function getReconciliationStats(scope: MarketScope | null) {
     }
   }
   return {
-    unknown: holding._sum.unknownQty ?? 0,
+    unknown: (holding._sum.unknownQty ?? 0) + (unproved._sum.knownQty ?? 0),
     missing: holding._sum.missingQty ?? 0,
     holdings: holding._count._all,
     unobservedLocations,

@@ -282,6 +282,10 @@ model Holding {
   knownQty       Int      @default(0) @map("known_qty")
   unknownQty     Int      @default(0) @map("unknown_qty")
   missingQty     Int      @default(0) @map("missing_qty")
+  // False when the ledger's remaining lots include a unit whose cost was
+  // never booked exactly (short history or an estimated purchase). The
+  // quantity is usable for selling; the cost is not usable for valuation.
+  costKnown      Boolean  @default(true) @map("cost_known")
   costBasis      Float    @default(0) @map("cost_basis")
   updatedAt      DateTime @updatedAt @map("updated_at")
   market         Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)

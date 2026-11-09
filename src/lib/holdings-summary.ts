@@ -28,6 +28,13 @@ export function summarizeHoldings(holdings: readonly StoredHolding[]): HoldingsS
     byLocation.mail += holding.mailQty;
     byLocation.listed += holding.listedQty;
     if (holding.knownQty <= 0) continue;
+    // A booked quantity whose lots include an estimated or missing cost
+    // cannot be valued against a cost total. It joins the unknown units
+    // instead of contributing a made-up basis.
+    if (!holding.costKnown) {
+      unknownUnits += holding.knownQty;
+      continue;
+    }
     const position = positions[holding.itemId] ?? { qty: 0, cost: 0 };
     position.qty += holding.knownQty;
     position.cost += holding.costBasis;

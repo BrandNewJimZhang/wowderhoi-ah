@@ -323,11 +323,15 @@ function Ledger.replay(events, market, initial)
   end
   for itemId, lots in pairs(state.lots) do
     local quantity, cost = 0, totalCost(lots)
-    for _, lot in ipairs(lots) do quantity = quantity + lot.qty end
+    local known = true
+    for _, lot in ipairs(lots) do
+      quantity = quantity + lot.qty
+      if lot.known == false then known = false end
+    end
     if quantity <= 0 then
       state.lots[itemId] = nil
     else
-      state.positions[itemId] = { qty = quantity, cost = round(cost) }
+      state.positions[itemId] = { qty = quantity, cost = round(cost), costKnown = known }
     end
   end
   state.capital.realized = round(state.capital.realized)

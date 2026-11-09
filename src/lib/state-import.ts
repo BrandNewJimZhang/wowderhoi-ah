@@ -266,6 +266,7 @@ async function recomputeHoldings(
       knownQty,
       unknownQty: Math.max(0, qty - ledgerQty),
       missingQty: allObserved ? Math.max(0, ledgerQty - qty) : 0,
+      costKnown: position?.costKnown !== false,
       costBasis: knownCost
     });
   }

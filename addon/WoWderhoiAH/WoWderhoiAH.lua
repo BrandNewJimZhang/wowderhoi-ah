@@ -1953,7 +1953,10 @@ function WAH.coreInput()
       qty = position.qty,
       cost = position.cost,
       sellableQty = record and record.sellableQty or position.qty,
-      costKnown = (not record) or record.unknownQty == 0,
+      -- The ledger says whether the basis is proved; the estate says
+      -- whether every sellable unit is booked. Both must hold.
+      costKnown = position.costKnown ~= false
+        and ((not record) or record.unknownQty == 0),
       requiresBank = record and record.requiresBank or false
     }
   end

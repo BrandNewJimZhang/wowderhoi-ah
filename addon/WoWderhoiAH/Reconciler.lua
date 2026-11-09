@@ -90,6 +90,10 @@ function Reconciler.run(snapshot)
       unknownQty = unknownQty,
       missingQty = missingQty,
       missingUnobserved = (not allObserved) and ledgerQty > totalQty or false,
+      -- The quantity is observed; the booked cost may still be partial
+      -- (short history or an estimated purchase). The sell page and the
+      -- core must not report realized profit from it.
+      costKnown = position == nil or position.costKnown ~= false,
       costBasis = knownCost,
       unitCost = knownQty > 0 and knownCost / knownQty or 0,
       sellableQty = sellableQty,

@@ -73,7 +73,7 @@ export async function getMarketView(): Promise<MarketView> {
         select: {
           character: true, itemId: true, qty: true, carriedQty: true, keyringQty: true,
           bankQty: true, accountBankQty: true, mailQty: true, listedQty: true, knownQty: true,
-          unknownQty: true, missingQty: true, costBasis: true
+          unknownQty: true, missingQty: true, costKnown: true, costBasis: true
         }
       }),
       tx.estate.findMany({
