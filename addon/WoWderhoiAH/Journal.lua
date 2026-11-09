@@ -66,9 +66,9 @@ function Journal.ensure()
 end
 
 -- Materialize this character's book at load, before the first action. The
--- terminal treats a journal-bearing scan as the authoritative ledger for
--- the scanning character; without the empty book the global is absent and
--- the import would look scan-only, keeping another character's positions.
+-- terminal imports every book by character; without the empty global the
+-- state payload would omit this character and leave its previous holdings
+-- standing.
 local loader = CreateFrame("Frame")
 loader:RegisterEvent("ADDON_LOADED")
 loader:SetScript("OnEvent", function(_, _, name)

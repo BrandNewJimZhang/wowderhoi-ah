@@ -79,13 +79,14 @@ describe("reconciliation", () => {
     expect(item(lua, "missingQty")).toBe(0);
   });
 
-  it("marks bank-only stock as requiring a bank trip", () => {
+  it("offers bank-only stock as a sale that requires a bank trip", () => {
     const lua = loadAddon();
     lua.exec("WowTest.ns.recordEvent({ k = 'buy', itemId = 2589, qty = 3, cost = 3000 })");
     lua.setBag([{ bag: 6, slot: 1, itemId: LINEN, count: 3, name: "Linen" }]);
     lua.exec("WowTest.fireEvent('BANKFRAME_OPENED')");
     lua.exec("WowTest.advance(2)");
-    expect(item(lua, "sellableQty")).toBe(0);
+    // The bag holds none, so the plan may only sell these after a bank trip.
+    expect(item(lua, "sellableQty")).toBe(3);
     expect(item(lua, "requiresBank")).toBe(1);
   });
 

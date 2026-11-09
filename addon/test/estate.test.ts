@@ -107,6 +107,26 @@ describe("estate collection", () => {
     )).toBe(0);
   });
 
+  it("keeps the last observed mail after the mailbox closes", () => {
+    const lua = loadAddon();
+    lua.exec(`WowTest.setMail({ {
+      sender = "Auction House", subject = "Won", money = 0, hasItem = true,
+      attachments = { "|Hitem:${MAGEWEAVE}:0:0|h[Mageweave]|h" },
+      attachmentItems = { { name = "Mageweave", itemId = ${MAGEWEAVE}, count = 3 } },
+      invoice = { kind = 2, name = "Mageweave", bid = 700 }
+    } })`);
+    lua.exec("WowTest.fireEvent('MAIL_INBOX_UPDATE')");
+    refresh(lua);
+    expect(lua.number(charScope(`items[${MAGEWEAVE}].mail.qty`))).toBe(3);
+    // The client only promises the inbox while the mailbox is open. Closing
+    // it and firing a bag event must not turn the cache into an empty inbox.
+    lua.exec("MailFrame:Hide()");
+    lua.exec("WowTest.setMail({})");
+    lua.exec("WowTest.fireEvent('BAG_UPDATE_DELAYED')");
+    refresh(lua);
+    expect(lua.number(charScope(`items[${MAGEWEAVE}].mail.qty`))).toBe(3);
+  });
+
   it("publishes own postings as account-level listed stock", () => {
     const lua = loadAddon();
     lua.setOwned([{ auctionID: 11, itemId: LINEN, quantity: 4, buyoutAmount: 4000 }]);

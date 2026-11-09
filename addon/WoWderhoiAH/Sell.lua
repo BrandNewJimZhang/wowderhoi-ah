@@ -103,6 +103,9 @@ local function collectBag()
             name = info.itemName or ("item:" .. info.itemID),
             icon = info.iconFileID,
             count = 0,
+            -- A non-commodity listing posts from one slot; the plan must
+            -- not quote a quantity larger than this stack can supply.
+            firstStack = info.stackCount or 1,
             bag = bag,
             slot = slot
           }
@@ -136,7 +139,11 @@ local function planFor(itemId, duration, quantity)
   if not scanned or not (scanned.sellP and scanned.sellP > 0) then
     return nil, "noScan", entry
   end
-  local qty = math.max(1, math.floor(quantity or entry.count or 1))
+  -- Commodities can draw from every bag stack; an item auction posts from
+  -- the one location it names, so its quantity is capped at that stack.
+  local requested = math.max(1, math.floor(quantity or entry.count or 1))
+  local stackCap = entry.commodity and entry.count or (entry.firstStack or entry.count or 1)
+  local qty = math.max(1, math.min(requested, stackCap))
   local deposits, depositAvailable = {}, false
   for _, hours in ipairs(DURATIONS) do
     local deposit, available = depositFor(entry, hours, qty)

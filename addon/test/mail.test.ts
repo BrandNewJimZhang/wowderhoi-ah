@@ -293,6 +293,22 @@ describe("mail invoice kinds", () => {
     expect(lua.number("(WowTest.ns.Ledger.positions()[2589] or {}).qty or 0")).toBe(1);
   });
 
+  it("books a won bid as the attached stack, not one unit", () => {
+    const lua = loadAddon();
+    lua.exec('WowTest.itemInfo[2589] = { name = "亚麻布" }');
+    lua.exec(`WowTest.setMail({ {
+      subject = "Auction won: 亚麻布",
+      money = 0,
+      hasItem = true,
+      attachmentItems = { { name = "亚麻布", itemId = 2589, count = 20 } },
+      invoice = { kind = 2, name = "亚麻布", bid = 700, buyout = 900 }
+    } })`);
+    const result = scan(lua);
+    expect(result.won).toBe(1);
+    expect(lua.number("WowTest.ns.Journal.last('buy').qty")).toBe(20);
+    expect(lua.number("(WowTest.ns.Ledger.positions()[2589] or {}).qty or 0")).toBe(20);
+  });
+
   it("closes an open posting on a returned cancelled mail", () => {
     const lua = loadAddon();
     lua.exec('WowTest.itemInfo[2589] = { name = "亚麻布" }');
@@ -311,6 +327,27 @@ describe("mail invoice kinds", () => {
     expect(lua.number("WowTest.ns.Ledger.capital().escrow")).toBe(0);
     // The goods came back and were never consumed.
     expect(lua.number("WowTest.ns.Ledger.positions()[2589].qty")).toBe(10);
+  });
+
+  it("does not book a cancel a second time when the client event follows the mail", () => {
+    const lua = loadAddon();
+    lua.exec('WowTest.itemInfo[2589] = { name = "亚麻布" }');
+    record(lua, { k: "buy", itemId: 2589, qty: 10, cost: 8000 });
+    record(lua, { k: "post", auctionID: 7, itemId: 2589, qty: 10, price: 1200, deposit: 500 });
+    lua.exec(`WowTest.setMail({ {
+      subject = "Auction cancelled: 亚麻布", money = 500, hasItem = true,
+      attachments = { "|Hitem:2589:0:0|h[亚麻布]|h" },
+      invoice = { kind = "cancelled", name = "亚麻布", buyout = 0, deposit = 500 }
+    } })`);
+    expect(scan(lua).returned).toBe(1);
+    lua.exec("WowTest.fireEvent('AUCTION_CANCELED', 7)");
+    expect(lua.number(`(function()
+      local n = 0
+      for _, event in ipairs(WowTest.ns.Journal.current()) do
+        if event.k == "cancel" then n = n + 1 end
+      end
+      return n
+    end)()`)).toBe(1);
   });
 
   it("ignores a player mail with no invoice", () => {

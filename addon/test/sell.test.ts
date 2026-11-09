@@ -81,6 +81,20 @@ describe("sell pricing", () => {
     expect(lua.eval("WowTest.ns.Sell.plan(2589, 24, 10).costKnown")).toBe(false);
   });
 
+  it("caps a non-commodity plan at the stack the posted location holds", () => {
+    const lua = page();
+    // The same item sits in two slots. An item auction posts from one
+    // location, so quoting the summed bag count would ask the client to
+    // list more than that stack contains.
+    lua.setBag([
+      { bag: 0, slot: 1, itemId: MAGEWEAVE, count: 3, name: "Mageweave Cloth", commodity: false },
+      { bag: 0, slot: 2, itemId: MAGEWEAVE, count: 7, name: "Mageweave Cloth", commodity: false }
+    ]);
+    lua.exec("WowTest.ns.Sell.collectBag()");
+    expect(lua.number("(WowTest.ns.Sell.plan(4338, 24, 10)).quantity")).toBe(3);
+    expect(lua.number("(WowTest.ns.Sell.plan(4338, 24, 2)).quantity")).toBe(2);
+  });
+
   it("refuses to price an item the scan has never seen", () => {
     const lua = page();
     expect(lua.eval("WowTest.ns.Sell.plan(99999, 24, 1)")).toBeNull();

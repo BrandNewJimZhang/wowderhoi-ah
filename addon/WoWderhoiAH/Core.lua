@@ -961,7 +961,7 @@ function Core.evaluate(input)
 
   -- The allocator sees the cash a sale can return, but the plan walk below
   -- still starts from the real purse and promotes the sale before spending.
-  local _, unfunded = Core.allocate(rows, planningBudget, rules, {
+  Core.allocate(rows, planningBudget, rules, {
     freeSlots = freeSlots,
     stackSize = stackSize,
     positions = positions
@@ -1005,8 +1005,11 @@ function Core.evaluate(input)
         realizedPnl = costKnown and round(economics.netProceeds - economics.costForSale) or nil,
         costKnown = costKnown,
         durationHours = economics.sellPlan and economics.sellPlan.duration or 24,
-        fillProb = economics.sellPlan and economics.sellPlan.fillProb or 0,
-        fillBasis = "sell",
+        -- The core has no deposit table, so sellPlan does not estimate a
+        -- fill chance here. A made-up zero would enter the calibration log
+        -- as a real prediction; leave it absent instead.
+        fillProb = economics.sellPlan and economics.sellPlan.fillProb or nil,
+        fillBasis = economics.sellPlan and economics.sellPlan.fillProb and "sell" or nil,
         -- A round trip plus the listing, not a buy.
         netPerMinute = round(economics.netProceeds / math.max(effortMinutes("sell"), 1)),
         requiresBank = position.requiresBank == true,
@@ -1101,19 +1104,18 @@ function Core.evaluate(input)
         quantity = fits()
         guard = guard + 1
       end
+      -- Which resource bound the step: the final loop records every refused
+      -- row once, so the cause must be the one the plan actually hit.
+      local slotQty = math.floor(slotUnits)
+      local affordableQty = affordable()
       if quantity <= 0 then
-        local reason = math.floor(slotUnits) < 1 and "slots" or "cash"
+        local reason = (slotQty < candidate.qty and slotQty <= affordableQty) and "slots" or "cash"
         -- The radar's fundable layer must describe the same trade the plan
         -- refused, not the pre-plan allocation.
         row.allocQty = 0
         row.allocNet = 0
         row.netPerMinute = 0
         row.unfunded = reason
-        unplanned[#unplanned + 1] = {
-          kind = "buy",
-          itemId = candidate.itemId,
-          reason = reason
-        }
       else
         local cashBefore, slotsBefore = cash, slotCountOf(slotUnits)
         local cost = quantity * unitCost
@@ -1125,13 +1127,14 @@ function Core.evaluate(input)
         end
         cash = cash - cost
         slotUnits = slotUnits - quantity
+        local cause = (slotQty < candidate.qty and slotQty <= affordableQty) and "slots" or "cash"
         if quantity < candidate.qty then
           row.allocQty = quantity
           row.allocCost = round(cost)
           row.allocUnitPrice = unitCost
           row.allocNet = net
           row.netPerMinute = round(net / math.max(effortMinutes("buy"), 1))
-          row.unfunded = "purse"
+          row.unfunded = cause
         end
         steps[#steps + 1] = {
           kind = "buy",
@@ -1160,7 +1163,7 @@ function Core.evaluate(input)
           unplanned[#unplanned + 1] = {
             kind = "buy",
             itemId = candidate.itemId,
-            reason = "cash",
+            reason = cause,
             note = quantity
           }
         end
@@ -1192,6 +1195,15 @@ function Core.evaluate(input)
     slotsAfter = slotCountOf(slotUnits),
     binding = (cash <= 0 and "cash") or (slotUnits < stackSize and "slots") or "none"
   }
+  -- The allocator's causes describe the pre-plan purse; the plan may have
+  -- reduced or refused a row afterwards. Re-derive the counts from the final
+  -- rows so the radar's explanation matches the list it renders.
+  local finalUnfunded = { kelly = 0, exposure = 0, purse = 0, depth = 0, slots = 0 }
+  for _, row in ipairs(rows) do
+    if (row.allocQty or 0) <= 0 and row.unfunded then
+      finalUnfunded[row.unfunded] = (finalUnfunded[row.unfunded] or 0) + 1
+    end
+  end
 
   return {
     phase = phase,
@@ -1207,7 +1219,7 @@ function Core.evaluate(input)
     -- Why rows fell out of the radar, keyed by gate, and why a candidate
     -- received no copper, keyed by cause. The UIs explain exclusions per
     -- row; the core's own tests read this table.
-    diagnostics = { excluded = excluded, unfunded = unfunded }
+    diagnostics = { excluded = excluded, unfunded = finalUnfunded }
   }
 end
 

@@ -46,6 +46,10 @@ local bankOpen = false
 -- cannot turn the cache into an empty bank.
 local bankCache = nil
 local mailObserved = false
+-- The inbox is only readable while the mailbox is open. Keep the last
+-- observed mail so a bag or money event after closing cannot replace it
+-- with an empty list.
+local mailCache = nil
 local ownedObserved = false
 
 local function characterName()
@@ -116,12 +120,18 @@ local function scanBank(items)
   copyBankCache(items)
 end
 
-local function scanMail(items)
-  if not mailObserved then return 0, nil end
-  if not (GetInboxNumItems and GetInboxHeaderInfo and GetInboxItemLink) then return 0, nil end
-  local ok, count = pcall(GetInboxNumItems)
-  if not ok or not count then return 0, nil end
+local function copyMailCache(items)
+  for itemId, byLocation in pairs(mailCache and mailCache.items or {}) do
+    local entry = byLocation.mail
+    if entry then addItem(items, itemId, "mail", entry.qty, entry.slots) end
+  end
+end
+
+local function readInbox()
+  local fresh = {}
   local pendingCash = 0
+  local ok, count = pcall(GetInboxNumItems)
+  if not ok or not count then return nil end
   for message = 1, count do
     local okHeader, header = pcall(function() return { GetInboxHeaderInfo(message) } end)
     if okHeader and header then
@@ -135,9 +145,9 @@ local function scanMail(items)
         -- for builds that only expose it.
         local counted = false
         if type(GetInboxItem) == "function" then
-          local okItem, _, itemId, _, count = pcall(GetInboxItem, message, attachment)
+          local okItem, _, itemId, _, stack = pcall(GetInboxItem, message, attachment)
           if okItem and itemId then
-            addItem(items, itemId, "mail", count or 1, 1)
+            addItem(fresh, itemId, "mail", stack or 1, 1)
             counted = true
           end
         end
@@ -145,13 +155,30 @@ local function scanMail(items)
           local okLink, link = pcall(GetInboxItemLink, message, attachment)
           if okLink and link then
             local itemId = tonumber(tostring(link):match("item:(%d+)"))
-            if itemId then addItem(items, itemId, "mail", 1, 1) end
+            if itemId then addItem(fresh, itemId, "mail", 1, 1) end
           end
         end
       end
     end
   end
-  return pendingCash, count
+  return { items = fresh, pendingCash = pendingCash, count = count }
+end
+
+local function scanMail(items)
+  if not mailObserved then return nil, nil end
+  -- GetInboxItem is the preferred source; the link is only the fallback.
+  -- Requiring the link would skip every build that exposes the item call.
+  if not (GetInboxNumItems and GetInboxHeaderInfo) then return nil, nil end
+  -- The client only promises the inbox while the mailbox is open. Closing
+  -- it must not turn the cached mail into an empty inbox.
+  local open = not (MailFrame and MailFrame.IsShown) or MailFrame:IsShown()
+  if open then
+    local read = readInbox()
+    if read then mailCache = read end
+  end
+  if not mailCache then return nil, nil end
+  copyMailCache(items)
+  return mailCache.pendingCash, mailCache.count
 end
 
 -- Own postings are still owned. They belong to the account, but the
@@ -208,8 +235,10 @@ local function build()
         name = characterName(),
         cash = GetMoney and GetMoney() or 0,
         freeSlots = freeBagSlots(),
-        pendingCash = pendingCash,
-        mailCount = mailCount or 0,
+        -- An unopened mailbox is not an empty one: nil keeps the "never
+        -- observed" state distinct from a genuinely zero pending balance.
+        pendingCash = mailCount ~= nil and pendingCash or nil,
+        mailCount = mailCount,
         coverage = {
           carried = "observed",
           keyring = "observed",
@@ -351,22 +380,14 @@ function Estate.revision()
   return snapshot and snapshot.revision or 0
 end
 
-function Estate.scope(scopeKey)
-  local snapshot = Estate.snapshot()
-  return snapshot and snapshot.scopes and snapshot.scopes[scopeKey] or nil
-end
-
 function Estate.currentCharacterScope()
-  return Estate.scope(characterScope())
+  local snapshot = Estate.snapshot()
+  return snapshot and snapshot.scopes and snapshot.scopes[characterScope()] or nil
 end
 
 function Estate.characterKey()
   return characterScope()
 end
-
-function Estate.isBankObserved() return bankObserved end
-function Estate.isMailObserved() return mailObserved end
-function Estate.isOwnedObserved() return ownedObserved end
 
 -- The client only promises container contents while the bank is open. The
 -- coverage flag is latched for the session; closing the bank does not throw

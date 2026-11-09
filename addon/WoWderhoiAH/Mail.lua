@@ -107,13 +107,30 @@ local function invoiceAt(index)
   }
 end
 
+-- The stack count of the first attachment. A won bid can be a stack, not
+-- one unit; booking it as one understates the position it created.
+local function attachmentQuantity(index)
+  if type(GetInboxItem) ~= "function" then return 1 end
+  local ok, _, itemId, _, count = pcall(GetInboxItem, index, 1)
+  if ok and itemId and count and count > 0 then return count end
+  return 1
+end
+
+-- The attachment's item id. GetInboxItem states it directly on modern
+-- clients; the link is the fallback for builds that only expose the link.
 local function itemFromLink(index)
-  if type(GetInboxItemLink) ~= "function" then return nil end
   for attachment = 1, 8 do
-    local ok, link = pcall(GetInboxItemLink, index, attachment)
-    if not ok or not link then break end
-    local itemId = tonumber(tostring(link):match("item:(%d+)"))
-    if itemId then return itemId end
+    if type(GetInboxItem) == "function" then
+      local ok, _, itemId = pcall(GetInboxItem, index, attachment)
+      if ok and itemId then return itemId end
+    end
+    if type(GetInboxItemLink) == "function" then
+      local ok, link = pcall(GetInboxItemLink, index, attachment)
+      if ok and link then
+        local itemId = tonumber(tostring(link):match("item:(%d+)"))
+        if itemId then return itemId end
+      end
+    end
   end
   return nil
 end
@@ -355,7 +372,7 @@ Mail.scan = function()
             WAH.recordEvent({
               k = "buy",
               itemId = itemId,
-              qty = 1,
+              qty = attachmentQuantity(message),
               cost = total,
               auctionID = matched and matched.auctionID or nil,
               priceSource = "mail",
@@ -371,7 +388,13 @@ Mail.scan = function()
           -- the estate and only needs counting.
           if firstUnbooked(store, tally, mark) then
             if matched then
-              WAH.recordEvent({ k = "cancel", auctionID = matched.auctionID })
+              -- The client can also fire a cancel event for the same
+              -- auction; Actions collapses the second fact.
+              if WAH.Actions and WAH.Actions.cancel then
+                WAH.Actions.cancel(matched.auctionID)
+              else
+                WAH.recordEvent({ k = "cancel", auctionID = matched.auctionID })
+              end
             end
             stats.returned = stats.returned + 1
           else
@@ -382,7 +405,11 @@ Mail.scan = function()
           -- lost, the goods came back. Only book it when the posting is
           -- still open, or the event would double-count.
           if firstUnbooked(store, tally, mark) then
-            WAH.recordEvent({ k = "expire", auctionID = matched.auctionID })
+            if WAH.Actions and WAH.Actions.expire then
+              WAH.Actions.expire(matched.auctionID)
+            else
+              WAH.recordEvent({ k = "expire", auctionID = matched.auctionID })
+            end
             stats.expired = stats.expired + 1
           else
             stats.duplicates = stats.duplicates + 1

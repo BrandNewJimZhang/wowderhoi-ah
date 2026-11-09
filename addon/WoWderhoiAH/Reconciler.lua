@@ -67,6 +67,15 @@ function Reconciler.run(snapshot)
     -- Only the units actually present carry the booked cost; the missing
     -- units must not inflate the known unit cost a valuation reads.
     local knownCost = ledgerQty > 0 and costBasis * knownQty / ledgerQty or 0
+    -- Bag units are sellable now; when the bag holds none, the bank units
+    -- are still a sell candidate that costs a trip.
+    local bankQty = bank + accountBank
+    local sellableQty = carried
+    local requiresBank = false
+    if carried <= 0 and bankQty > 0 then
+      sellableQty = bankQty
+      requiresBank = true
+    end
     items[itemId] = {
       itemId = itemId,
       ledgerQty = ledgerQty,
@@ -83,8 +92,8 @@ function Reconciler.run(snapshot)
       missingUnobserved = (not allObserved) and ledgerQty > totalQty or false,
       costBasis = knownCost,
       unitCost = knownQty > 0 and knownCost / knownQty or 0,
-      sellableQty = carried,
-      requiresBank = (bank + accountBank) > 0 and carried == 0,
+      sellableQty = sellableQty,
+      requiresBank = requiresBank,
       coverage = {
         bank = bankObserved and "observed" or "unobserved",
         accountBank = accountBankObserved and "observed" or "unobserved",

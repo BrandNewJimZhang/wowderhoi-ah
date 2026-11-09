@@ -648,6 +648,15 @@ function GetInboxItemLink(index, attachment)
   return message and message.attachments and message.attachments[attachment]
 end
 
+-- The modern signature (7.0.3+): name, itemID, texture, count, quality.
+-- Fixtures that only provide links keep exercising the fallback path.
+function GetInboxItem(index, attachment)
+  local message = bed.mail[index]
+  local info = message and message.attachmentItems and message.attachmentItems[attachment]
+  if not info then return end
+  return info.name or "", info.itemId, "Interface\\Icons\\Test", info.count or 1, 1
+end
+
 C_Mail = {
   HasInboxMoney = function(index)
     return (bed.mail[index] and bed.mail[index].money or 0) > 0

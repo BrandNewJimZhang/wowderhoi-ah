@@ -80,6 +80,31 @@ describe("native auction actions", () => {
     expect(lua.text("WowTest.ns.Journal.last('buy').priceSource")).toBe("estimated");
   });
 
+  it("upgrades a native posting with the UI's exact deposit", () => {
+    const lua = loadAddon();
+    auction(lua, 905, LINEN, 5, 5000);
+    // The event fires first and books the posting without a deposit.
+    lua.exec("WowTest.fireEvent('AUCTION_HOUSE_AUCTION_CREATED', 905)");
+    lua.exec(`WowTest.ns.Actions.post(905, {
+      itemId = ${LINEN}, qty = 5, price = 1000, deposit = 100
+    })`);
+    expect(count(lua, "post")).toBe(1);
+    expect(lua.number("WowTest.ns.Journal.last('post').deposit")).toBe(100);
+    expect(lua.number("WowTest.ns.Ledger.capital().escrow")).toBe(100);
+  });
+
+  it("upgrades a native purchase with the UI's exact cost", () => {
+    const lua = loadAddon();
+    auction(lua, 906, LINEN, 5, 5000);
+    lua.exec("WowTest.fireEvent('AUCTION_HOUSE_PURCHASE_COMPLETED', 906)");
+    lua.exec(`WowTest.ns.Actions.purchase(906, {
+      itemId = ${LINEN}, qty = 5, cost = 4000
+    })`);
+    expect(count(lua, "buy")).toBe(1);
+    expect(lua.number("WowTest.ns.Journal.last('buy').cost")).toBe(4000);
+    expect(lua.number("WowTest.ns.Ledger.capital().cashDelta")).toBe(-4000);
+  });
+
   it("records a bid as an annotation, not a cash movement", () => {
     const lua = loadAddon();
     lua.exec("WowTest.fireEvent('AUCTION_HOUSE_NEW_BID_RECEIVED', 904, 1200)");

@@ -19,15 +19,37 @@ end
 
 -- Recent events are enough: the client fires a completion event once, and
 -- the UI path that also records it runs within the same action.
-local function journalHas(kind, auctionID)
-  if auctionID == nil then return false end
+local function journalEvent(kind, auctionID)
+  if auctionID == nil then return nil end
   local events = WAH.Journal and WAH.Journal.current() or {}
   local floor = math.max(1, #events - 200)
   for index = #events, floor, -1 do
     local event = events[index]
-    if event.k == kind and sameID(event.auctionID, auctionID) then return true end
+    if event.k == kind and sameID(event.auctionID, auctionID) then return event end
   end
-  return false
+  return nil
+end
+
+-- The native event only knows the auctionID; the UI's pending record knows
+-- the deposit and the price the player actually paid. Whichever handler
+-- runs first, the richer record must win instead of being dropped as a
+-- duplicate. The fact is already in the book, so this upgrades it in place
+-- and rebuilds the projection.
+local function upgrade(event, patch)
+  if not event then return false end
+  local changed = false
+  for key, value in pairs(patch) do
+    if value ~= nil and event[key] ~= value then
+      event[key] = value
+      changed = true
+    end
+  end
+  if changed then
+    if WAH.Ledger then WAH.Ledger.rebuild() end
+    if WAH.Reconciler and WAH.Reconciler.publish then WAH.Reconciler.publish() end
+    if WAH.requestFlush then WAH.requestFlush() end
+  end
+  return changed
 end
 
 local function round(value) return math.floor((value or 0) + 0.5) end
@@ -87,14 +109,22 @@ end
 function Actions.post(auctionID, pending)
   if auctionID == nil then return false end
   if pending and pending.recorded then return false end
-  if journalHas("post", auctionID) then return false end
   local data = pending
   if data then
     data.recorded = true
   else
-    local resolved = Actions.resolveAuction(auctionID)
-    if not resolved then return false end
-    data = { itemId = resolved.itemId, qty = resolved.quantity, price = resolved.unitPrice }
+    data = Actions.resolveAuction(auctionID)
+    if not data then return false end
+  end
+  local existing = journalEvent("post", auctionID)
+  if existing then
+    upgrade(existing, {
+      itemId = data.itemId,
+      qty = data.qty or data.quantity,
+      price = data.price or data.unitPrice,
+      deposit = data.deposit
+    })
+    return false
   end
   WAH.recordEvent({
     k = "post",
@@ -112,7 +142,6 @@ end
 
 function Actions.purchase(auctionID, pending)
   if pending and pending.recorded then return false end
-  if journalHas("buy", auctionID) then return false end
   local data = pending
   if data then
     data.recorded = true
@@ -126,6 +155,18 @@ function Actions.purchase(auctionID, pending)
       auctionID = auctionID
     }
   else
+    return false
+  end
+  local existing = journalEvent("buy", auctionID)
+  if existing then
+    upgrade(existing, {
+      itemId = data.itemId,
+      qty = data.qty or data.quantity,
+      -- A missing UI cost is unknown, not zero; never downgrade the
+      -- event-resolved total to it.
+      cost = data.cost and data.cost > 0 and data.cost or nil,
+      priceSource = pending and "request" or nil
+    })
     return false
   end
   WAH.recordEvent({
@@ -151,6 +192,12 @@ function Actions.commodityPurchase(itemId, quantity, pending)
   local now = time()
   if lastCommodity and lastCommodity.itemId == itemId and lastCommodity.qty == quantity
     and now - lastCommodity.at <= 1 then
+    -- The event frame may have booked the fill with an estimate before the
+    -- purchase path supplied the exact cost. Upgrade the same fact.
+    if pending and pending.cost and not pending.recorded then
+      pending.recorded = true
+      upgrade(lastCommodity.event, { cost = pending.cost, priceSource = "request" })
+    end
     return false
   end
   local cost = pending and pending.cost
@@ -159,23 +206,30 @@ function Actions.commodityPurchase(itemId, quantity, pending)
     cost = Actions.estimateCommodityCost(itemId, quantity) or 0
     priceSource = "estimated"
   end
-  lastCommodity = { itemId = itemId, qty = quantity, at = now }
   if pending then pending.recorded = true end
-  WAH.recordEvent({
+  local event = WAH.recordEvent({
     k = "buy",
     itemId = itemId,
     qty = quantity,
     cost = cost,
     priceSource = priceSource
   })
+  lastCommodity = { itemId = itemId, qty = quantity, at = now, event = event }
   return true
 end
 
 function Actions.cancel(auctionID, pending)
   if auctionID == nil then return false end
   if pending and pending.recorded then return false end
-  if journalHas("cancel", auctionID) then return false end
   if pending then pending.recorded = true end
+  local existing = journalEvent("cancel", auctionID)
+  if existing then
+    upgrade(existing, {
+      refund = pending and pending.refund,
+      lostDeposit = pending and pending.lostDeposit
+    })
+    return false
+  end
   WAH.recordEvent({
     k = "cancel",
     auctionID = auctionID,
@@ -187,7 +241,7 @@ end
 
 function Actions.expire(auctionID)
   if auctionID == nil then return false end
-  if journalHas("expire", auctionID) then return false end
+  if journalEvent("expire", auctionID) then return false end
   WAH.recordEvent({ k = "expire", auctionID = auctionID })
   return true
 end
@@ -196,7 +250,7 @@ function Actions.bid(auctionID, amount)
   -- Some builds publish a table for BIDS_UPDATED; a table is not an
   -- auction identity and cannot be deduplicated.
   if type(auctionID) ~= "number" and type(auctionID) ~= "string" then return false end
-  if journalHas("bid", auctionID) then return false end
+  if journalEvent("bid", auctionID) then return false end
   WAH.recordEvent({ k = "bid", auctionID = auctionID, amount = amount or 0 })
   return true
 end
@@ -204,7 +258,6 @@ end
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("AUCTION_HOUSE_AUCTION_CREATED")
 frame:RegisterEvent("AUCTION_CANCELED")
-frame:RegisterEvent("AUCTION_HOUSE_AUCTION_CANCELED")
 frame:RegisterEvent("AUCTION_HOUSE_AUCTIONS_EXPIRED")
 frame:RegisterEvent("AUCTION_HOUSE_PURCHASE_COMPLETED")
 frame:RegisterEvent("COMMODITY_PURCHASED")
@@ -217,7 +270,7 @@ frame:SetScript("OnEvent", function(_, event, payload, extra)
     Actions.post(payload)
     return
   end
-  if event == "AUCTION_CANCELED" or event == "AUCTION_HOUSE_AUCTION_CANCELED" then
+  if event == "AUCTION_CANCELED" then
     Actions.cancel(payload)
     return
   end
