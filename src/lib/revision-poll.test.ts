@@ -36,4 +36,18 @@ describe("pollRevision", () => {
     });
     expect(result.outcome).toBe("offline");
   });
+
+  it("reports offline when the request times out", async () => {
+    // The browser fetch carries AbortSignal.timeout; an aborted request
+    // rejects with a DOMException and must degrade like any other failure.
+    const result = await pollRevision("m1:run-1", async () => {
+      throw new DOMException("The operation was aborted", "AbortError");
+    });
+    expect(result.outcome).toBe("offline");
+  });
+
+  it("reports offline when the response body is not JSON", async () => {
+    const result = await pollRevision("m1:run-1", async () => new Response("not json", { status: 200 }));
+    expect(result.outcome).toBe("offline");
+  });
 });
