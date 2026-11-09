@@ -267,9 +267,14 @@ Mail.available = function()
   return type(GetInboxNumItems) == "function" and type(GetInboxHeaderInfo) == "function"
 end
 
--- Money seen in the mailbox at the last scan. Display only: the purse is
--- GetMoney(), and the terminal never budgets against uncollected mail.
+-- Money seen in the mailbox. Display only: the purse is GetMoney(), and the
+-- terminal never budgets against uncollected mail. The estate snapshot is
+-- the same value the terminal imports, so the status line cannot quote a
+-- figure the estate does not have; Mail.last covers the window before the
+-- first snapshot exists.
 Mail.pendingCash = function()
+  local scope = WAH.Estate and WAH.Estate.currentCharacterScope()
+  if scope and scope.pendingCash ~= nil then return scope.pendingCash end
   return (Mail.last and Mail.last.cash) or 0
 end
 

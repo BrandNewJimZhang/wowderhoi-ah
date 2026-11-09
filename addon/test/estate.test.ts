@@ -128,6 +128,9 @@ describe("estate collection", () => {
     refresh(lua);
     expect(lua.text(charScope("coverage.mail"))).toBe("observed");
     expect(lua.number(charScope("pendingCash"))).toBe(900);
+    // The in-game status line and the terminal must quote the same figure;
+    // the estate snapshot is the one the terminal imports.
+    expect(lua.number("WowTest.ns.Mail.pendingCash()")).toBe(900);
     expect(lua.number(charScope(`items[${MAGEWEAVE}].mail.qty`))).toBe(1);
     // A COD attachment is not owned until paid.
     expect(lua.number(
