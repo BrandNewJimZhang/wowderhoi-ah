@@ -3,7 +3,7 @@
 // isolation (importing B must not erase A) and append-only facts.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { execSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -131,6 +131,32 @@ describe("POST /api/import/addon-state", () => {
     expect(response.status).toBe(400);
     const body = await response.json() as { error: string };
     expect(body.error).toMatch(/must name its server and faction/);
+  });
+
+  it("accepts the estate document version the publisher stamps", async () => {
+    // `Estate.VERSION` in the addon and `ESTATE_VERSION` in the importer are
+    // two hand-maintained copies of one document contract. A bump on one
+    // side that misses the other would reject every document the publisher
+    // writes, so the published number is exercised against the importer.
+    const source = readFileSync(
+      new URL("../../../../../addon/WoWderhoiAH/Estate.lua", import.meta.url),
+      "utf8"
+    );
+    const publisherVersion = Number(source.match(/Estate\.VERSION\s*=\s*(\d+)/)?.[1]);
+    expect(Number.isInteger(publisherVersion)).toBe(true);
+
+    const accepted = await post("state", {
+      server: "A", faction: "Alliance",
+      estate: { ...estate(1, 1, NOW, "Versioned"), v: publisherVersion }
+    });
+    expect(accepted.status).toBe(200);
+
+    const rejected = await post("state", {
+      server: "A", faction: "Alliance",
+      estate: { ...estate(1, 1, NOW, "Versioned"), v: publisherVersion + 1 }
+    });
+    expect(rejected.status).toBe(400);
+    expect((await rejected.json() as { error: string }).error).toMatch(/unsupported estate version/);
   });
 
   it("rejects an estate document from another format version", async () => {
