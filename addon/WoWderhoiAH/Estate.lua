@@ -41,6 +41,11 @@ local saveTimer = nil
 local lastSaveAt = 0
 local bankObserved = false
 local bankOpen = false
+-- Opening the character bank says nothing about the account bank: the tab
+-- may not exist on this client, and its containers only report slots once
+-- it has been read. Declaring it observed on BANKFRAME_OPENED alone turned
+-- "never read" into "genuinely empty".
+local accountBankObserved = false
 -- Container contents are only promised while the bank is open. The last
 -- observed bank is cached so a money or bag event after the bank closes
 -- cannot turn the cache into an empty bank.
@@ -113,8 +118,15 @@ local function scanBank(items)
   end
   local fresh = {}
   for bag = BANK_FIRST, BANK_LAST do scanContainer(fresh, bag, "bank") end
-  for bag = ACCOUNT_BANK_FIRST, ACCOUNT_BANK_LAST do
-    scanContainer(fresh, bag, "account_bank")
+  if C_Container and C_Container.GetContainerNumSlots then
+    for bag = ACCOUNT_BANK_FIRST, ACCOUNT_BANK_LAST do
+      -- Only a container with slots proves the account bank was actually
+      -- read; an absent tab reports zero and must stay `unobserved`.
+      if (C_Container.GetContainerNumSlots(bag) or 0) > 0 then
+        accountBankObserved = true
+      end
+      scanContainer(fresh, bag, "account_bank")
+    end
   end
   bankCache = fresh
   copyBankCache(items)
@@ -243,7 +255,7 @@ local function build()
       account = {
         kind = "account",
         coverage = {
-          account_bank = coverage(bankObserved),
+          account_bank = coverage(accountBankObserved),
           listed = coverage(ownedObserved)
         },
         items = accountItems

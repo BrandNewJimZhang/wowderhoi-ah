@@ -93,11 +93,13 @@ async function recordScanState(
         observedAt,
         cash: scan.cash,
         freeSlots: scan.bagSlots,
+        // Character-scoped coverage only. Own postings and the account
+        // bank live on the account scope; a character row that claimed
+        // them would be a second, unread copy of that coverage map.
         coverage: {
           carried: "unobserved",
           bank: "unobserved",
           mail: "unobserved",
-          listed: "unobserved",
           money: "observed"
         }
       }

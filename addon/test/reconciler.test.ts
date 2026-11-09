@@ -61,6 +61,12 @@ describe("reconciliation", () => {
     lua.exec("WowTest.fireEvent('MAIL_INBOX_UPDATE')");
     lua.setOwned([]);
     lua.exec("WowTest.fireEvent('OWNED_AUCTIONS_UPDATED')");
+    // A bank frame with no account bank containers is not a read account
+    // bank; seed a readable tab so every location is observed.
+    lua.setBag([
+      { bag: 0, slot: 1, itemId: LINEN, count: 5, name: "Linen" },
+      { bag: 15, slot: 1, itemId: 4338, count: 1, name: "Mageweave" }
+    ]);
     lua.exec("WowTest.fireEvent('BANKFRAME_OPENED')");
     lua.exec("WowTest.advance(2)");
     expect(item(lua, "bankQty")).toBe(0);

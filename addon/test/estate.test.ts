@@ -67,6 +67,16 @@ describe("estate collection", () => {
     expect(lua.text(accountScope("coverage.account_bank"))).toBe("observed");
   });
 
+  it("does not claim the account bank was read when the client has no account bank containers", () => {
+    const lua = loadAddon();
+    lua.setBag([{ bag: 6, slot: 1, itemId: LINEN, count: 40, name: "Linen" }]);
+    lua.exec("WowTest.fireEvent('BANKFRAME_OPENED')");
+    refresh(lua);
+    // The character bank was read; that says nothing about the account bank.
+    expect(lua.text(charScope("coverage.bank"))).toBe("observed");
+    expect(lua.text(accountScope("coverage.account_bank"))).toBe("unobserved");
+  });
+
   it("keeps the last observed bank after the bank closes", () => {
     const lua = loadAddon();
     lua.setBag([{ bag: 6, slot: 1, itemId: LINEN, count: 40, name: "Linen" }]);
