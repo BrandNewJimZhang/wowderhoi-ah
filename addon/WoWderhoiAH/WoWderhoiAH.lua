@@ -1715,13 +1715,6 @@ end
 SLASH_WOWDERHOIAHCAPTURE1 = "/wahcapture"
 SlashCmdList["WOWDERHOIAHCAPTURE"] = setCapture
 
--- Sell-page price x duration search. On by default; off posts the plain
--- one-copper undercut at the selected duration.
--- Cross-character moves. The client's mail has no reliable "this is a
--- transfer" signal (an attachment is an attachment), so the move is
--- manual: record it on the sender with `out`, note the printed cost, and
--- record it on the receiver with `in <unit cost>`. Recording it on one side
--- only is worse than not recording it: the books would disagree.
 -- The plan identity: realm|faction|genEpoch:estateRevision:ledgerRevision.
 -- Epoch seconds, not an ISO date: this side already has the scan timestamp
 -- and Lua cannot format ISO without a second implementation. A new estate or
@@ -1823,6 +1816,11 @@ SlashCmdList["WOWDERHOIAHCOST"] = function(input)
   chatMessage(string.format(L.COST_RECORDED, quantity, itemId, WAH.coinString(paid)))
 end
 
+-- Cross-character moves. The client's mail has no reliable "this is a
+-- transfer" signal (an attachment is an attachment), so the move is
+-- manual: record it on the sender with `out`, note the printed cost, and
+-- record it on the receiver with `in <unit cost>`. Recording it on one side
+-- only is worse than not recording it: the books would disagree.
 SLASH_WOWDERHOIAHTRANSFER1 = "/wahtransfer"
 SlashCmdList["WOWDERHOIAHTRANSFER"] = function(input)
   local itemId, quantity, direction, unitCost = (input or "")
@@ -1853,6 +1851,8 @@ SlashCmdList["WOWDERHOIAHTRANSFER"] = function(input)
   end
 end
 
+-- Sell-page price x duration search. On by default; off posts the plain
+-- one-copper undercut at the selected duration.
 SLASH_WOWDERHOIAHPRICING1 = "/wahpricing"
 SlashCmdList["WOWDERHOIAHPRICING"] = function(input)
   local state = (input or ""):lower():match("^%s*(%S*)%s*$")
