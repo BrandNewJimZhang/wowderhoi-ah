@@ -91,3 +91,15 @@ describe("executable plan", () => {
     for (const reason of reasons) expect(typeof reason).toBe("string");
   });
 });
+
+describe("sell cost basis", () => {
+  it("charges only the sellable units their share of the booked cost", () => {
+    const input = commodityInput({ phase: "wave" });
+    input.positions = { 2589: { qty: 10, cost: 10000, sellableQty: 4 } };
+    const sell = runCore(input).plan!.steps.find((step) => step.kind === "sell");
+    expect(sell?.qty).toBe(4);
+    const proceeds = Math.round(999 * 4 * 0.95);
+    expect(sell?.expectedNet).toBe(proceeds);
+    expect(sell?.realizedPnl).toBe(proceeds - 4000);
+  });
+});
