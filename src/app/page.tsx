@@ -29,6 +29,7 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 import { AppShell } from "@/components/app-shell";
 import { FreshnessLabel } from "@/components/freshness-label";
 import type { CoreAction } from "@/lib/core/types";
+import { planMatchesScan } from "@/lib/plan-view";
 
 export const dynamic = "force-dynamic";
 
@@ -42,16 +43,18 @@ export default async function Home() {
   const { scope, signals, latestScanAt, phase, evaluation } = bundle;
   const scopeId = scope?.id;
   const now = new Date();
-  // The game's published plan wins; the generation's evaluation is the
-  // fallback until the next radar refresh posts one. Neither is truncated:
-  // the old first-five cut hid every sell behind enough buy candidates.
-  const planSteps = (bundle.plan?.steps as CoreAction[] | undefined)
+  // The game's published plan wins only if it was minted for this scan;
+  // a plan from an older book must not describe the current market. The
+  // generation's evaluation is the fallback. Neither is truncated: the old
+  // first-five cut hid every sell behind enough buy candidates.
+  const publishedPlan = planMatchesScan(bundle.plan, latestScanAt) ? bundle.plan : null;
+  const planSteps = (publishedPlan?.steps as CoreAction[] | undefined)
     ?? evaluation.plan?.steps
     ?? evaluation.actions;
-  const unplanned = (bundle.plan?.unplanned as Array<{ kind: string; itemId: number; reason: string }> | undefined)
+  const unplanned = (publishedPlan?.unplanned as Array<{ kind: string; itemId: number; reason: string }> | undefined)
     ?? evaluation.plan?.unplanned
     ?? [];
-  const planResources = (bundle.plan?.resources as {
+  const planResources = (publishedPlan?.resources as {
     cashBefore?: number; cashAfter?: number; slotsBefore?: number; slotsAfter?: number;
   } | undefined) ?? evaluation.plan?.resources;
   // The valuation reads only the units the ledger can price. Unknown-cost
@@ -204,9 +207,9 @@ export default async function Home() {
                 action={(
                   <span className="font-mono text-xs text-terminal-muted">
                     共享决策核心 · 资源可行序列
-                    {bundle.plan
-                      ? ` · 计划 ${bundle.plan.createdAt.toISOString().slice(5, 16).replace("T", " ")}`
-                      : " · 游戏内计划未推送，以下为同口径估算"}
+                    {publishedPlan
+                      ? ` · 计划 ${publishedPlan.createdAt.toISOString().slice(5, 16).replace("T", " ")}`
+                      : " · 游戏内计划未推送或已过期，以下为同口径估算"}
                   </span>
                 )}
               />
