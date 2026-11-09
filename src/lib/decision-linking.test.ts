@@ -83,3 +83,11 @@ describe("mergeAdoptedDecisions", () => {
     expect(merged[0].adoptedAt).toEqual(tick);
   });
 });
+
+describe("linkTrades kind", () => {
+  it("does not attach a sale to a buy recommendation", () => {
+    const buy = { ...adoption, decisionId: "R|A|1:7:buy", kind: "buy" };
+    const [linked] = linkTrades([trade(7, at(1))], [buy]);
+    expect(linked.decisionId).toBeUndefined();
+  });
+});

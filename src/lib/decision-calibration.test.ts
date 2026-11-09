@@ -38,11 +38,11 @@ describe("decision calibration", () => {
     expect(late.filled).toBe(0);
   });
 
-  it("ignores inferred sales, sell decisions and vendor sales", () => {
+  it("counts sell decisions but ignores inferred and vendor sales", () => {
     const buckets = bucketPredictions(
       [
         buy({ at: at(0), fillProb: 0.1 }),
-        { itemId: 1, kind: "sell", at: at(0), fillProb: 0.1, fillBasis: null }
+        { itemId: 1, kind: "sell", at: at(0), fillProb: 0.1, fillBasis: "sell" }
       ],
       [
         sale({ at: at(1), inferred: true }),
@@ -50,10 +50,36 @@ describe("decision calibration", () => {
       ]
     );
     const bucket = buckets.find((entry) => entry.label === "0–20%")!;
-    expect(bucket.decisions).toBe(1);
-    // A vendor sale is not an auction fill; counting it would inflate the
-    // measured fill rate for a prediction about the auction book.
+    // Both sides of the plan are calibrated; neither inferred nor vendor
+    // rows are auction fills.
+    expect(bucket.decisions).toBe(2);
     expect(bucket.filled).toBe(0);
+  });
+
+  it("matches a censored sale by its interval, not its mailbox visit", () => {
+    const decision = buy({ at: at(0), fillProb: 0.5 });
+    const observedLater = {
+      ...sale({ at: at(72) }),
+      listedAt: at(-1),
+      observedAt: at(72),
+      censored: true
+    };
+    const filled = bucketPredictions([decision], [observedLater])
+      .find((entry) => entry.label === "40–60%")!;
+    expect(filled.filled).toBe(1);
+    expect(filled.censoredMatches).toBe(1);
+
+    // A listing that only started after the prediction window cannot be
+    // evidence for it, however long the mailbox sat unopened.
+    const startedLate = {
+      ...sale({ at: at(96) }),
+      listedAt: at(fillRules.horizonHours + 1),
+      observedAt: at(96),
+      censored: true
+    };
+    const notFilled = bucketPredictions([decision], [startedLate])
+      .find((entry) => entry.label === "40–60%")!;
+    expect(notFilled.filled).toBe(0);
   });
 
   it("leaves vendor guarantees out of the fill calibration", () => {

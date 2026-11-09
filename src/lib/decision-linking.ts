@@ -44,6 +44,10 @@ export function linkTrades<T extends LinkableTrade>(
     if (trade.decisionId) return trade;
     let match: (AdoptedDecision & { itemId: number; adoptedAt: Date }) | null = null;
     for (const decision of adopted) {
+      // A trade is a sale, so only a sell recommendation can own it. A buy
+      // recommendation is about acquiring the item; attaching the later
+      // sale would claim an outcome the decision did not produce.
+      if (decision.kind !== "sell") continue;
       if (decision.itemId !== trade.itemId) continue;
       const at = decision.adoptedAt.getTime();
       if (at > trade.realizedAt.getTime()) continue;

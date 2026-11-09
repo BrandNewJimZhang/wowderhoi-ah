@@ -188,6 +188,7 @@ export type CoreAction =
       costKnown?: boolean;
       durationHours?: number;
       fillProb?: number;
+      fillBasis?: string;
       // Net divided by the round-trip minutes a listing costs.
       netPerMinute: number;
       requiresBank?: boolean;

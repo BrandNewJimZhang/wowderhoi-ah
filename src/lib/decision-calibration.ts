@@ -27,6 +27,13 @@ type CalibrationTrade = {
   inferred: boolean;
   channel: string;
   decisionId?: string | null;
+  // The sale happened after it was listed and no later than it was
+  // observed. A mailbox sale opened three days later carries a three-day
+  // interval; matching it against a point time is what made lazy mailbox
+  // visits look like failed predictions.
+  listedAt?: Date | null;
+  observedAt?: Date | null;
+  censored?: boolean;
 };
 
 export type CalibrationBucket = {
@@ -40,9 +47,26 @@ export type CalibrationBucket = {
   // adoption rate.
   linked: number;
   window: number;
+  // Fills whose sale interval straddles the prediction horizon. Counting
+  // them is the censoring-aware reading; the number is shown so a review
+  // can tell how many matches are exact from how many are bounded.
+  censoredMatches: number;
   rate: number; // confirmed fills / decisions
   enoughSamples: boolean;
 };
+
+function tradeInterval(trade: CalibrationTrade): { low: number; high: number } {
+  const realized = trade.realizedAt.getTime();
+  const low = (trade.listedAt ?? trade.realizedAt).getTime();
+  const high = (trade.observedAt ?? trade.realizedAt).getTime();
+  // A malformed interval still contains its observation point.
+  return high >= low ? { low, high } : { low: realized, high: realized };
+}
+
+function overlapsWindow(trade: CalibrationTrade, start: number, end: number): boolean {
+  const interval = tradeInterval(trade);
+  return interval.high >= start && interval.low <= end;
+}
 
 const CALIBRATION_BUCKET_MIN_SAMPLES = 10;
 
@@ -70,7 +94,7 @@ export function bucketPredictions(
   const windowMs = windowHours * 60 * 60 * 1000;
   const usable = decisions.filter(
     (decision): decision is CalibrationDecision & { itemId: number; fillProb: number } =>
-      decision.kind === "buy"
+      (decision.kind === "buy" || decision.kind === "sell")
       && decision.fillBasis !== "vendor"
       && decision.itemId !== null
       && typeof decision.fillProb === "number"
@@ -84,6 +108,7 @@ export function bucketPredictions(
     filled: 0,
     linked: 0,
     window: 0,
+    censoredMatches: 0,
     rate: 0,
     enoughSamples: false
   }));
@@ -98,24 +123,29 @@ export function bucketPredictions(
     // inside the horizon the fill probability predicted: a sale four days
     // after a 24-hour prediction is still attribution, not evidence about
     // that prediction.
-    const linked = decision.decisionId
-      ? confirmed.some((trade) =>
+    // The sale's interval, not its observation point, is what can fall
+    // inside the prediction window. An id match still wins over the
+    // same-item window.
+    const linkedTrade = decision.decisionId
+      ? confirmed.find((trade) =>
           trade.decisionId === decision.decisionId
-          && trade.realizedAt.getTime() >= start
-          && trade.realizedAt.getTime() <= start + windowMs
+          && overlapsWindow(trade, start, start + windowMs)
         )
-      : false;
-    const windowMatch = !linked && confirmed.some((trade) =>
+      : undefined;
+    const windowTrade = linkedTrade ? undefined : confirmed.find((trade) =>
       trade.itemId === decision.itemId
-      && trade.realizedAt.getTime() >= start
-      && trade.realizedAt.getTime() <= start + windowMs
+      && overlapsWindow(trade, start, start + windowMs)
     );
-    if (linked) {
+    const matched = linkedTrade ?? windowTrade;
+    if (matched) {
       bucket.filled += 1;
-      bucket.linked += 1;
-    } else if (windowMatch) {
-      bucket.filled += 1;
-      bucket.window += 1;
+      if (linkedTrade) bucket.linked += 1;
+      else bucket.window += 1;
+      if (matched.censored
+        || (matched.observedAt && matched.listedAt
+          && matched.observedAt.getTime() - matched.listedAt.getTime() > windowMs)) {
+        bucket.censoredMatches += 1;
+      }
     }
   }
   for (const bucket of buckets) {

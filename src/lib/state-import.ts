@@ -518,8 +518,10 @@ export async function applyPlan(
       kind: step.kind,
       reason: step.reason ?? null,
       expectedNet: step.expectedNet ?? null,
-      fillProb: step.kind === "buy" ? step.fillProb ?? null : null,
-      fillBasis: step.kind === "buy" ? step.fillBasis ?? null : null,
+      // Sell decisions carry the sell plan's fill estimate too; calibration
+      // covers both sides, not just buys.
+      fillProb: step.fillProb ?? null,
+      fillBasis: step.fillBasis ?? (step.kind === "sell" ? "sell" : null),
       allocQty: step.kind === "buy" ? step.allocQty ?? step.qty ?? null : step.qty ?? null,
       allocUnitPrice: step.kind === "buy"
         ? step.allocUnitPrice ?? step.unitPrice ?? null

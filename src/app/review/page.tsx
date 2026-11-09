@@ -41,7 +41,10 @@ export default async function ReviewPage() {
     // the same rows, so coverage and calibration describe one sample.
     prisma.trade.findMany({
       where: { ...marketWhere, realizedAt: { gte: calibrationSince } },
-      select: { itemId: true, pnl: true, realizedAt: true, inferred: true, channel: true, decisionId: true }
+      select: {
+        itemId: true, pnl: true, realizedAt: true, inferred: true, channel: true,
+        decisionId: true, listedAt: true, observedAt: true, censored: true
+      }
     }),
     getPositions(scope)
   ]);
@@ -96,6 +99,7 @@ export default async function ReviewPage() {
   );
   const linkedFills = calibration.reduce((sum, bucket) => sum + bucket.linked, 0);
   const windowFills = calibration.reduce((sum, bucket) => sum + bucket.window, 0);
+  const censoredFills = calibration.reduce((sum, bucket) => sum + bucket.censoredMatches, 0);
   // Largest committed position, not whatever order the database returned:
   // the experiment section must name the same item on every render.
   const focusPosition = Object.entries(positions).sort((left, right) => right[1].cost - left[1].cost)[0];
@@ -173,7 +177,7 @@ export default async function ReviewPage() {
 
       <div className="mb-3 flex flex-wrap items-center gap-4 border border-terminal-border bg-terminal-panel px-3 py-2 font-mono text-[11px] text-terminal-muted">
         <span>决策匹配：{policyEstimate.matched} / {policyEstimate.decisions}（覆盖率 {(policyEstimate.coverage * 100).toFixed(0)}%）</span>
-        <span>已采纳 {adoptedCount} 条 · 按 id 归因 {linkedFills} 笔 vs 按窗口 {windowFills} 笔</span>
+        <span>已采纳 {adoptedCount} 条 · 按 id 归因 {linkedFills} 笔 vs 按窗口 {windowFills} 笔 · 区间匹配 {censoredFills} 笔</span>
         <span>
           匹配后平均净利 {policyEstimate.matched > 0 ? <Coins copper={policyEstimate.estimate} /> : "—"}
         </span>
