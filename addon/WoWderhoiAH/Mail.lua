@@ -178,8 +178,9 @@ local function nameIndex()
     if name and #name >= 3 then index[name] = itemId end
   end
   for _, post in pairs(ledger and ledger.openPosts or {}) do add(post.itemId) end
-  -- Trades matter when the posting is already closed: a sale the reconcile
-  -- inferred removed its post, and the mail that confirms it arrives after.
+  -- Trades matter when the posting is already closed: a sale booked by an
+  -- older addon version as an inference removed its post, and the mail that
+  -- confirms it can arrive after. Current versions book sales from events.
   for _, trade in ipairs(ledger and ledger.trades or {}) do add(trade.itemId) end
   return index
 end
@@ -233,9 +234,9 @@ local function uniquePostForItem(itemId)
   return found
 end
 
--- A sale the owned-list reconcile already booked as an inference, before
--- the mailbox was opened. The mail is the confirmation of that same trade,
--- so it must upgrade the label, not book the revenue again.
+-- A sale an older addon version booked as an inference, before the mailbox
+-- was opened. The mail is the confirmation of that same trade, so it must
+-- upgrade the label, not book the revenue again.
 local function inferredSale(itemId, total)
   local ledger = WAH.Ledger and WAH.Ledger.current() or nil
   local found

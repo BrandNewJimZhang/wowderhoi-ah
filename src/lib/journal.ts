@@ -432,9 +432,9 @@ export function replayJournal(events: JournalEvent[], checkpoint?: JournalCheckp
         break;
       }
       case "confirm": {
-        // The mailbox confirmed a sale reconcile had booked as an
-        // inference. Upgrade the trade in place; booking it again would
-        // count the revenue and the consumed lots twice.
+        // The mailbox confirmed a sale an older addon version had booked
+        // as an inference. Upgrade the trade in place; booking it again
+        // would count the revenue and the consumed lots twice.
         const trade = trades.find(
           (candidate) =>
             candidate.inferred

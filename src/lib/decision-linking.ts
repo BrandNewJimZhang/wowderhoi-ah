@@ -24,10 +24,11 @@ type StoredAdoption = {
   adoptedAt: Date | null;
 };
 
-// A buy recommendation's goods are sold later; a sell recommendation is
-// the sale itself. Both use the same attribution window, which is wider
-// than the fill horizon because the goods must first be bought and listed.
-// Off-policy evaluation attributes P&L over the same window.
+// A sale inside the attribution window may belong to a sell recommendation
+// the player adopted; a buy recommendation is an acquisition, not a sale.
+// The window is wider than the fill horizon because the goods must first
+// be bought and listed. Off-policy evaluation attributes P&L over the same
+// window.
 export const ATTRIBUTION_WINDOW_DAYS = 7;
 
 export function linkTrades<T extends LinkableTrade>(

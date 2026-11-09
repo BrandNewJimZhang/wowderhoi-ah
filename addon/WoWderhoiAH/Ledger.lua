@@ -242,8 +242,8 @@ function Ledger.replay(events, market, initial)
         censored = event.censored == true
       }
     elseif kind == "confirm" then
-      -- The mailbox confirmed a sale that the owned-list reconcile had
-      -- booked as an inference. Upgrade that trade in place: booking the
+      -- The mailbox confirmed a sale an older addon version had booked as
+      -- an inference. Upgrade that trade in place: booking the
       -- sale again would count the revenue and the consumed lots twice.
       local trade
       for _, candidate in ipairs(state.trades) do
