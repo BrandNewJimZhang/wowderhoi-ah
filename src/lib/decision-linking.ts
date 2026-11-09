@@ -2,7 +2,7 @@
 // in game. The adopt event carries the decision id; the next matching sale
 // of the same item inside the attribution window inherits it. Everything
 // else stays a window match in the calibration, labelled as such.
-export type AdoptedDecision = {
+type AdoptedDecision = {
   decisionId: string;
   itemId: number | null;
   kind: string;
@@ -17,7 +17,7 @@ type LinkableTrade = {
 
 // A stored decision row and the journal-derived adoption row have the same
 // shape; only the source differs.
-export type StoredAdoption = {
+type StoredAdoption = {
   decisionId: string | null;
   itemId: number | null;
   kind: string;

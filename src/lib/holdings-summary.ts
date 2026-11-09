@@ -3,7 +3,7 @@
 // without summing silently kept only the last row.
 import type { StoredHolding } from "@/lib/repositories";
 
-export type HoldingsSummary = {
+type HoldingsSummary = {
   // Known units per item, summed across characters.
   positions: Record<number, { qty: number; cost: number }>;
   unknownUnits: number;

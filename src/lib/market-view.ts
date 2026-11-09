@@ -10,7 +10,7 @@ import { createMarketReader, type MarketBundle } from "@/lib/market-read";
 import { resolveMarketScope } from "@/lib/market-scope";
 import { GENERATION_SELECT, type StoredHolding } from "@/lib/repositories";
 
-export type StoredPlan = {
+type StoredPlan = {
   id: string;
   revision: string;
   estateRevision: number;
@@ -24,7 +24,7 @@ export type StoredPlan = {
   supersededAt: Date | null;
 };
 
-export type StoredEstate = {
+type StoredEstate = {
   scope: string;
   revision: number;
   observedAt: Date;

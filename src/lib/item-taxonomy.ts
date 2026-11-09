@@ -15,7 +15,7 @@ type CatalogClassInput = {
 
 type ItemTaxonomy = { category: string; subCategory: string };
 
-export const ITEM_CLASSES: Record<number, string> = {
+const ITEM_CLASSES: Record<number, string> = {
   0: "消耗品",
   1: "容器",
   2: "武器",
