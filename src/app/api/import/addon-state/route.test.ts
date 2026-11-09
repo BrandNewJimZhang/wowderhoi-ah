@@ -37,13 +37,13 @@ function post(path: string, payload: unknown): Promise<Response> {
   }));
 }
 
-function estate(revision: number, carried: number, observedAt = NOW) {
+function estate(revision: number, carried: number, observedAt = NOW, character = "Tester") {
   return {
     v: 1,
     revision,
     observedAt,
     scopes: {
-      "character:Tester": {
+      [`character:${character}`]: {
         kind: "character",
         revision,
         cash: 10000,
@@ -157,6 +157,38 @@ describe("POST /api/import/addon-state", () => {
     const market = await prisma.market.findUnique({ where: { realm_faction: { realm: "A", faction: "Alliance" } } });
     const item = await prisma.estateItem.findFirst({ where: { estate: { marketId: market!.id, scope: "character:Tester" } } });
     expect(item?.qty).toBe(5);
+  });
+
+  it("accepts a re-created estate whose counter restarted", async () => {
+    // The revision is the addon's local counter. Reinstalling the addon or
+    // clearing SavedVariables restarts it at 1, so a smaller number with a
+    // newer observation is fresh state, not a delayed document. An older
+    // observation is still stale and must not regress the terminal.
+    await post("scan", {
+      scan: { ...scan, server: "Reset", faction: "Horde", character: "Resty", scannedAt: NOW - 1000 }
+    });
+    await post("state", {
+      server: "Reset", faction: "Horde",
+      estate: estate(5, 5, NOW - 500, "Resty")
+    });
+    const restarted = await post("state", {
+      server: "Reset", faction: "Horde",
+      estate: estate(1, 7, NOW - 100, "Resty")
+    });
+    expect((await restarted.json() as { changed: boolean }).changed).toBe(true);
+    const market = await prisma.market.findUnique({ where: { realm_faction: { realm: "Reset", faction: "Horde" } } });
+    expect(await prisma.holding.findFirst({
+      where: { marketId: market!.id, character: "Resty", itemId: 2589 }
+    })).toMatchObject({ qty: 7 });
+
+    const delayed = await post("state", {
+      server: "Reset", faction: "Horde",
+      estate: estate(4, 9, NOW - 200, "Resty")
+    });
+    expect((await delayed.json() as { changed: boolean }).changed).toBe(false);
+    expect(await prisma.holding.findFirst({
+      where: { marketId: market!.id, character: "Resty", itemId: 2589 }
+    })).toMatchObject({ qty: 7 });
   });
 
   it("applies journal facts once and derives the holding", async () => {

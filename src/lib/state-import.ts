@@ -104,10 +104,9 @@ export async function applyEstate(
     highestRevision = Math.max(highestRevision, revision);
     const existing = await tx.estate.findUnique({
       where: { marketId_scope: { marketId, scope } },
-      select: { id: true, revision: true, coverage: true }
+      select: { id: true, revision: true, coverage: true, observedAt: true }
     });
     const coverage = coverageMap(value.coverage, scope);
-    if (existing && existing.revision > revision) continue;
     // A scan seeds the row with cash and free slots but no item detail. At
     // the same revision the pushed document still owns the contents; an
     // already-observed row at the same revision is a re-send and a no-op.
@@ -120,7 +119,21 @@ export async function applyEstate(
       : scope === "account"
         ? false
         : existingCoverage.carried !== "observed";
-    if (existing && existing.revision === revision && !seeded) continue;
+    if (existing) {
+      if (existing.revision === revision && !seeded) continue;
+      const previousAt = existing.observedAt.getTime();
+      const nextAt = observedAt.getTime();
+      // The counter is local to one addon install, but the observation time
+      // is not. A reinstall restarts the counter at 1; its fresher document
+      // must replace the old one, while a delayed document carrying a newer
+      // counter but an older observation is stale. The only case where an
+      // older observation is accepted is the real estate replacing the
+      // content-free scan seed.
+      if (nextAt < previousAt && !(seeded && revision > existing.revision)) continue;
+      // Two revisions can share one second; at the same observation time
+      // only a higher counter is newer.
+      if (nextAt === previousAt && revision < existing.revision) continue;
+    }
     const row = existing
       ? await tx.estate.update({
           where: { id: existing.id },
