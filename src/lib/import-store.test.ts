@@ -56,7 +56,7 @@ beforeAll(async () => {
   ({ prisma } = await import("@/lib/prisma"));
   ({ writeGeneration } = await import("@/lib/import-store"));
   await prisma.$executeRawUnsafe(`CREATE TABLE "MarketGeneration" (
-    "id" TEXT PRIMARY KEY, "market_id" TEXT, "scanned_at" DATETIME, "phase" TEXT,
+    "id" TEXT PRIMARY KEY, "market_id" TEXT, "scanned_at" DATETIME, "character" TEXT DEFAULT '', "phase" TEXT,
     "breadth" INTEGER, "stale_count" INTEGER, "first_scan_at" DATETIME,
     "price_index" TEXT, "core" TEXT, "gap_minutes" INTEGER, "created_at" DATETIME)`);
   await prisma.$executeRawUnsafe(`CREATE TABLE "MarketQuote" (
@@ -77,6 +77,7 @@ beforeAll(async () => {
     PRIMARY KEY ("market_id", "item_id"))`);
   await prisma.$executeRawUnsafe(`CREATE TABLE "Decision" (
     "id" TEXT PRIMARY KEY, "decision_id" TEXT UNIQUE, "generation_id" TEXT,
+    "plan_id" TEXT, "plan_revision" TEXT,
     "adopted_at" DATETIME, "market_id" TEXT, "at" DATETIME, "phase" TEXT,
     "item_id" INTEGER, "kind" TEXT, "reason" TEXT, "expected_net" REAL,
     "fill_prob" REAL, "fill_basis" TEXT, "alloc_qty" INTEGER, "alloc_unit_price" REAL)`);

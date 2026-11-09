@@ -9,7 +9,7 @@ import { fillRules } from "@/lib/market-rules";
 import { CATALOG_SOURCE, SCAN_SOURCE } from "@/lib/item-catalog";
 import type { MarketScope } from "@/lib/market-scope";
 
-const GENERATION_SELECT = {
+export const GENERATION_SELECT = {
   id: true, marketId: true, scannedAt: true, phase: true, breadth: true, staleCount: true,
   firstScanAt: true, priceIndex: true, core: true, gapMinutes: true
 } as const;
@@ -156,14 +156,62 @@ export async function getRecipes() {
   return prisma.recipe.findMany({ orderBy: [{ profession: "asc" }, { name: "asc" }] });
 }
 
-// Positions and trades are rewritten by every import, including the
-// journal-only replay the mailbox triggers between scans.
+// The shared core's sellable quantity: what the character can list without
+// a bank trip. Listed units are already on the book and bank units need a
+// trip, so neither belongs in a sell action's quantity.
 export async function getPositions(scope: MarketScope | null): Promise<Record<number, { qty: number; cost: number }>> {
-  const rows = await prisma.position.findMany({
-    where: scope ? { marketId: scope.id } : {},
-    select: { itemId: true, qty: true, costBasis: true }
+  if (!scope) return {};
+  const rows = await prisma.holding.findMany({
+    where: {
+      marketId: scope.id,
+      ...(scope.character ? { character: scope.character } : {})
+    },
+    select: { itemId: true, carriedQty: true, costBasis: true }
   });
-  return Object.fromEntries(rows.map((row) => [row.itemId, { qty: row.qty, cost: row.costBasis }]));
+  return Object.fromEntries(rows.map((row) => [row.itemId, { qty: row.carriedQty, cost: row.costBasis }]));
+}
+
+export type StoredHolding = {
+  character: string;
+  itemId: number;
+  qty: number;
+  carriedQty: number;
+  bankQty: number;
+  accountBankQty: number;
+  mailQty: number;
+  listedQty: number;
+  knownQty: number;
+  unknownQty: number;
+  missingQty: number;
+  costBasis: number;
+};
+
+// Every character's reconciled holdings, for the portfolio view. The page
+// aggregates them by item; the core still gets one character's sellable
+// quantity from getPositions.
+export async function getHoldings(scope: MarketScope | null): Promise<StoredHolding[]> {
+  if (!scope) return [];
+  return prisma.holding.findMany({
+    where: { marketId: scope.id },
+    orderBy: [{ character: "asc" }, { itemId: "asc" }],
+    select: {
+      character: true, itemId: true, qty: true, carriedQty: true, bankQty: true,
+      accountBankQty: true, mailQty: true, listedQty: true, knownQty: true,
+      unknownQty: true, missingQty: true, costBasis: true
+    }
+  });
+}
+
+export async function getEstates(scope: MarketScope | null) {
+  if (!scope) return [];
+  return prisma.estate.findMany({
+    where: { marketId: scope.id },
+    orderBy: { scope: "asc" },
+    select: {
+      scope: true, revision: true, observedAt: true, cash: true, freeSlots: true,
+      pendingCash: true, coverage: true
+    }
+  });
 }
 
 // Clean fill labels for the shared decision core: collected auction sales

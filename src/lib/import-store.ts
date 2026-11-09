@@ -19,7 +19,7 @@ function chunks<T>(values: readonly T[], size: number): T[][] {
   return out;
 }
 
-type StoredDecision = DecisionRow & { adoptedAt: Date | null };
+type StoredDecision = DecisionRow & { adoptedAt?: Date | null };
 
 type SignalInsert = { itemId: number; data: StoredSignalRow };
 
@@ -165,6 +165,7 @@ export async function writeGeneration(
     data: {
       marketId,
       scannedAt: plan.scannedAt,
+      character: plan.character ?? "",
       phase: plan.phase,
       breadth: plan.breadth,
       staleCount: plan.staleCount,

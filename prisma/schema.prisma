@@ -16,10 +16,6 @@ model Market {
   id          String    @id @default(cuid())
   realm       String
   faction     String
-  cash        Float     @default(0) // latest scan's player cash, copper
-  // Character whose scan (and journal) produced cash, positions and trades.
-  // Empty for scan-only imports that carry no character.
-  character   String    @default("")
   // Server opening time (epoch seconds from the addon). Phase age is measured
   // from here when set; otherwise from the earliest scan.
   openedAt    DateTime? @map("opened_at")
@@ -27,9 +23,6 @@ model Market {
   // backwards when old snapshot rows are pruned. openedAt still wins when
   // the player configured it.
   firstScanAt DateTime? @map("first_scan_at")
-  // Free bag slots at the latest scan. Null for imports from addons that did
-  // not report the field; the shared core then keeps its planning fallback.
-  bagSlots    Int?      @map("bag_slots")
   // Monotonic token for the page inputs. It is incremented inside the same
   // transaction that writes them, so the pages' revision moves exactly when
   // committed data does; the diagnostic ImportRun rows play no part.
@@ -39,9 +32,13 @@ model Market {
   generations    MarketGeneration[]
   series         ItemSeries[]
   importRuns     ImportRun[]
-  positions      Position[]
   trades         Trade[]
   decisions      Decision[]
+  estates        Estate[]
+  journalFacts   JournalFact[]
+  checkpoints    LedgerCheckpoint[]
+  holdings       Holding[]
+  plans          Plan[]
 
   @@unique([realm, faction])
 }
@@ -84,6 +81,9 @@ model MarketGeneration {
   id             String   @id @default(cuid())
   marketId       String   @map("market_id")
   scannedAt      DateTime @map("scanned_at")
+  // Character whose scan produced this observation. The observation is
+  // market-scoped, but the private state it pairs with is character-scoped.
+  character      String   @default("")
   phase          String
   breadth        Int
   // Items carried over from the previous generation because the newest
@@ -99,6 +99,7 @@ model MarketGeneration {
   quotes         MarketQuote[]
   signals        MarketSignalRow[]
   decisions      Decision[]
+  plans          Plan[]
 
   @@unique([marketId, scannedAt])
   @@index([marketId, scannedAt])
@@ -200,26 +201,128 @@ model ImportRun {
   @@index([marketId, receivedAt])
 }
 
-// A position is the ledger projection of the imported journal, rebuilt on
-// every import. It is not hand-edited.
-model Position {
-  id        String   @id @default(cuid())
-  marketId  String   @map("market_id")
-  itemId    Int      @map("item_id")
-  qty       Int
-  costBasis Float    @map("cost_basis")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  market    Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+// The client-pushed private state. One row per character or account scope;
+// the revision moves only when the snapshot content changes. Coverage is a
+// JSON map of location -> "observed" | "unobserved": a bank that was never
+// opened is not an empty bank.
+model Estate {
+  id          String    @id @default(cuid())
+  marketId    String    @map("market_id")
+  scope       String
+  revision    Int       @default(0)
+  observedAt  DateTime  @map("observed_at")
+  cash        Float?
+  freeSlots   Int?      @map("free_slots")
+  pendingCash Float?    @map("pending_cash")
+  coverage    Json
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  market      Market    @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  items       EstateItem[]
 
-  @@unique([marketId, itemId])
-  @@index([marketId])
+  @@unique([marketId, scope])
+  @@index([marketId, observedAt])
+}
+
+model EstateItem {
+  estateId  String @map("estate_id")
+  itemId    Int    @map("item_id")
+  location  String // carried | bank | account_bank | mail | listed | keyring
+  qty       Int
+  slotCount Int    @default(0) @map("slot_count")
+  estate    Estate @relation(fields: [estateId], references: [id], onDelete: Cascade)
+
+  @@id([estateId, itemId, location])
   @@index([itemId])
 }
 
-// Realized trades, also rebuilt from the journal on every import.
+// Append-only action facts. (marketId, character, seq) is the identity; an
+// import inserts only the rows it has not seen, so a re-sent book is
+// idempotent and an out-of-order delivery cannot rewrite history.
+model JournalFact {
+  id         String   @id @default(cuid())
+  marketId   String   @map("market_id")
+  character  String
+  seq        Int
+  kind       String
+  eventTime  DateTime? @map("event_time")
+  observedAt DateTime @map("observed_at")
+  censored   Boolean  @default(false)
+  payload    Json
+  market     Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+
+  @@unique([marketId, character, seq])
+  @@index([marketId, character, observedAt])
+}
+
+// The prefix of a local journal folded into a replay state. Positions,
+// open postings and capital are checkpoint state plus the facts after it.
+model LedgerCheckpoint {
+  marketId   String   @map("market_id")
+  character  String
+  throughSeq Int      @map("through_seq")
+  state      Json
+  createdAt  DateTime @default(now()) @map("created_at")
+  market     Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+
+  @@unique([marketId, character, throughSeq])
+}
+
+// The reconciliation read model: what is owned, where it is, how much of it
+// the ledger can price, and what is missing from the observed locations.
+model Holding {
+  id             String   @id @default(cuid())
+  marketId       String   @map("market_id")
+  character      String
+  itemId         Int      @map("item_id")
+  qty            Int
+  carriedQty     Int      @default(0) @map("carried_qty")
+  bankQty        Int      @default(0) @map("bank_qty")
+  accountBankQty Int      @default(0) @map("account_bank_qty")
+  mailQty        Int      @default(0) @map("mail_qty")
+  listedQty      Int      @default(0) @map("listed_qty")
+  knownQty       Int      @default(0) @map("known_qty")
+  unknownQty     Int      @default(0) @map("unknown_qty")
+  missingQty     Int      @default(0) @map("missing_qty")
+  costBasis      Float    @default(0) @map("cost_basis")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  market         Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+
+  @@unique([marketId, character, itemId])
+  @@index([itemId])
+}
+
+// One immutable plan. The game is the plan authority; the terminal stores
+// the copy, its decisions and its learning history. A newer plan never
+// rewrites an older one; it only marks it superseded.
+model Plan {
+  id             String   @id @default(cuid())
+  marketId       String   @map("market_id")
+  generationId   String?  @map("generation_id")
+  revision       String
+  estateRevision Int      @default(0) @map("estate_revision")
+  ledgerRevision Int      @default(0) @map("ledger_revision")
+  configRevision String   @default("") @map("config_revision")
+  steps          Json
+  resources      Json
+  unplanned      Json
+  source         String   @default("addon")
+  createdAt      DateTime @default(now()) @map("created_at")
+  supersededAt   DateTime? @map("superseded_at")
+  market         Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  generation     MarketGeneration? @relation(fields: [generationId], references: [id], onDelete: SetNull)
+  decisions      Decision[]
+
+  @@unique([marketId, revision])
+  @@index([marketId, createdAt])
+}
+
+// Realized trades, projected from JournalFact rows and appended rather than
+// rebuilt. `realizedAt` is when the sale was observed; when the goods were
+// listed and when the sale actually happened are separate bounds.
 model Trade {
   id         String    @id @default(cuid())
   marketId   String    @map("market_id")
+  character  String    @default("")
   itemId     Int       @map("item_id")
   qty        Int
   price      Float
@@ -231,15 +334,24 @@ model Trade {
   // a mailbox sale is necessarily observed later than it happened.
   listedAt   DateTime? @map("listed_at")
   realizedAt DateTime  @map("realized_at")
+  // The censoring interval: the sale happened after listedAt and no later
+  // than observedAt. Calibration matches against the interval, not a point.
+  observedAt DateTime? @map("observed_at")
+  censored   Boolean   @default(false)
   // Set when the player adopted a recommendation and this sale is tied to
   // it. A row without one was matched by the calibration's same-item
   // window instead.
   decisionId String?   @map("decision_id")
+  // The journal fact that produced this row, when one exists. Re-importing
+  // the same fact is a no-op.
+  sourceFactId String? @map("source_fact_id")
   market     Market    @relation(fields: [marketId], references: [id], onDelete: Cascade)
 
+  @@unique([marketId, sourceFactId])
   @@index([marketId, realizedAt])
   @@index([itemId])
   @@index([decisionId])
+  @@index([sourceFactId])
 }
 
 // What the system recommended and why. Written once per generation by the
@@ -252,6 +364,10 @@ model Decision {
   // Null on rows written before the identity existed.
   decisionId     String?  @unique @map("decision_id")
   generationId   String?  @map("generation_id")
+  planId         String?  @map("plan_id")
+  // The plan revision the prediction belongs to. A decision is immutable:
+  // a new plan writes new rows, never edits the predicted fields.
+  planRevision   String?  @map("plan_revision")
   // Set when the in-game /wahadopt event names this decision.
   adoptedAt      DateTime? @map("adopted_at")
   marketId       String   @map("market_id")
@@ -269,9 +385,11 @@ model Decision {
   allocUnitPrice Float?   @map("alloc_unit_price")
   market         Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
   generation     MarketGeneration? @relation(fields: [generationId], references: [id], onDelete: SetNull)
+  plan           Plan?    @relation(fields: [planId], references: [id], onDelete: SetNull)
 
   @@index([at])
   @@index([itemId])
+  @@index([planRevision])
 }
 
 // Forever recipe network, imported from data/recipes.forever.json.

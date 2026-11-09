@@ -262,8 +262,12 @@ describe("journalRevision", () => {
 
 describe("bookForCharacter", () => {
   const books = [
-    { key: "TestRealm|Alliance|Main", events: [{ k: "buy", t: 1, itemId: 2589, qty: 4, cost: 400 }], dropped: 0 },
-    { key: "TestRealm|Alliance|Alt", events: [], dropped: 0 }
+    {
+      key: "TestRealm|Alliance|Main",
+      events: [{ k: "buy", t: 1, itemId: 2589, qty: 4, cost: 400 }],
+      dropped: 0, nextSeq: 2, checkpoint: null
+    },
+    { key: "TestRealm|Alliance|Alt", events: [], dropped: 0, nextSeq: 1, checkpoint: null }
   ];
 
   it("returns the scanning character's own book", () => {

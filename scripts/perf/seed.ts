@@ -62,7 +62,18 @@ async function main() {
   // radar and the perf run measures a dead page; fund the fixture at the
   // planning budget so the decision path actually runs.
   const marketRow = await prisma.market.create({
-    data: { realm: "PerfRealm", faction: "Alliance", cash: DEFAULT_BUDGET_COPPER }
+    data: { realm: "PerfRealm", faction: "Alliance" }
+  });
+  await prisma.estate.create({
+    data: {
+      marketId: marketRow.id,
+      scope: "character:Perf",
+      revision: 1,
+      observedAt: new Date(newestScanMs),
+      cash: DEFAULT_BUDGET_COPPER,
+      freeSlots: 20,
+      coverage: { carried: "observed", bank: "unobserved", mail: "unobserved", listed: "unobserved", money: "observed" }
+    }
   });
 
   await insertChunked(

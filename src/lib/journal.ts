@@ -58,7 +58,7 @@ type JournalBook = {
 
 type JournalLot = { qty: number; unitCost: number; at: number };
 
-type JournalTrade = {
+export type JournalTrade = {
   t: number;
   itemId: number | null;
   qty: number;
@@ -148,6 +148,10 @@ export function parseJournal(raw: unknown): JournalBook[] {
       for (const field of ["seq", "eventTime", "observedAt"] as const) {
         if (typeof event[field] === "number") parsed[field] = event[field] as number;
       }
+      // A journal written before the sequence existed is numbered in array
+      // order. The sequence is the terminal's only idempotency key, so it
+      // must exist even for a migrated book.
+      if (parsed.seq === undefined) parsed.seq = index + 1;
       if (typeof event.auctionID === "number" || typeof event.auctionID === "string") parsed.auctionID = event.auctionID;
       if (event.inferred === true) parsed.inferred = true;
       if (typeof event.listedAt === "number") parsed.listedAt = event.listedAt;

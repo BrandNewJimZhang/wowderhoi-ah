@@ -2,30 +2,37 @@
 // are scoped to a Market row (realm + faction); without this, two
 // characters or two realms mix their books into one signal. The scope is
 // the market of the newest generation unless AQT_MARKET=realm|faction pins it.
+//
+// Cash, character and free slots are not Market columns: they belong to the
+// character-scoped Estate. The scope derives them from the newest
+// generation's character and that character's estate so a page still reads
+// one object, but the private state has one authority.
 import { prisma } from "@/lib/prisma";
 
 export type MarketScope = {
   id: string;
   realm: string;
   faction: string;
-  cash: number;
-  // Character whose scan produced the ledger; "" when the import carried none.
+  // Latest cash for the scanning character; null when that character has no
+  // observed estate yet. The core keeps its planning fallback on null.
+  cash: number | null;
+  // Character whose scan produced the newest generation; "" when the
+  // generation carried none.
   character: string;
+  // Free bag slots from the same estate; null means unobserved.
+  bagSlots?: number | null;
+  // Estate revision the scope's cash and slots came from. A plan revision
+  // that mentions state must move when this does.
+  estateRevision?: number;
   // Server opening time captured by the addon. Phase age is measured from
   // it when set, so a fresh terminal install does not look like a new server.
-  // Optional only for test fixtures; the market row always carries it.
   openedAt?: Date | null;
   // Earliest observation ever imported for this market. Persisted so pruning
   // old generations cannot make the market look younger (and its gates
   // looser). openedAt still takes precedence when configured.
   firstScanAt?: Date | null;
-  // Free bag slots at the latest scan. Null/absent means the import never
-  // reported them, so the shared core keeps its planning fallback.
-  bagSlots?: number | null;
   // Committed token for the page inputs. The import transactions advance it
-  // in the same commit that writes cash, the ledger and the generation, so
-  // the open pages' poll cannot lag a committed change or follow a failed
-  // one.
+  // in the same commit that writes the state, ledger and generation.
   dataVersion: number;
 };
 
@@ -40,12 +47,42 @@ export function parseMarketPin(value: string | undefined): { realm: string; fact
   return { realm: parts[0], faction: parts[1] };
 }
 
+async function scopeOfMarket(market: {
+  id: string; realm: string; faction: string; openedAt: Date | null;
+  firstScanAt: Date | null; dataVersion: number;
+}): Promise<MarketScope> {
+  const generation = await prisma.marketGeneration.findFirst({
+    where: { marketId: market.id },
+    orderBy: { scannedAt: "desc" },
+    select: { character: true }
+  });
+  const character = generation?.character ?? "";
+  const estate = character
+    ? await prisma.estate.findUnique({
+        where: { marketId_scope: { marketId: market.id, scope: `character:${character}` } },
+        select: { cash: true, freeSlots: true, revision: true }
+      })
+    : null;
+  return {
+    id: market.id,
+    realm: market.realm,
+    faction: market.faction,
+    cash: estate?.cash ?? null,
+    character,
+    bagSlots: estate?.freeSlots ?? null,
+    estateRevision: estate?.revision ?? 0,
+    openedAt: market.openedAt,
+    firstScanAt: market.firstScanAt,
+    dataVersion: market.dataVersion
+  };
+}
+
 export async function getMarketScope(): Promise<MarketScope | null> {
   const pin = parseMarketPin(process.env.AQT_MARKET);
   if (pin) {
     const market = await prisma.market.findUnique({ where: { realm_faction: pin } });
     if (!market) throw new Error(`AQT_MARKET points at ${pin.realm}|${pin.faction}, but no such market has been imported`);
-    return market;
+    return scopeOfMarket(market);
   }
   // Every generation belongs to a market, so the newest one names the scope.
   const latest = await prisma.marketGeneration.findFirst({
@@ -54,7 +91,8 @@ export async function getMarketScope(): Promise<MarketScope | null> {
   });
   if (latest) {
     const market = await prisma.market.findUnique({ where: { id: latest.marketId } });
-    if (market) return market;
+    if (market) return scopeOfMarket(market);
   }
-  return prisma.market.findFirst({ orderBy: { createdAt: "asc" } });
+  const market = await prisma.market.findFirst({ orderBy: { createdAt: "asc" } });
+  return market ? scopeOfMarket(market) : null;
 }

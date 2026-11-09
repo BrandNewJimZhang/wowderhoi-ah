@@ -45,6 +45,10 @@ export type DecisionRow = {
 
 export type GenerationPlan = {
   scannedAt: Date;
+  // Character whose scan produced the observation. The generation is
+  // market-scoped; the private state it pairs with is character-scoped.
+  // Optional for fixtures written before the field existed.
+  character?: string;
   phase: MarketPhase;
   breadth: number;
   staleCount: number;
@@ -298,6 +302,7 @@ export function buildGenerationPlan(input: GenerationInput): GenerationPlan {
 
   return {
     scannedAt: scan.scannedAt,
+    character: scan.character ?? "",
     phase,
     breadth,
     staleCount: staleCandidates.length,

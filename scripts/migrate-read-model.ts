@@ -259,6 +259,20 @@ async function main() {
     if (snapshots.length === 0 && dailies.length === 0 && existingRows.length === 0) continue;
 
     const latestAt = snapshots.at(-1)?.timestamp ?? market.firstScanAt ?? new Date();
+    // Private state is character-scoped now. Rebuild the observation from
+    // the newest generation's character and that character's estate.
+    const latestGeneration = await prisma.marketGeneration.findFirst({
+      where: { marketId: market.id },
+      orderBy: { scannedAt: "desc" },
+      select: { character: true }
+    });
+    const character = latestGeneration?.character ?? "";
+    const estate = character
+      ? await prisma.estate.findUnique({
+          where: { marketId_scope: { marketId: market.id, scope: `character:${character}` } },
+          select: { cash: true, freeSlots: true }
+        })
+      : null;
     const latestSeconds = Math.round(latestAt.getTime() / 1000);
     const snapshotDays = new Set<string>();
     const legacyPoints = new Map<number, SeriesPoint[]>();
@@ -374,10 +388,10 @@ async function main() {
         scannedAt: latestAt,
         server: market.realm,
         faction: market.faction,
-        character: market.character || null,
-        cash: market.cash,
+        character: character || null,
+        cash: estate?.cash ?? 0,
         openedAt: market.openedAt ? Math.round(market.openedAt.getTime() / 1000) : null,
-        bagSlots: market.bagSlots,
+        bagSlots: estate?.freeSlots ?? null,
         observationVersion: latestRows.find((row) => row.observationVersion !== null)?.observationVersion ?? null,
         skippedItems: 0,
         items: scanItems
@@ -398,11 +412,12 @@ async function main() {
         id: market.id,
         realm: market.realm,
         faction: market.faction,
-        cash: market.cash,
-        character: market.character,
+        cash: estate?.cash ?? null,
+        character,
         openedAt: market.openedAt,
         firstScanAt: market.firstScanAt,
-        bagSlots: market.bagSlots,
+        bagSlots: estate?.freeSlots ?? null,
+        estateRevision: 0,
         dataVersion: market.dataVersion
       };
       const plan = buildGenerationPlan({
