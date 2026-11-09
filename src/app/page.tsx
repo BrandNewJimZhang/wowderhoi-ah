@@ -28,6 +28,7 @@ import { WatchStar } from "@/components/watch-star";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { AppShell } from "@/components/app-shell";
 import { FreshnessLabel } from "@/components/freshness-label";
+import type { CoreAction } from "@/lib/core/types";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,18 @@ export default async function Home() {
   const { scope, signals, latestScanAt, phase, evaluation } = bundle;
   const scopeId = scope?.id;
   const now = new Date();
+  // The game's published plan wins; the generation's evaluation is the
+  // fallback until the next radar refresh posts one. Neither is truncated:
+  // the old first-five cut hid every sell behind enough buy candidates.
+  const planSteps = (bundle.plan?.steps as CoreAction[] | undefined)
+    ?? evaluation.plan?.steps
+    ?? evaluation.actions;
+  const unplanned = (bundle.plan?.unplanned as Array<{ kind: string; itemId: number; reason: string }> | undefined)
+    ?? evaluation.plan?.unplanned
+    ?? [];
+  const planResources = (bundle.plan?.resources as {
+    cashBefore?: number; cashAfter?: number; slotsBefore?: number; slotsAfter?: number;
+  } | undefined) ?? evaluation.plan?.resources;
   // The valuation reads only the units the ledger can price. Unknown-cost
   // units are shown separately instead of being valued at zero.
   const positions = Object.fromEntries(
@@ -186,36 +199,72 @@ export default async function Home() {
         <div className="grid gap-3 xl:grid-cols-[1fr_360px]">
           <div className="space-y-3">
             <Panel>
-              <PanelHeader title="下一步行动" action={<span className="font-mono text-xs text-terminal-muted">共享决策核心 · 条件策略</span>} />
+              <PanelHeader
+                title="下一步行动"
+                action={(
+                  <span className="font-mono text-xs text-terminal-muted">
+                    共享决策核心 · 资源可行序列
+                    {bundle.plan && ` · 计划 ${bundle.plan.createdAt.toISOString().slice(5, 16).replace("T", " ")}`}
+                  </span>
+                )}
+              />
               <div className="space-y-2 p-3 font-mono text-xs">
                 {actionsBlocked && <div className="text-terminal-muted">数据过期或阶段已推移，等下一次扫描后再给出行动。</div>}
-                {!actionsBlocked && evaluation.actions.length === 0 && <div className="text-terminal-muted">{emptyDealsMessage}</div>}
-                {!actionsBlocked && evaluation.actions.slice(0, 5).map((action) => (
-                  <div key={`${action.kind}-${action.itemId}`} className="flex flex-wrap items-center justify-between gap-2 border-b border-terminal-border/60 pb-1 last:border-0">
+                {!actionsBlocked && planSteps.length === 0 && <div className="text-terminal-muted">{emptyDealsMessage}</div>}
+                {!actionsBlocked && planSteps.map((action, index) => (
+                  <div key={`${index}-${action.kind}-${action.itemId}`} className="flex flex-wrap items-center justify-between gap-2 border-b border-terminal-border/60 pb-1 last:border-0">
                     <Link href={`/items/${action.itemId}`} className="text-slate-100 hover:text-terminal-amber">
                       <span className={action.kind === "buy" ? "text-terminal-green" : "text-terminal-amber"}>
-                        {action.kind === "buy" ? "买入" : "卖出"}
+                        {index + 1}. {action.kind === "buy" ? "买入" : "卖出"}
                       </span>
-                      {" "}{("name" in action && action.name) || `#${action.itemId}`}
+                      {" "}{action.name || `#${action.itemId}`}
                     </Link>
                     {action.kind === "buy" ? (
                       <span className="flex flex-wrap items-center gap-3 text-terminal-muted">
                         <span>{action.qty} 件</span>
                         <span>上限 <Coins copper={action.maxUnitPrice} /></span>
                         <span>净利 <Coins copper={action.expectedNet} /></span>
-                        <span>成交率 {(action.fillProb * 100).toFixed(0)}%</span>
+                        <span>成交率 {((action.fillProb ?? 0) * 100).toFixed(0)}%</span>
                         {action.stop && <span className="text-terminal-amber">高于 <Coins copper={action.stop.ifPriceAbove} /> 放弃</span>}
-                        <span className="text-slate-400">{action.reason}</span>
+                        {action.cashAfter !== undefined && (
+                          <span>之后现金 <Coins copper={action.cashAfter} /> · 空位 {action.slotsAfter}</span>
+                        )}
                       </span>
                     ) : (
                       <span className="flex flex-wrap items-center gap-3 text-terminal-muted">
                         <span>{action.qty} 件 @ <Coins copper={action.price} /></span>
-                        <span>售出净利 <Coins copper={action.expectedNet} /></span>
-                        <span>每分钟 <Coins copper={action.netPerMinute} /></span>
+                        <span>回款 <Coins copper={action.expectedNet} /></span>
+                        {action.costKnown === false
+                          ? <span className="text-terminal-amber">成本未知</span>
+                          : action.realizedPnl !== undefined && action.realizedPnl !== null
+                            ? <span>已实现 <Coins copper={action.realizedPnl} /></span>
+                            : null}
+                        {action.requiresBank && <span className="text-terminal-amber">需去银行</span>}
+                        {action.cashAfter !== undefined && (
+                          <span>之后现金 <Coins copper={action.cashAfter} /> · 空位 {action.slotsAfter}</span>
+                        )}
                       </span>
                     )}
                   </div>
                 ))}
+                {!actionsBlocked && planResources && (
+                  <div className="pt-1 text-[10px] text-terminal-muted">
+                    计划后：现金 <Coins copper={planResources.cashAfter ?? 0} /> · 空位 {planResources.slotsAfter ?? 0}
+                    {unplanned.length > 0 && ` · ${unplanned.length} 条未纳入`}
+                  </div>
+                )}
+                {!actionsBlocked && unplanned.length > 0 && (
+                  <details className="text-[10px] text-terminal-muted">
+                    <summary className="cursor-pointer">未纳入的行动</summary>
+                    <div className="mt-1 space-y-1">
+                      {unplanned.slice(0, 8).map((row, index) => (
+                        <div key={`${index}-${row.itemId}`}>
+                          #{row.itemId} · {row.reason}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
               </div>
             </Panel>
 
