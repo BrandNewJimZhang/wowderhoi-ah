@@ -6,6 +6,7 @@ import {
   getCatalogueStats,
   getGenerationCount,
   getImportRuns,
+  getReconciliationStats,
   getSeriesStats
 } from "@/lib/repositories";
 import { describeFreshness, scanGapHint, staleScanHint } from "@/lib/freshness";
@@ -38,14 +39,21 @@ function databaseSize(): string | null {
 export default async function HealthPage() {
   const context = await getMarketContext();
   const scope = context.scope;
-  const [series, catalogue, generationCount, runs] = scope
+  const [series, catalogue, generationCount, runs, reconciliation] = scope
     ? await Promise.all([
         getSeriesStats(scope.id),
         getCatalogueStats(),
         getGenerationCount(scope.id),
-        getImportRuns(scope.id, 20)
+        getImportRuns(scope.id, 20),
+        getReconciliationStats(scope)
       ])
-    : [{ items: 0, points: 0, firstAt: null, lastAt: null }, { total: 0, catalogue: 0, scanOwned: 0, placeholders: 0, withIcon: 0, build: null }, 0, []];
+    : [
+        { items: 0, points: 0, firstAt: null, lastAt: null },
+        { total: 0, catalogue: 0, scanOwned: 0, placeholders: 0, withIcon: 0, build: null },
+        0,
+        [],
+        { unknown: 0, missing: 0, holdings: 0, unobservedLocations: 0, planRevision: null }
+      ];
   const freshness = describeFreshness(context.latestScanAt, new Date());
   const latestRun = runs[0];
   const seriesDays = seriesSpanDays(series.firstAt, series.lastAt);
@@ -80,7 +88,7 @@ export default async function HealthPage() {
         </div>
       )}
 
-      <div className="mb-3 grid gap-3 font-mono text-xs sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-3 grid gap-3 font-mono text-xs sm:grid-cols-2 xl:grid-cols-5">
         <div className="border border-terminal-border bg-terminal-panel p-3">
           <div className="text-terminal-muted">物品种类 / 生成代际</div>
           <div className="mt-1 text-lg text-slate-100">{context.signalCount} / {generationCount}</div>
@@ -99,6 +107,16 @@ export default async function HealthPage() {
           <div className="text-terminal-muted">最近导入 / Journal 错误</div>
           <div className="mt-1 text-lg text-slate-100">{latestRun ? latestRun.status : "—"} / {latestRun?.journalErrors ?? 0}</div>
           <div className="mt-1 text-[10px] text-terminal-muted">{latestRun ? `${latestRun.durationMs} ms · ${latestRun.source}` : "还没有导入记录"}</div>
+        </div>
+        <div className="border border-terminal-border bg-terminal-panel p-3">
+          <div className="text-terminal-muted">对账 / 当前计划</div>
+          <div className="mt-1 text-lg text-slate-100">
+            {reconciliation.unknown} / {reconciliation.missing}
+          </div>
+          <div className="mt-1 text-[10px] text-terminal-muted">
+            {reconciliation.holdings} 条持仓 · {reconciliation.unobservedLocations} 个未观测位置
+            {reconciliation.planRevision ? ` · 计划 ${reconciliation.planRevision}` : " · 尚无计划"}
+          </div>
         </div>
       </div>
 

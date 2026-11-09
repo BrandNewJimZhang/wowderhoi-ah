@@ -211,6 +211,42 @@ export async function getHoldings(scope: MarketScope | null): Promise<StoredHold
   });
 }
 
+// Health-page counters for the state layer: unbooked stock, ledger stock the
+// observed locations do not show, and how many locations were never looked
+// at. The last number is the honest coverage gap, not an error count.
+export async function getReconciliationStats(scope: MarketScope | null) {
+  if (!scope) {
+    return { unknown: 0, missing: 0, holdings: 0, unobservedLocations: 0, planRevision: null as string | null };
+  }
+  const [holding, estates, plan] = await Promise.all([
+    prisma.holding.aggregate({
+      where: { marketId: scope.id },
+      _sum: { unknownQty: true, missingQty: true },
+      _count: { _all: true }
+    }),
+    prisma.estate.findMany({ where: { marketId: scope.id }, select: { coverage: true } }),
+    prisma.plan.findFirst({
+      where: { marketId: scope.id },
+      orderBy: { createdAt: "desc" },
+      select: { revision: true }
+    })
+  ]);
+  let unobservedLocations = 0;
+  for (const estate of estates) {
+    const coverage = (estate.coverage ?? {}) as Record<string, unknown>;
+    for (const value of Object.values(coverage)) {
+      if (value !== "observed") unobservedLocations += 1;
+    }
+  }
+  return {
+    unknown: holding._sum.unknownQty ?? 0,
+    missing: holding._sum.missingQty ?? 0,
+    holdings: holding._count._all,
+    unobservedLocations,
+    planRevision: plan?.revision ?? null
+  };
+}
+
 export async function getEstates(scope: MarketScope | null) {
   if (!scope) return [];
   return prisma.estate.findMany({

@@ -121,5 +121,15 @@ export async function pruneAgedRows(now = new Date()): Promise<{ decisions: numb
     ),
     prisma.importRun.deleteMany({ where: { receivedAt: { lt: runCutoff } } })
   ]);
+  // A superseded plan with no surviving decision is history the review can
+  // no longer read. Fresh plans and plans still cited by a decision stay:
+  // the decision log is the immutable record, not the plan table.
+  await prisma.plan.deleteMany({
+    where: {
+      createdAt: { lt: decisionCutoff },
+      supersededAt: { not: null },
+      decisions: { none: {} }
+    }
+  });
   return { decisions, importRuns: importRuns.count };
 }

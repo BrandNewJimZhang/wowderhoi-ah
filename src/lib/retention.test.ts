@@ -44,7 +44,10 @@ beforeAll(async () => {
   );
   await prisma.$executeRawUnsafe(
     `CREATE TABLE "Decision" ("id" TEXT PRIMARY KEY, "market_id" TEXT, "at" DATETIME,
-      "generation_id" TEXT, "decision_id" TEXT)`
+      "generation_id" TEXT, "decision_id" TEXT, "plan_id" TEXT)`
+  );
+  await prisma.$executeRawUnsafe(
+    `CREATE TABLE "Plan" ("id" TEXT PRIMARY KEY, "created_at" DATETIME, "superseded_at" DATETIME)`
   );
   await prisma.$executeRawUnsafe(
     `CREATE TABLE "Trade" ("id" TEXT PRIMARY KEY, "decision_id" TEXT)`
