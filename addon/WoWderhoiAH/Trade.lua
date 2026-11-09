@@ -487,12 +487,22 @@ end
 -- purchase recorded — the request for item auctions, and the client-reported
 -- fill for commodities.
 local function recordPurchase(purchase)
-  WAH.recordEvent({
-    k = "buy",
-    itemId = purchase.itemId,
-    qty = purchase.qty,
-    cost = purchase.cost
-  })
+  if WAH.Actions then
+    if purchase.via == "commodity" then
+      WAH.Actions.commodityPurchase(purchase.itemId, purchase.qty, purchase)
+    else
+      WAH.Actions.purchase(purchase.auctionID, purchase)
+    end
+  else
+    WAH.recordEvent({
+      k = "buy",
+      itemId = purchase.itemId,
+      qty = purchase.qty,
+      cost = purchase.cost
+    })
+  end
+  -- The action may already have been booked by the event frame; the chat
+  -- line still belongs to this purchase.
   chatMessage(string.format(L.BOUGHT, purchase.name, purchase.qty, coinString(purchase.cost)))
 end
 
@@ -1055,6 +1065,11 @@ tradeEvents:SetScript("OnEvent", function(_, event, payload, extra)
     if purchase and purchase.via == "commodity" and (payload == nil or payload == purchase.itemId) then
       pendingPurchase = nil
       completePurchase(purchase, extra)
+    elseif payload ~= nil and extra ~= nil then
+      -- A purchase made through the Blizzard UI has no local pending record.
+      -- The event still names the item and the fill; book it with an
+      -- estimated cost rather than losing the action.
+      if WAH.Actions then WAH.Actions.commodityPurchase(payload, extra) end
     end
     return
   end
@@ -1074,6 +1089,10 @@ tradeEvents:SetScript("OnEvent", function(_, event, payload, extra)
         pendingPurchase = nil
         completePurchase(purchase)
       end
+    elseif WAH.Actions then
+      -- Native item-auction purchase: the completion event names the
+      -- auctionID, and GetAuctionInfoByID still resolves the item.
+      WAH.Actions.purchase(payload)
     end
     return
   end

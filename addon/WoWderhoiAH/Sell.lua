@@ -191,18 +191,13 @@ end
 -- ============================== Posting =============================
 
 local function onAuctionCreated(auctionID)
-  if not pendingPost or not auctionID then return end
+  if not auctionID then return end
   local post = pendingPost
   pendingPost = nil
-  WAH.recordEvent({
-    k = "post",
-    auctionID = auctionID,
-    itemId = post.itemId,
-    qty = post.qty,
-    price = post.price,
-    deposit = post.deposit
-  })
-  chatMessage(string.format(L.SELL_POSTED, post.name, post.qty, coinString(post.price)))
+  local recorded = WAH.Actions and WAH.Actions.post(auctionID, post)
+  if post and recorded then
+    chatMessage(string.format(L.SELL_POSTED, post.name, post.qty, coinString(post.price)))
+  end
   if sell then
     C_Timer.After(1, function() WAH.Sell.refreshOwned() end)
   end
@@ -210,7 +205,7 @@ end
 
 local function onAuctionExpired(auctionID)
   if not auctionID then return end
-  WAH.recordEvent({ k = "expire", auctionID = auctionID })
+  if WAH.Actions then WAH.Actions.expire(auctionID) end
   chatMessage(string.format(L.SELL_EXPIRED, auctionID))
   if sell and sell:IsShown() then WAH.Sell.refreshOwned() end
 end
@@ -349,12 +344,19 @@ local function cancelAuction(auctionID)
     cancelling[auctionID] = nil
     return false, err
   end
-  WAH.recordEvent({
-    k = "cancel",
-    auctionID = auctionID,
-    refund = math.max(0, deposit - cost),
-    lostDeposit = cost
-  })
+  if WAH.Actions then
+    WAH.Actions.cancel(auctionID, {
+      refund = math.max(0, deposit - cost),
+      lostDeposit = cost
+    })
+  else
+    WAH.recordEvent({
+      k = "cancel",
+      auctionID = auctionID,
+      refund = math.max(0, deposit - cost),
+      lostDeposit = cost
+    })
+  end
   cancelling[auctionID] = nil
   chatMessage(string.format(L.SELL_CANCELLED, auctionID))
   if sell and sell:IsShown() then C_Timer.After(1, function() WAH.Sell.refreshOwned() end) end
