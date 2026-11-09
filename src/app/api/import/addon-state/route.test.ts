@@ -118,6 +118,16 @@ describe("POST /api/import/addon-state", () => {
     expect(character.items[0]).toMatchObject({ itemId: 2589, location: "carried", qty: 5 });
   });
 
+  it("rejects an estate document from another format version", async () => {
+    const response = await post("state", {
+      server: "A", faction: "Alliance",
+      estate: { ...estate(9, 1), v: 2 }
+    });
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: string };
+    expect(body.error).toMatch(/unsupported estate version/);
+  });
+
   it("ignores an estate revision that does not advance", async () => {
     const response = await post("state", { server: "A", faction: "Alliance", estate: estate(1, 99) });
     expect(response.status).toBe(200);

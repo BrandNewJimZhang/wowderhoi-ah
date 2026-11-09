@@ -35,6 +35,11 @@ type AddonEstate = {
   scopes?: Record<string, EstateScopeInput>;
 };
 
+// The publisher's document format. A version bump changes what a field
+// means, so an older terminal must reject it instead of importing it under
+// the wrong interpretation.
+const ESTATE_VERSION = 1;
+
 const LOCATIONS = new Set(["carried", "bank", "account_bank", "mail", "listed", "keyring"]);
 
 function numeric(value: unknown, field: string): number {
@@ -69,6 +74,9 @@ export async function applyEstate(
     throw new Error("State payload: estate must be an object");
   }
   const estate = raw as AddonEstate;
+  if (estate.v !== ESTATE_VERSION) {
+    throw new Error(`State payload: unsupported estate version ${JSON.stringify(estate.v)}`);
+  }
   if (typeof estate.scopes !== "object" || estate.scopes === null) {
     throw new Error("State payload: estate.scopes must be an object");
   }

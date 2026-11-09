@@ -246,7 +246,7 @@ export async function getNavigationBadges(): Promise<NavBadges> {
     prisma.plan.findFirst({
       where: { marketId: scope.id },
       orderBy: { createdAt: "desc" },
-      select: { revision: true, estateRevision: true, steps: true }
+      select: { revision: true, estateRevision: true, configRevision: true, steps: true }
     })
   ]);
   const currentPlan = planMatchesScan(plan, generation?.scannedAt ?? null, scope.estateRevision)
