@@ -4,15 +4,15 @@ import { journalRevision, parseJournal, replayJournal, type JournalEvent } from 
 import { loadAddon } from "../../addon/test/wow-lua";
 
 const EVENTS: JournalEvent[] = [
-  { k: "buy", t: 100, itemId: 2589, qty: 10, cost: 10000 },
-  { k: "buy", t: 110, itemId: 2589, qty: 10, cost: 20000 },
-  { k: "post", t: 120, auctionID: 7, itemId: 2589, qty: 15, price: 1500, deposit: 500 },
-  { k: "sold", t: 130, auctionID: 7, itemId: 2589, qty: 15, price: 1500, fee: 1125, censored: true },
-  { k: "vendor", t: 140, itemId: 2589, qty: 3, paid: 4000 },
-  { k: "post", t: 150, auctionID: 8, itemId: 2589, qty: 2, price: 1600, deposit: 300 },
-  { k: "expire", t: 160, auctionID: 8 },
-  { k: "buy", t: 170, itemId: 1000, qty: 5, cost: 5000 },
-  { k: "de", t: 180, itemId: 1000, qty: 5, outputs: [{ itemId: 2000, qty: 2 }, { itemId: 2001, qty: 1 }] }
+  { k: "buy", t: 100, seq: 1, itemId: 2589, qty: 10, cost: 10000 },
+  { k: "buy", t: 110, seq: 2, itemId: 2589, qty: 10, cost: 20000 },
+  { k: "post", t: 120, seq: 3, auctionID: 7, itemId: 2589, qty: 15, price: 1500, deposit: 500 },
+  { k: "sold", t: 130, seq: 4, auctionID: 7, itemId: 2589, qty: 15, price: 1500, fee: 1125, censored: true },
+  { k: "vendor", t: 140, seq: 5, itemId: 2589, qty: 3, paid: 4000 },
+  { k: "post", t: 150, seq: 6, auctionID: 8, itemId: 2589, qty: 2, price: 1600, deposit: 300 },
+  { k: "expire", t: 160, seq: 7, auctionID: 8 },
+  { k: "buy", t: 170, seq: 8, itemId: 1000, qty: 5, cost: 5000 },
+  { k: "de", t: 180, seq: 9, itemId: 1000, qty: 5, outputs: [{ itemId: 2000, qty: 2 }, { itemId: 2001, qty: 1 }] }
 ];
 
 describe("replayJournal", () => {
@@ -328,6 +328,9 @@ describe("journal checkpoint parity", () => {
     // Trades in the checkpoint keep the suffix's P&L reproducible; the
     // suffix itself only appends the later sales.
     expect(split.trades.slice(0, prefix.trades.length)).toEqual(prefix.trades);
+    // Every trade names the event that produced it; the terminal uses that
+    // sequence as its fact identity instead of the array position.
+    expect(split.trades.map((trade) => trade.seq)).toEqual([4, 5]);
   });
 
   it("parses a checkpoint from SavedVariables and moves the revision", () => {

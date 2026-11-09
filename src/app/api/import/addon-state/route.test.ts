@@ -186,6 +186,47 @@ describe("POST /api/import/addon-state", () => {
     expect(trade).toMatchObject({ qty: 4, pnl: 4560, basisKnown: false });
   });
 
+  it("keeps a checkpoint trade's identity when older trades are pruned", async () => {
+    // A checkpoint drops trades older than the retention window. If the
+    // fact identity were the trade's array position, every surviving trade
+    // would shift and be inserted a second time.
+    const trade = (seq: number, itemId: number) => ({
+      t: NOW - 100 + seq, seq, itemId, qty: 1, price: 10, fee: 0, basis: 5,
+      basisKnown: true, pnl: 5, channel: "vendor", inferred: false,
+      observedAt: NOW - 100 + seq, censored: false
+    });
+    const checkpoint = (throughSeq: number, trades: unknown[], throughSeqNext: number) => ({
+      books: {
+        "A|Alliance|Checkpointer": {
+          e: [],
+          dropped: 0,
+          nextSeq: throughSeqNext,
+          checkpoint: {
+            throughSeq,
+            state: {
+              lots: {},
+              openPosts: {},
+              trades,
+              capital: { escrow: 0, realized: 0, fees: 0, depositsLost: 0, cashDelta: 0 }
+            }
+          }
+        }
+      }
+    });
+    expect((await post("state", {
+      server: "A", faction: "Alliance",
+      journal: checkpoint(10, [trade(1, 2589)], 11)
+    })).status).toBe(200);
+    expect((await post("state", {
+      server: "A", faction: "Alliance",
+      journal: checkpoint(20, [trade(2, 2592), trade(1, 2589)], 21)
+    })).status).toBe(200);
+    const market = await prisma.market.findUnique({ where: { realm_faction: { realm: "A", faction: "Alliance" } } });
+    expect(await prisma.trade.count({
+      where: { marketId: market!.id, character: "Checkpointer" }
+    })).toBe(2);
+  });
+
   it("marks a holding whose cost was only estimated", async () => {
     const response = await post("state", {
       server: "A", faction: "Alliance",

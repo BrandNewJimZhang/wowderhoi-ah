@@ -191,7 +191,7 @@ function Ledger.replay(events, market, initial)
       -- integer-column projection: round the unit price and the realized
       -- cash once, here, and identically on both runtimes.
       state.trades[#state.trades + 1] = {
-        t = event.t, itemId = event.itemId, qty = event.qty or 0,
+        t = event.t, seq = event.seq, itemId = event.itemId, qty = event.qty or 0,
         price = (event.qty or 0) > 0 and round((event.paid or 0) / event.qty) or 0,
         fee = 0, basis = basis, basisKnown = known,
         pnl = round((event.paid or 0) - basis), channel = "vendor",
@@ -232,7 +232,7 @@ function Ledger.replay(events, market, initial)
         end
       end
       state.trades[#state.trades + 1] = {
-        t = event.t, itemId = itemId, qty = quantity,
+        t = event.t, seq = event.seq, itemId = itemId, qty = quantity,
         price = round(price), fee = round(fee), basis = basis, basisKnown = known,
         pnl = round(price * quantity - fee - basis), channel = "auction",
         auctionID = event.auctionID,

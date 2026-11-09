@@ -62,6 +62,11 @@ type JournalLot = { qty: number; unitCost: number; at: number; known?: boolean }
 
 export type JournalTrade = {
   t: number;
+  // The journal sequence of the event that produced this trade. The
+  // terminal's fact identity uses it, so a checkpoint that prunes an
+  // older trade and shifts array positions cannot turn the same sale into
+  // a second row.
+  seq?: number;
   itemId: number | null;
   qty: number;
   price: number;
@@ -222,6 +227,7 @@ function parseCheckpoint(raw: unknown): JournalCheckpoint | null {
     const trade = (entry ?? {}) as Record<string, unknown>;
     return {
       t: toNumber(trade.t),
+      ...(typeof trade.seq === "number" ? { seq: trade.seq } : {}),
       itemId: typeof trade.itemId === "number" ? trade.itemId : null,
       qty: toNumber(trade.qty),
       price: toNumber(trade.price),
@@ -377,7 +383,7 @@ export function replayJournal(events: JournalEvent[], checkpoint?: JournalCheckp
         // integer-column projection: round the unit price and the realized
         // cash once, here, and identically to Ledger.lua.
         trades.push({
-          t: at, itemId: event.itemId ?? null, qty: event.qty ?? 0,
+          t: at, seq: event.seq, itemId: event.itemId ?? null, qty: event.qty ?? 0,
           price: (event.qty ?? 0) > 0 ? round(paid / (event.qty ?? 1)) : 0,
           fee: 0, basis, basisKnown: known, pnl: round(paid - basis), channel: "vendor", inferred: false,
           observedAt: at, censored: false
@@ -420,7 +426,7 @@ export function replayJournal(events: JournalEvent[], checkpoint?: JournalCheckp
         }
         const listedAt = event.listedAt ?? post?.at;
         trades.push({
-          t: at, itemId: itemId ?? null, qty: quantity, price: round(price), fee: round(fee), basis,
+          t: at, seq: event.seq, itemId: itemId ?? null, qty: quantity, price: round(price), fee: round(fee), basis,
           basisKnown: known,
           pnl: round(price * quantity - fee - basis), channel: "auction",
           ...(event.auctionID !== undefined ? { auctionID: event.auctionID } : {}),

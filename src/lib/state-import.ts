@@ -277,6 +277,10 @@ function tradeFactId(character: string, trade: JournalTrade, index: number): str
   if (trade.channel === "auction" && trade.auctionID !== undefined) {
     return `${character}|auction|${String(trade.auctionID)}`;
   }
+  // A checkpoint prunes trades by age, which shifts their array positions.
+  // The event sequence is the stable identity; the index is only a fallback
+  // for checkpoints written before trades carried one.
+  if (trade.seq !== undefined) return `${character}|seq|${trade.seq}`;
   return `${character}|${trade.channel}|${trade.t}|${trade.itemId ?? 0}|${trade.qty}|${index}`;
 }
 
