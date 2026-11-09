@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseSavedVariables } from "@/lib/addon-scan";
-import { bookForCharacter, journalRevision, parseJournal, replayJournal, type JournalEvent } from "@/lib/journal";
+import { bookForCharacter, checkpointOf, journalRevision, parseJournal, replayJournal, type JournalEvent } from "@/lib/journal";
 import { loadAddon } from "../../addon/test/wow-lua";
 
 const EVENTS: JournalEvent[] = [
@@ -276,5 +276,33 @@ describe("bookForCharacter", () => {
     // cash would report positions that character does not hold.
     expect(bookForCharacter(books, "TestRealm|Alliance|New")).toBeNull();
     expect(bookForCharacter(books, null)).toBeNull();
+  });
+});
+
+describe("journal checkpoint parity", () => {
+  it("replays checkpoint plus suffix like the full history", () => {
+    const full = replayJournal(EVENTS);
+    const prefix = replayJournal(EVENTS.slice(0, 4));
+    const checkpoint = { ...checkpointOf(prefix), throughSeq: 4 };
+    const split = replayJournal(EVENTS.slice(4), checkpoint);
+    expect(split.positions).toEqual(full.positions);
+    expect(split.openPosts).toEqual(full.openPosts);
+    expect(split.capital).toEqual(full.capital);
+    // Trades in the checkpoint keep the suffix's P&L reproducible; the
+    // suffix itself only appends the later sales.
+    expect(split.trades.slice(0, prefix.trades.length)).toEqual(prefix.trades);
+  });
+
+  it("parses a checkpoint from SavedVariables and moves the revision", () => {
+    const source = `WoWderhoiAH_Journal = { ["v"] = 2, ["books"] = { ["TestRealm|Alliance|Tester"] = { ["dropped"] = 4, ["nextSeq"] = 9, ["e"] = { { ["k"] = "buy", ["t"] = 10, ["seq"] = 9, ["itemId"] = 2589, ["qty"] = 1, ["cost"] = 100 } }, ["checkpoint"] = { ["throughSeq"] = 8, ["state"] = { ["lots"] = { [2589] = { { ["qty"] = 2, ["unitCost"] = 50, ["at"] = 1 } } }, ["openPosts"] = {}, ["trades"] = {}, ["capital"] = { ["escrow"] = 0, ["realized"] = 0, ["fees"] = 0, ["depositsLost"] = 0, ["cashDelta"] = -100 }, ["cashAnchor"] = 1000 } } } } }`;
+    const parsed = parseSavedVariables(source);
+    const books = parseJournal(parsed.WoWderhoiAH_Journal);
+    expect(books[0].nextSeq).toBe(9);
+    expect(books[0].checkpoint?.throughSeq).toBe(8);
+    const state = replayJournal(books[0].events, books[0].checkpoint);
+    expect(state.positions[2589]).toEqual({ qty: 3, cost: 200 });
+    expect(state.capital.cashDelta).toBe(-200);
+    expect(state.cashAnchor).toBe(1000);
+    expect(journalRevision(parsed.WoWderhoiAH_Journal)).toContain(":9:8");
   });
 });

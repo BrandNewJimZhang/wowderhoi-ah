@@ -17,12 +17,12 @@
 local ADDON_NAME, WAH = ...
 
 local Ledger = {}
--- Version 3: trades carry the auctionID that a mailbox confirmation uses to
--- upgrade an inferred sale; a stored v2 ledger from the previous release
--- has no such field and must be rebuilt rather than reused.
--- (Version 2 introduced material-FIFO craft cost, partial fills and the
--- listing time the fill model needs for exposure hours.)
-Ledger.VERSION = 3
+-- Version 4: the journal carries stable sequence numbers and a checkpoint.
+-- Replaying a checkpoint plus the surviving events must produce the same
+-- positions, open postings and capital as replaying the full history.
+-- (Version 3 introduced the auctionID on trades; version 2 the material
+-- FIFO craft cost, partial fills and listing-time exposure.)
+Ledger.VERSION = 4
 
 local function round(value) return math.floor((value or 0) + 0.5) end
 
@@ -36,16 +36,55 @@ local function newState(market)
     trades = {}, -- realized sales
     -- Cash is not part of the ledger: GetMoney() is the only live source,
     -- and a snapshot taken at the last rebuild would go stale the moment the
-    -- player loots or pays. Capital is the projection of what the journal
-    -- can prove.
+    -- player loots or pays. `cashDelta` is the change these events can
+    -- prove; `cashAnchor` is the purse when the book was created. Their sum
+    -- is the expected purse, and the reconciler reports the difference.
     capital = {
       escrow = 0,
       realized = 0,
       fees = 0,
-      depositsLost = 0
+      depositsLost = 0,
+      cashDelta = 0
     },
+    cashAnchor = nil,
     errors = {}
   }
+end
+
+local function copyState(initial, market)
+  local state = newState(market)
+  if not initial then return state end
+  for itemId, lots in pairs(initial.lots or {}) do
+    local copy = {}
+    for index, lot in ipairs(lots) do
+      copy[index] = { qty = lot.qty, unitCost = lot.unitCost, at = lot.at }
+    end
+    state.lots[itemId] = copy
+  end
+  for key, post in pairs(initial.openPosts or {}) do
+    state.openPosts[key] = {
+      itemId = post.itemId,
+      qty = post.qty,
+      price = post.price,
+      deposit = post.deposit,
+      at = post.at
+    }
+  end
+  for index, trade in ipairs(initial.trades or {}) do
+    local copy = {}
+    for field, value in pairs(trade) do copy[field] = value end
+    state.trades[index] = copy
+  end
+  local capital = initial.capital or {}
+  state.capital = {
+    escrow = capital.escrow or 0,
+    realized = capital.realized or 0,
+    fees = capital.fees or 0,
+    depositsLost = capital.depositsLost or 0,
+    cashDelta = capital.cashDelta or 0
+  }
+  state.cashAnchor = initial.cashAnchor
+  return state
 end
 
 local function addLot(state, itemId, quantity, unitCost, at)
@@ -98,9 +137,11 @@ local function postKey(event, index)
   return event.auctionID or ("event:" .. tostring(index))
 end
 
--- Pure replay. `events` is the journal array; `market` labels the result.
-function Ledger.replay(events, market)
-  local state = newState(market)
+-- Pure replay. `events` is the journal array; `market` labels the result;
+-- `initial` is a checkpoint state (lots, openPosts, trades, capital,
+-- cashAnchor) the surviving events apply on top of.
+function Ledger.replay(events, market, initial)
+  local state = copyState(initial, market)
   local posts = state.openPosts
   for index, event in ipairs(events or {}) do
     local kind = event.k
@@ -108,6 +149,7 @@ function Ledger.replay(events, market)
       local quantity = event.qty or 0
       local cost = event.cost or 0
       addLot(state, event.itemId, quantity, quantity > 0 and cost / quantity or 0, event.t)
+      state.capital.cashDelta = state.capital.cashDelta - cost
     elseif kind == "craft" then
       -- A craft consumes its materials and adds the product at their FIFO
       -- cost. The capture side never prices the craft: the ledger is the
@@ -121,6 +163,7 @@ function Ledger.replay(events, market)
     elseif kind == "vendor" then
       local basis = consume(state, event.itemId, event.qty or 0, event.t)
       state.capital.realized = state.capital.realized + (event.paid or 0) - basis
+      state.capital.cashDelta = state.capital.cashDelta + (event.paid or 0)
       -- Money is whole copper. A unit price can be fractional (a stack
       -- bought or sold as a lot), but the trade rows must survive an
       -- integer-column projection: round the unit price and the realized
@@ -141,6 +184,7 @@ function Ledger.replay(events, market)
         at = event.t
       }
       state.capital.escrow = state.capital.escrow + (event.deposit or 0)
+      state.capital.cashDelta = state.capital.cashDelta - (event.deposit or 0)
     elseif kind == "sold" then
       local key = postKey(event, index)
       local post = posts[key]
@@ -151,6 +195,7 @@ function Ledger.replay(events, market)
       local basis = consume(state, itemId, quantity, event.t)
       state.capital.realized = state.capital.realized + price * quantity - fee - basis
       state.capital.fees = state.capital.fees + fee
+      state.capital.cashDelta = state.capital.cashDelta + price * quantity - fee
       if post then
         -- A commodity listing can fill in pieces: keep the remaining units
         -- open and refund the deposit only when the posting is exhausted.
@@ -159,6 +204,7 @@ function Ledger.replay(events, market)
           post.qty = remaining
         else
           state.capital.escrow = state.capital.escrow - post.deposit
+          state.capital.cashDelta = state.capital.cashDelta + post.deposit
           posts[key] = nil
         end
       end
@@ -191,6 +237,8 @@ function Ledger.replay(events, market)
         state.capital.realized = state.capital.realized
           + (price * quantity - fee) - (trade.price * trade.qty - trade.fee)
         state.capital.fees = state.capital.fees + fee - trade.fee
+        state.capital.cashDelta = state.capital.cashDelta
+          + (price * quantity - fee) - (trade.price * trade.qty - trade.fee)
         trade.qty, trade.price, trade.fee = quantity, round(price), round(fee)
         trade.pnl = round(price * quantity - fee - trade.basis)
         trade.inferred = false
@@ -211,6 +259,7 @@ function Ledger.replay(events, market)
       local refund = event.refund or ((post and post.deposit or 0) - lost)
       state.capital.escrow = math.max(0, state.capital.escrow - refund - lost)
       state.capital.depositsLost = state.capital.depositsLost + lost
+      state.capital.cashDelta = state.capital.cashDelta + refund
       posts[key] = nil
     elseif kind == "expire" then
       local key = postKey(event, index)
@@ -236,6 +285,10 @@ function Ledger.replay(events, market)
       for _, output in ipairs(outputs) do
         addLot(state, output.itemId, output.qty or 0, unitCost, event.t)
       end
+    elseif kind == "bid" then
+      -- A bid freezes money but does not consume goods. The win arrives as
+      -- a mail `buy`, which is the cash fact; counting the freeze here too
+      -- would subtract the same copper twice.
     elseif kind == "adopt" then
       -- An annotation, not a trade: the terminal reads it to attribute a
       -- later sale, and the ledger has no state to change.
@@ -256,13 +309,40 @@ function Ledger.replay(events, market)
   state.capital.fees = round(state.capital.fees)
   state.capital.depositsLost = round(state.capital.depositsLost)
   state.capital.escrow = round(state.capital.escrow)
+  state.capital.cashDelta = round(state.capital.cashDelta)
   return state
 end
 
+-- The checkpoint form of a replay state. It keeps the FIFO lots, the open
+-- postings, the recent trades the fill model reads, the capital block and
+-- the cash anchor; the terminal can replay it without the removed events.
+function Ledger.snapshot(state)
+  local trades = {}
+  local cutoff = time() - 7 * 24 * 3600
+  for _, trade in ipairs(state.trades or {}) do
+    if (trade.t or 0) >= cutoff then
+      local copy = {}
+      for field, value in pairs(trade) do copy[field] = value end
+      trades[#trades + 1] = copy
+    end
+  end
+  return {
+    lots = state.lots,
+    openPosts = state.openPosts,
+    trades = trades,
+    capital = state.capital,
+    cashAnchor = state.cashAnchor
+  }
+end
+
 function Ledger.rebuild()
-  local events = WAH.Journal and WAH.Journal.current() or {}
+  local book = WAH.Journal and WAH.Journal.book() or nil
+  local events = book and book.e or {}
   local market = WAH.Journal and WAH.Journal.bookKey() or "local"
-  local state = Ledger.replay(events, market)
+  local state = Ledger.replay(events, market, book and book.checkpoint and book.checkpoint.state)
+  state.cashAnchor = state.cashAnchor
+    or (book and book.checkpoint and book.checkpoint.state and book.checkpoint.state.cashAnchor)
+    or (book and book.cashAnchor)
   WoWderhoiAH_Ledger = state
   return state
 end

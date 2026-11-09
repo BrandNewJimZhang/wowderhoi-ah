@@ -132,3 +132,74 @@ describe("journal and ledger", () => {
     expect(lua.number("WowTest.savedCount")).toBe(1);
   });
 });
+
+describe("journal checkpoint", () => {
+  it("compacts the oldest prefix without changing positions or capital", () => {
+    const lua = loadAddon();
+    lua.exec(`
+      WowTest.ns.Journal.CAP = 6
+      WowTest.ns.Journal.COMPACT_KEEP = 3
+      WowTest.allEvents = {}
+      local function add(event)
+        WowTest.ns.recordEvent(event)
+        WowTest.allEvents[#WowTest.allEvents + 1] = event
+      end
+      add({ k = "buy", itemId = 2589, qty = 10, cost = 10000 })
+      add({ k = "buy", itemId = 2589, qty = 10, cost = 20000 })
+      add({ k = "post", auctionID = 7, itemId = 2589, qty = 5, price = 1500, deposit = 100 })
+      add({ k = "sold", auctionID = 7, itemId = 2589, qty = 5, price = 1500, fee = 100 })
+      add({ k = "buy", itemId = 2770, qty = 4, cost = 4800 })
+      add({ k = "post", auctionID = 8, itemId = 2770, qty = 4, price = 1600, deposit = 200 })
+      add({ k = "vendor", itemId = 2589, qty = 2, paid = 4000 })
+      add({ k = "buy", itemId = 2770, qty = 3, cost = 1500 })
+    `);
+    expect(lua.number("WowTest.ns.Journal.book().checkpoint == nil and 0 or 1")).toBe(1);
+    expect(lua.number("WowTest.ns.Journal.count()")).toBe(4);
+    const same = lua.number(`(function()
+      local full = WowTest.ns.Ledger.replay(WowTest.allEvents, "TestRealm|Alliance|Tester")
+      local compact = WowTest.ns.Ledger.current()
+      local function samePositions()
+        for itemId, position in pairs(full.positions) do
+          local other = compact.positions[itemId]
+          if not other or other.qty ~= position.qty or other.cost ~= position.cost then return false end
+        end
+        for itemId in pairs(compact.positions) do
+          if not full.positions[itemId] then return false end
+        end
+        return true
+      end
+      local function sameCapital()
+        for field, value in pairs(full.capital) do
+          if compact.capital[field] ~= value then return false end
+        end
+        return true
+      end
+      local function samePosts()
+        for key, post in pairs(full.openPosts) do
+          local other = compact.openPosts[key]
+          if not other or other.qty ~= post.qty then return false end
+        end
+        for key in pairs(compact.openPosts) do
+          if not full.openPosts[key] then return false end
+        end
+        return true
+      end
+      return samePositions() and sameCapital() and samePosts() and 1 or 0
+    end)()`);
+    expect(same).toBe(1);
+  });
+
+  it("continues the sequence after a compaction", () => {
+    const lua = loadAddon();
+    lua.exec(`
+      WowTest.ns.Journal.CAP = 3
+      WowTest.ns.Journal.COMPACT_KEEP = 1
+      for index = 1, 5 do
+        WowTest.ns.recordEvent({ k = "buy", itemId = 2589, qty = 1, cost = 100 })
+      end
+    `);
+    const lastSeq = lua.number("WowTest.ns.Journal.last('buy').seq");
+    expect(lastSeq).toBe(5);
+    expect(lua.number("WowTest.ns.Journal.revision()")).toBe(5);
+  });
+});

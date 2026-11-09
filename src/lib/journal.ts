@@ -6,6 +6,13 @@
 export type JournalEvent = {
   k: string;
   t: number;
+  // Stable per-book sequence. A re-sent book is deduplicated by
+  // (character, seq), never by comparing whole event tables.
+  seq?: number;
+  // When the action happened and when the addon learned it. A mailbox sale
+  // is necessarily observed later than it happened.
+  eventTime?: number;
+  observedAt?: number;
   itemId?: number;
   qty?: number;
   cost?: number;
@@ -23,16 +30,30 @@ export type JournalEvent = {
   // observed later than it happened (the mailbox is the observation).
   listedAt?: number;
   censored?: boolean;
+  // Where a purchase price came from when no client purchase event stated
+  // it (mail, estimated, manual).
+  priceSource?: string;
   // /wahadopt carries the terminal's stable decision identity. It is a
   // ledger annotation, not a trade: replay records it for attribution and
   // never lets it change positions or P&L.
   id?: string;
 };
 
+export type JournalCheckpoint = {
+  throughSeq: number;
+  lots: Record<number, JournalLot[]>;
+  openPosts: ReplayState["openPosts"];
+  trades: JournalTrade[];
+  capital: ReplayState["capital"];
+  cashAnchor?: number;
+};
+
 type JournalBook = {
   key: string;
   events: JournalEvent[];
   dropped: number;
+  nextSeq: number;
+  checkpoint: JournalCheckpoint | null;
 };
 
 type JournalLot = { qty: number; unitCost: number; at: number };
@@ -67,6 +88,9 @@ type ReplayError = {
 
 export type ReplayState = {
   positions: Record<number, { qty: number; cost: number }>;
+  // The FIFO lots behind positions. They are not part of the page contract;
+  // the checkpoint parity test and a later checkpoint need them.
+  lots: Record<number, JournalLot[]>;
   openPosts: Record<string, { itemId?: number; qty: number; price: number; deposit: number; at: number }>;
   trades: JournalTrade[];
   capital: {
@@ -74,7 +98,11 @@ export type ReplayState = {
     realized: number;
     fees: number;
     depositsLost: number;
+    // Cash change these events can prove. `cashAnchor` is the purse when
+    // the book was created; the reconciler compares their sum with GetMoney.
+    cashDelta: number;
   };
+  cashAnchor?: number;
   errors: ReplayError[];
 };
 
@@ -117,10 +145,14 @@ export function parseJournal(raw: unknown): JournalBook[] {
       for (const field of ["itemId", "qty", "cost", "paid", "price", "fee", "deposit", "refund", "lostDeposit"] as const) {
         if (typeof event[field] === "number") parsed[field] = event[field] as number;
       }
+      for (const field of ["seq", "eventTime", "observedAt"] as const) {
+        if (typeof event[field] === "number") parsed[field] = event[field] as number;
+      }
       if (typeof event.auctionID === "number" || typeof event.auctionID === "string") parsed.auctionID = event.auctionID;
       if (event.inferred === true) parsed.inferred = true;
       if (typeof event.listedAt === "number") parsed.listedAt = event.listedAt;
       if (typeof event.id === "string" && event.id !== "") parsed.id = event.id;
+      if (typeof event.priceSource === "string" && event.priceSource !== "") parsed.priceSource = event.priceSource;
       if (event.censored === true) parsed.censored = true;
       const outputs = numericEntries(event.outputs).map((output) => {
         const row = (output ?? {}) as Record<string, unknown>;
@@ -134,8 +166,89 @@ export function parseJournal(raw: unknown): JournalBook[] {
       if (mats.length > 0) parsed.mats = mats;
       return parsed;
     });
-    return { key, events, dropped: toNumber(book.dropped) };
+    const nextSeq = typeof book.nextSeq === "number"
+      ? book.nextSeq
+      : events.reduce((max, event) => Math.max(max, event.seq ?? 0), 0) + 1;
+    return { key, events, dropped: toNumber(book.dropped), nextSeq, checkpoint: parseCheckpoint(book.checkpoint) };
   });
+}
+
+function parseCheckpoint(raw: unknown): JournalCheckpoint | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const checkpoint = raw as Record<string, unknown>;
+  const state = (checkpoint.state ?? {}) as Record<string, unknown>;
+  const lots: Record<number, JournalLot[]> = {};
+  for (const [key, value] of Object.entries((state.lots ?? {}) as Record<string, unknown>)) {
+    const itemId = Number(key);
+    if (!Number.isInteger(itemId)) continue;
+    lots[itemId] = numericEntries(value).map((entry, index) => {
+      const lot = (entry ?? {}) as Record<string, unknown>;
+      return {
+        qty: toNumber(lot.qty),
+        unitCost: toNumber(lot.unitCost),
+        at: toNumber(lot.at, index)
+      };
+    }).filter((lot) => lot.qty > 0);
+  }
+  const openPosts: ReplayState["openPosts"] = {};
+  for (const [key, value] of Object.entries((state.openPosts ?? {}) as Record<string, unknown>)) {
+    const post = (value ?? {}) as Record<string, unknown>;
+    openPosts[key] = {
+      ...(typeof post.itemId === "number" ? { itemId: post.itemId } : {}),
+      qty: toNumber(post.qty),
+      price: toNumber(post.price),
+      deposit: toNumber(post.deposit),
+      at: toNumber(post.at)
+    };
+  }
+  const trades: JournalTrade[] = numericEntries(state.trades).map((entry) => {
+    const trade = (entry ?? {}) as Record<string, unknown>;
+    return {
+      t: toNumber(trade.t),
+      itemId: typeof trade.itemId === "number" ? trade.itemId : null,
+      qty: toNumber(trade.qty),
+      price: toNumber(trade.price),
+      fee: toNumber(trade.fee),
+      basis: toNumber(trade.basis),
+      pnl: toNumber(trade.pnl),
+      channel: typeof trade.channel === "string" ? trade.channel : "auction",
+      inferred: trade.inferred === true,
+      ...(typeof trade.auctionID === "number" || typeof trade.auctionID === "string"
+        ? { auctionID: trade.auctionID }
+        : {}),
+      ...(typeof trade.listedAt === "number" ? { listedAt: trade.listedAt } : {}),
+      observedAt: toNumber(trade.observedAt, toNumber(trade.t)),
+      censored: trade.censored === true
+    };
+  });
+  const capital = (state.capital ?? {}) as Record<string, unknown>;
+  return {
+    throughSeq: toNumber(checkpoint.throughSeq),
+    lots,
+    openPosts,
+    trades,
+    capital: {
+      escrow: toNumber(capital.escrow),
+      realized: toNumber(capital.realized),
+      fees: toNumber(capital.fees),
+      depositsLost: toNumber(capital.depositsLost),
+      cashDelta: toNumber(capital.cashDelta)
+    },
+    ...(typeof state.cashAnchor === "number" ? { cashAnchor: state.cashAnchor } : {})
+  };
+}
+
+// The checkpoint form of a replay state. The Lua ledger exposes the same
+// shape; a parity fixture can check one against the other.
+export function checkpointOf(state: ReplayState): JournalCheckpoint {
+  return {
+    throughSeq: 0,
+    lots: state.lots,
+    openPosts: state.openPosts,
+    trades: state.trades,
+    capital: state.capital,
+    ...(state.cashAnchor === undefined ? {} : { cashAnchor: state.cashAnchor })
+  };
 }
 
 // The journal is per character, but the terminal's positions and trades are
@@ -157,18 +270,38 @@ function postKey(event: JournalEvent, index: number): string {
 // oldest one both move the revision; rewriting the file unchanged does not.
 export function journalRevision(raw: unknown): string {
   return parseJournal(raw)
-    .map((book) => `${book.key}:${book.events.length}:${book.dropped}`)
+    .map((book) =>
+      `${book.key}:${book.events.length}:${book.dropped}:${book.nextSeq}:${book.checkpoint?.throughSeq ?? 0}`
+    )
     .sort()
     .join("|");
 }
 
-export function replayJournal(events: JournalEvent[]): ReplayState {
+export function replayJournal(events: JournalEvent[], checkpoint?: JournalCheckpoint | null): ReplayState {
   const lots = new Map<number, JournalLot[]>();
   const positions: Record<number, { qty: number; cost: number }> = {};
   const openPosts: ReplayState["openPosts"] = {};
   const trades: JournalTrade[] = [];
   const errors: ReplayError[] = [];
-  const capital = { escrow: 0, realized: 0, fees: 0, depositsLost: 0 };
+  const capital = { escrow: 0, realized: 0, fees: 0, depositsLost: 0, cashDelta: 0 };
+  let cashAnchor: number | undefined;
+  if (checkpoint) {
+    for (const [itemId, list] of Object.entries(checkpoint.lots)) {
+      lots.set(Number(itemId), list.map((lot) => ({ ...lot })));
+    }
+    for (const [key, post] of Object.entries(checkpoint.openPosts)) {
+      openPosts[key] = { ...post };
+    }
+    for (const trade of checkpoint.trades) trades.push({ ...trade });
+    Object.assign(capital, {
+      escrow: checkpoint.capital.escrow,
+      realized: checkpoint.capital.realized,
+      fees: checkpoint.capital.fees,
+      depositsLost: checkpoint.capital.depositsLost,
+      cashDelta: checkpoint.capital.cashDelta
+    });
+    cashAnchor = checkpoint.cashAnchor;
+  }
 
   const addLot = (itemId: number | undefined, quantity: number, unitCost: number, at: number) => {
     if (!itemId || quantity <= 0) return;
@@ -206,6 +339,7 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
         const quantity = event.qty ?? 0;
         const cost = event.cost ?? 0;
         addLot(event.itemId, quantity, quantity > 0 ? cost / quantity : 0, at);
+        capital.cashDelta -= cost;
         break;
       }
       case "craft": {
@@ -224,6 +358,7 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
         const basis = consume(event.itemId, event.qty ?? 0, at);
         const paid = event.paid ?? 0;
         capital.realized += paid - basis;
+        capital.cashDelta += paid;
         // Money is whole copper. A unit price can be fractional (a stack
         // bought or sold as a lot), but trade rows must survive an
         // integer-column projection: round the unit price and the realized
@@ -245,6 +380,7 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
           at
         };
         capital.escrow += event.deposit ?? 0;
+        capital.cashDelta -= event.deposit ?? 0;
         break;
       }
       case "sold": {
@@ -257,6 +393,7 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
         const basis = consume(itemId, quantity, at);
         capital.realized += price * quantity - fee - basis;
         capital.fees += fee;
+        capital.cashDelta += price * quantity - fee;
         if (post) {
           // A commodity listing can fill in pieces: keep the remaining units
           // open and refund the deposit only when the posting is exhausted.
@@ -264,6 +401,7 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
           if (remaining > 0) post.qty = remaining;
           else {
             capital.escrow -= post.deposit;
+            capital.cashDelta += post.deposit;
             delete openPosts[key];
           }
         }
@@ -296,6 +434,7 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
           const fee = event.fee ?? trade.fee;
           capital.realized += price * quantity - fee - (trade.price * trade.qty - trade.fee);
           capital.fees += fee - trade.fee;
+          capital.cashDelta += (price * quantity - fee) - (trade.price * trade.qty - trade.fee);
           trade.qty = quantity;
           trade.price = round(price);
           trade.fee = round(fee);
@@ -318,6 +457,7 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
         const refund = event.refund ?? ((post?.deposit ?? 0) - lost);
         capital.escrow = Math.max(0, capital.escrow - refund - lost);
         capital.depositsLost += lost;
+        capital.cashDelta += refund;
         delete openPosts[key];
         break;
       }
@@ -352,6 +492,12 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
         for (const output of outputs) addLot(output.itemId, output.qty ?? 0, unitCost, at);
         break;
       }
+      case "bid": {
+        // A bid freezes money but does not consume goods. The win arrives
+        // as a mail `buy`, which is the cash fact; counting the freeze too
+        // would subtract the same copper twice.
+        break;
+      }
       case "adopt": {
         // The adoption is read by the import layer from the raw event list;
         // the ledger has no state to update.
@@ -369,8 +515,11 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
     else positions[itemId] = { qty: quantity, cost: round(cost) };
   }
 
+  const lotRecord: Record<number, JournalLot[]> = {};
+  for (const [itemId, list] of lots.entries()) lotRecord[itemId] = list;
   return {
     positions,
+    lots: lotRecord,
     openPosts,
     trades,
     capital: {
@@ -378,8 +527,10 @@ export function replayJournal(events: JournalEvent[]): ReplayState {
       realized: round(capital.realized),
       fees: round(capital.fees),
       depositsLost: round(capital.depositsLost),
-      escrow: round(capital.escrow)
+      escrow: round(capital.escrow),
+      cashDelta: round(capital.cashDelta)
     },
+    ...(cashAnchor === undefined ? {} : { cashAnchor }),
     errors
   };
 }
