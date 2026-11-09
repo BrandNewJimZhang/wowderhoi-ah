@@ -35,11 +35,13 @@ export const MIGRATED_COVERAGE = {
 
 // A Position row is the ledger's known quantity: the old import rebuilt it
 // from the journal. Seeding knownQty from it preserves the cost basis; the
-// next estate push reconciles the locations.
+// next estate push reconciles the locations. No location is claimed here:
+// the old model never observed the bag, so `carriedQty` must stay 0 while
+// `MIGRATED_COVERAGE.carried` is unobserved.
 export function holdingSeed(row: OldPosition) {
   return {
     qty: row.qty,
-    carriedQty: row.qty,
+    carriedQty: 0,
     knownQty: row.qty,
     unknownQty: 0,
     missingQty: 0,
