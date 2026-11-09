@@ -80,6 +80,12 @@ async function main() {
     for (const row of markets) {
       const character = row.character ?? "";
       if (!character) continue;
+      // Old generations default to an empty character; the market was
+      // single-character under the old model, so attribute them to it.
+      await prisma.marketGeneration.updateMany({
+        where: { marketId: row.id, character: "" },
+        data: { character }
+      });
       await prisma.estate.upsert({
         where: { marketId_scope: { marketId: row.id, scope: `character:${character}` } },
         create: {

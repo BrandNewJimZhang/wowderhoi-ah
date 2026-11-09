@@ -153,6 +153,19 @@ describe("POST /api/import/addon-state", () => {
     expect(await prisma.trade.count({ where: { marketId: market!.id, character: "Tester" } })).toBe(1);
   });
 
+  it("rebuilds holdings when only the estate moves", async () => {
+    const response = await post("state", {
+      server: "A", faction: "Alliance",
+      estate: estate(2, 8)
+    });
+    expect(response.status).toBe(200);
+    const market = await prisma.market.findUnique({ where: { realm_faction: { realm: "A", faction: "Alliance" } } });
+    const holding = await prisma.holding.findFirst({
+      where: { marketId: market!.id, character: "Tester", itemId: 2589 }
+    });
+    expect(holding).toMatchObject({ qty: 8, carriedQty: 8, knownQty: 3, unknownQty: 5 });
+  });
+
   it("keeps two characters' holdings and trades apart", async () => {
     const response = await post("state", {
       server: "A", faction: "Alliance",

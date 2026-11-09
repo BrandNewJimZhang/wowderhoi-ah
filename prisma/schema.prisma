@@ -276,6 +276,7 @@ model Holding {
   itemId         Int      @map("item_id")
   qty            Int
   carriedQty     Int      @default(0) @map("carried_qty")
+  keyringQty     Int      @default(0) @map("keyring_qty")
   bankQty        Int      @default(0) @map("bank_qty")
   accountBankQty Int      @default(0) @map("account_bank_qty")
   mailQty        Int      @default(0) @map("mail_qty")

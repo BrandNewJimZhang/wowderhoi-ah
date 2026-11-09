@@ -35,11 +35,12 @@ export default async function PortfolioPage() {
   const byLocation = bundle.holdings.reduce(
     (totals, holding) => ({
       carried: totals.carried + holding.carriedQty,
+      keyring: totals.keyring + holding.keyringQty,
       bank: totals.bank + holding.bankQty + holding.accountBankQty,
       mail: totals.mail + holding.mailQty,
       listed: totals.listed + holding.listedQty
     }),
-    { carried: 0, bank: 0, mail: 0, listed: 0 }
+    { carried: 0, keyring: 0, bank: 0, mail: 0, listed: 0 }
   );
   // A position whose item left the newest scan has no current sell front:
   // value it as unpriced instead of carrying the last price it was seen at.
@@ -105,6 +106,7 @@ export default async function PortfolioPage() {
 
       <div className="mb-3 flex flex-wrap gap-3 border border-terminal-border bg-terminal-panel px-4 py-2 font-mono text-xs text-terminal-muted">
         <span>背包 {byLocation.carried}</span>
+        {byLocation.keyring > 0 && <span>钥匙链 {byLocation.keyring}</span>}
         <span>银行 {byLocation.bank}</span>
         <span>邮箱 {byLocation.mail}</span>
         <span>在售 {byLocation.listed}</span>

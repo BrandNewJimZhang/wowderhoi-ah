@@ -192,23 +192,31 @@ async function recomputeHoldings(
   tx: Prisma.TransactionClient,
   marketId: string,
   character: string,
-  replay: ReplayState
+  replay: ReplayState,
+  // Account bank and own postings are account-scoped. Attributing them to
+  // every character's holding made the portfolio sum the same auction once
+  // per character; only the character whose scan names the current scope
+  // carries them.
+  includeAccount: boolean
 ): Promise<void> {
   const characterScope = `character:${character}`;
   const [characterEstate, accountEstate] = await Promise.all([
     loadEstateItems(tx, marketId, characterScope),
-    loadEstateItems(tx, marketId, "account")
+    includeAccount
+      ? loadEstateItems(tx, marketId, "account")
+      : Promise.resolve({ items: new Map<number, Map<string, number>>(), coverage: {}, exists: false })
   ]);
   const bankObserved = coverageObserved(characterEstate.coverage, "bank");
   const mailObserved = coverageObserved(characterEstate.coverage, "mail");
-  const accountBankObserved = coverageObserved(accountEstate.coverage, "account_bank");
-  const listedObserved = coverageObserved(accountEstate.coverage, "listed");
-  const allObserved = bankObserved && mailObserved && accountBankObserved && listedObserved;
+  const accountBankObserved = includeAccount && coverageObserved(accountEstate.coverage, "account_bank");
+  const listedObserved = includeAccount && coverageObserved(accountEstate.coverage, "listed");
+  const allObserved = bankObserved && mailObserved
+    && (!includeAccount || (accountBankObserved && listedObserved));
 
   const itemIds = new Set<number>([
     ...Object.keys(replay.positions).map(Number),
     ...characterEstate.items.keys(),
-    ...accountEstate.items.keys()
+    ...(includeAccount ? accountEstate.items.keys() : [])
   ]);
   const rows: Prisma.HoldingCreateManyInput[] = [];
   for (const itemId of itemIds) {
@@ -225,20 +233,25 @@ async function recomputeHoldings(
     // an unseen bag as an empty bag would mark every held unit missing.
     const observedQty = carriedQty + bankQty + accountBankQty + mailQty + listedQty + keyringQty;
     const qty = characterEstate.exists ? observedQty : ledgerQty;
+    const knownQty = characterEstate.exists ? Math.min(ledgerQty, qty) : ledgerQty;
+    // The booked cost belongs only to the units that are actually present;
+    // spreading it over a larger ledger quantity would inflate unit cost.
+    const knownCost = ledgerQty > 0 ? costBasis * (knownQty / ledgerQty) : 0;
     rows.push({
       marketId,
       character,
       itemId,
       qty,
       carriedQty: characterEstate.exists ? carriedQty : ledgerQty,
+      keyringQty,
       bankQty,
       accountBankQty,
       mailQty,
       listedQty,
-      knownQty: characterEstate.exists ? Math.min(ledgerQty, qty) : ledgerQty,
+      knownQty,
       unknownQty: characterEstate.exists ? Math.max(0, qty - ledgerQty) : 0,
       missingQty: characterEstate.exists && allObserved ? Math.max(0, ledgerQty - qty) : 0,
-      costBasis
+      costBasis: knownCost
     });
   }
   await tx.holding.deleteMany({ where: { marketId, character } });
@@ -327,6 +340,41 @@ async function applyAdoptions(
   }
 }
 
+// Rebuild one character's holdings from the persisted facts and checkpoint.
+// An estate-only update needs this: the bag moved, but no journal event did.
+export async function refreshHoldings(
+  tx: Prisma.TransactionClient,
+  marketId: string
+): Promise<void> {
+  const generation = await tx.marketGeneration.findFirst({
+    where: { marketId },
+    orderBy: { scannedAt: "desc" },
+    select: { character: true }
+  });
+  const character = generation?.character ?? "";
+  if (!character) return;
+  const checkpointRow = await tx.ledgerCheckpoint.findFirst({
+    where: { marketId, character },
+    orderBy: { throughSeq: "desc" }
+  });
+  const raw = (checkpointRow?.state ?? null) as Record<string, unknown> | null;
+  const checkpoint = raw
+    ? ((raw.state && typeof raw.state === "object" ? raw.state : raw) as unknown as JournalCheckpoint)
+    : null;
+  const facts = await tx.journalFact.findMany({
+    where: {
+      marketId,
+      character,
+      ...(checkpoint ? { seq: { gt: checkpoint.throughSeq } } : {})
+    },
+    orderBy: { seq: "asc" },
+    select: { payload: true }
+  });
+  const events = facts.map((fact) => fact.payload as unknown as JournalEvent);
+  const replay = replayJournal(events, checkpoint);
+  await recomputeHoldings(tx, marketId, character, replay, true);
+}
+
 export type JournalApplyResult = {
   events: number;
   trades: number;
@@ -347,6 +395,12 @@ export async function applyJournal(
   let newFacts = 0;
   let newCheckpoints = 0;
   const characters: string[] = [];
+  const activeGeneration = await tx.marketGeneration.findFirst({
+    where: { marketId },
+    orderBy: { scannedAt: "desc" },
+    select: { character: true }
+  });
+  const activeCharacter = activeGeneration?.character ?? "";
   for (const book of books) {
     const character = book.key.split("|").pop() ?? "";
     if (!character) continue;
@@ -388,7 +442,12 @@ export async function applyJournal(
       events += data.length;
       newFacts += data.length;
     }
-    if (stale) continue;
+    if (stale) {
+      // Adoptions are annotations, not projection state; a late delivery
+      // still carries a player fact the review must see.
+      await applyAdoptions(tx, marketId, character, book.events);
+      continue;
+    }
     if (book.checkpoint) {
       const checkpointExisting = await tx.ledgerCheckpoint.findUnique({
         where: {
@@ -424,14 +483,14 @@ export async function applyJournal(
         ...(book.checkpoint as unknown as { state?: Partial<JournalCheckpoint> }).state
       };
       const replay = replayJournal(book.events, checkpoint);
-      await recomputeHoldings(tx, marketId, character, replay);
+      await recomputeHoldings(tx, marketId, character, replay, character === activeCharacter);
       const created = await applyTrades(tx, marketId, character, replay.trades);
       trades += created;
       await applyAdoptions(tx, marketId, character, book.events);
       errors += replay.errors.length;
     } else {
       const replay = replayJournal(book.events);
-      await recomputeHoldings(tx, marketId, character, replay);
+      await recomputeHoldings(tx, marketId, character, replay, character === activeCharacter);
       const created = await applyTrades(tx, marketId, character, replay.trades);
       trades += created;
       await applyAdoptions(tx, marketId, character, book.events);

@@ -167,17 +167,33 @@ export async function getPositions(scope: MarketScope | null): Promise<Record<nu
       ...(scope.character ? { character: scope.character } : {})
     },
     select: {
-      itemId: true, qty: true, carriedQty: true, bankQty: true,
+      itemId: true, qty: true, carriedQty: true, keyringQty: true, bankQty: true,
       accountBankQty: true, unknownQty: true, costBasis: true
     }
   });
-  return Object.fromEntries(rows.map((row) => [row.itemId, {
-    qty: row.qty,
-    cost: row.costBasis,
-    sellableQty: row.carriedQty,
-    costKnown: row.unknownQty === 0,
-    requiresBank: row.bankQty + row.accountBankQty > 0 && row.carriedQty === 0
-  }]));
+  const out: Record<number, CorePosition> = {};
+  for (const row of rows) {
+    const current = out[row.itemId];
+    const next: CorePosition = {
+      qty: row.qty,
+      cost: row.costBasis,
+      sellableQty: row.carriedQty,
+      costKnown: row.unknownQty === 0,
+      requiresBank: row.bankQty + row.accountBankQty > 0 && row.carriedQty === 0
+    };
+    if (!current) {
+      out[row.itemId] = next;
+    } else {
+      // Defensive aggregation: the normal read is one character, but an
+      // unpinned legacy scope can still return several holdings rows.
+      current.qty += next.qty;
+      current.cost += next.cost;
+      current.sellableQty = (current.sellableQty ?? 0) + (next.sellableQty ?? 0);
+      current.costKnown = current.costKnown !== false && next.costKnown !== false;
+      current.requiresBank = current.requiresBank || next.requiresBank;
+    }
+  }
+  return out;
 }
 
 export type StoredHolding = {
@@ -185,6 +201,7 @@ export type StoredHolding = {
   itemId: number;
   qty: number;
   carriedQty: number;
+  keyringQty: number;
   bankQty: number;
   accountBankQty: number;
   mailQty: number;
@@ -194,22 +211,6 @@ export type StoredHolding = {
   missingQty: number;
   costBasis: number;
 };
-
-// Every character's reconciled holdings, for the portfolio view. The page
-// aggregates them by item; the core still gets one character's sellable
-// quantity from getPositions.
-export async function getHoldings(scope: MarketScope | null): Promise<StoredHolding[]> {
-  if (!scope) return [];
-  return prisma.holding.findMany({
-    where: { marketId: scope.id },
-    orderBy: [{ character: "asc" }, { itemId: "asc" }],
-    select: {
-      character: true, itemId: true, qty: true, carriedQty: true, bankQty: true,
-      accountBankQty: true, mailQty: true, listedQty: true, knownQty: true,
-      unknownQty: true, missingQty: true, costBasis: true
-    }
-  });
-}
 
 // Health-page counters for the state layer: unbooked stock, ledger stock the
 // observed locations do not show, and how many locations were never looked
@@ -245,18 +246,6 @@ export async function getReconciliationStats(scope: MarketScope | null) {
     unobservedLocations,
     planRevision: plan?.revision ?? null
   };
-}
-
-export async function getEstates(scope: MarketScope | null) {
-  if (!scope) return [];
-  return prisma.estate.findMany({
-    where: { marketId: scope.id },
-    orderBy: { scope: "asc" },
-    select: {
-      scope: true, revision: true, observedAt: true, cash: true, freeSlots: true,
-      pendingCash: true, coverage: true
-    }
-  });
 }
 
 // Clean fill labels for the shared decision core: collected auction sales

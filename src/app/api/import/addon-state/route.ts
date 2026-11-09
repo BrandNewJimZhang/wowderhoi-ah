@@ -4,7 +4,7 @@
 // the whole document without duplicating anything.
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { applyEstate, applyJournal, applyPlan } from "@/lib/state-import";
+import { applyEstate, applyJournal, applyPlan, refreshHoldings } from "@/lib/state-import";
 
 export async function POST(request: Request) {
   const payload = (await request.json()) as Record<string, unknown>;
@@ -35,9 +35,14 @@ export async function POST(request: Request) {
       const estate = payload.estate === undefined || payload.estate === null
         ? { changed: false, revision: 0 }
         : await applyEstate(tx, market.id, payload.estate);
-      const journal = payload.journal === undefined || payload.journal === null
-        ? { changed: false, events: 0, trades: 0, errors: 0, characters: [] as string[] }
-        : await applyJournal(tx, market.id, payload.journal);
+      const journalPresent = payload.journal !== undefined && payload.journal !== null;
+      const journal = journalPresent
+        ? await applyJournal(tx, market.id, payload.journal)
+        : { changed: false, events: 0, trades: 0, errors: 0, characters: [] as string[] };
+      // An estate-only update still changes the holdings read model.
+      if (estate.changed && !journalPresent) {
+        await refreshHoldings(tx, market.id);
+      }
       const generation = await tx.marketGeneration.findFirst({
         where: { marketId: market.id },
         orderBy: { scannedAt: "desc" },

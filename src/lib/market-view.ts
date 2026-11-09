@@ -117,8 +117,8 @@ export async function getMarketView(): Promise<MarketView> {
         where: { marketId: scope.id },
         orderBy: [{ character: "asc" }, { itemId: "asc" }],
         select: {
-          character: true, itemId: true, qty: true, carriedQty: true, bankQty: true,
-          accountBankQty: true, mailQty: true, listedQty: true, knownQty: true,
+          character: true, itemId: true, qty: true, carriedQty: true, keyringQty: true,
+          bankQty: true, accountBankQty: true, mailQty: true, listedQty: true, knownQty: true,
           unknownQty: true, missingQty: true, costBasis: true
         }
       }),

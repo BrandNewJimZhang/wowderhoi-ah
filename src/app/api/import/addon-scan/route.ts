@@ -77,7 +77,7 @@ async function recordScanState(
   const scope = `character:${scan.character}`;
   const existing = await tx.estate.findUnique({
     where: { marketId_scope: { marketId, scope } },
-    select: { id: true, revision: true, cash: true, freeSlots: true }
+    select: { id: true, revision: true, cash: true, freeSlots: true, observedAt: true }
   });
   if (!existing) {
     const created = await tx.estate.create({
@@ -102,6 +102,9 @@ async function recordScanState(
     });
     return created.revision;
   }
+  // A real-time estate observation newer than the scan already knows the
+  // purse; the scan's older snapshot must not move it backwards.
+  if (existing.observedAt > observedAt) return existing.revision;
   if (existing.cash === scan.cash
     && (scan.bagSlots === null || existing.freeSlots === scan.bagSlots)) {
     return existing.revision;
