@@ -1707,15 +1707,46 @@ SlashCmdList["WOWDERHOIAHCAPTURE"] = setCapture
 -- manual: record it on the sender with `out`, note the printed cost, and
 -- record it on the receiver with `in <unit cost>`. Recording it on one side
 -- only is worse than not recording it: the books would disagree.
--- The terminal's stable decision identity, reproduced in game so /wahadopt
--- can name one. Epoch seconds, not an ISO date: this side already has the
--- scan timestamp and Lua cannot format ISO without a second implementation.
-function WAH.decisionId(itemId, kind)
+-- The plan identity: realm|faction|genEpoch:estateRevision:ledgerRevision.
+-- Epoch seconds, not an ISO date: this side already has the scan timestamp
+-- and Lua cannot format ISO without a second implementation. A new estate or
+-- journal revision produces a new plan identity, so a prediction is never
+-- silently rewritten under the old name.
+function WAH.planRevision()
   local scan = WoWderhoiAH_ScanData
   if type(scan) ~= "table" or type(scan.scannedAt) ~= "number" then return nil end
-  return string.format("%s|%s|%d:%d:%s",
+  local estate = WAH.Estate and WAH.Estate.revision() or 0
+  local ledger = WAH.Journal and WAH.Journal.revision() or 0
+  return string.format("%s|%s|%d:%d:%d",
     tostring(scan.server or ""), tostring(scan.faction or ""),
-    scan.scannedAt, tonumber(itemId) or 0, tostring(kind or ""))
+    scan.scannedAt, estate, ledger)
+end
+
+-- Publish the plan the radar just computed. The game is the plan authority;
+-- the terminal stores this copy and its decisions. Only the plan-bearing
+-- fields travel -- rows and books stay local.
+function WAH.publishPlan(plan)
+  if not plan or type(plan.revision) ~= "string" or plan.revision == "" then return false end
+  WoWderhoiAH_Plan = {
+    revision = plan.revision,
+    estateRevision = WAH.Estate and WAH.Estate.revision() or 0,
+    ledgerRevision = WAH.Journal and WAH.Journal.revision() or 0,
+    configRevision = tostring(WAH.PIPELINE_VERSION or ""),
+    observedAt = time(),
+    steps = plan.steps or {},
+    resources = plan.resources or {},
+    unplanned = plan.unplanned or {}
+  }
+  if WAH.requestFlush then WAH.requestFlush(2) end
+  return true
+end
+
+-- The terminal's stable decision identity, reproduced in game so /wahadopt
+-- can name one. It names the plan revision the recommendation belongs to.
+function WAH.decisionId(itemId, kind)
+  local revision = WAH.planRevision()
+  if not revision then return nil end
+  return string.format("%s:%d:%s", revision, tonumber(itemId) or 0, tostring(kind or ""))
 end
 
 SLASH_WOWDERHOIAHADOPT1 = "/wahadopt"
@@ -1815,8 +1846,14 @@ function WAH.coreInput()
     },
     positions = {},
     capital = { cash = 0, budget = 0 },
-    capacity = { bagSlots = freeBagSlots(), stackSize = 20 }
+    capacity = {
+      bagSlots = freeBagSlots(),
+      freeSlots = (WAH.Estate and WAH.Estate.currentCharacterScope()
+        and WAH.Estate.currentCharacterScope().freeSlots) or freeBagSlots(),
+      stackSize = 20
+    }
   }
+  input.planRevision = WAH.planRevision()
   if not scan then return input end
   -- The phase is whatever WAH.currentPhase resolves -- manual override,
   -- the /wahopen anchor, or the series age. Passing it keeps the radar's
@@ -1876,7 +1913,21 @@ function WAH.coreInput()
     end
   end
   local cash = GetMoney and GetMoney() or 0
-  input.positions = ledger and ledger.positions or {}
+  -- The ledger owns cost and realised P&L; the estate owns how much is
+  -- actually sellable now and where it sits. Neither replaces the other.
+  local reconciled = WAH.Reconciler and WAH.Reconciler.current() or nil
+  local positions = {}
+  for itemId, position in pairs(ledger and ledger.positions or {}) do
+    local record = reconciled and reconciled.items[itemId]
+    positions[itemId] = {
+      qty = position.qty,
+      cost = position.cost,
+      sellableQty = record and record.sellableQty or position.qty,
+      costKnown = (not record) or record.unknownQty == 0,
+      requiresBank = record and record.requiresBank or false
+    }
+  end
+  input.positions = positions
   input.capital = {
     cash = cash,
     -- The planning cap is the purse. Core.allocate applies

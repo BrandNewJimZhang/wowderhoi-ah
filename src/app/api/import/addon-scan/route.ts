@@ -235,7 +235,8 @@ export async function POST(request: Request) {
       positions,
       ownSales,
       budgetCopper: resolveBudgetCopper(),
-      phaseOverride: resolvePhaseOverride()
+      phaseOverride: resolvePhaseOverride(),
+      freeSlots: plannedScope.bagSlots ?? undefined
     });
 
     await prisma.$transaction(async (tx) => {
