@@ -1134,7 +1134,9 @@ function Core.evaluate(input)
       local slotQty = math.floor(slotUnits)
       local affordableQty = affordable()
       if quantity <= 0 then
-        local reason = (slotQty < candidate.qty and slotQty <= affordableQty) and "slots" or "cash"
+        -- The cause vocabulary is shared with the allocator and the terminal
+        -- diagnostics: the purse ran dry, not a separate "cash" state.
+        local reason = (slotQty < candidate.qty and slotQty <= affordableQty) and "slots" or "purse"
         -- The radar's fundable layer must describe the same trade the plan
         -- refused, not the pre-plan allocation.
         row.allocQty = 0
@@ -1152,7 +1154,7 @@ function Core.evaluate(input)
         end
         cash = cash - cost
         slotUnits = slotUnits - quantity
-        local cause = (slotQty < candidate.qty and slotQty <= affordableQty) and "slots" or "cash"
+        local cause = (slotQty < candidate.qty and slotQty <= affordableQty) and "slots" or "purse"
         if quantity < candidate.qty then
           row.allocQty = quantity
           row.allocCost = round(cost)
