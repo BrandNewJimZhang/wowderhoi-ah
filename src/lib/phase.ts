@@ -17,6 +17,26 @@ export function resolvePhase(ageHours: number, breadth: number): MarketPhase {
   return "steady";
 }
 
+// The next moment resolvePhase changes while the data stands still: only
+// age moves between scans, because breadth changes with an import and that
+// already advances the revision. The thresholds are the same table
+// resolvePhase reads, so a boundary cannot drift from the phase it names.
+export function nextPhaseBoundaryAt(anchor: Date | null, breadth: number, now: Date): Date | null {
+  if (!anchor) return null;
+  const limits = phaseBoundaries;
+  const thresholds = [
+    { breadth: limits.ignitionBreadth, hours: limits.ignitionHours },
+    { breadth: limits.waveBreadth, hours: limits.waveHours },
+    { breadth: limits.settleBreadth, hours: limits.settleHours }
+  ];
+  for (const threshold of thresholds) {
+    if (breadth < threshold.breadth) continue;
+    const at = new Date(anchor.getTime() + threshold.hours * 3_600_000);
+    if (at.getTime() > now.getTime()) return at;
+  }
+  return null;
+}
+
 // Ignition deliberately has no history window. Statistics that still need a
 // window (trend, chart default) borrow the steady one from the same rule
 // table instead of restating the number.

@@ -11,7 +11,8 @@ import type { PriceIndex } from "@/lib/deflator";
 import type { GenerationRecord } from "@/lib/generation-record";
 import { resolvePhaseOverride } from "@/lib/config";
 import { describeFreshness } from "@/lib/freshness";
-import { ageHours, resolvePhase } from "@/lib/phase";
+import { ageHours, nextPhaseBoundaryAt, resolvePhase } from "@/lib/phase";
+import { SCAN_STALE_MINUTES } from "@/lib/market-rules";
 import type { MarketPhase } from "@/lib/market-rules";
 import type { StoredSignalRow } from "@/lib/signal-row";
 import { getGenerationSignals, getLatestGeneration, getMarketRevision, getPositions } from "@/lib/repositories";
@@ -41,6 +42,10 @@ type MarketContext = {
   // True when the display phase moved since the scan; the dashboard must
   // hide actions that were sized under the old gates.
   phaseMismatch: boolean;
+  // Milliseconds until the next boundary that changes rendered content
+  // rather than a relative label: the stale flag or the display phase. Null
+  // when nothing changes before the next import.
+  nextRefreshInMs: number | null;
 };
 
 export type MarketBundle = MarketContext & {
@@ -68,7 +73,8 @@ function emptyContext(phase: MarketPhase, scope: MarketScope | null, revision: s
     gapMinutes: null,
     staleCount: 0,
     signalCount: 0,
-    phaseMismatch: false
+    phaseMismatch: false,
+    nextRefreshInMs: null
   };
 }
 
@@ -80,6 +86,23 @@ function emptyEvaluation(phase: MarketPhase): CoreOutput {
     actions: [],
     diagnostics: { excluded: {}, unfunded: { kelly: 0, exposure: 0, purse: 0, depth: 0 } }
   };
+}
+
+// The refresh schedule covers the boundaries that change rendered content
+// while the data stands still. Relative labels tick in the browser, so they
+// are not candidates here. A pinned phase never moves, and a missing
+// generation has no boundary to schedule.
+function nextRefreshInMsOf(
+  scope: MarketScope | null,
+  generation: GenerationRecord,
+  now: Date
+): number | null {
+  const staleAt = generation.scannedAt.getTime() + SCAN_STALE_MINUTES * 60_000;
+  const anchor = scope?.openedAt ?? scope?.firstScanAt ?? generation.firstScanAt;
+  const phaseAt = resolvePhaseOverride() ? null : nextPhaseBoundaryAt(anchor, generation.breadth, now);
+  const candidates = [staleAt, phaseAt === null ? null : phaseAt.getTime()]
+    .filter((value): value is number => value !== null && value > now.getTime());
+  return candidates.length > 0 ? Math.min(...candidates) - now.getTime() : null;
 }
 
 // The configured opening time beats the persisted first observation, which
@@ -130,7 +153,8 @@ export function createMarketReader(fetchers: ReaderFetchers) {
       gapMinutes: generation.gapMinutes,
       staleCount: generation.staleCount,
       signalCount: generation.breadth + generation.staleCount,
-      phaseMismatch: phase !== generation.phase
+      phaseMismatch: phase !== generation.phase,
+      nextRefreshInMs: nextRefreshInMsOf(scope, generation, now)
     };
   };
   return {

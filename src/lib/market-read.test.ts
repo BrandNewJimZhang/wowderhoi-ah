@@ -3,6 +3,7 @@ import type { GenerationRecord } from "@/lib/generation-record";
 import type { MarketSignal } from "@/lib/analytics";
 import type { StoredSignalRow } from "@/lib/signal-row";
 import { signalFixture } from "@/lib/signal-fixture";
+import { SCAN_STALE_MINUTES } from "@/lib/market-rules";
 import { badgeCounts, createMarketReader, type MarketBundle } from "@/lib/market-read";
 
 const LATEST = new Date("2026-07-20T10:00:00Z");
@@ -197,5 +198,63 @@ describe("getMarketBundle", () => {
     });
     await source.getMarketBundle();
     expect(seen).toEqual(["m2"]);
+  });
+});
+
+describe("nextRefreshInMs", () => {
+  it("schedules the stale boundary while the scan is fresh", async () => {
+    const context = await reader({ now: LATEST }).getMarketContext();
+    expect(context.nextRefreshInMs).toBe(SCAN_STALE_MINUTES * 60_000);
+  });
+
+  it("schedules the next phase boundary when it comes first", async () => {
+    const anchor = new Date(LATEST.getTime() - (6 * 3_600_000 - 5 * 60_000));
+    const context = await reader({
+      record: generation({ breadth: 100, firstScanAt: anchor }),
+      scope: { openedAt: anchor },
+      now: LATEST
+    }).getMarketContext();
+    expect(context.nextRefreshInMs).toBe(5 * 60_000);
+  });
+
+  it("keeps the phase boundary after the scan is already stale", async () => {
+    const now = new Date(LATEST.getTime() + 40 * 60_000);
+    const anchor = new Date(now.getTime() - 5 * 3_600_000);
+    const context = await reader({
+      record: generation({ breadth: 100, firstScanAt: anchor }),
+      scope: { openedAt: anchor },
+      now
+    }).getMarketContext();
+    expect(context.nextRefreshInMs).toBe(60 * 60_000);
+  });
+
+  it("does not schedule a phase boundary while the phase is pinned", async () => {
+    process.env.AQT_PHASE = "steady";
+    try {
+      const anchor = new Date(LATEST.getTime() - (6 * 3_600_000 - 5 * 60_000));
+      const context = await reader({
+        record: generation({ breadth: 900, firstScanAt: anchor }),
+        scope: { openedAt: anchor },
+        now: LATEST
+      }).getMarketContext();
+      expect(context.nextRefreshInMs).toBe(SCAN_STALE_MINUTES * 60_000);
+    } finally {
+      delete process.env.AQT_PHASE;
+    }
+  });
+
+  it("has no refresh boundary before the first generation", async () => {
+    const context = await reader({ record: null }).getMarketContext();
+    expect(context.nextRefreshInMs).toBeNull();
+  });
+
+  it("stops scheduling once the scan is stale and every phase boundary passed", async () => {
+    const now = new Date(LATEST.getTime() + 200 * 3_600_000);
+    const context = await reader({
+      record: generation({ breadth: 900, firstScanAt: LATEST }),
+      scope: { openedAt: LATEST },
+      now
+    }).getMarketContext();
+    expect(context.nextRefreshInMs).toBeNull();
   });
 });

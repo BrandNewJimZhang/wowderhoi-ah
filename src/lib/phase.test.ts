@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { historyWindowHours, phaseDescription, phaseLabels, resolvePhase } from "@/lib/phase";
+import { historyWindowHours, nextPhaseBoundaryAt, phaseDescription, phaseLabels, resolvePhase } from "@/lib/phase";
 import { phaseBoundaries, phaseHistory } from "@/lib/market-rules";
 
 describe("resolvePhase", () => {
@@ -37,5 +37,47 @@ describe("resolvePhase", () => {
       expect(phaseLabels[phase]).toBeTruthy();
       expect(phaseDescription(phase)).toBeTruthy();
     }
+  });
+});
+
+describe("nextPhaseBoundaryAt", () => {
+  const anchor = new Date("2026-01-01T00:00:00Z");
+  const hoursLater = (hours: number) => new Date(anchor.getTime() + hours * 3_600_000);
+  const cases = [
+    { breadth: phaseBoundaries.ignitionBreadth - 1, now: 0, boundary: null },
+    { breadth: phaseBoundaries.ignitionBreadth, now: 0, boundary: 6 },
+    { breadth: phaseBoundaries.ignitionBreadth, now: 6, boundary: null },
+    { breadth: phaseBoundaries.waveBreadth - 1, now: 0, boundary: 6 },
+    { breadth: phaseBoundaries.waveBreadth - 1, now: 6, boundary: null },
+    { breadth: phaseBoundaries.waveBreadth, now: 0, boundary: 6 },
+    { breadth: phaseBoundaries.waveBreadth, now: 6, boundary: 48 },
+    { breadth: phaseBoundaries.waveBreadth, now: 48, boundary: null },
+    { breadth: phaseBoundaries.settleBreadth, now: 0, boundary: 6 },
+    { breadth: phaseBoundaries.settleBreadth, now: 6, boundary: 48 },
+    { breadth: phaseBoundaries.settleBreadth, now: 48, boundary: 168 },
+    { breadth: phaseBoundaries.settleBreadth, now: 168, boundary: null }
+  ] as const;
+
+  it("names the next moment resolvePhase changes, and nothing after the last boundary", () => {
+    for (const entry of cases) {
+      const at = nextPhaseBoundaryAt(anchor, entry.breadth, hoursLater(entry.now));
+      expect(at, `breadth ${entry.breadth} at ${entry.now}h`).toEqual(
+        entry.boundary === null ? null : hoursLater(entry.boundary)
+      );
+    }
+  });
+
+  it("agrees with resolvePhase on both sides of every boundary", () => {
+    for (const entry of cases) {
+      if (entry.boundary === null) continue;
+      const before = resolvePhase(entry.boundary - 0.001, entry.breadth);
+      const at = resolvePhase(entry.boundary, entry.breadth);
+      expect(at, `breadth ${entry.breadth} at ${entry.boundary}h`).not.toBe(before);
+    }
+  });
+
+  it("never schedules a boundary without an anchor", () => {
+    // ageHours treats a missing anchor as zero, so the phase cannot advance.
+    expect(nextPhaseBoundaryAt(null, phaseBoundaries.settleBreadth, anchor)).toBeNull();
   });
 });

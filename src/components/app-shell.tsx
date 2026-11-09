@@ -10,9 +10,10 @@ import { AutoRefresh } from "@/components/auto-refresh";
 // poll compares against the data on screen rather than a later read.
 type AppShellSection = "/" | "/market" | "/portfolio" | "/review" | "/recipes" | "/health";
 
-export async function AppShell({ active, revision, children }: {
+export async function AppShell({ active, revision, nextRefreshInMs, children }: {
   active: AppShellSection;
   revision: string;
+  nextRefreshInMs: number | null;
   children: React.ReactNode;
 }) {
   // The first server render is the app's Node lifecycle point.
@@ -43,7 +44,7 @@ export async function AppShell({ active, revision, children }: {
           <Link href="/recipes" className={linkClass("/recipes")}><span>制造</span></Link>
           <Link href="/health" className={linkClass("/health")}><span>数据</span></Link>
         </div>
-        <AutoRefresh revision={revision} />
+        <AutoRefresh revision={revision} nextRefreshInMs={nextRefreshInMs} />
       </nav>
       <div className="min-w-0 flex-1">{children}</div>
     </div>

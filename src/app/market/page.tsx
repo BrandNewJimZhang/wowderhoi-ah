@@ -36,7 +36,7 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
     priceP75: signal.priceP75
   }));
   return (
-    <AppShell active="/market" revision={bundle.revision}>
+    <AppShell active="/market" revision={bundle.revision} nextRefreshInMs={bundle.nextRefreshInMs}>
       <main className="terminal-grid min-h-screen p-3 text-slate-200">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border border-terminal-border bg-terminal-panel px-4 py-3">
           <div>
