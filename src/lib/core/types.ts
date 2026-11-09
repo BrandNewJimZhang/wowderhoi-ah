@@ -199,14 +199,14 @@ export type CoreAction =
       reason: string;
     };
 
-export type UnplannedStep = {
+type UnplannedStep = {
   kind: "buy" | "sell";
   itemId: number;
   reason: string;
   note?: number;
 };
 
-export type CorePlan = {
+type CorePlan = {
   revision: string;
   steps: CoreAction[];
   resources: {
