@@ -77,6 +77,25 @@ describe("estate collection", () => {
     expect(lua.text(accountScope("coverage.account_bank"))).toBe("unobserved");
   });
 
+  it("keeps the account bank when a later visit does not expose its tab", () => {
+    const lua = loadAddon();
+    lua.setBag([
+      { bag: 6, slot: 1, itemId: LINEN, count: 40, name: "Linen" },
+      { bag: 15, slot: 1, itemId: MAGEWEAVE, count: 7, name: "Mageweave" }
+    ]);
+    lua.exec("WowTest.fireEvent('BANKFRAME_OPENED')");
+    refresh(lua);
+    expect(lua.number(accountScope(`items[${MAGEWEAVE}].account_bank.qty`))).toBe(7);
+    // Close, then reopen on a visit where the client reports no slots for
+    // the 15–23 containers. A tab that is not readable is not an empty
+    // tab; the last observation must survive.
+    lua.exec("WowTest.fireEvent('BANKFRAME_CLOSED')");
+    lua.setBag([{ bag: 6, slot: 1, itemId: LINEN, count: 40, name: "Linen" }]);
+    lua.exec("WowTest.fireEvent('BANKFRAME_OPENED')");
+    refresh(lua);
+    expect(lua.number(accountScope(`items[${MAGEWEAVE}].account_bank.qty`))).toBe(7);
+  });
+
   it("keeps the last observed bank after the bank closes", () => {
     const lua = loadAddon();
     lua.setBag([{ bag: 6, slot: 1, itemId: LINEN, count: 40, name: "Linen" }]);

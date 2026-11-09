@@ -118,14 +118,25 @@ local function scanBank(items)
   end
   local fresh = {}
   for bag = BANK_FIRST, BANK_LAST do scanContainer(fresh, bag, "bank") end
+  local accountRead = false
   if C_Container and C_Container.GetContainerNumSlots then
     for bag = ACCOUNT_BANK_FIRST, ACCOUNT_BANK_LAST do
       -- Only a container with slots proves the account bank was actually
       -- read; an absent tab reports zero and must stay `unobserved`.
       if (C_Container.GetContainerNumSlots(bag) or 0) > 0 then
         accountBankObserved = true
+        accountRead = true
       end
       scanContainer(fresh, bag, "account_bank")
+    end
+  end
+  -- A visit where no account-bank container reports slots is an unread tab,
+  -- not an emptied one: keep the last observation instead of dropping the
+  -- stock while coverage still says observed.
+  if not accountRead then
+    for itemId, byLocation in pairs(bankCache or {}) do
+      local entry = byLocation.account_bank
+      if entry then addItem(fresh, itemId, "account_bank", entry.qty, entry.slots) end
     end
   end
   bankCache = fresh
