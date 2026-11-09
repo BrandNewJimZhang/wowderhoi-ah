@@ -211,15 +211,6 @@ export async function getImportRuns(marketId: string, limit = 20) {
   });
 }
 
-// The data revision the open pages poll: the market's committed data
-// version. The import transactions advance it in the same commit that
-// writes the page inputs, so a failed attempt, a journal-less duplicate or
-// a pruned diagnostic row cannot move it. The market id keeps two scopes
-// from sharing the empty revision.
-export async function getMarketRevision(scope: MarketScope | null): Promise<string> {
-  return scope ? `${scope.id}:${scope.dataVersion}` : "none";
-}
-
 export async function getCatalogueStats() {
   const [total, catalogue, scanOwned, placeholders, withIcon, build] = await Promise.all([
     prisma.item.count(),

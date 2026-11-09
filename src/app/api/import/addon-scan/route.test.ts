@@ -15,7 +15,7 @@ process.env.DATABASE_URL = `file:${path.join(directory, "test.db").replace(/\\/g
 
 let POST: typeof import("./route").POST;
 let prisma: typeof import("@/lib/prisma").prisma;
-let getMarketRevision: typeof import("@/lib/repositories").getMarketRevision;
+let marketRevision: typeof import("@/lib/market-revision").marketRevision;
 
 const scan = {
   dataVersion: 4,
@@ -51,7 +51,7 @@ beforeAll(async () => {
   execSync("npx prisma db push --skip-generate", { stdio: "pipe", env: { ...process.env } });
   ({ POST } = await import("./route"));
   ({ prisma } = await import("@/lib/prisma"));
-  ({ getMarketRevision } = await import("@/lib/repositories"));
+  ({ marketRevision } = await import("@/lib/market-revision"));
 });
 
 // SQLite releases its Windows file handle asynchronously after disconnect,
@@ -112,7 +112,7 @@ describe("POST /api/import/addon-scan revision", () => {
     expect(market.id).toBe(body.marketId);
     expect(market.dataVersion).toBe(1);
     expect(market.cash).toBe(0);
-    expect(await getMarketRevision(market)).toBe(`${market.id}:1`);
+    expect(marketRevision(market)).toBe(`${market.id}:1`);
   });
 
   it("does not move the version for a duplicate without a journal", async () => {

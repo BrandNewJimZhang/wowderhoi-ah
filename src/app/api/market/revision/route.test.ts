@@ -4,11 +4,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/market-scope", () => ({
-  getMarketScope: async () => ({ id: "m1" })
-}));
-
-vi.mock("@/lib/repositories", () => ({
-  getMarketRevision: async (scope: { id: string } | null) => scope ? `${scope.id}:run-1` : "none"
+  getMarketScope: async () => ({ id: "m1", dataVersion: 7 })
 }));
 
 describe("GET /api/market/revision", () => {
@@ -17,6 +13,6 @@ describe("GET /api/market/revision", () => {
     const response = await GET();
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toContain("no-store");
-    await expect(response.json()).resolves.toEqual({ revision: "m1:run-1" });
+    await expect(response.json()).resolves.toEqual({ revision: "m1:7" });
   });
 });

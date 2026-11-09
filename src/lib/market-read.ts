@@ -16,8 +16,9 @@ import { ageHours, nextPhaseBoundaryAt, resolvePhase } from "@/lib/phase";
 import { SCAN_STALE_MINUTES } from "@/lib/market-rules";
 import type { MarketPhase } from "@/lib/market-rules";
 import type { StoredSignalRow } from "@/lib/signal-row";
-import { getGenerationSignals, getLatestGeneration, getMarketRevision, getPositions } from "@/lib/repositories";
+import { getGenerationSignals, getLatestGeneration, getPositions } from "@/lib/repositories";
 import { getMarketScope, type MarketScope } from "@/lib/market-scope";
+import { marketRevision } from "@/lib/market-revision";
 
 // Everything a page needs to describe the market, without its rows. The
 // item and health pages used to load the whole bundle for these fields,
@@ -25,8 +26,9 @@ import { getMarketScope, type MarketScope } from "@/lib/market-scope";
 type MarketContext = {
   scope: MarketScope | null;
   // Opaque token for the import the page rendered from; the browser polls
-  // the same token and refreshes when it moves. It is read before the
-  // generation so an import landing mid-request still counts as newer.
+  // the same token and refreshes when it moves. It is derived from the
+  // scope read before the generation, so an import landing mid-request
+  // still counts as newer.
   revision: string;
   latestScanAt: Date | null;
   // The phase right now, from wall-clock age and breadth.
@@ -56,7 +58,6 @@ export type MarketBundle = MarketContext & {
 
 type ReaderFetchers = {
   getMarketScope: () => Promise<MarketScope | null>;
-  getMarketRevision: (scope: MarketScope | null) => Promise<string>;
   getLatestGeneration: (scope: MarketScope | null) => Promise<GenerationRecord | null>;
   getSignals: (generationId: string) => Promise<StoredSignalRow[]>;
   // Injectable clock so phase-boundary behaviour is testable.
@@ -99,8 +100,9 @@ function nextRefreshInMsOf(
   now: Date
 ): number | null {
   const staleAt = generation.scannedAt.getTime() + SCAN_STALE_MINUTES * 60_000;
-  const anchor = scope?.openedAt ?? scope?.firstScanAt ?? generation.firstScanAt;
-  const phaseAt = resolvePhaseOverride() ? null : nextPhaseBoundaryAt(anchor, generation.breadth, now);
+  const phaseAt = resolvePhaseOverride()
+    ? null
+    : nextPhaseBoundaryAt(phaseAnchorOf(scope, generation), generation.breadth, now);
   const candidates = [staleAt, phaseAt === null ? null : phaseAt.getTime()]
     .filter((value): value is number => value !== null && value > now.getTime());
   return candidates.length > 0 ? Math.min(...candidates) - now.getTime() : null;
@@ -108,8 +110,12 @@ function nextRefreshInMsOf(
 
 // The configured opening time beats the persisted first observation, which
 // beats the generation's own anchor: a pruned store must not reset a mature
-// market to ignition. One resolver keeps the bundle and the shell badges
-// from reading different phases.
+// market to ignition. One resolver keeps the current phase, the refresh
+// boundary and the shell badges from measuring a different market age.
+function phaseAnchorOf(scope: MarketScope | null, generation: GenerationRecord): Date | null {
+  return scope?.openedAt ?? scope?.firstScanAt ?? generation.firstScanAt;
+}
+
 function displayPhaseOf(
   scope: MarketScope | null,
   generation: GenerationRecord | null,
@@ -118,8 +124,7 @@ function displayPhaseOf(
   const override = resolvePhaseOverride();
   if (override) return override;
   if (!generation) return "ignition";
-  const anchor = scope?.openedAt ?? scope?.firstScanAt ?? generation.firstScanAt;
-  return resolvePhase(ageHours(now, anchor), generation.breadth);
+  return resolvePhase(ageHours(now, phaseAnchorOf(scope, generation)), generation.breadth);
 }
 
 export function createMarketReader(fetchers: ReaderFetchers) {
@@ -129,11 +134,12 @@ export function createMarketReader(fetchers: ReaderFetchers) {
   // twice could straddle an import that lands between the calls.
   const readGeneration = async () => {
     const scope = await fetchers.getMarketScope();
-    // The revision is read first: an import that commits between this read
-    // and the generation read leaves the embedded revision behind the
-    // polled one, so the page refreshes once more. Read the other way
-    // around, such an import would be invisible until the next one.
-    const revision = await fetchers.getMarketRevision(scope);
+    // The revision comes from the scope read: an import that commits
+    // between this read and the generation read leaves the embedded
+    // revision behind the polled one, so the page refreshes once more. Read
+    // the other way around, such an import would be invisible until the
+    // next one.
+    const revision = marketRevision(scope);
     const generation = await fetchers.getLatestGeneration(scope);
     return { scope, generation, revision };
   };
@@ -190,7 +196,6 @@ const getGenerationOnce = cache(getLatestGeneration);
 
 const defaultReader = createMarketReader({
   getMarketScope: getScopeOnce,
-  getMarketRevision,
   getLatestGeneration: getGenerationOnce,
   getSignals: getGenerationSignals
 });
