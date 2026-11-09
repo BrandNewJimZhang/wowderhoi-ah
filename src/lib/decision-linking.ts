@@ -2,6 +2,8 @@
 // in game. The adopt event carries the decision id; the next matching sale
 // of the same item inside the attribution window inherits it. Everything
 // else stays a window match in the calibration, labelled as such.
+import { startsWithinWindow, type TradeTimeBounds } from "@/lib/trade-interval";
+
 type AdoptedDecision = {
   decisionId: string;
   itemId: number | null;
@@ -9,9 +11,8 @@ type AdoptedDecision = {
   adoptedAt: Date | null;
 };
 
-type LinkableTrade = {
+type LinkableTrade = TradeTimeBounds & {
   itemId: number;
-  realizedAt: Date;
   decisionId?: string | null;
 };
 
@@ -50,9 +51,12 @@ export function linkTrades<T extends LinkableTrade>(
       // sale would claim an outcome the decision did not produce.
       if (decision.kind !== "sell") continue;
       if (decision.itemId !== trade.itemId) continue;
+      // The listing must follow the adoption: goods listed before the
+      // recommendation were not produced by it, even when the mailbox
+      // reports the sale later. The listing is the lower bound of the
+      // sale's interval, so the attribution window is measured from it.
       const at = decision.adoptedAt.getTime();
-      if (at > trade.realizedAt.getTime()) continue;
-      if (trade.realizedAt.getTime() - at > windowMs) continue;
+      if (!startsWithinWindow(trade, at, at + windowMs)) continue;
       match = decision;
     }
     return match ? { ...trade, decisionId: match.decisionId } : trade;

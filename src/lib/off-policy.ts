@@ -7,6 +7,7 @@
 // effective sample size next to the estimate. It never dresses a
 // descriptive average up as a causal effect.
 import { ATTRIBUTION_WINDOW_DAYS } from "@/lib/decision-linking";
+import { startsWithinWindow, tradeInterval, type TradeTimeBounds } from "@/lib/trade-interval";
 
 export type LoggedDecision = {
   id: string;
@@ -19,10 +20,9 @@ export type LoggedDecision = {
   decisionId?: string | null;
 };
 
-export type RealizedTrade = {
+export type RealizedTrade = TradeTimeBounds & {
   itemId: number;
   pnl: number;
-  realizedAt: Date;
   inferred?: boolean;
   decisionId?: string | null;
 };
@@ -45,7 +45,10 @@ export function evaluatePolicy(
 ): PolicyEstimate {
   const windowMs = (options?.windowDays ?? ATTRIBUTION_WINDOW_DAYS) * 24 * 60 * 60 * 1000;
   const maxWeight = options?.maxWeight ?? 10;
-  const sortedTrades = [...trades].sort((left, right) => left.realizedAt.getTime() - right.realizedAt.getTime());
+  // Deterministic attribution order: the listing time (the interval's lower
+  // bound) is when the sale entered the book, regardless of when the inbox
+  // reported it.
+  const sortedTrades = [...trades].sort((left, right) => tradeInterval(left).low - tradeInterval(right).low);
   const used = new Set<number>();
   let weightSum = 0;
   let sumSquares = 0;
@@ -57,13 +60,15 @@ export function evaluatePolicy(
     const identityIndex = decision.decisionId
       ? sortedTrades.findIndex((trade, index) => !used.has(index) && trade.decisionId === decision.decisionId)
       : -1;
+    // A sale belongs to the decision only if it was listed after the
+    // decision; only the mailbox report may land later. Judging by the
+    // observation point dropped fills whose inbox was opened late.
     const tradeIndex = identityIndex !== -1
       ? identityIndex
       : sortedTrades.findIndex((trade, index) =>
           !used.has(index)
           && trade.itemId === decision.itemId
-          && trade.realizedAt.getTime() >= decision.at.getTime()
-          && trade.realizedAt.getTime() - decision.at.getTime() <= windowMs
+          && startsWithinWindow(trade, decision.at.getTime(), decision.at.getTime() + windowMs)
         );
     if (tradeIndex === -1) continue;
     used.add(tradeIndex);
@@ -103,12 +108,18 @@ type DecayReport = {
 export function alphaDecay(trades: RealizedTrade[], options?: { windowDays?: number }): DecayReport {
   if (trades.length === 0) return { buckets: [], decaying: false, reason: null };
   const windowMs = (options?.windowDays ?? 7) * 24 * 60 * 60 * 1000;
-  const sorted = [...trades].sort((left, right) => left.realizedAt.getTime() - right.realizedAt.getTime());
-  const start = sorted[0].realizedAt.getTime();
+  // The sale lies somewhere in [listedAt, observedAt]. Bucket at the lower
+  // bound: a sale cannot precede its listing and normally follows within
+  // the auction's duration, while the observation point can be days later.
+  // Bucketing by the inbox-open time moved old sales into the newest window
+  // and manufactured both decay and fresh edge.
+  const tradedAt = (trade: RealizedTrade) => tradeInterval(trade).low;
+  const sorted = [...trades].sort((left, right) => tradedAt(left) - tradedAt(right));
+  const start = tradedAt(sorted[0]);
   const buckets: DecayBucket[] = [];
-  for (let bucketStart = start; bucketStart <= sorted[sorted.length - 1].realizedAt.getTime(); bucketStart += windowMs) {
+  for (let bucketStart = start; bucketStart <= tradedAt(sorted[sorted.length - 1]); bucketStart += windowMs) {
     const bucketEnd = bucketStart + windowMs;
-    const rows = sorted.filter((trade) => trade.realizedAt.getTime() >= bucketStart && trade.realizedAt.getTime() < bucketEnd);
+    const rows = sorted.filter((trade) => tradedAt(trade) >= bucketStart && tradedAt(trade) < bucketEnd);
     if (rows.length === 0) continue;
     const pnl = rows.reduce((sum, trade) => sum + trade.pnl, 0);
     buckets.push({

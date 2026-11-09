@@ -22,10 +22,13 @@ export function ownSalesFromRows(rows: readonly OwnSaleRow[], now: Date = new Da
   for (const row of rows) {
     const observedAt = row.realizedAt.getTime();
     if (observedAt < since || observedAt > until) continue;
-    // Exposure is per sale: how long that listing waited on the book. The
-    // span between the first and last sale understates it when several
-    // listings sold close together. A missing posting time uses the scan
-    // interval as the floor, the same lower bound the in-game ledger has.
+    // Exposure is per sale. The exact fill moment is unknown: the mailbox
+    // reports a sale later than it happened, so the observation point is
+    // the upper bound. Using the upper bound underestimates sell-through
+    // speed, which is the safe direction for sizing; a missing posting time
+    // uses the scan interval as the floor, the same lower bound the in-game
+    // ledger has. The span between the first and last sale understates it
+    // when several listings sold close together.
     const listedAt = row.listedAt?.getTime() ?? observedAt - floorMs;
     const exposure = Math.max(observedAt - listedAt, floorMs);
     const record = byItem.get(row.itemId) ?? { qty: 0, samples: 0, exposureMs: 0 };

@@ -162,7 +162,9 @@ export default async function PortfolioPage() {
             <table className="w-full min-w-[620px] border-collapse font-mono text-xs">
               <thead className="bg-terminal-panel2 text-[10px] uppercase text-terminal-muted">
                 <tr>
-                  <th className="border-b border-terminal-border px-3 py-2 text-left">时间</th>
+                  {/* The mailbox reports a sale later than it happened.
+                      This column is when the terminal recorded it. */}
+                  <th className="border-b border-terminal-border px-3 py-2 text-left">记录时间</th>
                   <th className="border-b border-terminal-border px-3 py-2 text-left">物品</th>
                   <th className="border-b border-terminal-border px-3 py-2 text-right">数量</th>
                   <th className="border-b border-terminal-border px-3 py-2 text-right">单价</th>

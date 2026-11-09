@@ -12,7 +12,13 @@ const adoption = {
   adoptedAt: ADOPTED_AT
 };
 
-type Trade = { itemId: number; realizedAt: Date; decisionId?: string | null };
+type Trade = {
+  itemId: number;
+  realizedAt: Date;
+  listedAt?: Date;
+  observedAt?: Date;
+  decisionId?: string | null;
+};
 const trade = (itemId: number, realizedAt: Date, decisionId?: string): Trade =>
   decisionId === undefined ? { itemId, realizedAt } : { itemId, realizedAt, decisionId };
 
@@ -30,6 +36,22 @@ describe("linkTrades", () => {
   it("does not link a sale past the attribution window", () => {
     const [linked] = linkTrades(
       [trade(7, at(ATTRIBUTION_WINDOW_DAYS + 1))],
+      [adoption]
+    );
+    expect(linked.decisionId).toBeUndefined();
+  });
+
+  it("links a sale listed inside the window even when the mailbox was opened later", () => {
+    const [linked] = linkTrades(
+      [{ itemId: 7, realizedAt: at(10), listedAt: at(1), observedAt: at(10) }] as Trade[],
+      [adoption]
+    );
+    expect(linked.decisionId).toBe(adoption.decisionId);
+  });
+
+  it("does not link a sale that was already listed before the adoption", () => {
+    const [linked] = linkTrades(
+      [{ itemId: 7, realizedAt: at(2), listedAt: at(-1), observedAt: at(2) }] as Trade[],
       [adoption]
     );
     expect(linked.decisionId).toBeUndefined();

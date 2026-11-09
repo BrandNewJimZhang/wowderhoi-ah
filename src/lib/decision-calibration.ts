@@ -9,6 +9,7 @@
 // The comparison is descriptive. The player chooses which recommendations
 // to act on, so the sample is selected; the page says so next to the table.
 import { fillRules } from "@/lib/market-rules";
+import { overlapsWindow, type TradeTimeBounds } from "@/lib/trade-interval";
 
 type CalibrationDecision = {
   itemId: number | null;
@@ -21,18 +22,15 @@ type CalibrationDecision = {
   decisionId?: string | null;
 };
 
-type CalibrationTrade = {
+// The sale happened after it was listed and no later than it was observed.
+// A mailbox sale opened three days later carries a three-day interval;
+// matching it against a point time is what made lazy mailbox visits look
+// like failed predictions.
+type CalibrationTrade = TradeTimeBounds & {
   itemId: number;
-  realizedAt: Date;
   inferred: boolean;
   channel: string;
   decisionId?: string | null;
-  // The sale happened after it was listed and no later than it was
-  // observed. A mailbox sale opened three days later carries a three-day
-  // interval; matching it against a point time is what made lazy mailbox
-  // visits look like failed predictions.
-  listedAt?: Date | null;
-  observedAt?: Date | null;
   censored?: boolean;
 };
 
@@ -54,19 +52,6 @@ export type CalibrationBucket = {
   rate: number; // confirmed fills / decisions
   enoughSamples: boolean;
 };
-
-function tradeInterval(trade: CalibrationTrade): { low: number; high: number } {
-  const realized = trade.realizedAt.getTime();
-  const low = (trade.listedAt ?? trade.realizedAt).getTime();
-  const high = (trade.observedAt ?? trade.realizedAt).getTime();
-  // A malformed interval still contains its observation point.
-  return high >= low ? { low, high } : { low: realized, high: realized };
-}
-
-function overlapsWindow(trade: CalibrationTrade, start: number, end: number): boolean {
-  const interval = tradeInterval(trade);
-  return interval.high >= start && interval.low <= end;
-}
 
 const CALIBRATION_BUCKET_MIN_SAMPLES = 10;
 

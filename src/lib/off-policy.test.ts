@@ -50,6 +50,38 @@ describe("evaluatePolicy", () => {
     );
     expect(estimate.matched).toBe(0);
   });
+
+  it("does not match a sale that was already listed before the decision", () => {
+    const estimate = evaluatePolicy(
+      decisions,
+      [{
+        itemId: 1,
+        pnl: 100,
+        realizedAt: new Date(start.getTime() + 2 * DAY),
+        listedAt: new Date(start.getTime() - DAY),
+        observedAt: new Date(start.getTime() + 2 * DAY)
+      }],
+      () => true,
+      { windowDays: 7 }
+    );
+    expect(estimate.matched).toBe(0);
+  });
+
+  it("matches a sale listed inside the window even when the mailbox was opened later", () => {
+    const estimate = evaluatePolicy(
+      decisions,
+      [{
+        itemId: 1,
+        pnl: 100,
+        realizedAt: new Date(start.getTime() + 30 * DAY),
+        listedAt: new Date(start.getTime() + DAY),
+        observedAt: new Date(start.getTime() + 30 * DAY)
+      }],
+      () => true,
+      { windowDays: 7 }
+    );
+    expect(estimate.matched).toBe(1);
+  });
 });
 
 describe("alphaDecay", () => {
@@ -81,5 +113,21 @@ describe("alphaDecay", () => {
 
   it("returns an empty report for no trades", () => {
     expect(alphaDecay([]).buckets).toEqual([]);
+  });
+
+  it("buckets a delayed inbox sale by the week it was listed", () => {
+    const report = alphaDecay([
+      {
+        itemId: 1,
+        pnl: 100,
+        realizedAt: new Date(start.getTime() + 3 * 7 * DAY),
+        listedAt: new Date(start.getTime() + DAY),
+        observedAt: new Date(start.getTime() + 3 * 7 * DAY)
+      },
+      trade(1, 50)
+    ]);
+    expect(report.buckets).toHaveLength(2);
+    expect(report.buckets[0].count).toBe(1);
+    expect(report.buckets[0].pnl).toBe(100);
   });
 });

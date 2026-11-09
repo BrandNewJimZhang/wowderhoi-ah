@@ -359,7 +359,7 @@ async function applyAdoptions(
   });
   const unlinked = await tx.trade.findMany({
     where: { marketId, character, decisionId: null },
-    select: { id: true, itemId: true, realizedAt: true }
+    select: { id: true, itemId: true, realizedAt: true, listedAt: true, observedAt: true }
   });
   const linked = linkTrades(
     unlinked.map((trade) => ({ ...trade, decisionId: null as string | null })),

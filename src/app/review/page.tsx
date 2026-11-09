@@ -66,6 +66,8 @@ export default async function ReviewPage() {
     itemId: trade.itemId,
     pnl: trade.pnl,
     realizedAt: trade.realizedAt,
+    listedAt: trade.listedAt,
+    observedAt: trade.observedAt,
     inferred: false,
     decisionId: trade.decisionId
   }));
@@ -83,6 +85,8 @@ export default async function ReviewPage() {
       itemId: trade.itemId,
       pnl: trade.pnl,
       realizedAt: trade.realizedAt,
+      listedAt: trade.listedAt,
+      observedAt: trade.observedAt,
       inferred: false,
       decisionId: trade.decisionId
     }));
@@ -301,7 +305,7 @@ export default async function ReviewPage() {
               <span className="text-terminal-muted">成交价 <Coins copper={level.price} /></span>
               <span className="flex items-center gap-3">
                 <span className="text-terminal-green">{level.filled} 笔 · {level.units} 件</span>
-                <span className="text-terminal-muted">中位成交 {level.medianHours !== null ? `${level.medianHours.toFixed(1)} 小时` : "—"}</span>
+                <span className="text-terminal-muted">中位观测 {level.medianHours !== null ? `${level.medianHours.toFixed(1)} 小时` : "—"}</span>
               </span>
             </div>
           ))}
