@@ -280,6 +280,10 @@ Ledger 是 Journal 的纯投影：
 重算，只有快照真正变化才递增 `revision`。它导出独立的 `WoWderhoiAH_Estate`，
 不塞进 `ScanData`：背包变化不应该伪造一次行情扫描。
 
+扫描只更新它真正观测到的 `cash` 与 `freeSlots`，不改 `observedAt` 或 `revision`：
+扫描不是一次 estate 观测，混用两个时钟会让扫描之后到达的、修订更新但观测时间更早
+的 estate 文档被误判为旧文档。
+
 `revision` 是单次插件安装内的本地计数器；重装插件或清除 SavedVariables 会让它
 从 1 重新开始。终端因此以 `observedAt` 判断新旧：观测时间更晚的文档即使计数器更小
 也接受（重装后的新状态），观测时间更早的文档即使计数器更大也丢弃（延迟到达的旧

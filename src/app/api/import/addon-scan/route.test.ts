@@ -163,6 +163,10 @@ describe("POST /api/import/addon-scan revision", () => {
     // The scan observed a newer purse but did not mint a publisher revision.
     expect(after?.cash).toBe(5000);
     expect(after?.revision).toBe(0);
+    // The scan is not an estate observation: moving observedAt here would
+    // make a real estate document published earlier look older than the
+    // scan and get rejected even though its revision is newer.
+    expect(after?.observedAt.getTime()).toBe(other.scannedAt * 1000);
   });
 
   it("does not move the version for a duplicate scan, even with a journal", async () => {

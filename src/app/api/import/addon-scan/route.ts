@@ -113,15 +113,16 @@ async function recordScanState(
     && (scan.bagSlots === null || existing.freeSlots === scan.bagSlots)) {
     return existing.revision;
   }
-  // The revision belongs to the estate publisher. A scan writes the two
-  // fields it observed and keeps the publisher's version, so a later push
-  // at the same revision is still compared against the same content.
+  // The revision and the observation time belong to the estate publisher.
+  // A scan writes the two fields it observed and keeps both: moving
+  // observedAt here would mix two clocks and make a real estate document
+  // published before the scan look older than it, so the import would
+  // reject a newer revision.
   await tx.estate.update({
     where: { id: existing.id },
     data: {
       cash: scan.cash,
-      ...(scan.bagSlots === null ? {} : { freeSlots: scan.bagSlots }),
-      observedAt
+      ...(scan.bagSlots === null ? {} : { freeSlots: scan.bagSlots })
     }
   });
   return existing.revision;
