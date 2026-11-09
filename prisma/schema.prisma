@@ -300,6 +300,10 @@ model Plan {
   id             String   @id @default(cuid())
   marketId       String   @map("market_id")
   revision       String
+  // Character whose estate sized the plan. `estateRevision` belongs to
+  // that character's scope, not to the newest scan, so a plan stays current
+  // when the player switches characters between scans.
+  character      String   @default("")
   estateRevision Int      @default(0) @map("estate_revision")
   ledgerRevision Int      @default(0) @map("ledger_revision")
   configRevision String   @default("") @map("config_revision")

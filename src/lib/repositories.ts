@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { planEstateRevision, planMatchesScan } from "@/lib/plan-view";
 import type { MarketQuote } from "@/lib/market-data";
 import { arraysToSeries, type SeriesPoint } from "@/lib/item-series";
 import { decodeGeneration, type GenerationRecord } from "@/lib/generation-record";
@@ -160,9 +161,12 @@ export async function getRecipes() {
 // character carries none, the bank units are still a real sell candidate,
 // flagged so the plan can add the bank trip. Listed units are already on
 // the book and never belong in a sell action's quantity.
-export async function getPositions(scope: MarketScope | null): Promise<Record<number, CorePosition>> {
+export async function getPositions(
+  scope: MarketScope | null,
+  client: Pick<typeof prisma, "holding"> = prisma
+): Promise<Record<number, CorePosition>> {
   if (!scope) return {};
-  const rows = await prisma.holding.findMany({
+  const rows = await client.holding.findMany({
     where: {
       marketId: scope.id,
       ...(scope.character ? { character: scope.character } : {})
@@ -223,7 +227,7 @@ export async function getReconciliationStats(scope: MarketScope | null) {
   if (!scope) {
     return { unknown: 0, missing: 0, holdings: 0, unobservedLocations: 0, planRevision: null as string | null };
   }
-  const [holding, unproved, estates, plan] = await Promise.all([
+  const [holding, unproved, estates, generation, plan] = await Promise.all([
     prisma.holding.aggregate({
       where: { marketId: scope.id },
       _sum: { unknownQty: true, missingQty: true },
@@ -235,11 +239,19 @@ export async function getReconciliationStats(scope: MarketScope | null) {
       where: { marketId: scope.id, costKnown: false },
       _sum: { knownQty: true }
     }),
-    prisma.estate.findMany({ where: { marketId: scope.id }, select: { coverage: true } }),
+    prisma.estate.findMany({
+      where: { marketId: scope.id },
+      select: { scope: true, revision: true, coverage: true }
+    }),
+    prisma.marketGeneration.findFirst({
+      where: { marketId: scope.id },
+      orderBy: { scannedAt: "desc" },
+      select: { scannedAt: true }
+    }),
     prisma.plan.findFirst({
       where: { marketId: scope.id, supersededAt: null },
       orderBy: { createdAt: "desc" },
-      select: { revision: true }
+      select: { revision: true, character: true, estateRevision: true, configRevision: true }
     })
   ]);
   let unobservedLocations = 0;
@@ -249,21 +261,33 @@ export async function getReconciliationStats(scope: MarketScope | null) {
       if (value !== "observed") unobservedLocations += 1;
     }
   }
+  // The health page reports a plan as current only when it was minted for
+  // the newest scan and this estate revision. A superseded row is history;
+  // naming it here would disagree with the dashboard and the nav badge.
+  const currentPlan = planMatchesScan(
+    plan,
+    generation?.scannedAt ?? null,
+    planEstateRevision(plan, estates, scope.estateRevision)
+  ) ? plan : null;
   return {
     unknown: (holding._sum.unknownQty ?? 0) + (unproved._sum.knownQty ?? 0),
     missing: holding._sum.missingQty ?? 0,
     holdings: holding._count._all,
     unobservedLocations,
-    planRevision: plan?.revision ?? null
+    planRevision: currentPlan?.revision ?? null
   };
 }
 
 // Clean fill labels for the shared decision core: collected auction sales
 // only. Inferred journal rows are excluded because they are disappearances,
 // not sales, and vendor/decompose channels are not market evidence.
-export async function getOwnSales(scope: MarketScope | null, at: Date = new Date()): Promise<OwnSales> {
+export async function getOwnSales(
+  scope: MarketScope | null,
+  at: Date = new Date(),
+  client: Pick<typeof prisma, "trade"> = prisma
+): Promise<OwnSales> {
   const since = new Date(at.getTime() - fillRules.ownSalesWindowDays * 24 * 60 * 60 * 1000);
-  const rows = await prisma.trade.findMany({
+  const rows = await client.trade.findMany({
     where: {
       ...(scope ? { marketId: scope.id } : {}),
       channel: "auction",

@@ -30,7 +30,7 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 import { AppShell } from "@/components/app-shell";
 import { FreshnessLabel } from "@/components/freshness-label";
 import type { CoreAction, CoreRow } from "@/lib/core/types";
-import { planMatchesScan } from "@/lib/plan-view";
+import { planEstateRevision, planMatchesScan } from "@/lib/plan-view";
 
 export const dynamic = "force-dynamic";
 
@@ -49,9 +49,11 @@ export default async function Home() {
   // not describe the current market. The generation's evaluation is the
   // fallback. Neither is truncated: the old first-five cut hid every sell
   // behind enough buy candidates.
-  const publishedPlan = planMatchesScan(bundle.plan, latestScanAt, scope?.estateRevision)
-    ? bundle.plan
-    : null;
+  const publishedPlan = planMatchesScan(
+    bundle.plan,
+    latestScanAt,
+    planEstateRevision(bundle.plan, bundle.estates, scope?.estateRevision)
+  ) ? bundle.plan : null;
   const planSteps = (publishedPlan?.steps as CoreAction[] | undefined)
     ?? evaluation.plan?.steps
     ?? evaluation.actions;
@@ -252,6 +254,9 @@ export default async function Home() {
                     共享决策核心 · 资源可行序列
                     {publishedPlan
                       ? ` · 计划 ${publishedPlan.createdAt.toISOString().slice(5, 16).replace("T", " ")}`
+                        + (publishedPlan.character && publishedPlan.character !== scope?.character
+                          ? ` · 角色 ${publishedPlan.character}`
+                          : "")
                       : " · 游戏内计划未推送或已过期，以下为同口径估算"}
                   </span>
                 )}

@@ -61,6 +61,7 @@ describe("plan publication", () => {
       unplanned = { { kind = "buy", itemId = 1, reason = "cash" } }
     })`);
     expect(lua.text("WoWderhoiAH_Plan.revision")).toBe("A|Alliance|100:2:3");
+    expect(lua.text("WoWderhoiAH_Plan.character")).toBe("Tester");
     expect(lua.number("WoWderhoiAH_Plan.estateRevision")).toBe(lua.number("WowTest.ns.Estate.revision()"));
     expect(lua.number("WoWderhoiAH_Plan.ledgerRevision")).toBe(lua.number("WowTest.ns.Journal.revision()"));
     expect(lua.number("#WoWderhoiAH_Plan.steps")).toBe(1);

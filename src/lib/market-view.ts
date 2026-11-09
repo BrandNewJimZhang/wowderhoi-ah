@@ -10,28 +10,28 @@ import { createMarketReader, type MarketBundle } from "@/lib/market-read";
 import { resolveMarketScope } from "@/lib/market-scope";
 import { GENERATION_SELECT, type StoredHolding } from "@/lib/repositories";
 
+// Only the fields a page reads. The row's lineage (ledger revision, source,
+// supersession time) is in the plan identity and the history table; copying
+// it into every view gave the renderer a second, unread shape.
 type StoredPlan = {
-  id: string;
   revision: string;
+  // The character whose estate revision the plan was sized from.
+  character: string;
   estateRevision: number;
-  ledgerRevision: number;
   configRevision: string;
   steps: unknown;
   resources: unknown;
   unplanned: unknown;
-  source: string;
   createdAt: Date;
-  supersededAt: Date | null;
 };
 
+// A page needs the estate revision the plan matched against and the
+// character's in-transit mail money; the rest of the row belongs to the
+// reconciliation read model.
 type StoredEstate = {
   scope: string;
   revision: number;
-  observedAt: Date;
-  cash: number | null;
-  freeSlots: number | null;
   pendingCash: number | null;
-  coverage: unknown;
 };
 
 export type MarketView = MarketBundle & {
@@ -79,10 +79,7 @@ export async function getMarketView(): Promise<MarketView> {
       tx.estate.findMany({
         where: { marketId: scope.id },
         orderBy: { scope: "asc" },
-        select: {
-          scope: true, revision: true, observedAt: true, cash: true, freeSlots: true,
-          pendingCash: true, coverage: true
-        }
+        select: { scope: true, revision: true, pendingCash: true }
       }),
       // Only one plan is current. A delayed or same-second plan can leave
       // two rows at the top of a createdAt ordering; the superseded marker
@@ -91,9 +88,8 @@ export async function getMarketView(): Promise<MarketView> {
         where: { marketId: scope.id, supersededAt: null },
         orderBy: { createdAt: "desc" },
         select: {
-          id: true, revision: true, estateRevision: true, ledgerRevision: true,
-          configRevision: true, steps: true, resources: true, unplanned: true,
-          source: true, createdAt: true, supersededAt: true
+          revision: true, character: true, estateRevision: true, configRevision: true,
+          steps: true, resources: true, unplanned: true, createdAt: true
         }
       })
     ]);

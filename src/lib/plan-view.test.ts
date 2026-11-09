@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planEpoch, planMatchesScan } from "@/lib/plan-view";
+import { planEpoch, planEstateRevision, planMatchesScan } from "@/lib/plan-view";
 
 describe("plan view", () => {
   it("reads the scan epoch from the plan revision", () => {
@@ -25,6 +25,19 @@ describe("plan view", () => {
     // An unstamped object predates the field entirely; the scan epoch still
     // guards it.
     expect(planMatchesScan({ revision: plan.revision }, latest)).toBe(true);
+  });
+
+  it("reads the minting character's estate revision, not the scan scope's", () => {
+    const estates = [
+      { scope: "character:Alpha", revision: 4 },
+      { scope: "character:Beta", revision: 9 }
+    ];
+    expect(planEstateRevision({ character: "Beta" }, estates, 1)).toBe(9);
+    // A named character with no estate row cannot be verified.
+    expect(planEstateRevision({ character: "Gamma" }, estates, 1)).toBe(-1);
+    // A plan without the stamp falls back to the scope's revision.
+    expect(planEstateRevision({}, estates, 1)).toBe(1);
+    expect(planEstateRevision(null, estates, 1)).toBe(1);
   });
 
   it("rejects a plan sized from an older estate revision", () => {

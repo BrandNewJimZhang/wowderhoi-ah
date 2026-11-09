@@ -18,7 +18,7 @@ import { ageHours, nextPhaseBoundaryAt, resolvePhase } from "@/lib/phase";
 import { SCAN_STALE_MINUTES } from "@/lib/market-rules";
 import type { MarketPhase } from "@/lib/market-rules";
 import type { StoredSignalRow } from "@/lib/signal-row";
-import { getGenerationSignals, getLatestGeneration, getPositions } from "@/lib/repositories";
+import { getGenerationSignals, getLatestGeneration } from "@/lib/repositories";
 import { getMarketScope, type MarketScope } from "@/lib/market-scope";
 import { marketRevision } from "@/lib/market-revision";
 
@@ -240,16 +240,34 @@ export async function getNavigationBadges(): Promise<NavBadges> {
   const scope = await getScopeOnce();
   if (!scope) return { actions: 0, stale: 0, positions: 0 };
   const now = new Date();
-  const [generation, positions, plan] = await Promise.all([
+  const [generation, holdings, plan] = await Promise.all([
     getGenerationOnce(scope),
-    getPositions(scope),
+    // The portfolio is account-wide; counting only the scan character's
+    // rows advertised fewer holdings than the page lists.
+    prisma.holding.findMany({
+      where: { marketId: scope.id },
+      distinct: ["itemId"],
+      select: { itemId: true }
+    }),
     prisma.plan.findFirst({
       where: { marketId: scope.id, supersededAt: null },
       orderBy: { createdAt: "desc" },
-      select: { revision: true, estateRevision: true, configRevision: true, steps: true }
+      select: {
+        revision: true, character: true, estateRevision: true, configRevision: true, steps: true
+      }
     })
   ]);
-  const currentPlan = planMatchesScan(plan, generation?.scannedAt ?? null, scope.estateRevision)
+  // The plan's estate revision belongs to the character that minted it; the
+  // badge must not judge it against whoever scanned last.
+  let matchedEstateRevision = scope.estateRevision;
+  if (plan?.character) {
+    const estate = await prisma.estate.findUnique({
+      where: { marketId_scope: { marketId: scope.id, scope: `character:${plan.character}` } },
+      select: { revision: true }
+    });
+    matchedEstateRevision = estate?.revision ?? -1;
+  }
+  const currentPlan = planMatchesScan(plan, generation?.scannedAt ?? null, matchedEstateRevision)
     ? plan
     : null;
   const planActions = currentPlan && Array.isArray(currentPlan.steps) ? currentPlan.steps.length : null;
@@ -258,7 +276,7 @@ export async function getNavigationBadges(): Promise<NavBadges> {
     generation,
     displayPhaseOf(scope, generation, now),
     stale,
-    Object.keys(positions).length,
+    holdings.length,
     planActions
   );
 }

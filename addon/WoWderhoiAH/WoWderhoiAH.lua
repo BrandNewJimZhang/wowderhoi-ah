@@ -1748,6 +1748,10 @@ function WAH.publishPlan(plan)
   if type(existing) == "table" and existing.revision == plan.revision then return false end
   WoWderhoiAH_Plan = {
     revision = plan.revision,
+    -- The estate revision is this character's; naming it lets the terminal
+    -- match the plan after a character switch instead of comparing with
+    -- whoever scanned last.
+    character = (UnitName and UnitName("player")) or "",
     estateRevision = WAH.Estate and WAH.Estate.revision() or 0,
     ledgerRevision = WAH.Journal and WAH.Journal.revision() or 0,
     configRevision = tostring(WAH.PIPELINE_VERSION or ""),

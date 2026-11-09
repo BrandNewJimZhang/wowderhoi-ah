@@ -590,6 +590,7 @@ type PlanStep = {
 
 type AddonPlan = {
   revision?: string;
+  character?: string;
   estateRevision?: number;
   ledgerRevision?: number;
   configRevision?: string;
@@ -610,6 +611,9 @@ export async function applyPlan(
   if (typeof plan.revision !== "string" || plan.revision === "") {
     return { created: false, revision: null };
   }
+  if (plan.character !== undefined && typeof plan.character !== "string") {
+    throw new Error(`State payload: plan character must be a string, got ${JSON.stringify(plan.character)}`);
+  }
   const existing = await tx.plan.findUnique({
     where: { marketId_revision: { marketId, revision: plan.revision } },
     select: { id: true }
@@ -626,6 +630,7 @@ export async function applyPlan(
     data: {
       marketId,
       revision: plan.revision,
+      character: typeof plan.character === "string" ? plan.character : "",
       estateRevision: plan.estateRevision ?? 0,
       ledgerRevision: plan.ledgerRevision ?? 0,
       configRevision: plan.configRevision ?? "",

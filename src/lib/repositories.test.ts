@@ -14,6 +14,7 @@ const NEW = Date.UTC(2026, 10, 8, 10);
 
 let prisma: typeof import("@/lib/prisma").prisma;
 let getItemDetail: typeof import("@/lib/repositories").getItemDetail;
+let getReconciliationStats: typeof import("@/lib/repositories").getReconciliationStats;
 
 const scope = { id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0, character: "Tester", dataVersion: 0 };
 
@@ -28,7 +29,7 @@ function signalData(sellPrice: number) {
 
 beforeAll(async () => {
   ({ prisma } = await import("@/lib/prisma"));
-  ({ getItemDetail } = await import("@/lib/repositories"));
+  ({ getItemDetail, getReconciliationStats } = await import("@/lib/repositories"));
   await prisma.$executeRawUnsafe(`CREATE TABLE "Item" (
     "id" TEXT PRIMARY KEY, "item_id" INTEGER UNIQUE, "name" TEXT, "quality" TEXT,
     "category" TEXT, "sub_category" TEXT, "vendor_price" REAL, "icon_id" INTEGER,
@@ -58,6 +59,22 @@ beforeAll(async () => {
     "market_id" TEXT, "item_id" INTEGER, "first_at" DATETIME, "last_at" DATETIME,
     "point_count" INTEGER, "points" TEXT, "updated_at" DATETIME,
     PRIMARY KEY ("market_id", "item_id"))`);
+  await prisma.$executeRawUnsafe(`CREATE TABLE "Holding" (
+    "id" TEXT PRIMARY KEY, "market_id" TEXT, "character" TEXT, "item_id" INTEGER,
+    "qty" INTEGER DEFAULT 0, "carried_qty" INTEGER DEFAULT 0, "keyring_qty" INTEGER DEFAULT 0,
+    "bank_qty" INTEGER DEFAULT 0, "account_bank_qty" INTEGER DEFAULT 0, "mail_qty" INTEGER DEFAULT 0,
+    "listed_qty" INTEGER DEFAULT 0, "known_qty" INTEGER DEFAULT 0, "unknown_qty" INTEGER DEFAULT 0,
+    "missing_qty" INTEGER DEFAULT 0, "cost_known" BOOLEAN DEFAULT 1, "cost_basis" REAL DEFAULT 0,
+    "updated_at" DATETIME)`);
+  await prisma.$executeRawUnsafe(`CREATE TABLE "Estate" (
+    "id" TEXT PRIMARY KEY, "market_id" TEXT, "scope" TEXT, "revision" INTEGER DEFAULT 0,
+    "observed_at" DATETIME, "cash" REAL, "free_slots" INTEGER, "pending_cash" REAL,
+    "coverage" TEXT, "updated_at" DATETIME)`);
+  await prisma.$executeRawUnsafe(`CREATE TABLE "Plan" (
+    "id" TEXT PRIMARY KEY, "market_id" TEXT, "revision" TEXT, "character" TEXT DEFAULT '',
+    "estate_revision" INTEGER DEFAULT 0, "ledger_revision" INTEGER DEFAULT 0,
+    "config_revision" TEXT DEFAULT '', "steps" TEXT, "resources" TEXT, "unplanned" TEXT,
+    "source" TEXT DEFAULT 'addon', "created_at" DATETIME, "superseded_at" DATETIME)`);
 
   for (const [id, at] of [["g-old", OLD], ["g-new", NEW]] as const) {
     await prisma.$executeRawUnsafe(
@@ -117,5 +134,32 @@ describe("getItemDetail", () => {
     const detail = await getItemDetail(2, scope);
     expect(detail?.quote?.timestamp.getTime()).toBe(NEW);
     expect(detail?.signal?.signal.sellPrice).toBe(120);
+  });
+});
+
+describe("getReconciliationStats", () => {
+  it("matches a plan against the estate of the character that minted it", async () => {
+    const revision = `TestRealm|Alliance|${Math.round(NEW / 1000)}:3:7`;
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "Estate" ("id", "market_id", "scope", "revision", "coverage")
+       VALUES ('e1', 'm1', 'character:Tester', 3, '{}')`
+    );
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "Plan" ("id", "market_id", "revision", "character", "estate_revision",
+        "ledger_revision", "config_revision", "steps", "resources", "unplanned", "source",
+        "created_at", "superseded_at")
+       VALUES ('p1', 'm1', ?, 'Tester', 3, 7, '4', '[]', '{}', '[]', 'addon', ?, NULL)`,
+      revision,
+      NEW
+    );
+    // The scope came from whoever scanned last (revision 999); the plan is
+    // still current because its own character's estate is at revision 3.
+    const current = await getReconciliationStats({ ...scope, estateRevision: 999 });
+    expect(current.planRevision).toBe(revision);
+    // The minting character's purse moved; the dashboard withholds the plan,
+    // so the health page must not call it current either.
+    await prisma.$executeRawUnsafe(`UPDATE "Estate" SET "revision" = 4 WHERE "id" = 'e1'`);
+    const stale = await getReconciliationStats({ ...scope, estateRevision: 999 });
+    expect(stale.planRevision).toBeNull();
   });
 });

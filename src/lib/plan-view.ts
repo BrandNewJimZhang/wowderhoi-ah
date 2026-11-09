@@ -8,6 +8,21 @@ export function planEpoch(revision: string): number | null {
   return Number.isFinite(epoch) && epoch > 0 ? epoch : null;
 }
 
+// The estate revision a plan must be compared against belongs to the
+// character that minted it, not to whoever scanned last. A plan written
+// before the character stamp falls back to the caller's scope revision.
+// A named character with no estate row cannot be verified, so the plan is
+// not current (revisions are non-negative; -1 can never match).
+export function planEstateRevision(
+  plan: { character?: string } | null | undefined,
+  estates: ReadonlyArray<{ scope: string; revision: number }>,
+  fallback?: number
+): number | undefined {
+  if (!plan || !plan.character) return fallback;
+  const estate = estates.find((row) => row.scope === `character:${plan.character}`);
+  return estate ? estate.revision : -1;
+}
+
 // The plan identity also carries the estate revision it was sized from. A
 // plan minted before the bag or purse moved describes a state the player no
 // longer has; the page must fall back rather than present it as current.
