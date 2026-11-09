@@ -519,9 +519,6 @@ export async function applyJournal(
           character,
           seq: event.seq as number,
           kind: event.k,
-          eventTime: event.eventTime === undefined ? null : new Date(event.eventTime * 1000),
-          observedAt: new Date((event.observedAt ?? event.t) * 1000),
-          censored: event.censored === true,
           payload: event as unknown as Prisma.InputJsonValue
         }));
       if (data.length > 0) await tx.journalFact.createMany({ data });

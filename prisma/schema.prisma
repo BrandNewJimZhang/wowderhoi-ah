@@ -241,14 +241,10 @@ model JournalFact {
   character  String
   seq        Int
   kind       String
-  eventTime  DateTime? @map("event_time")
-  observedAt DateTime @map("observed_at")
-  censored   Boolean  @default(false)
   payload    Json
   market     Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
 
   @@unique([marketId, character, seq])
-  @@index([marketId, character, observedAt])
 }
 
 // The prefix of a local journal folded into a replay state. Positions,
