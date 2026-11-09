@@ -435,16 +435,20 @@ async function charactersWithState(
 // character whose scan names the current scope carries them. Recomputing
 // just the active character left the previous one holding a stale copy, so
 // the portfolio summed the same posting twice after a character switch.
+//
+// A scan passes the character it is importing: the new generation is not
+// written yet, so the account-scoped rows must move before the plan reads
+// the sellable stock. Every other caller names the newest generation.
 export async function refreshHoldings(
   tx: Prisma.TransactionClient,
-  marketId: string
+  marketId: string,
+  importingCharacter?: string
 ): Promise<void> {
-  const generation = await tx.marketGeneration.findFirst({
+  const activeCharacter = importingCharacter ?? (await tx.marketGeneration.findFirst({
     where: { marketId },
     orderBy: { scannedAt: "desc" },
     select: { character: true }
-  });
-  const activeCharacter = generation?.character ?? "";
+  }))?.character ?? "";
   for (const character of await charactersWithState(tx, marketId)) {
     const replay = await replayForCharacter(tx, marketId, character);
     await recomputeHoldings(tx, marketId, character, replay, character === activeCharacter);

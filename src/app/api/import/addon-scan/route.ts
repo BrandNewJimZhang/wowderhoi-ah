@@ -228,25 +228,7 @@ export async function POST(request: Request) {
       firstScanAt,
       dataVersion: market.dataVersion
     };
-    const positions = await getPositions(plannedScope);
-    const ownSales = await getOwnSales(plannedScope, scan.scannedAt);
-
-    const plan = buildGenerationPlan({
-      scan,
-      series,
-      items: itemsById,
-      existingSeries,
-      previous: previous ? { scannedAt: previous.scannedAt, quotes: previousRefs } : null,
-      openedAt,
-      firstScanAt,
-      positions,
-      ownSales,
-      budgetCopper: resolveBudgetCopper(),
-      phaseOverride: resolvePhaseOverride(),
-      freeSlots: plannedScope.bagSlots ?? undefined
-    });
-
-    await prisma.$transaction(async (tx) => {
+    const { plan, positionCount } = await prisma.$transaction(async (tx) => {
       // The scanned cash and free slots commit with the observation. The
       // scan may not rewrite the coverage map the estate publisher owns.
       estateRevision = await recordScanState(tx, market.id, scan, scan.scannedAt);
@@ -274,13 +256,35 @@ export async function POST(request: Request) {
       for (const update of itemDiff.updates) {
         await tx.item.update({ where: { itemId: update.itemId }, data: update.data });
       }
+      // The scan names the active character. Account bank and own postings
+      // move to that character's holding row and leave the previous one.
+      // The plan below reads those holdings, so the move must happen first;
+      // otherwise a character's first scan would size sells from the
+      // previous character's account-scoped stock.
+      await refreshHoldings(tx, market.id, character);
+      plannedScope.estateRevision = estateRevision;
+      const positions = await getPositions(plannedScope, tx);
+      const ownSales = await getOwnSales(plannedScope, scan.scannedAt, tx);
+      const positionCount = Object.keys(positions).length;
+      const plan = buildGenerationPlan({
+        scan,
+        series,
+        items: itemsById,
+        existingSeries,
+        previous: previous ? { scannedAt: previous.scannedAt, quotes: previousRefs } : null,
+        openedAt,
+        firstScanAt,
+        positions,
+        ownSales,
+        budgetCopper: resolveBudgetCopper(),
+        phaseOverride: resolvePhaseOverride(),
+        freeSlots: plannedScope.bagSlots ?? undefined
+      });
       // Decisions belong to the game's plan, not to the scan observation.
       // Writing scan-time rows under the old timestamp identity would give
       // the same recommendation two ids and let calibration count it twice.
       await writeGeneration(tx, market.id, plan, []);
-      // The scan names the active character. Account bank and own postings
-      // move to that character's holding row and leave the previous one.
-      await refreshHoldings(tx, market.id);
+      return { plan, positionCount };
     }, { timeout: 120_000 });
 
     await pruneGenerations(market.id);
@@ -302,7 +306,7 @@ export async function POST(request: Request) {
       phase: plan.phase,
       scannedAt: scan.scannedAt.toISOString(),
       marketId: market.id,
-      positions: Object.keys(positions).length,
+      positions: positionCount,
       estateRevision
     });
   } catch (error) {

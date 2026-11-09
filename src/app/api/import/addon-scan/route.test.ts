@@ -99,6 +99,32 @@ afterAll(async () => {
   await removeDirectory(directory);
 });
 
+function estateWithAccountBank(revision: number, character: string, qty: number) {
+  return {
+    v: 1,
+    revision,
+    observedAt: scan.scannedAt,
+    scopes: {
+      [`character:${character}`]: {
+        kind: "character",
+        revision,
+        cash: 0,
+        freeSlots: 10,
+        coverage: {
+          carried: "observed", bank: "unobserved", mail: "unobserved", money: "observed"
+        },
+        items: {}
+      },
+      account: {
+        kind: "account",
+        revision,
+        coverage: { account_bank: "observed", listed: "unobserved" },
+        items: { "2770": { account_bank: { qty, slots: 1 } } }
+      }
+    }
+  };
+}
+
 describe("POST /api/import/addon-scan revision", () => {
   it("advances the data version inside the transaction that writes the observation", async () => {
     const response = await post({ scan });
@@ -157,10 +183,41 @@ describe("POST /api/import/addon-scan revision", () => {
     expect((await marketRow()).dataVersion).toBe(2);
   });
 
+  it("sizes the scan-time plan from the importing character's refreshed stock", async () => {
+    // The account bank belongs to whoever scans next. Until that scan is
+    // written, the rows are still on the previous character, so a plan read
+    // before the refresh would claim the new character has nothing to sell.
+    const state = await postState({
+      server: "A",
+      faction: "Alliance",
+      estate: estateWithAccountBank(1, "Tester", 2)
+    });
+    expect(state.status).toBe(200);
+
+    const response = await post({
+      scan: {
+        ...scan,
+        scannedAt: scan.scannedAt + 300,
+        character: "Alt",
+        items: {
+          "2770": { name: "Mageweave", minPrice: 100, marketPrice: 100, sellP: 100, quantity: 5, numAuctions: 1 }
+        }
+      }
+    });
+    expect(response.status).toBe(200);
+    const generation = await prisma.marketGeneration.findFirst({
+      where: { market: { realm: "A", faction: "Alliance" }, character: "Alt" },
+      select: { core: true }
+    });
+    const core = generation?.core as { actions: Array<{ kind: string; itemId: number }> } | undefined;
+    expect(core?.actions).toContainEqual(expect.objectContaining({ kind: "sell", itemId: 2770 }));
+  });
+
   it("rolls the observation and the version back when the import transaction fails", async () => {
     // Fault injection after the market update has run: the signal insert can
     // no longer succeed, so the whole transaction — including the version
     // and the estate's scanned cash — must roll back.
+    const versionBefore = (await marketRow()).dataVersion;
     await prisma.$executeRawUnsafe(`DROP TABLE "MarketSignalRow"`);
     await expect(post({
       scan: {
@@ -174,7 +231,7 @@ describe("POST /api/import/addon-scan revision", () => {
       }
     })).rejects.toThrow();
     const market = await marketRow();
-    expect(market.dataVersion).toBe(2);
+    expect(market.dataVersion).toBe(versionBefore);
     const estate = await prisma.estate.findUnique({
       where: { marketId_scope: { marketId: market.id, scope: "character:Tester" } }
     });

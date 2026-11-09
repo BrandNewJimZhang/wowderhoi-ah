@@ -1,8 +1,9 @@
 // One scan becomes one immutable generation: the current book (quotes), the
-// signals derived from the book plus the series, the shared core's output,
-// and the decisions that output named. Everything expensive happens here,
-// outside the write transaction; page reads only decode what this module
-// produced.
+// signals derived from the book plus the series, and the shared core's
+// output. The scan route calls this inside the import transaction because
+// the plan may only read holdings after the same transaction re-attributed
+// account-scoped stock to the importing character. Page reads only decode
+// what this module produced.
 import type { AddonScan } from "@/lib/addon-scan";
 import { buildMarketSignal } from "@/lib/analytics";
 import { buildCoreInput } from "@/lib/core/from-market";
