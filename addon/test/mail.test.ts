@@ -138,6 +138,28 @@ describe("mailbox capture", () => {
     expect(scan(lua).sold).toBe(1);
   });
 
+  it("does not invent a quantity for a sale mail with no open posting", () => {
+    const lua = loadAddon();
+    // The scan names the item, but no posting exists in the ledger: the
+    // listing predates the addon. The mail proves revenue, not the units.
+    lua.exec(`
+      WoWderhoiAH_ScanData = {
+        dataVersion = WowTest.ns.PIPELINE_VERSION,
+        items = { [2589] = { name = "亚麻布" } }
+      }
+    `);
+    lua.exec(`WowTest.setMail({ ${toLua(saleMail("Auction successful: 亚麻布", "亚麻布", 1200, 60, 1140))} })`);
+    const first = scan(lua);
+    expect(first.sold).toBe(0);
+    expect(first.unattributed).toBe(1);
+    expect(lua.number("WowTest.ns.Journal.count()")).toBe(0);
+    // The mail was not marked as booked: once a posting can explain it, a
+    // later visit must still book the sale.
+    record(lua, { k: "buy", itemId: 2589, qty: 4, cost: 4000 });
+    record(lua, { k: "post", auctionID: 7, itemId: 2589, qty: 4, price: 1200, deposit: 100 });
+    expect(scan(lua)).toMatchObject({ sold: 1, unattributed: 0 });
+  });
+
   it("flushes SavedVariables when a sale is booked, not on a repeat visit", () => {
     const lua = loadAddon();
     lua.exec('WowTest.itemInfo[2589] = { name = "亚麻布" }');

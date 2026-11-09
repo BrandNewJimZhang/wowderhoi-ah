@@ -329,38 +329,51 @@ Mail.scan = function()
           -- tally: a later scan that knows the name must still book it.
           stats.unattributed = stats.unattributed + 1
         elseif isSale then
-          if not firstUnbooked(store, tally, mark) then
-            stats.duplicates = stats.duplicates + 1
-          else
-            local inferred = (not matched) and inferredSale(itemId, total) or nil
-            if inferred then
-              WAH.recordEvent({
-                k = "confirm",
-                auctionID = inferred.auctionID,
-                itemId = itemId,
-                qty = inferred.qty,
-                price = inferred.price,
-                fee = invoice.consignment,
-                listedAt = inferred.listedAt,
-                censored = true
-              })
-              stats.reconfirmed = stats.reconfirmed + 1
+          local inferred = (not matched) and inferredSale(itemId, total) or nil
+          -- A fingerprint already in the store was booked on an earlier
+          -- visit; the posting is closed by then, so `matched` is nil even
+          -- though the sale is known.
+          local alreadyBooked = (tally[mark] or 0) < (store.counts[mark] or 0)
+          if not matched and not inferred then
+            -- The sale is real but its posting is not in this character's
+            -- ledger: it predates the addon or the journal checkpoint. The
+            -- mail proves revenue, never the units that produced it.
+            -- Booking a guessed quantity would consume the wrong lots and
+            -- report a fabricated profit, so the mail is counted and left
+            -- unmarked: an ambiguous match may become unambiguous on a
+            -- later visit, and the estate reconciler surfaces the cash.
+            if alreadyBooked then
+              stats.duplicates = stats.duplicates + 1
             else
-              local quantity = matched and matched.quantity or 1
-              local unitPrice = matched and matched.post.price or total
-              WAH.recordEvent({
-                k = "sold",
-                auctionID = matched and matched.auctionID or nil,
-                itemId = itemId,
-                qty = quantity,
-                price = unitPrice,
-                fee = invoice.consignment,
-                listedAt = matched and matched.post.at or nil,
-                censored = true,
-                inferred = false
-              })
-              stats.sold = stats.sold + 1
+              stats.unattributed = stats.unattributed + 1
             end
+          elseif not firstUnbooked(store, tally, mark) then
+            stats.duplicates = stats.duplicates + 1
+          elseif inferred then
+            WAH.recordEvent({
+              k = "confirm",
+              auctionID = inferred.auctionID,
+              itemId = itemId,
+              qty = inferred.qty,
+              price = inferred.price,
+              fee = invoice.consignment,
+              listedAt = inferred.listedAt,
+              censored = true
+            })
+            stats.reconfirmed = stats.reconfirmed + 1
+          else
+            WAH.recordEvent({
+              k = "sold",
+              auctionID = matched.auctionID,
+              itemId = itemId,
+              qty = matched.quantity,
+              price = matched.post.price,
+              fee = invoice.consignment,
+              listedAt = matched.post.at,
+              censored = true,
+              inferred = false
+            })
+            stats.sold = stats.sold + 1
           end
         elseif isWon then
           -- A won bid is a purchase: the client already took the bid amount
