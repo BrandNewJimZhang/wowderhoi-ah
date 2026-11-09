@@ -126,7 +126,10 @@ local function scanMail(items)
     local okHeader, header = pcall(function() return { GetInboxHeaderInfo(message) } end)
     if okHeader and header then
       pendingCash = pendingCash + (header[5] or 0)
-      local attachments = header[13] or 0
+      -- A COD attachment is not owned until it is paid; counting it would
+      -- put someone else's goods in the player's holdings.
+      local cod = header[6] or 0
+      local attachments = cod > 0 and 0 or (header[13] or 0)
       for attachment = 1, attachments do
         -- GetInboxItem carries the stack count; the link is the fallback
         -- for builds that only expose it.
