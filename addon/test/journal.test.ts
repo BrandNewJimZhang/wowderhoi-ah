@@ -203,3 +203,29 @@ describe("journal checkpoint", () => {
     expect(lua.number("WowTest.ns.Journal.revision()")).toBe(5);
   });
 });
+
+describe("journal checkpoint composition", () => {
+  it("keeps the older basis across repeated compactions", () => {
+    const lua = loadAddon();
+    lua.exec(`
+      WowTest.ns.Journal.CAP = 4
+      WowTest.ns.Journal.COMPACT_KEEP = 2
+      WowTest.allEvents = {}
+      for index = 1, 12 do
+        local event = { k = "buy", itemId = 2589, qty = 1, cost = 100 * index }
+        WowTest.ns.recordEvent(event)
+        WowTest.allEvents[#WowTest.allEvents + 1] = event
+      end
+    `);
+    expect(lua.number("WowTest.ns.Journal.book().checkpoint == nil and 0 or 1")).toBe(1);
+    const same = lua.number(`(function()
+      local full = WowTest.ns.Ledger.replay(WowTest.allEvents, "TestRealm|Alliance|Tester")
+      local compact = WowTest.ns.Ledger.current()
+      return full.positions[2589].qty == compact.positions[2589].qty
+        and full.positions[2589].cost == compact.positions[2589].cost
+        and full.capital.cashDelta == compact.capital.cashDelta and 1 or 0
+    end)()`);
+    expect(same).toBe(1);
+    expect(lua.number("WowTest.ns.Journal.book().checkpoint.throughSeq")).toBeGreaterThan(0);
+  });
+});

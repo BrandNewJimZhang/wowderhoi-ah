@@ -67,6 +67,20 @@ describe("estate collection", () => {
     expect(lua.text(accountScope("coverage.account_bank"))).toBe("observed");
   });
 
+  it("keeps the last observed bank after the bank closes", () => {
+    const lua = loadAddon();
+    lua.setBag([{ bag: 6, slot: 1, itemId: LINEN, count: 40, name: "Linen" }]);
+    lua.exec("WowTest.fireEvent('BANKFRAME_OPENED')");
+    refresh(lua);
+    expect(lua.number(charScope(`items[${LINEN}].bank.qty`))).toBe(40);
+    // The client clears the bank's container list when the frame closes.
+    lua.setBag([]);
+    lua.exec("WowTest.fireEvent('BANKFRAME_CLOSED')");
+    lua.exec("WowTest.fireEvent('PLAYER_MONEY')");
+    refresh(lua);
+    expect(lua.number(charScope(`items[${LINEN}].bank.qty`))).toBe(40);
+  });
+
   it("exports mail attachments and pending cash only after a mailbox visit", () => {
     const lua = loadAddon();
     lua.exec(`WowTest.setMail({ {
@@ -94,6 +108,27 @@ describe("estate collection", () => {
     expect(lua.text(accountScope("coverage.listed"))).toBe("observed");
   });
 
+  it("keeps the last owned postings until the client answers a new query", () => {
+    const lua = loadAddon();
+    lua.setOwned([{ auctionID: 11, itemId: LINEN, quantity: 4, buyoutAmount: 4000 }]);
+    lua.exec("WowTest.fireEvent('OWNED_AUCTIONS_UPDATED')");
+    refresh(lua);
+    expect(lua.number(accountScope(`items[${LINEN}].listed.qty`))).toBe(4);
+    // The auction house closed and the client's list is empty, but no new
+    // query answered; the last observation stays.
+    lua.setOwned([]);
+    lua.exec("WowTest.fireEvent('PLAYER_MONEY')");
+    refresh(lua);
+    expect(lua.number(accountScope(`items[${LINEN}].listed.qty`))).toBe(4);
+    // An actual owned-list answer replaces it.
+    lua.exec("WowTest.fireEvent('OWNED_AUCTIONS_UPDATED')");
+    refresh(lua);
+    expect(lua.number(
+      `(function() local s = WowTest.ns.Estate.snapshot().scopes.account`
+      + ` return (s.items[${LINEN}] and s.items[${LINEN}].listed) and 1 or 0 end)()`
+    )).toBe(0);
+  });
+
   it("reads cash and free slots from the live client", () => {
     const lua = loadAddon();
     lua.exec("WowTest.setMoney(123456)");
@@ -109,9 +144,12 @@ describe("estate revision", () => {
   it("moves only when the content changes", () => {
     const lua = loadAddon();
     const first = lua.number("WowTest.ns.Estate.revision()");
+    const observedAt = lua.number("WowTest.ns.Estate.snapshot().observedAt");
     lua.exec("WowTest.fireEvent('BAG_UPDATE_DELAYED')");
-    refresh(lua);
+    lua.advance(5);
     expect(lua.number("WowTest.ns.Estate.revision()")).toBe(first);
+    // An unchanged rebuild must not move the timestamp the watcher keys on.
+    expect(lua.number("WowTest.ns.Estate.snapshot().observedAt")).toBe(observedAt);
     lua.exec("WowTest.setMoney(42)");
     lua.exec("WowTest.fireEvent('PLAYER_MONEY')");
     refresh(lua);

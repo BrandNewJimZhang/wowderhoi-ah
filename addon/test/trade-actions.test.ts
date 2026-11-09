@@ -133,10 +133,29 @@ describe("next steps mode", () => {
     expect(names).toContain("买入 Clean Spread");
   });
 
+  it("includes a bag item the ledger never booked", () => {
+    const lua = loadAddon();
+    lua.setScan([{
+      itemId: 4338, name: "Clean Spread", minPrice: 8000, sellP: 10000,
+      numAuctions: 6, sellers: 3, quantity: 70, itemClass: "Trade Goods",
+      tiers: [{ p: 8000, q: 20 }, { p: 9000, q: 50 }]
+    }]);
+    lua.setPoints([{ itemId: 4338, closes: [10000, 10500, 11000, 11500, 11000, 11000], spacing: 1800 }]);
+    lua.setBag([{ bag: 0, slot: 1, itemId: 4338, count: 10, name: "Clean Spread" }]);
+    lua.exec("WowTest.fireEvent('BAG_UPDATE_DELAYED')");
+    lua.advance(2);
+    lua.openTab();
+    lua.exec("WowTest.clickButton(WowTest.ns.L.NEXT_STEPS)");
+    expect(lua.names()).toContain("卖出 Clean Spread");
+    // The ledger has no cost for these units; the plan must say so rather
+    // than presenting a zero-basis profit.
+    expect(lua.number("(WowTest.ns.Reconciler.item(4338) or {}).unknownQty or 0")).toBe(10);
+  });
+
   it("keeps the core's urgency order when a header is clicked", () => {
     const lua = cockpit(true);
     const before = lua.names();
-    lua.clickHeader("净利");
+    lua.clickHeader("净额");
     expect(lua.names()).toEqual(before);
   });
 });

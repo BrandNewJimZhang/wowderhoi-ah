@@ -64,6 +64,9 @@ function Reconciler.run(snapshot)
     local knownQty = math.min(ledgerQty, totalQty)
     local unknownQty = math.max(0, totalQty - ledgerQty)
     local missingQty = allObserved and math.max(0, ledgerQty - totalQty) or 0
+    -- Only the units actually present carry the booked cost; the missing
+    -- units must not inflate the known unit cost a valuation reads.
+    local knownCost = ledgerQty > 0 and costBasis * knownQty / ledgerQty or 0
     items[itemId] = {
       itemId = itemId,
       ledgerQty = ledgerQty,
@@ -78,8 +81,8 @@ function Reconciler.run(snapshot)
       unknownQty = unknownQty,
       missingQty = missingQty,
       missingUnobserved = (not allObserved) and ledgerQty > totalQty or false,
-      costBasis = costBasis,
-      unitCost = ledgerQty > 0 and costBasis / ledgerQty or 0,
+      costBasis = knownCost,
+      unitCost = knownQty > 0 and knownCost / knownQty or 0,
       sellableQty = carried,
       requiresBank = (bank + accountBank) > 0 and carried == 0,
       coverage = {

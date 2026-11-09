@@ -223,7 +223,6 @@ local function rebuildActions()
   wipe(actionRows)
   if not lastEvaluation then return end
   for _, action in ipairs(lastEvaluation.actions) do
-    if #actionRows >= 12 then break end
     actionRows[#actionRows + 1] = {
       kind = action.kind,
       itemId = action.itemId,
@@ -276,7 +275,8 @@ local function refreshRadar()
       -- the excluded.sizing gate rather than an unfunded cause.
       local unfunded = lastEvaluation.diagnostics and lastEvaluation.diagnostics.unfunded or {}
       local message = string.format(L.RADAR_UNFUNDED, considered,
-        unfunded.purse or 0, unfunded.exposure or 0, unfunded.depth or 0)
+        unfunded.purse or 0, unfunded.exposure or 0, unfunded.depth or 0,
+        unfunded.slots or 0)
       -- A risk-model count of zero is not a cause; saying "0 more" reads as
       -- a fourth bucket that happened to be empty.
       if sizing > 0 then

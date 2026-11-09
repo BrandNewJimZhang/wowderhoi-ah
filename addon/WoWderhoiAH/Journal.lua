@@ -103,7 +103,7 @@ function Journal.compact(book)
   if prefix <= 0 then return false end
   local events = {}
   for index = 1, prefix do events[index] = target.e[index] end
-  local state = WAH.Ledger.replay(events, bookKey(), target.checkpoint)
+  local state = WAH.Ledger.replay(events, bookKey(), target.checkpoint and target.checkpoint.state)
   target.checkpoint = {
     throughSeq = events[prefix].seq or prefix,
     state = WAH.Ledger.snapshot(state)

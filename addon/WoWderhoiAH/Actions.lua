@@ -193,7 +193,9 @@ function Actions.expire(auctionID)
 end
 
 function Actions.bid(auctionID, amount)
-  if auctionID == nil then return false end
+  -- Some builds publish a table for BIDS_UPDATED; a table is not an
+  -- auction identity and cannot be deduplicated.
+  if type(auctionID) ~= "number" and type(auctionID) ~= "string" then return false end
   if journalHas("bid", auctionID) then return false end
   WAH.recordEvent({ k = "bid", auctionID = auctionID, amount = amount or 0 })
   return true

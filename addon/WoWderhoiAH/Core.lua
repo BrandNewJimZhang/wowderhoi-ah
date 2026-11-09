@@ -722,9 +722,14 @@ function Core.evaluate(input)
     if quantity == nil then quantity = position.qty end
     local item = items[itemId]
     if not (quantity and quantity > 0 and item and item.sellP) then return nil end
+    -- Only the sellable units carry their share of the booked cost; the
+    -- bank/listed units stay in the position and must not inflate the
+    -- realised P&L of this sale.
+    local totalQty = position.qty or quantity
+    local saleCost = totalQty > 0 and (position.cost or 0) * quantity / totalQty or 0
     local sellPlan = Core.sellPlan(
       { itemId = itemId, sellP = item.sellP, vendorP = item.vendorP },
-      { qty = quantity, cost = position.cost or 0 },
+      { qty = quantity, cost = saleCost },
       rules,
       {}
     )
@@ -738,7 +743,8 @@ function Core.evaluate(input)
       price = price,
       proceeds = proceeds,
       fee = fee,
-      netProceeds = round(proceeds - fee)
+      netProceeds = round(proceeds - fee),
+      costForSale = saleCost
     }
   end
   local plannedSellProceeds = 0
@@ -996,7 +1002,7 @@ function Core.evaluate(input)
         -- Net against the listing price, not the raw front: the undercut is
         -- real money. The historical cost is reported but never subtracted
         -- from the decision value -- it is sunk.
-        realizedPnl = costKnown and round(economics.netProceeds - (position.cost or 0)) or nil,
+        realizedPnl = costKnown and round(economics.netProceeds - economics.costForSale) or nil,
         costKnown = costKnown,
         durationHours = economics.sellPlan and economics.sellPlan.duration or 24,
         fillProb = economics.sellPlan and economics.sellPlan.fillProb or 0,
@@ -1096,10 +1102,17 @@ function Core.evaluate(input)
         guard = guard + 1
       end
       if quantity <= 0 then
+        local reason = math.floor(slotUnits) < 1 and "slots" or "cash"
+        -- The radar's fundable layer must describe the same trade the plan
+        -- refused, not the pre-plan allocation.
+        row.allocQty = 0
+        row.allocNet = 0
+        row.netPerMinute = 0
+        row.unfunded = reason
         unplanned[#unplanned + 1] = {
           kind = "buy",
           itemId = candidate.itemId,
-          reason = math.floor(slotUnits) < 1 and "slots" or "cash"
+          reason = reason
         }
       else
         local cashBefore, slotsBefore = cash, slotCountOf(slotUnits)
@@ -1112,6 +1125,14 @@ function Core.evaluate(input)
         end
         cash = cash - cost
         slotUnits = slotUnits - quantity
+        if quantity < candidate.qty then
+          row.allocQty = quantity
+          row.allocCost = round(cost)
+          row.allocUnitPrice = unitCost
+          row.allocNet = net
+          row.netPerMinute = round(net / math.max(effortMinutes("buy"), 1))
+          row.unfunded = "purse"
+        end
         steps[#steps + 1] = {
           kind = "buy",
           itemId = candidate.itemId,
@@ -1147,6 +1168,7 @@ function Core.evaluate(input)
     end
   end
 
+  local funded = {}
   for _, row in ipairs(rows) do
     if (row.allocQty or 0) <= 0 then
       unplanned[#unplanned + 1] = {
@@ -1154,13 +1176,19 @@ function Core.evaluate(input)
         itemId = row.itemId,
         reason = row.unfunded or "unfunded"
       }
+    else
+      funded[#funded + 1] = row
     end
   end
+  -- The plan may have reduced or refused a row the allocator had funded;
+  -- the fundable layer is rebuilt from the final quantities so the radar
+  -- and the action list describe one trade.
+  opportunities = funded
 
   local resources = {
     cashBefore = budget,
     cashAfter = cash,
-    slotsBefore = bagSlots,
+    slotsBefore = freeSlots,
     slotsAfter = slotCountOf(slotUnits),
     binding = (cash <= 0 and "cash") or (slotUnits < stackSize and "slots") or "none"
   }

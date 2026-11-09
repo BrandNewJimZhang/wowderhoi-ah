@@ -63,7 +63,7 @@ describe("executable-profit radar table", () => {
   it("gives every column one meaning across all rows", () => {
     expect(lua.header(0)).toBe("物品");
     expect([1, 2, 3, 4, 5].map((slot) => lua.header(slot)))
-      .toEqual(["可买", "买价", "建议卖价", "净利", "成交率"]);
+      .toEqual(["可买", "买价", "建议卖价", "净额", "成交率"]);
     // The in-game budget is the purse; the allocator applies the 50% daily
     // share once. The 1,000,000-copper purse therefore grants 500,000.
     expect(lua.column(1)).toEqual(["5", "6", "29"]);
@@ -100,7 +100,7 @@ describe("column sorting", () => {
   });
 
   it("sorts by net profit, biggest first", () => {
-    lua.clickHeader("净利");
+    lua.clickHeader("净额");
     expect(lua.names()).toEqual(["Gold Ore", "Mageweave Cloth", "Linen Cloth [NPC必赚]"]);
   });
 
@@ -126,14 +126,14 @@ describe("column sorting", () => {
   });
 
   it("marks the sorted column and moves the marker when another is clicked", () => {
-    expect(lua.header(4)).toBe("净利");
-    lua.clickHeader("净利");
-    expect(lua.header(4)).toBe("净利 ▼");
-    lua.clickHeader("净利");
-    expect(lua.header(4)).toBe("净利 ▲");
+    expect(lua.header(4)).toBe("净额");
+    lua.clickHeader("净额");
+    expect(lua.header(4)).toBe("净额 ▼");
+    lua.clickHeader("净额");
+    expect(lua.header(4)).toBe("净额 ▲");
     lua.clickHeader("买价");
     expect(lua.header(2)).toBe("买价 ▲");
-    expect(lua.header(4)).toBe("净利");
+    expect(lua.header(4)).toBe("净额");
   });
 
   it("drops the sort when the rows are rebuilt, because the old key no longer describes them", () => {

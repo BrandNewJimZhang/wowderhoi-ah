@@ -40,6 +40,11 @@ local debounceTimer = nil
 local saveTimer = nil
 local lastSaveAt = 0
 local bankObserved = false
+local bankOpen = false
+-- Container contents are only promised while the bank is open. The last
+-- observed bank is cached so a money or bag event after the bank closes
+-- cannot turn the cache into an empty bank.
+local bankCache = nil
 local mailObserved = false
 local ownedObserved = false
 
@@ -86,12 +91,29 @@ local function scanCarried(items)
   scanContainer(items, KEYRING, "keyring")
 end
 
+local function copyBankCache(items)
+  for itemId, byLocation in pairs(bankCache or {}) do
+    for location, entry in pairs(byLocation) do
+      if location == "bank" or location == "account_bank" then
+        addItem(items, itemId, location, entry.qty, entry.slots)
+      end
+    end
+  end
+end
+
 local function scanBank(items)
   if not bankObserved then return end
-  for bag = BANK_FIRST, BANK_LAST do scanContainer(items, bag, "bank") end
-  for bag = ACCOUNT_BANK_FIRST, ACCOUNT_BANK_LAST do
-    scanContainer(items, bag, "account_bank")
+  if not bankOpen then
+    copyBankCache(items)
+    return
   end
+  local fresh = {}
+  for bag = BANK_FIRST, BANK_LAST do scanContainer(fresh, bag, "bank") end
+  for bag = ACCOUNT_BANK_FIRST, ACCOUNT_BANK_LAST do
+    scanContainer(fresh, bag, "account_bank")
+  end
+  bankCache = fresh
+  copyBankCache(items)
 end
 
 local function scanMail(items)
@@ -106,10 +128,22 @@ local function scanMail(items)
       pendingCash = pendingCash + (header[5] or 0)
       local attachments = header[13] or 0
       for attachment = 1, attachments do
-        local okLink, link = pcall(GetInboxItemLink, message, attachment)
-        if okLink and link then
-          local itemId = tonumber(tostring(link):match("item:(%d+)"))
-          if itemId then addItem(items, itemId, "mail", 1, 1) end
+        -- GetInboxItem carries the stack count; the link is the fallback
+        -- for builds that only expose it.
+        local counted = false
+        if type(GetInboxItem) == "function" then
+          local okItem, _, itemId, _, count = pcall(GetInboxItem, message, attachment)
+          if okItem and itemId then
+            addItem(items, itemId, "mail", count or 1, 1)
+            counted = true
+          end
+        end
+        if not counted then
+          local okLink, link = pcall(GetInboxItemLink, message, attachment)
+          if okLink and link then
+            local itemId = tonumber(tostring(link):match("item:(%d+)"))
+            if itemId then addItem(items, itemId, "mail", 1, 1) end
+          end
         end
       end
     end
@@ -198,7 +232,14 @@ local function build()
   if WAH.Reconciler then snapshot.reconciled = WAH.Reconciler.run(snapshot) end
   local existing = WoWderhoiAH_Estate
   local revision = existing and existing.revision or 0
-  if not Estate.same(snapshot, existing) then revision = revision + 1 end
+  if not Estate.same(snapshot, existing) then
+    revision = revision + 1
+  elseif existing then
+    -- An unchanged snapshot must not move observedAt: the watcher keys its
+    -- state watermark on (revision, observedAt), so a moving timestamp
+    -- would make every idle rebuild look like new state.
+    snapshot.observedAt = existing.observedAt
+  end
   snapshot.revision = revision
   return snapshot
 end
@@ -341,12 +382,19 @@ frame:RegisterEvent("MAIL_INBOX_UPDATE")
 
 frame:SetScript("OnEvent", function(_, event)
   if event == "BANKFRAME_OPENED" then
+    bankOpen = true
     bankObserved = true
     Estate.markDirty()
     return
   end
-  if event == "MAIL_SHOW" or event == "MAIL_INBOX_UPDATE" then
+  if event == "MAIL_INBOX_UPDATE" then
+    -- MAIL_SHOW fires before the inbox has loaded; only the update proves
+    -- the message list was actually read.
     mailObserved = true
+    Estate.markDirty()
+    return
+  end
+  if event == "MAIL_SHOW" then
     Estate.markDirty()
     return
   end
@@ -355,8 +403,18 @@ frame:SetScript("OnEvent", function(_, event)
     Estate.markDirty()
     return
   end
-  -- A closed bank is not a changed bank; the slots are already latched.
-  if event == "BANKFRAME_CLOSED" then return end
+  if event == "BANKFRAME_CLOSED" then
+    -- Keep the last observed contents; the client no longer promises them.
+    bankOpen = false
+    Estate.markDirty()
+    return
+  end
+  if event == "PLAYER_ENTERING_WORLD" then
+    -- A loading screen closes any bank frame without a CLOSED event.
+    bankOpen = false
+    Estate.markDirty()
+    return
+  end
   Estate.markDirty()
 end)
 

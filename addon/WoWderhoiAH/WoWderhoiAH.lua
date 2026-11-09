@@ -271,27 +271,42 @@ local ownedSnapshot = nil
 -- One shape for every reader of the owned-auction list: the scan's
 -- self-exclusion, the sell page, the estate publisher and the reconciler
 -- must not each walk GetOwnedAuctionInfo with slightly different fields.
-function WAH.ownedAuctions()
+--
+-- The client only promises the list after QueryOwnedAuctions. After the
+-- auction house closes, the same call can return zero and would wipe the
+-- last observed postings; readers get the cached rows unless an explicit
+-- refresh asks the client again.
+local ownedRowsCache = nil
+function WAH.ownedAuctions(refresh)
+  if not refresh and ownedRowsCache then return ownedRowsCache end
   local rows = {}
   if not (C_AuctionHouse.GetNumOwnedAuctions and C_AuctionHouse.GetOwnedAuctionInfo) then
-    return rows
+    return ownedRowsCache or rows
   end
   local count = C_AuctionHouse.GetNumOwnedAuctions() or 0
   for index = 1, count do
     local info = C_AuctionHouse.GetOwnedAuctionInfo(index)
     local itemId = info and info.itemKey and info.itemKey.itemID
     if itemId then
+      local seconds = info.timeLeftSeconds
+      if not seconds and info.timeLeft and C_AuctionHouse.GetTimeLeftBandInfo then
+        local _, maxSeconds = C_AuctionHouse.GetTimeLeftBandInfo(info.timeLeft)
+        seconds = maxSeconds
+      end
       rows[#rows + 1] = {
         auctionID = info.auctionID,
         itemId = itemId,
         quantity = info.quantity or 1,
         buyout = info.buyoutAmount or info.bidAmount or 0,
-        timeLeftSeconds = info.timeLeftSeconds,
+        timeLeftSeconds = seconds,
         status = info.status
       }
     end
   end
-  return rows
+  -- An empty answer from an explicit refresh is a real empty list; an
+  -- empty answer from a passive read is not allowed to erase the cache.
+  if refresh or not ownedRowsCache then ownedRowsCache = rows end
+  return ownedRowsCache
 end
 
 -- Reads whatever the client currently holds. The event handler calls this
@@ -299,7 +314,7 @@ end
 -- builds), so a refresh that queried again would recurse.
 local function captureOwnedSnapshot()
   local byItem = {}
-  for _, row in ipairs(WAH.ownedAuctions()) do
+  for _, row in ipairs(WAH.ownedAuctions(true)) do
     local list = byItem[row.itemId]
     if not list then
       list = {}
@@ -1941,6 +1956,20 @@ function WAH.coreInput()
       costKnown = (not record) or record.unknownQty == 0,
       requiresBank = record and record.requiresBank or false
     }
+  end
+  -- Items the estate can see but the ledger never booked (loot, mail,
+  -- pre-install stock) are still sellable. Without this the bag snapshot
+  -- fixed the quantity display but the next-step plan kept ignoring them.
+  for itemId, record in pairs(reconciled and reconciled.items or {}) do
+    if not positions[itemId] and record.sellableQty and record.sellableQty > 0 then
+      positions[itemId] = {
+        qty = record.totalQty,
+        cost = 0,
+        sellableQty = record.sellableQty,
+        costKnown = record.unknownQty == 0,
+        requiresBank = record.requiresBank or false
+      }
+    end
   end
   input.positions = positions
   input.capital = {

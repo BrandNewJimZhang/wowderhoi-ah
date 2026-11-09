@@ -38,6 +38,7 @@ local ownedLoaded = false
 -- as sales would book every open posting as sold the first time the page
 -- opens.
 local ownedSynced = false
+local lastUnobserved = 0
 local pendingPost = nil
 local cancelling = {}
 local lastError = nil
@@ -88,7 +89,8 @@ end
 local function collectBag()
   wipe(bagItems)
   local byItem = {}
-  for bag = 0, 4 do
+  -- Backpack 0-4 plus the reagent bag 5: both are carried and sellable.
+  for bag = 0, 5 do
     local slots = C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerNumSlots(bag) or 0
     for slot = 1, slots do
       local info = C_Container and C_Container.GetContainerItemInfo
@@ -185,6 +187,10 @@ local function planFor(itemId, duration, quantity)
   }, position, WAH.RULES, opts)
   if not plan then return nil, "noPrice", entry end
   plan.depositAvailable = depositAvailable
+  -- The bag may hold units the journal never booked; their profit is not
+  -- a zero-basis windfall.
+  local record = WAH.Reconciler and WAH.Reconciler.item(itemId) or nil
+  plan.costKnown = held ~= nil and qty <= held.qty and ((not record) or record.unknownQty == 0)
   return plan, nil, entry
 end
 
@@ -313,9 +319,10 @@ local function reconcile()
       missing = missing + 1
     end
   end
-  if missing > 0 then
+  if missing > 0 and missing ~= lastUnobserved then
     chatMessage(string.format(L.SELL_UNOBSERVED, missing))
   end
+  lastUnobserved = missing
   return missing
 end
 
@@ -561,7 +568,8 @@ local function render()
       string.format("%s: %s", L.SELL_PRICE, coinString(plan.sellP)),
       string.format("%s: |cffff9933%s|r", L.SELL_LIST, coinString(plan.listP)),
       string.format("%s: %s", L.SELL_DEPOSIT, plan.depositAvailable and coinString(plan.deposit) or L.SELL_DEPOSIT_UNAVAILABLE),
-      string.format("%s: %s", L.SELL_NET, coinString(plan.netIfSold)),
+      string.format("%s: %s", L.SELL_NET,
+        plan.costKnown == false and L.SELL_COST_UNKNOWN or coinString(plan.netIfSold)),
       string.format("%s: %s  |  %s: %s", L.SELL_BREAKEVEN, coinString(plan.sellBreakeven),
         L.SELL_EXPIRE_BREAKEVEN, coinString(plan.expireBreakeven)),
       string.format("%s: %s", L.SELL_LOSS, coinString(plan.lossIfExpired))

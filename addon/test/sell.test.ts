@@ -67,6 +67,20 @@ describe("sell pricing", () => {
     expect(lua.number("(WowTest.ns.Sell.plan(4338, 12, 1)).deposit")).toBe(24);
   });
 
+  it("marks an unbooked bag item's profit as cost unknown", () => {
+    const lua = loadAddon();
+    lua.setScan([{
+      itemId: LINEN, name: "Linen Cloth", minPrice: 800, sellP: 1000,
+      numAuctions: 5, sellers: 3, quantity: 100, itemClass: "Trade Goods",
+      tiers: [{ p: 800, q: 20 }, { p: 900, q: 80 }]
+    }]);
+    lua.setBag([{ bag: 0, slot: 1, itemId: LINEN, count: 10, name: "Linen Cloth", commodity: true }]);
+    lua.exec("WowTest.fireEvent('BAG_UPDATE_DELAYED')");
+    lua.advance(2);
+    lua.exec("WowTest.ns.Sell.collectBag()");
+    expect(lua.eval("WowTest.ns.Sell.plan(2589, 24, 10).costKnown")).toBe(false);
+  });
+
   it("refuses to price an item the scan has never seen", () => {
     const lua = page();
     expect(lua.eval("WowTest.ns.Sell.plan(99999, 24, 1)")).toBeNull();

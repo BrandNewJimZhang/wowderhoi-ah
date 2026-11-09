@@ -348,7 +348,10 @@ Mail.scan = function()
           -- A won bid is a purchase: the client already took the bid amount
           -- out of the purse, and the item only exists in the mailbox. Not
           -- booking it left the bag and the ledger permanently disagreeing.
-          if firstUnbooked(store, tally, mark) then
+          -- Without a price the mail is not a costed purchase; count it.
+          if total <= 0 then
+            stats.unattributed = stats.unattributed + 1
+          elseif firstUnbooked(store, tally, mark) then
             WAH.recordEvent({
               k = "buy",
               itemId = itemId,
