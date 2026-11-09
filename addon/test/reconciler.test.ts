@@ -10,10 +10,6 @@ function item(lua: ReturnType<typeof loadAddon>, field: string) {
   return lua.number(`(WowTest.ns.Reconciler.item(${LINEN}) or {}).${field} or 0`);
 }
 
-function itemText(lua: ReturnType<typeof loadAddon>, field: string) {
-  return lua.text(`(WowTest.ns.Reconciler.item(${LINEN}) or {}).${field} or ""`);
-}
-
 function bag(lua: ReturnType<typeof loadAddon>, bagIndex: number, count: number) {
   lua.setBag([{ bag: bagIndex, slot: 1, itemId: LINEN, count, name: "Linen" }]);
   lua.exec("WowTest.fireEvent('BAG_UPDATE_DELAYED')");
@@ -38,7 +34,7 @@ describe("reconciliation", () => {
     bag(lua, 0, 5);
     expect(item(lua, "missingQty")).toBe(0);
     expect(item(lua, "missingUnobserved")).toBe(1);
-    expect(itemText(lua, "coverage.bank")).toBe("unobserved");
+    expect(lua.text("WowTest.ns.Reconciler.current().coverage.bank")).toBe("unobserved");
 
     // The bank opens with the other three units.
     lua.setBag([

@@ -85,13 +85,7 @@ function Reconciler.run(snapshot)
       missingQty = missingQty,
       missingUnobserved = (not allObserved) and ledgerQty > totalQty or false,
       sellableQty = sellableQty,
-      requiresBank = requiresBank,
-      coverage = {
-        bank = bankObserved and "observed" or "unobserved",
-        accountBank = accountBankObserved and "observed" or "unobserved",
-        mail = mailObserved and "observed" or "unobserved",
-        listed = listedObserved and "observed" or "unobserved"
-      }
+      requiresBank = requiresBank
     }
   end
 
@@ -117,8 +111,6 @@ function Reconciler.run(snapshot)
   cash.coverage = cash.anchor and "observed" or "unobserved"
 
   return {
-    v = 1,
-    at = time(),
     items = items,
     cash = cash,
     coverage = {
