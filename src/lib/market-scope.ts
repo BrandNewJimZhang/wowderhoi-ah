@@ -22,6 +22,11 @@ export type MarketScope = {
   // Free bag slots at the latest scan. Null/absent means the import never
   // reported them, so the shared core keeps its planning fallback.
   bagSlots?: number | null;
+  // Committed token for the page inputs. The import transactions advance it
+  // in the same commit that writes cash, the ledger and the generation, so
+  // the open pages' poll cannot lag a committed change or follow a failed
+  // one.
+  dataVersion: number;
 };
 
 // The pin parser is shared with `npm run calibrate`: a malformed pin must

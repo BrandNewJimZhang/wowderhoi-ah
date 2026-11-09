@@ -211,18 +211,13 @@ export async function getImportRuns(marketId: string, limit = 20) {
   });
 }
 
-// The data revision the open pages poll. Every import records a run after
-// its transaction commits — a scan, a journal-only replay or a failed
-// attempt — so a new run is the one signal that some page input may have
-// moved. The market id keeps two scopes from sharing the empty revision.
+// The data revision the open pages poll: the market's committed data
+// version. The import transactions advance it in the same commit that
+// writes the page inputs, so a failed attempt, a journal-less duplicate or
+// a pruned diagnostic row cannot move it. The market id keeps two scopes
+// from sharing the empty revision.
 export async function getMarketRevision(scope: MarketScope | null): Promise<string> {
-  if (!scope) return "none";
-  const run = await prisma.importRun.findFirst({
-    where: { marketId: scope.id },
-    orderBy: [{ receivedAt: "desc" }, { id: "desc" }],
-    select: { id: true }
-  });
-  return `${scope.id}:${run?.id ?? "none"}`;
+  return scope ? `${scope.id}:${scope.dataVersion}` : "none";
 }
 
 export async function getCatalogueStats() {

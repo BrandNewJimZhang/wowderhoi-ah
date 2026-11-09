@@ -27,6 +27,7 @@ import type { SignalItem } from "@/lib/market-data";
 function scopeOf(market: {
   id: string; realm: string; faction: string; cash: number; character: string;
   openedAt: Date | null; firstScanAt: Date | null; bagSlots: number | null;
+  dataVersion: number;
 }): MarketScope {
   return {
     id: market.id,
@@ -36,7 +37,8 @@ function scopeOf(market: {
     character: market.character,
     openedAt: market.openedAt,
     firstScanAt: market.firstScanAt,
-    bagSlots: market.bagSlots
+    bagSlots: market.bagSlots,
+    dataVersion: market.dataVersion
   };
 }
 
@@ -308,9 +310,17 @@ export async function POST(request: Request) {
       if (seriesItemCreates.length > 0) await tx.item.createMany({ data: seriesItemCreates });
       await replaceSeries(tx, market.id, seriesRows);
       const seriesFirst = series?.firstScanAt ? new Date(series.firstScanAt * 1000) : null;
-      if (seriesFirst && (!market.firstScanAt || seriesFirst < market.firstScanAt)) {
-        await tx.market.update({ where: { id: market.id }, data: { firstScanAt: seriesFirst } });
-      }
+      // The replay rewrites the ledger the portfolio and review pages read,
+      // so the token advances even when firstScanAt itself does not move.
+      await tx.market.update({
+        where: { id: market.id },
+        data: {
+          ...(seriesFirst && (!market.firstScanAt || seriesFirst < market.firstScanAt)
+            ? { firstScanAt: seriesFirst }
+            : {}),
+          dataVersion: { increment: 1 }
+        }
+      });
       const statements = journalStatements(tx, replay, market.id, adopted);
       for (const statement of statements) await statement;
     }, { timeout: 60_000 });
@@ -332,35 +342,39 @@ export async function POST(request: Request) {
     });
   }
 
-  const existingMarket = await prisma.market.findUnique({
-    where: { realm_faction: { realm: scan.server, faction: scan.faction } },
-    select: { firstScanAt: true }
-  });
-  const seriesFirst = series?.firstScanAt ? new Date(series.firstScanAt * 1000) : null;
-  const firstScanAt = [existingMarket?.firstScanAt, seriesFirst, scan.scannedAt]
-    .filter((value): value is Date => value instanceof Date)
-    .reduce((earliest, value) => (value < earliest ? value : earliest));
+  // Reserve the market row before planning, but leave the page inputs to the
+  // import transaction: a failed import must not change cash, the character
+  // or the phase anchor. This row supplies the id and the values the update
+  // clause keeps when the payload omits them.
   const market = await prisma.market.upsert({
     where: { realm_faction: { realm: scan.server, faction: scan.faction } },
-    create: {
-      realm: scan.server,
-      faction: scan.faction,
-      cash: scan.cash,
-      character: scan.character ?? "",
-      openedAt: scan.openedAt ? new Date(scan.openedAt * 1000) : null,
-      firstScanAt,
-      bagSlots: scan.bagSlots
-    },
-    update: {
-      cash: scan.cash,
-      ...(scan.character ? { character: scan.character } : {}),
-      ...(scan.openedAt === null ? {} : {
-        openedAt: scan.openedAt > 0 ? new Date(scan.openedAt * 1000) : null
-      }),
-      firstScanAt,
-      ...(scan.bagSlots === null ? {} : { bagSlots: scan.bagSlots })
+    create: { realm: scan.server, faction: scan.faction },
+    update: {},
+    select: {
+      id: true, cash: true, character: true, openedAt: true, firstScanAt: true,
+      bagSlots: true, dataVersion: true
     }
   });
+  const seriesFirst = series?.firstScanAt ? new Date(series.firstScanAt * 1000) : null;
+  const firstScanAt = [market.firstScanAt, seriesFirst, scan.scannedAt]
+    .filter((value): value is Date => value instanceof Date)
+    .reduce((earliest, value) => (value < earliest ? value : earliest));
+  const openedAt = scan.openedAt === null
+    ? market.openedAt
+    : scan.openedAt > 0 ? new Date(scan.openedAt * 1000) : null;
+  // The plan must see this scan's inputs, not the row as it was before the
+  // transaction that will commit them.
+  const planned = {
+    id: market.id,
+    realm: scan.server,
+    faction: scan.faction,
+    cash: scan.cash,
+    character: scan.character || market.character,
+    openedAt,
+    firstScanAt,
+    bagSlots: scan.bagSlots === null ? market.bagSlots : scan.bagSlots,
+    dataVersion: market.dataVersion
+  };
 
   try {
     const existingItems = await prisma.item.findMany({
@@ -402,7 +416,7 @@ export async function POST(request: Request) {
     }
     const existingSeries = await getSeriesForItems(market.id, Array.from(seriesIds));
 
-    const scope = scopeOf(market);
+    const scope = scopeOf(planned);
     const positions = replay ? replay.positions : await getPositions(scope);
     const ownSales = replay ? ownSalesOf(replay, scan.scannedAt) : await getOwnSales(scope, scan.scannedAt);
 
@@ -412,8 +426,8 @@ export async function POST(request: Request) {
       items: itemsById,
       existingSeries,
       previous: previous ? { scannedAt: previous.scannedAt, quotes: previousRefs } : null,
-      openedAt: market.openedAt,
-      firstScanAt: market.firstScanAt,
+      openedAt: planned.openedAt,
+      firstScanAt: planned.firstScanAt,
       positions,
       ownSales,
       budgetCopper: resolveBudgetCopper(),
@@ -428,6 +442,20 @@ export async function POST(request: Request) {
     const adopted = await adoptedDecisionsFor(market.id, book?.events ?? [], planDecisions);
 
     await prisma.$transaction(async (tx) => {
+      // The page inputs and the token that advertises them commit together.
+      await tx.market.update({
+        where: { id: market.id },
+        data: {
+          cash: scan.cash,
+          ...(scan.character ? { character: scan.character } : {}),
+          ...(scan.openedAt === null ? {} : {
+            openedAt: scan.openedAt > 0 ? new Date(scan.openedAt * 1000) : null
+          }),
+          firstScanAt,
+          ...(scan.bagSlots === null ? {} : { bagSlots: scan.bagSlots }),
+          dataVersion: { increment: 1 }
+        }
+      });
       if (itemDiff.creates.length > 0) {
         await tx.item.createMany({
           data: itemDiff.creates.map((row) => ({

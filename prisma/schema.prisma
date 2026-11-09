@@ -30,6 +30,10 @@ model Market {
   // Free bag slots at the latest scan. Null for imports from addons that did
   // not report the field; the shared core then keeps its planning fallback.
   bagSlots    Int?      @map("bag_slots")
+  // Monotonic token for the page inputs. It is incremented inside the same
+  // transaction that writes them, so the pages' revision moves exactly when
+  // committed data does; the diagnostic ImportRun rows play no part.
+  dataVersion Int       @default(0) @map("data_version")
   createdAt   DateTime  @default(now()) @map("created_at")
 
   generations    MarketGeneration[]

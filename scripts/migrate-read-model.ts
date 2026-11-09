@@ -402,7 +402,8 @@ async function main() {
         character: market.character,
         openedAt: market.openedAt,
         firstScanAt: market.firstScanAt,
-        bagSlots: market.bagSlots
+        bagSlots: market.bagSlots,
+        dataVersion: market.dataVersion
       };
       const plan = buildGenerationPlan({
         scan,

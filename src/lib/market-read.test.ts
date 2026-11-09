@@ -60,7 +60,7 @@ function reader(options: {
 } = {}) {
   return createMarketReader({
     getMarketScope: async () => (options.scope === null ? null : {
-      id: "m1", realm: "TestRealm", faction: "Alliance", cash: 500000, character: "Tester",
+      id: "m1", realm: "TestRealm", faction: "Alliance", cash: 500000, character: "Tester", dataVersion: 1,
       ...(options.scope ?? {})
     }),
     getMarketRevision: async (scope) => scope ? `${scope.id}:rev-1` : "none",
@@ -95,7 +95,7 @@ describe("getMarketContext", () => {
   it("serves the generation's metadata without loading its signal rows", async () => {
     let signalCalls = 0;
     const source = createMarketReader({
-      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0, character: "Tester" }),
+      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0, character: "Tester", dataVersion: 1 }),
       getMarketRevision: async () => "m1:rev-1",
       getLatestGeneration: async () => generation(),
       getSignals: async () => {
@@ -116,7 +116,7 @@ describe("getMarketContext", () => {
   it("reads the data revision before the generation so a mid-request import still refreshes", async () => {
     const order: string[] = [];
     const source = createMarketReader({
-      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0, character: "Tester" }),
+      getMarketScope: async () => ({ id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0, character: "Tester", dataVersion: 1 }),
       getMarketRevision: async () => {
         order.push("revision");
         return "m1:run-1";
@@ -189,7 +189,7 @@ describe("getMarketBundle", () => {
   it("never serves one market's generation to another scope", async () => {
     const seen: string[] = [];
     const source = createMarketReader({
-      getMarketScope: async () => ({ id: "m2", realm: "Other", faction: "Horde", cash: 0, character: "" }),
+      getMarketScope: async () => ({ id: "m2", realm: "Other", faction: "Horde", cash: 0, character: "", dataVersion: 0 }),
       getMarketRevision: async (scope) => scope?.id ?? "none",
       getLatestGeneration: async (scope) => { seen.push(scope?.id ?? "none"); return null; },
       getSignals: async () => [],

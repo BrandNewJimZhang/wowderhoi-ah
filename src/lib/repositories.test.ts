@@ -15,7 +15,7 @@ const NEW = Date.UTC(2026, 10, 8, 10);
 let prisma: typeof import("@/lib/prisma").prisma;
 let getItemDetail: typeof import("@/lib/repositories").getItemDetail;
 
-const scope = { id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0, character: "Tester" };
+const scope = { id: "m1", realm: "TestRealm", faction: "Alliance", cash: 0, character: "Tester", dataVersion: 0 };
 
 function signalData(sellPrice: number) {
   return JSON.stringify({
