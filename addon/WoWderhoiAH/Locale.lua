@@ -153,7 +153,7 @@ local L = {
   SELL_CANCEL = "Cancel",
   SELL_CANCELLED = "Cancelled auction %d.",
   SELL_EXPIRED = "Auction %d expired; the lost deposit is in the ledger.",
-  SELL_INFERRED_SOLD = "%d inferred sales (listing vanished before expiry), booked at the posted price.",
+  SELL_UNOBSERVED = "%d postings vanished without a sale, cancel or expiry event; left unobserved, not booked as sales.",
   MAIL_BOOKED = "Mailbox: %d collected sale(s), %d expired listing(s) booked.",
   RADAR_ALLOC = "Full-budget executable %d | allocated %d",
   OPEN_USAGE = "Usage: /wahopen now | /wahopen <epoch> | /wahopen -<hours> | /wahopen auto",
@@ -335,7 +335,7 @@ if GetLocale() == "zhCN" then
   L.SELL_CANCEL = "撤单"
   L.SELL_CANCELLED = "已撤单 %d。"
   L.SELL_EXPIRED = "挂单 %d 已到期，押金损失已记账。"
-  L.SELL_INFERRED_SOLD = "推断成交 %d 笔（挂单在到期前消失），已按挂单价记账。"
+  L.SELL_UNOBSERVED = "%d 笔挂单在没有成交、撤单或流拍事件的情况下消失；标记为未观测，不记账。"
   L.MAIL_BOOKED = "邮箱：已入账 %d 笔成交、%d 笔到期退回。"
   L.RADAR_ALLOC = "全预算可执行 %d 件 | 已分配 %d 件"
   L.OPEN_USAGE = "用法：/wahopen now | /wahopen <epoch 秒> | /wahopen -<小时数> | /wahopen auto"

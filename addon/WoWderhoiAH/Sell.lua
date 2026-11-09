@@ -293,41 +293,30 @@ local function collectOwned()
   return owned
 end
 
--- An owned auction that vanished without an expiry event was almost
--- certainly sold. The client exposes no sale event outside the mailbox, so
--- this is recorded as an inferred sale at the posted price and labelled.
+-- A posting that vanished from the owned list without a sale, cancel or
+-- expiry event is unobserved, not sold. The client exposes cancellation and
+-- expiry events and the mailbox confirms sales; inferring a sale from the
+-- gap booked revenue for a cancellation and consumed the lots twice when
+-- the goods came back. The count is reported so /wahdiag can show a
+-- coverage gap, and no journal event is written.
 local function reconcile()
   if not ownedSynced or not ownedLoaded then return 0 end
   local ledger = WAH.Ledger and WAH.Ledger.current()
   if not ledger then return 0 end
   local present = {}
   for _, row in ipairs(owned) do present[row.auctionID] = true end
-  local candidates = {}
+  local missing = 0
   local nowTs = time()
   for auctionID, post in pairs(ledger.openPosts or {}) do
     if not present[auctionID] and not cancelling[auctionID]
       and post.at and nowTs - post.at >= 60 then
-      candidates[#candidates + 1] = { auctionID = auctionID, post = post }
+      missing = missing + 1
     end
   end
-  table.sort(candidates, function(left, right) return left.auctionID < right.auctionID end)
-  for _, candidate in ipairs(candidates) do
-    local post = candidate.post
-    local fee = math.floor((post.price or 0) * (post.qty or 0) * (WAH.RULES.feeRate or 0.05) + 0.5)
-    WAH.recordEvent({
-      k = "sold",
-      auctionID = candidate.auctionID,
-      itemId = post.itemId,
-      qty = post.qty,
-      price = post.price,
-      fee = fee,
-      inferred = true
-    })
+  if missing > 0 then
+    chatMessage(string.format(L.SELL_UNOBSERVED, missing))
   end
-  if #candidates > 0 then
-    chatMessage(string.format(L.SELL_INFERRED_SOLD, #candidates))
-  end
-  return #candidates
+  return missing
 end
 
 local function cancelAuction(auctionID)

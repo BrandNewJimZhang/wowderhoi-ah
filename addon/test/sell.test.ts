@@ -126,21 +126,19 @@ describe("owned auctions", () => {
     expect(lua.number("WowTest.ns.Ledger.positions()[2589].qty")).toBe(10);
   });
 
-  it("infers a sale when an owned auction vanishes before expiry", () => {
+  it("leaves a vanished owned auction unobserved instead of booking a sale", () => {
     const lua = page();
     lua.exec("WowTest.ns.Sell.select(2589)");
     lua.exec("WowTest.ns.Sell.postSelected()");
     lua.advance(61);
     lua.setOwned([]); // the listing is gone from the owned list
     lua.exec("WowTest.fireEvent('OWNED_AUCTIONS_UPDATED')");
-    expect(lua.number("WowTest.ns.Journal.count()")).toBe(3); // buy + post + sold
-    const sold = "WowTest.ns.Journal.last('sold')";
-    expect(lua.number(`${sold}.price`)).toBe(999);
-    expect(lua.number(`${sold}.fee`)).toBe(500);
-    expect(lua.eval(`${sold}.inferred`)).toBe(true);
-    // 9990 - 500 - 8000 = 1490
-    expect(lua.number("WowTest.ns.Ledger.capital().realized")).toBe(1490);
-    expect(lua.number("WowTest.ns.Ledger.capital().escrow")).toBe(0);
+    expect(lua.number("WowTest.ns.Journal.count()")).toBe(2); // buy + post
+    expect(lua.number("WowTest.ns.Journal.last('sold') == nil and 0 or 1")).toBe(0);
+    expect(lua.number("WowTest.ns.Ledger.capital().realized")).toBe(0);
+    // The posting is still open; no event closed or sold it.
+    expect(lua.number("WowTest.ns.Ledger.capital().escrow")).toBe(720);
+    expect(lua.lastChat()).toContain("未观测");
   });
 
   it("flags an owned listing priced above the current sell front", () => {
@@ -176,13 +174,13 @@ describe("owned auctions", () => {
     expect(lua.number("WowTest.ns.Journal.count()")).toBe(2); // buy + post
   });
 
-  it("does not reconcile a posting younger than a minute", () => {
+  it("does not turn a vanished posting into a sale at any age", () => {
     const lua = page();
     lua.exec("WowTest.ns.Sell.select(2589)");
     lua.exec("WowTest.ns.Sell.postSelected()");
+    lua.advance(3600);
     lua.setOwned([]);
     lua.exec("WowTest.fireEvent('OWNED_AUCTIONS_UPDATED')");
-    // Same clock, so the post is too fresh to call sold.
     expect(lua.number("WowTest.ns.Journal.count()")).toBe(2);
   });
 });
