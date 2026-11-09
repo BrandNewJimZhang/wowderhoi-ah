@@ -14,12 +14,12 @@
 local ADDON_NAME, WAH = ...
 
 local Journal = {}
--- Version 2 added the stable per-book sequence, the event/observation time
--- pair, and the prefix checkpoint. Version 3 adds the book epoch and the
--- content revision: clearing SavedVariables creates a new book whose
--- sequence restarts at 1, and the epoch is what keeps its facts distinct
--- from the old book's. Older books are migrated in place.
-Journal.VERSION = 3
+-- The saved shape has evolved in place, per book: version 2 added the stable
+-- sequence, the event/observation time pair and the prefix checkpoint;
+-- version 3 adds the book epoch and the content revision, because clearing
+-- SavedVariables creates a new book whose sequence restarts at 1. Older
+-- books are migrated field by field in `migrate`, so no version number is
+-- persisted: an unused global would be a second, drifting authority.
 Journal.CAP = 5000
 -- How many recent events survive a compaction. The checkpoint carries the
 -- state of everything older, so the safe prefix is everything but a small
@@ -60,7 +60,7 @@ local function migrate(book)
 end
 
 function Journal.ensure()
-  WoWderhoiAH_Journal = WoWderhoiAH_Journal or { v = Journal.VERSION, books = {} }
+  WoWderhoiAH_Journal = WoWderhoiAH_Journal or { books = {} }
   local key = bookKey()
   local book = WoWderhoiAH_Journal.books[key]
   if not book then
