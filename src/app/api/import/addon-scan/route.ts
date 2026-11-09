@@ -359,9 +359,21 @@ export async function POST(request: Request) {
   const firstScanAt = [market.firstScanAt, seriesFirst, scan.scannedAt]
     .filter((value): value is Date => value instanceof Date)
     .reduce((earliest, value) => (value < earliest ? value : earliest));
+  const character = scan.character || market.character;
   const openedAt = scan.openedAt === null
     ? market.openedAt
     : scan.openedAt > 0 ? new Date(scan.openedAt * 1000) : null;
+  const bagSlots = scan.bagSlots === null ? market.bagSlots : scan.bagSlots;
+  // The transaction writes exactly the inputs the plan saw; a field the scan
+  // omits is left untouched so a concurrent import cannot be clobbered with
+  // the pre-reservation value.
+  const pageInputs = {
+    cash: scan.cash,
+    ...(scan.character ? { character } : {}),
+    ...(scan.openedAt === null ? {} : { openedAt }),
+    firstScanAt,
+    ...(scan.bagSlots === null ? {} : { bagSlots })
+  };
   // The plan must see this scan's inputs, not the row as it was before the
   // transaction that will commit them.
   const planned = {
@@ -369,10 +381,10 @@ export async function POST(request: Request) {
     realm: scan.server,
     faction: scan.faction,
     cash: scan.cash,
-    character: scan.character || market.character,
+    character,
     openedAt,
     firstScanAt,
-    bagSlots: scan.bagSlots === null ? market.bagSlots : scan.bagSlots,
+    bagSlots,
     dataVersion: market.dataVersion
   };
 
@@ -445,16 +457,7 @@ export async function POST(request: Request) {
       // The page inputs and the token that advertises them commit together.
       await tx.market.update({
         where: { id: market.id },
-        data: {
-          cash: scan.cash,
-          ...(scan.character ? { character: scan.character } : {}),
-          ...(scan.openedAt === null ? {} : {
-            openedAt: scan.openedAt > 0 ? new Date(scan.openedAt * 1000) : null
-          }),
-          firstScanAt,
-          ...(scan.bagSlots === null ? {} : { bagSlots: scan.bagSlots }),
-          dataVersion: { increment: 1 }
-        }
+        data: { ...pageInputs, dataVersion: { increment: 1 } }
       });
       if (itemDiff.creates.length > 0) {
         await tx.item.createMany({
