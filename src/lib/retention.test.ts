@@ -44,7 +44,7 @@ beforeAll(async () => {
   );
   await prisma.$executeRawUnsafe(
     `CREATE TABLE "Decision" ("id" TEXT PRIMARY KEY, "market_id" TEXT, "at" DATETIME,
-      "generation_id" TEXT, "decision_id" TEXT, "plan_id" TEXT)`
+      "decision_id" TEXT, "plan_id" TEXT)`
   );
   await prisma.$executeRawUnsafe(
     `CREATE TABLE "Plan" ("id" TEXT PRIMARY KEY, "created_at" DATETIME, "superseded_at" DATETIME)`
@@ -125,8 +125,8 @@ describe("pruneAgedRows", () => {
   it("drops aged decisions and import runs but keeps fresh rows", async () => {
     const now = new Date(NOW);
     await prisma.$executeRawUnsafe(
-      `INSERT INTO "Decision" ("id", "market_id", "at", "generation_id") VALUES
-        ('old', 'm1', ${NOW - 91 * DAY}, NULL), ('new', 'm1', ${NOW - 10 * DAY}, NULL)`
+      `INSERT INTO "Decision" ("id", "market_id", "at") VALUES
+        ('old', 'm1', ${NOW - 91 * DAY}), ('new', 'm1', ${NOW - 10 * DAY})`
     );
     await prisma.$executeRawUnsafe(
       `INSERT INTO "ImportRun" VALUES ('old', 'm1', ${NOW - 31 * DAY}), ('new', 'm1', ${NOW - 2 * DAY})`
@@ -143,9 +143,9 @@ describe("pruneAgedRows", () => {
     // would make a replay erase the trade's attribution with no way back.
     const now = new Date(NOW);
     await prisma.$executeRawUnsafe(
-      `INSERT INTO "Decision" ("id", "market_id", "at", "generation_id", "decision_id") VALUES
-        ('linked', 'm1', ${NOW - 120 * DAY}, NULL, 'd-linked'),
-        ('orphan', 'm1', ${NOW - 120 * DAY}, NULL, 'd-orphan')`
+      `INSERT INTO "Decision" ("id", "market_id", "at", "decision_id") VALUES
+        ('linked', 'm1', ${NOW - 120 * DAY}, 'd-linked'),
+        ('orphan', 'm1', ${NOW - 120 * DAY}, 'd-orphan')`
     );
     await prisma.$executeRawUnsafe(
       `INSERT INTO "Trade" ("id", "decision_id") VALUES ('t1', 'd-linked')`
