@@ -576,7 +576,12 @@ function Core.allocate(rows, deployable, rules, options)
   -- decremented copper, so every one of twelve buys could claim the whole
   -- bag. `freeSlots == nil` keeps the previous unlimited behaviour for
   -- callers that have no estate input.
+  -- A sale frees the slots its goods occupy, so the allocator must see the
+  -- same room the plan walk will have after promoting that sale. Counting
+  -- only the currently empty slots refused every buy on a full bag even
+  -- though the plan itself sells first to make room.
   local remainingSlots = opts.freeSlots and opts.freeSlots * stackSize or nil
+  if remainingSlots ~= nil then remainingSlots = remainingSlots + (opts.plannedSellUnits or 0) end
   local positions = opts.positions or {}
   local remaining = math.max(deployable or 0, 0) * (portfolio.dailyBudget or 0.5)
   -- Why a candidate got no copper. "The purse ran out" is actionable and
@@ -762,10 +767,15 @@ function Core.evaluate(input)
     }
   end
   local plannedSellProceeds = 0
+  -- Units a sale moves out of the bag. Bank stock frees no bag slot.
+  local plannedSellUnits = 0
   for itemId, position in pairs(positions) do
     local economics = sellEconomics(itemId, position)
     if economics and economics.netProceeds > 0 then
       plannedSellProceeds = plannedSellProceeds + economics.netProceeds
+      if not position.requiresBank then
+        plannedSellUnits = plannedSellUnits + economics.quantity
+      end
     end
   end
   local planningBudget = budget + plannedSellProceeds
@@ -978,7 +988,8 @@ function Core.evaluate(input)
   Core.allocate(rows, planningBudget, rules, {
     freeSlots = freeSlots,
     stackSize = stackSize,
-    positions = positions
+    positions = positions,
+    plannedSellUnits = plannedSellUnits
   })
   -- The funded layer. Every "buy this now" surface reads this list instead
   -- of re-filtering rows with its own copy of `allocQty > 0`.

@@ -42,6 +42,22 @@ describe("executable plan", () => {
     expect(output.plan!.resources.cashAfter).toBe(cash);
   });
 
+  it("prices a buy against the bag space a planned sale will free", () => {
+    const input = twoItemInput();
+    input.capacity = { bagSlots: 20, freeSlots: 0, stackSize: 20 };
+    // A full bag: the only room for the buy is the slot the sale frees.
+    input.positions = { 2589: { qty: 20, cost: 14000, sellableQty: 20 } };
+    const output = runCore(input);
+    const kinds = output.plan!.steps.map((step) => step.kind);
+    expect(kinds).toContain("sell");
+    expect(kinds).toContain("buy");
+    expect(kinds.indexOf("sell")).toBeLessThan(kinds.indexOf("buy"));
+    const bought = output.plan!.steps
+      .filter((step) => step.kind === "buy")
+      .reduce((sum, step) => sum + step.qty, 0);
+    expect(bought).toBeLessThanOrEqual(20);
+  });
+
   it("promotes a sale to fund a buy when the purse is empty", () => {
     const input = commodityInput({ phase: "wave", budget: 0 });
     input.capital = { cash: 0, budget: 0 };
