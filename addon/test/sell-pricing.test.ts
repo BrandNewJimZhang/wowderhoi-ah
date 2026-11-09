@@ -9,12 +9,13 @@ function plan(input: {
   deposits: Record<number, number>;
   vendorP?: number;
   supply?: number;
+  cost?: number;
   tiers?: Array<{ p: number; q: number }>;
 }) {
   const lua = loadAddon();
   lua.exec(`WowTest.pricingResult = WowTest.ns.Core.sellPlan(
     { itemId = 2589, sellP = 1000, vendorP = ${input.vendorP ?? 0} },
-    { qty = 10, cost = 0 },
+    { qty = 10, cost = ${input.cost ?? 0} },
     WowTest.ns.RULES,
     {
       deposits = { [12] = ${input.deposits[12]}, [24] = ${input.deposits[24]}, [48] = ${input.deposits[48]} },
@@ -92,6 +93,20 @@ describe("sell price and duration search", () => {
     // 0.001/hour over 100 units = 0.1 units/hour; ten units clear in 100h.
     expect(Number(radar)).toBeCloseTo(1 - Math.exp(-0.24), 4);
     expect(Number(fillProb)).toBeCloseTo(Number(radar), 4);
+  });
+
+  it("does not let the historical basis choose the listing", () => {
+    // The same goods with different purchase prices face the same cash
+    // trade-off. Subtracting the basis made a lot bought above the market
+    // prefer the shortest listing, i.e. the one least likely to sell.
+    const free = { 12: 0, 24: 0, 48: 0 };
+    const cheap = plan({ hazard: 0.005, deposits: free, cost: 0 });
+    const loss = plan({ hazard: 0.005, deposits: free, cost: 20000 });
+    expect(loss.price).toBe(cheap.price);
+    expect(loss.duration).toBe(cheap.duration);
+    expect(cheap.duration).toBe(48);
+    // The reported numbers still use the booked basis.
+    expect(loss.lossIfExpired).toBeGreaterThan(cheap.lossIfExpired);
   });
 
   it("keeps the plain plan when the caller offers no market inputs", () => {

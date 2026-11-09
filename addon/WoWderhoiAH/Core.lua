@@ -1266,7 +1266,11 @@ function Core.sellPlan(item, position, rules, opts)
       for _, hours in ipairs({ 12, 24, 48 }) do
         local cost = deposits[hours] or 0
         local probability = Core.fillWithin(opts.hazard, opts.supply, ahead, quantity, hours)
-        local net = Core.netIfSold(candidate, quantity, unitCost, feeRate)
+        -- Historical cost is sunk and must not choose the listing. Two
+        -- players holding the same unbooked item face the same cash
+        -- trade-off; subtracting the basis made a loss-making lot prefer
+        -- the duration least likely to sell, to avoid realizing the loss.
+        local net = Core.netIfSold(candidate, quantity, 0, feeRate)
         -- The deposit comes back on a sale and is lost on expiry, so the
         -- risk term is deposit x P(expire), never deposit on every trade.
         local value = net * probability - cost * (1 - probability)
