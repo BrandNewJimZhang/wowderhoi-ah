@@ -674,8 +674,9 @@ end
 --   market           { firstScanAt, items = { [id] = item } }
 --                    item.tiers must be price-ascending (both builders sort)
 --   capital          { cash, budget } -- cash nil = unknown balance; 0 = empty
---   capacity         { bagSlots, stackSize }
---   positions        { [itemId] = { qty, cost } }
+--   capacity         { bagSlots, stackSize, freeSlots }
+--   positions        { [itemId] = { qty, cost, sellableQty, costKnown,
+--                      requiresBank } }
 --
 -- output:
 --   { phase, rows, opportunities, actions, diagnostics }
