@@ -35,24 +35,27 @@ describe("decisionIdFor", () => {
   it("matches the in-game /wahadopt formula", () => {
     const body = luaDecisionIdFunction();
     const format = body.match(/string\.format\("([^"]+)"/)?.[1];
-    expect(format).toBe("%s|%s|%d:%d:%s");
-    expect(body).toContain('tostring(scan.server or "")');
-    expect(body).toContain('tostring(scan.faction or "")');
-    expect(body).toContain('scan.scannedAt, tonumber(itemId) or 0, tostring(kind or "")');
+    expect(format).toBe("%s:%d:%s");
+    expect(body).toContain("local revision = WAH.planRevision()");
+    expect(body).toContain('tonumber(itemId) or 0, tostring(kind or "")');
 
+    const planRevision = "CN5 Realm 8 PvP|Alliance|1700000000:3:7";
     const tsId = decisionIdFor({
       realm: "CN5 Realm 8 PvP",
       faction: "Alliance",
-      scannedAt: 1_700_000_000,
+      planRevision,
       itemId: 2589,
       kind: "buy"
     });
-    // A realm name can contain spaces, so the only safe reading of the id is
-    // the Lua format's own separators.
-    const pattern = new RegExp(
-      `^${format!.replace(/[.]/g, "\\.").replace(/%s/g, ".+?").replace(/%d/g, "\\d+")}$`
-    );
-    expect(tsId).toMatch(pattern);
+    expect(tsId).toBe(`${planRevision}:2589:buy`);
+  });
+
+  it("separates plan revisions, items and kinds", () => {
+    const base = {
+      realm: "R", faction: "A", planRevision: "R|A|100:3:7", itemId: 1, kind: "buy"
+    };
+    expect(decisionIdFor(base)).toBe("R|A|100:3:7:1:buy");
+    expect(decisionIdFor({ ...base, planRevision: "R|A|100:3:8" })).not.toBe(decisionIdFor(base));
   });
 
   it("separates kinds and items", () => {
