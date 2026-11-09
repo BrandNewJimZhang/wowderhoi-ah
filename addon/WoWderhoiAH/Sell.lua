@@ -732,7 +732,8 @@ events:SetScript("OnEvent", function(_, event, ...)
   end
   if event == "OWNED_AUCTIONS_UPDATED" then
     -- The client has now answered a QueryOwnedAuctions: this list is the
-    -- whole account's current postings, so reconcile may treat gaps as sales.
+    -- whole account's current postings, so a gap against the ledger is a
+    -- real observation gap rather than a partial list.
     ownedSynced = true
     collectOwned()
     reconcile()

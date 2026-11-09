@@ -193,15 +193,6 @@ local function scanOwned(items)
   end
 end
 
-local function freeBagSlots()
-  if not (C_Container and C_Container.GetContainerNumFreeSlots) then return 20 end
-  local total = 0
-  for bag = BAG_FIRST, BAG_LAST do
-    total = total + (C_Container.GetContainerNumFreeSlots(bag) or 0)
-  end
-  return total
-end
-
 local function coverage(observed)
   return observed and "observed" or "unobserved"
 end
@@ -234,7 +225,8 @@ local function build()
         kind = "character",
         name = characterName(),
         cash = GetMoney and GetMoney() or 0,
-        freeSlots = freeBagSlots(),
+        -- One free-slot rule for the scan, the radar and the estate.
+        freeSlots = WAH.freeBagSlots(),
         -- An unopened mailbox is not an empty one: nil keeps the "never
         -- observed" state distinct from a genuinely zero pending balance.
         pendingCash = mailCount ~= nil and pendingCash or nil,

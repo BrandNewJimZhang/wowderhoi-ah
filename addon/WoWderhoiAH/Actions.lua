@@ -261,9 +261,10 @@ frame:RegisterEvent("AUCTION_CANCELED")
 frame:RegisterEvent("AUCTION_HOUSE_AUCTIONS_EXPIRED")
 frame:RegisterEvent("AUCTION_HOUSE_PURCHASE_COMPLETED")
 frame:RegisterEvent("COMMODITY_PURCHASED")
+-- BID_ADDED names the bid, not the auction (BIDS_UPDATED has no payload),
+-- so it cannot be deduplicated against an auction identity. The received-bid
+-- event carries the auctionID and is the only one this module can book.
 frame:RegisterEvent("AUCTION_HOUSE_NEW_BID_RECEIVED")
-frame:RegisterEvent("BID_ADDED")
-frame:RegisterEvent("BIDS_UPDATED")
 
 frame:SetScript("OnEvent", function(_, event, payload, extra)
   if event == "AUCTION_HOUSE_AUCTION_CREATED" then
@@ -287,12 +288,6 @@ frame:SetScript("OnEvent", function(_, event, payload, extra)
     return
   end
   if event == "AUCTION_HOUSE_NEW_BID_RECEIVED" then
-    Actions.bid(payload, extra)
-    return
-  end
-  -- BID_ADDED / BIDS_UPDATED name the auction in different builds; the
-  -- auctionID is the first argument where the client supplies one.
-  if event == "BID_ADDED" or event == "BIDS_UPDATED" then
     Actions.bid(payload, extra)
     return
   end

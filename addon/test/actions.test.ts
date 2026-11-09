@@ -111,4 +111,13 @@ describe("native auction actions", () => {
     expect(count(lua, "bid")).toBe(1);
     expect(lua.number("WowTest.ns.Ledger.capital().cashDelta")).toBe(0);
   });
+
+  it("does not mistake a bid id for an auction id", () => {
+    const lua = loadAddon();
+    // BID_ADDED carries the bid id; BIDS_UPDATED carries nothing. Neither
+    // can name the auction a journal fact is deduplicated by.
+    lua.exec("WowTest.fireEvent('BID_ADDED', 55)");
+    lua.exec("WowTest.fireEvent('BIDS_UPDATED')");
+    expect(count(lua, "bid")).toBe(0);
+  });
 });
