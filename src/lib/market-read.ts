@@ -5,6 +5,7 @@
 // exactly as WAH.currentPhase does in game, so the current phase is
 // recomputed per request. When it differs from the generation's phase the
 // UI must not apply the new gates to the old book.
+import { cache } from "react";
 import type { MarketSignal } from "@/lib/analytics";
 import type { CoreOutput } from "@/lib/core/types";
 import type { PriceIndex } from "@/lib/deflator";
@@ -179,10 +180,18 @@ export function createMarketReader(fetchers: ReaderFetchers) {
   };
 }
 
+// The page and the shell both describe the same market. Caching the two
+// reads per request keeps them from reading separate snapshots around an
+// import, and the shell's badge pass shares the generation the page reads.
+// `cache` is request-scoped in the Next server; outside one it is a
+// pass-through, so unit tests and scripts keep the plain functions.
+const getScopeOnce = cache(getMarketScope);
+const getGenerationOnce = cache(getLatestGeneration);
+
 const defaultReader = createMarketReader({
-  getMarketScope,
+  getMarketScope: getScopeOnce,
   getMarketRevision,
-  getLatestGeneration,
+  getLatestGeneration: getGenerationOnce,
   getSignals: getGenerationSignals
 });
 
@@ -211,11 +220,11 @@ export function badgeCounts(
 // The shell renders these on every page; they are two cheap reads plus one
 // count, not the full signal bundle.
 export async function getNavigationBadges(): Promise<NavBadges> {
-  const scope = await getMarketScope();
+  const scope = await getScopeOnce();
   if (!scope) return { actions: 0, stale: 0, positions: 0 };
   const now = new Date();
   const [generation, positions] = await Promise.all([
-    getLatestGeneration(scope),
+    getGenerationOnce(scope),
     getPositions(scope)
   ]);
   const stale = describeFreshness(generation?.scannedAt ?? null, now).stale;
