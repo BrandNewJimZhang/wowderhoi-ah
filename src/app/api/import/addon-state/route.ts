@@ -43,20 +43,21 @@ export async function POST(request: Request) {
       if (estate.changed && !journalPresent) {
         await refreshHoldings(tx, market.id);
       }
+      // The plan's own revision names the scan it was minted for. Linking
+      // the row to "whatever generation is newest now" was a second copy
+      // of that fact, and one that a delayed delivery could put out of
+      // date. Only the phase is not in the identity.
       const generation = await tx.marketGeneration.findFirst({
         where: { marketId: market.id },
         orderBy: { scannedAt: "desc" },
-        select: { id: true, phase: true }
+        select: { phase: true }
       });
       const plan = payload.plan === undefined || payload.plan === null
         ? { created: false, revision: null as string | null }
         : await applyPlan(
             tx,
             market.id,
-            realm,
-            faction,
             payload.plan,
-            generation?.id ?? null,
             generation?.phase ?? "steady"
           );
       const changed = estate.changed || journal.changed || plan.created;

@@ -98,8 +98,6 @@ model MarketGeneration {
   market         Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
   quotes         MarketQuote[]
   signals        MarketSignalRow[]
-  decisions      Decision[]
-  plans          Plan[]
 
   @@unique([marketId, scannedAt])
   @@index([marketId, scannedAt])
@@ -298,7 +296,6 @@ model Holding {
 model Plan {
   id             String   @id @default(cuid())
   marketId       String   @map("market_id")
-  generationId   String?  @map("generation_id")
   revision       String
   estateRevision Int      @default(0) @map("estate_revision")
   ledgerRevision Int      @default(0) @map("ledger_revision")
@@ -310,7 +307,6 @@ model Plan {
   createdAt      DateTime @default(now()) @map("created_at")
   supersededAt   DateTime? @map("superseded_at")
   market         Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
-  generation     MarketGeneration? @relation(fields: [generationId], references: [id], onDelete: SetNull)
   decisions      Decision[]
 
   @@unique([marketId, revision])
@@ -369,7 +365,6 @@ model Decision {
   // Stable identity shared with the addon: realm|faction|scannedAt:item:kind.
   // Null on rows written before the identity existed.
   decisionId     String?  @unique @map("decision_id")
-  generationId   String?  @map("generation_id")
   planId         String?  @map("plan_id")
   // The plan revision the prediction belongs to. A decision is immutable:
   // a new plan writes new rows, never edits the predicted fields.
@@ -390,7 +385,6 @@ model Decision {
   allocQty       Int?     @map("alloc_qty")
   allocUnitPrice Float?   @map("alloc_unit_price")
   market         Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
-  generation     MarketGeneration? @relation(fields: [generationId], references: [id], onDelete: SetNull)
   plan           Plan?    @relation(fields: [planId], references: [id], onDelete: SetNull)
 
   @@index([at])

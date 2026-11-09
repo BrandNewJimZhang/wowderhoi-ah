@@ -576,10 +576,7 @@ type AddonPlan = {
 export async function applyPlan(
   tx: Prisma.TransactionClient,
   marketId: string,
-  realm: string,
-  faction: string,
   raw: unknown,
-  generationId: string | null,
   phase: string
 ): Promise<{ created: boolean; revision: string | null }> {
   if (typeof raw !== "object" || raw === null) return { created: false, revision: null };
@@ -602,7 +599,6 @@ export async function applyPlan(
   const row = await tx.plan.create({
     data: {
       marketId,
-      generationId,
       revision: plan.revision,
       estateRevision: plan.estateRevision ?? 0,
       ledgerRevision: plan.ledgerRevision ?? 0,
@@ -632,7 +628,6 @@ export async function applyPlan(
       planId: row.id,
       planRevision: plan.revision,
       marketId,
-      generationId,
       at,
       phase,
       itemId: step.itemId,

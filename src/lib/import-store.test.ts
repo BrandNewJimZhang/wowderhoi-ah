@@ -79,7 +79,7 @@ beforeAll(async () => {
     "point_count" INTEGER, "points" TEXT, "updated_at" DATETIME,
     PRIMARY KEY ("market_id", "item_id"))`);
   await prisma.$executeRawUnsafe(`CREATE TABLE "Decision" (
-    "id" TEXT PRIMARY KEY, "decision_id" TEXT UNIQUE, "generation_id" TEXT,
+    "id" TEXT PRIMARY KEY, "decision_id" TEXT UNIQUE,
     "plan_id" TEXT, "plan_revision" TEXT,
     "adopted_at" DATETIME, "market_id" TEXT, "at" DATETIME, "phase" TEXT,
     "item_id" INTEGER, "kind" TEXT, "reason" TEXT, "expected_net" REAL,
@@ -125,8 +125,8 @@ describe("writeGeneration", () => {
     // The generation was pruned; its decision row outlived it (the log keeps
     // 90 days), and the player had adopted that recommendation.
     await prisma.$executeRawUnsafe(
-      `INSERT INTO "Decision" ("id", "decision_id", "generation_id", "adopted_at", "market_id", "at", "phase", "item_id", "kind")
-       VALUES ('old-decision', 'R|A|2:1:buy', NULL, ?, 'm1', ?, 'settle', 1, 'buy')`,
+      `INSERT INTO "Decision" ("id", "decision_id", "adopted_at", "market_id", "at", "phase", "item_id", "kind")
+       VALUES ('old-decision', 'R|A|2:1:buy', ?, 'm1', ?, 'settle', 1, 'buy')`,
       ADOPTED_AT.getTime(),
       new Date("2026-11-06T10:00:00Z").getTime()
     );
@@ -138,6 +138,6 @@ describe("writeGeneration", () => {
     const decisions = await prisma.decision.findMany({ where: { decisionId: "R|A|2:1:buy" } });
     expect(decisions).toHaveLength(1);
     expect(decisions[0].adoptedAt?.getTime()).toBe(ADOPTED_AT.getTime());
-    expect(decisions[0].generationId).not.toBeNull();
+    expect(decisions[0].decisionId).toBe("R|A|2:1:buy");
   });
 });

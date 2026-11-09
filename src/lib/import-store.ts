@@ -113,7 +113,6 @@ export async function replaceSeries(
 async function replaceDecisionsByIdentity(
   tx: Prisma.TransactionClient,
   marketId: string,
-  generationId: string,
   scannedAt: Date,
   phase: string,
   decisions: StoredDecision[]
@@ -135,7 +134,6 @@ async function replaceDecisionsByIdentity(
         ...row,
         adoptedAt: row.adoptedAt ?? adoptedBefore.get(row.decisionId) ?? null,
         marketId,
-        generationId,
         at: scannedAt,
         phase
       }))
@@ -168,6 +166,6 @@ export async function writeGeneration(
   }
   await insertSignals(tx, generation.id, plan.signals);
   await replaceSeries(tx, marketId, plan.series);
-  await replaceDecisionsByIdentity(tx, marketId, generation.id, plan.scannedAt, plan.phase, decisions);
+  await replaceDecisionsByIdentity(tx, marketId, plan.scannedAt, plan.phase, decisions);
   return generation.id;
 }
