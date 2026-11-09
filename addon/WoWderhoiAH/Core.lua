@@ -514,6 +514,19 @@ function Core.kellyFraction(p, win, loss)
   return math.max(0, math.min(1, fraction))
 end
 
+-- Copper of the per-item exposure an existing holding already consumes.
+-- Proved cost is what the player paid. Unproved stock (seen in the estate
+-- but never booked, or bought at an estimated price) has no basis; marking
+-- it at the row's entry price is the only non-zero estimate available, and
+-- leaving it at zero sized a holder as if the shelf were empty.
+local function heldExposure(held, unitPrice)
+  if not held or (held.qty or 0) <= 0 then return 0 end
+  if held.costKnown == false then
+    return (held.qty or 0) * (unitPrice or 0)
+  end
+  return held.cost or 0
+end
+
 -- Budget for one opportunity, capped by the per-item exposure rule.
 --
 -- The bet is sized at the entry price -- the front of the book, which is
@@ -587,7 +600,7 @@ function Core.allocate(rows, deployable, rules, options)
     local sized
     local itemCap
     if not row.vendor then
-      sized = Core.sizePosition(row, deployable, rules, held and held.cost or 0)
+      sized = Core.sizePosition(row, deployable, rules, heldExposure(held, row.minPrice or row.candidateUnitPrice))
       row.exploratory = sized.exploratory
       itemCap = sized.budget
     end
@@ -905,7 +918,7 @@ function Core.evaluate(input)
             sellP = sellP,
             fillProb = point,
             samples = samples
-          }, planningBudget, rules)
+          }, planningBudget, rules, heldExposure(positions[itemId], minPrice))
           if sized.fraction > 0 then
             local row = {
               itemId = itemId,

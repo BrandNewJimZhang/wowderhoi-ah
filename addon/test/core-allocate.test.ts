@@ -29,7 +29,7 @@ function evaluate(
   items: Record<number, unknown>,
   budget: number,
   phase = "wave",
-  positions: Record<number, { qty: number; cost: number }> = {}
+  positions: Record<number, { qty: number; cost: number; costKnown?: boolean; sellableQty?: number }> = {}
 ) {
   const lua = loadAddon();
   const input = {
@@ -68,6 +68,22 @@ describe("shared capital allocation", () => {
     expect(row.allocQty).toBeGreaterThan(0);
     expect(row.allocCost).toBeLessThanOrEqual(25000);
     expect(row.allocQty).toBeLessThan(row.candidateQty);
+  });
+
+  it("charges unbooked stock against the exposure at the entry price", () => {
+    // 25k exposure share. Forty units with a proved 5k basis leave 20k and
+    // still buy stock; forty units with no basis are marked at the 700
+    // entry, exceed the share, and must not be sized as if the shelf were
+    // empty.
+    const proved = evaluate({ 2589: item(2589) }, 100000, "wave", {
+      2589: { qty: 40, cost: 5000, costKnown: true, sellableQty: 0 }
+    });
+    const unproved = evaluate({ 2589: item(2589) }, 100000, "wave", {
+      2589: { qty: 40, cost: 0, costKnown: false, sellableQty: 0 }
+    });
+    expect(proved.rows[0].allocQty).toBeGreaterThan(0);
+    expect(unproved.rows[0].allocQty).toBe(0);
+    expect(unproved.rows[0].unfunded).toBe("exposure");
   });
 
   it("emits actions with the allocated quantity and its net", () => {
