@@ -70,10 +70,15 @@ function estateWithAccount(revision: number, carried: number, listed: number, ob
   return payload;
 }
 
-function book(character: string, events: unknown[], nextSeq = events.length + 1) {
+function book(character: string, events: unknown[], nextSeq = events.length + 1, epoch?: number) {
   return {
     books: {
-      [`A|Alliance|${character}`]: { e: events, dropped: 0, nextSeq }
+      [`A|Alliance|${character}`]: {
+        e: events,
+        dropped: 0,
+        nextSeq,
+        ...(epoch === undefined ? {} : { epoch })
+      }
     }
   };
 }
@@ -142,7 +147,7 @@ describe("POST /api/import/addon-state", () => {
 
   it("rejects a coverage map the terminal does not understand", async () => {
     const payload = estate(9, 1);
-    (payload.scopes["character:Tester"].coverage as Record<string, string>).void_storage = "observed";
+    (payload.scopes["character:Tester"].coverage as unknown as Record<string, string>).void_storage = "observed";
     const response = await post("state", { server: "A", faction: "Alliance", estate: payload });
     expect(response.status).toBe(400);
     const body = await response.json() as { error: string };
@@ -265,9 +270,46 @@ describe("POST /api/import/addon-state", () => {
     });
     expect(holding).toMatchObject({ knownQty: 3, costBasis: 2400 });
     const fact = await prisma.journalFact.findUnique({
-      where: { marketId_character_seq: { marketId: market!.id, character: "Corrector", seq: 20 } }
+      where: { marketId_character_epoch_seq: { marketId: market!.id, character: "Corrector", epoch: 0, seq: 20 } }
     });
     expect((fact?.payload as { cost: number }).cost).toBe(4000);
+  });
+
+  it("replays the newest book after SavedVariables is cleared", async () => {
+    // Clearing SavedVariables restarts the sequence at 1. The epoch is the
+    // book's identity: without it the terminal would match the new seq 1
+    // and 2 against the old facts, insert nothing, and keep replaying a
+    // ledger the client no longer has.
+    const first = await post("state", {
+      server: "A", faction: "Alliance",
+      journal: book("Reborn", [
+        { k: "buy", t: NOW - 100, seq: 1, itemId: 9999, qty: 2, cost: 2000 },
+        { k: "sold", t: NOW - 50, seq: 2, itemId: 9999, qty: 2, price: 3000, fee: 300, auctionID: 21 }
+      ], 3)
+    });
+    expect(first.status).toBe(200);
+    const market = await prisma.market.findUnique({ where: { realm_faction: { realm: "A", faction: "Alliance" } } });
+
+    const second = await post("state", {
+      server: "A", faction: "Alliance",
+      journal: book("Reborn", [
+        { k: "buy", t: NOW - 10, seq: 1, itemId: 9999, qty: 3, cost: 6000 },
+        { k: "sold", t: NOW - 5, seq: 2, itemId: 9999, qty: 1, price: 2000, fee: 200, auctionID: 22 }
+      ], 3, 200)
+    });
+    expect(second.status).toBe(200);
+    expect(await prisma.journalFact.count({ where: { marketId: market!.id, character: "Reborn" } })).toBe(4);
+    const holding = await prisma.holding.findFirst({
+      where: { marketId: market!.id, character: "Reborn", itemId: 9999 }
+    });
+    // Only the newest book defines the live ledger: buy 3 at 2,000 each,
+    // sell 1, leaving 2 units at a 4,000 basis.
+    expect(holding).toMatchObject({ qty: 2, knownQty: 2, costBasis: 4000 });
+    expect(await prisma.trade.count({ where: { marketId: market!.id, character: "Reborn" } })).toBe(2);
+    const newest = await prisma.trade.findFirst({
+      where: { marketId: market!.id, character: "Reborn", sourceFactId: { contains: "epoch:200" } }
+    });
+    expect(newest).not.toBeNull();
   });
 
   it("labels a trade the ledger could not price", async () => {

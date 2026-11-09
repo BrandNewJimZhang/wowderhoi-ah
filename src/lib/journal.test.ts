@@ -307,6 +307,15 @@ describe("journalRevision", () => {
     expect(journalRevision(corrected)).not.toBe(journalRevision(base));
   });
 
+  it("changes when a cleared journal starts a new book epoch", () => {
+    // The sequence restarts at 1 after SavedVariables is cleared. The epoch
+    // is the only token that tells the watcher this is a new book rather
+    // than the old one re-sent.
+    const recreated = structuredClone(base);
+    (recreated.books["TestRealm|Alliance|Main"] as Record<string, unknown>).epoch = 100;
+    expect(journalRevision(recreated)).not.toBe(journalRevision(base));
+  });
+
   it("changes when the oldest events are truncated", () => {
     const truncated = structuredClone(base);
     truncated.books["TestRealm|Alliance|Main"].dropped = 1;
@@ -352,6 +361,6 @@ describe("journal checkpoint parity", () => {
     expect(state.positions[2589]).toEqual({ qty: 3, cost: 200, costKnown: true });
     expect(state.capital.cashDelta).toBe(-200);
     expect(state.cashAnchor).toBe(1000);
-    expect(journalRevision(parsed.WoWderhoiAH_Journal)).toContain(":1:4:9:8:8");
+    expect(journalRevision(parsed.WoWderhoiAH_Journal)).toContain(":1:4:9:8:0:8");
   });
 });

@@ -14,11 +14,12 @@
 local ADDON_NAME, WAH = ...
 
 local Journal = {}
--- Version 2 adds the stable per-book sequence, the event/observation time
--- pair, and the prefix checkpoint. A version 1 book is migrated in place:
--- its events receive sequence numbers in order, and its next event continues
--- from there.
-Journal.VERSION = 2
+-- Version 2 added the stable per-book sequence, the event/observation time
+-- pair, and the prefix checkpoint. Version 3 adds the book epoch and the
+-- content revision: clearing SavedVariables creates a new book whose
+-- sequence restarts at 1, and the epoch is what keeps its facts distinct
+-- from the old book's. Older books are migrated in place.
+Journal.VERSION = 3
 Journal.CAP = 5000
 -- How many recent events survive a compaction. The checkpoint carries the
 -- state of everything older, so the safe prefix is everything but a small
@@ -53,6 +54,9 @@ local function migrate(book)
   -- V2 added the content revision. A migrated book starts from the number
   -- of events it already carries, so the token only moves forward.
   if type(book.rev) ~= "number" then book.rev = book.nextSeq - 1 end
+  -- V3 added the book epoch. A migrated book belongs to the first
+  -- installation; zero is its identity and every re-created book is later.
+  if type(book.epoch) ~= "number" then book.epoch = 0 end
 end
 
 function Journal.ensure()
@@ -60,7 +64,13 @@ function Journal.ensure()
   local key = bookKey()
   local book = WoWderhoiAH_Journal.books[key]
   if not book then
-    book = { e = {}, dropped = 0, nextSeq = 1, rev = 0, cashAnchor = GetMoney and GetMoney() or nil }
+    book = {
+      e = {}, dropped = 0, nextSeq = 1, rev = 0,
+      -- Creation time, not a random id: a re-created book always follows
+      -- the one whose SavedVariables were cleared.
+      epoch = time(),
+      cashAnchor = GetMoney and GetMoney() or nil
+    }
     WoWderhoiAH_Journal.books[key] = book
   else
     migrate(book)

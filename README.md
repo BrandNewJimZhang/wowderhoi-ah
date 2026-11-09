@@ -179,7 +179,7 @@ The scan import materialises one immutable `MarketGeneration`: the current
 book (`MarketQuote`), the signals derived from it and the addon series, and
 the shared core's output (`MarketSignalRow`). The state import is
 idempotent per domain — estate by revision, journal facts by
-`(character, seq)`, plans by revision — so a mailbox flush or a bag change
+`(character, epoch, seq)`, plans by revision — so a mailbox flush or a bag change
 reaches the terminal without a new scan. The terminal keeps its own longer
 `ItemSeries`, so an addon upgrade that rebuilds the game file cannot erase
 history. `WoWderhoiAH_Capture` is the previous scan's tier-level identity

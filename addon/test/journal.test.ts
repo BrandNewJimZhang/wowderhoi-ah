@@ -206,6 +206,21 @@ describe("journal checkpoint", () => {
   });
 });
 
+describe("journal book identity", () => {
+  it("stamps each new book with a later epoch", () => {
+    const lua = loadAddon();
+    const before = lua.number("WowTest.ns.Journal.book().epoch");
+    expect(before).toBeGreaterThan(0);
+    // Clearing SavedVariables starts a new book whose sequence begins at 1
+    // again; the epoch is what keeps those facts from looking like the old
+    // book's already-imported ones.
+    lua.exec("WowTest.advance(10)");
+    lua.exec(`_G["WoWderhoiAH_Journal"] = nil`);
+    lua.exec("WowTest.ns.Journal.ensure()");
+    expect(lua.number("WowTest.ns.Journal.book().epoch")).toBeGreaterThan(before);
+  });
+});
+
 describe("journal checkpoint composition", () => {
   it("keeps the older basis across repeated compactions", () => {
     const lua = loadAddon();

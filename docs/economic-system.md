@@ -117,10 +117,14 @@ Journal 是追加式事实，按 `realm|faction|character` 分册，事件种类
 transfer_out / transfer_in / adopt`。
 每册维护单调序号 `seq`；事件同时记录 `eventTime`（能确定的游戏内时间）、
 `observedAt`（写入时刻）与 `censored`（两者不同时为 true）。序号是终端去重的
-唯一身份：同一册的 `(character, seq)` 只会写一次。分册另有内容修订 `rev`：
-追加事件和原地补全同一事件（例如原生事件先按估算价入账、随后拿到 UI 的精确成本
-或押金）都会推进它。watcher 用它判断“事实内容变了但没有新序号”，计划身份也把
-它当作账本修订。
+唯一身份：同一册的 `(character, epoch, seq)` 只会写一次。分册另有内容修订
+`rev`：追加事件和原地补全同一事件（例如原生事件先按估算价入账、随后拿到 UI 的
+精确成本或押金）都会推进它。watcher 用它判断“事实内容变了但没有新序号”，计划
+身份也把它当作账本修订。
+
+`epoch` 是分册创建时刻。清除 SavedVariables 或重装插件会让序号从 1 重新开始，
+`epoch` 让新分册的事实与旧分册分开；终端只用最新 `epoch` 的分册重放当前持仓，
+旧分册保留为历史与成交事实。
 
 当前插件自动写入买、挂、撤、成交（邮箱确认）、流拍、竞价与制造；
 `vendor` 通过 `/wahcost` 手动补记（客户端没有逐笔卖店事件，只有一条本地化汇总行）；
@@ -136,8 +140,8 @@ transfer_out / transfer_in / adopt`。
 邮箱里未领取的金币（`Mail.pendingCash`），显示在状态行的“在途”，但**不进入预算**：
 `GetMoney()` 仍是唯一可花费现金。
 
-插件在角色登录时就会建立（可能为空的）分册，终端按 `(market, character, seq)`
-逐册追加事实，并按角色重建持仓；一次扫描的兜底计划只读扫描角色的持仓，绝不回退
+插件在角色登录时就会建立（可能为空的）分册，终端按
+`(market, character, epoch, seq)` 逐册追加事实，并按角色重建持仓；一次扫描的兜底计划只读扫描角色的持仓，绝不回退
 到同市场其他角色的分册——那会把别人的持仓配到这次扫描的现金上。账号级在售与
 账号银行只由一个角色承载（最近一次 estate 观测的角色；没有 estate 时
 回退到最近扫描的角色），避免跨角色重复计数；每个角色游戏内看到的仍是自己的账本。
@@ -232,11 +236,12 @@ Ledger 是 Journal 的纯投影：
   `account` 分区，每个分区带 `revision`、`observedAt`、`cash`、`freeSlots` 和
   `coverage`。`EstateItem.location` 区分 `carried / bank / account_bank / mail /
   listed / keyring`；未打开过的位置在 `coverage` 里是 `unobserved`，不是 0。
-- `JournalFact`：追加式事实，按 `(marketId, character, seq)` 唯一。导入插入
-  尚未存在的序号，并用同一序号的修正内容更新已存在的事实（不删除行）；同一
-  分册的乱序重发是幂等的。
+- `JournalFact`：追加式事实，按 `(marketId, character, epoch, seq)` 唯一。
+  导入插入尚未存在的序号，并用同一序号的修正内容更新已存在的事实（不删除行）；
+  同一分册的乱序重发是幂等的。`epoch` 是分册创建时刻，清除 SavedVariables 后
+  新分册的序号重新从 1 开始，靠它区分。
 - `LedgerCheckpoint`：本地日志截断前的前缀压缩状态，按 `(marketId, character,
-  throughSeq)` 唯一。持仓、开仓与资本 = 最新检查点 + 之后的事实。
+  epoch, throughSeq)` 唯一。持仓、开仓与资本 = 最新 `epoch` 的检查点 + 之后的事实。
 - `Holding`：按 `(marketId, character, itemId)` 的对账读模型，记录
   `qty / carriedQty / bankQty / accountBankQty / mailQty / listedQty /
   knownQty / unknownQty / missingQty / costBasis`。它由 `Estate` + 检查点 +

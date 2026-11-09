@@ -297,32 +297,36 @@ async function recomputeHoldings(
   if (rows.length > 0) await tx.holding.createMany({ data: rows });
 }
 
-function tradeFactId(character: string, trade: JournalTrade, index: number): string {
+function tradeFactId(character: string, epoch: number, trade: JournalTrade, index: number): string {
   // The event sequence is the sale's identity. An auctionID is not unique
   // per trade: a commodity listing fills in pieces, so several sale mails
-  // share one posting and must stay separate rows.
-  if (trade.seq !== undefined) return `${character}|seq|${trade.seq}`;
+  // share one posting and must stay separate rows. A re-created book
+  // restarts its sequence, so its facts carry the epoch; a first-install
+  // book keeps the historical unprefixed form.
+  const prefix = epoch > 0 ? `${character}|epoch:${epoch}` : character;
+  if (trade.seq !== undefined) return `${prefix}|seq|${trade.seq}`;
   // A checkpoint written before trades carried a sequence can still name the
   // posting, which is stable across checkpoint pruning.
   if (trade.channel === "auction" && trade.auctionID !== undefined) {
-    return `${character}|auction|${String(trade.auctionID)}`;
+    return `${prefix}|auction|${String(trade.auctionID)}`;
   }
   // The array position shifts when a checkpoint prunes a trade; this last
   // form only covers checkpoints that carry neither identity.
-  return `${character}|${trade.channel}|${trade.t}|${trade.itemId ?? 0}|${trade.qty}|${index}`;
+  return `${prefix}|${trade.channel}|${trade.t}|${trade.itemId ?? 0}|${trade.qty}|${index}`;
 }
 
 async function applyTrades(
   tx: Prisma.TransactionClient,
   marketId: string,
   character: string,
+  epoch: number,
   trades: JournalTrade[]
 ): Promise<number> {
   let created = 0;
   for (let index = 0; index < trades.length; index += 1) {
     const trade = trades[index];
     if (trade.itemId === null) continue;
-    const sourceFactId = tradeFactId(character, trade, index);
+    const sourceFactId = tradeFactId(character, epoch, trade, index);
     const existing = await tx.trade.findUnique({
       where: { marketId_sourceFactId: { marketId, sourceFactId } },
       select: { id: true }
@@ -393,8 +397,16 @@ async function replayForCharacter(
   marketId: string,
   character: string
 ): Promise<ReplayState> {
-  const checkpointRow = await tx.ledgerCheckpoint.findFirst({
+  // Only the newest book defines the live ledger. Clearing SavedVariables
+  // starts a new epoch whose sequence begins at 1; the old epoch's facts
+  // stay as history but must not keep feeding positions.
+  const latest = await tx.journalFact.aggregate({
     where: { marketId, character },
+    _max: { epoch: true }
+  });
+  const epoch = latest._max.epoch ?? 0;
+  const checkpointRow = await tx.ledgerCheckpoint.findFirst({
+    where: { marketId, character, epoch },
     orderBy: { throughSeq: "desc" }
   });
   const raw = (checkpointRow?.state ?? null) as Record<string, unknown> | null;
@@ -419,6 +431,7 @@ async function replayForCharacter(
     where: {
       marketId,
       character,
+      epoch,
       ...(checkpoint ? { seq: { gt: checkpoint.throughSeq } } : {})
     },
     orderBy: { seq: "asc" },
@@ -530,12 +543,13 @@ export async function applyJournal(
   for (const book of books) {
     const character = book.key.split("|").pop() ?? "";
     if (!character) continue;
+    const epoch = book.epoch;
     characters.push(character);
     // An empty or older book must not rebuild holdings from less history
     // than the terminal already has. Out-of-order delivery still inserts
     // any facts it carries; it just does not drive the projection.
     const existingFact = await tx.journalFact.aggregate({
-      where: { marketId, character },
+      where: { marketId, character, epoch },
       _max: { seq: true }
     });
     const existingSeq = existingFact._max.seq ?? 0;
@@ -549,7 +563,7 @@ export async function applyJournal(
       // enforces, just decided before the write.
       const sequences = book.events.map((event) => event.seq as number);
       const known = await tx.journalFact.findMany({
-        where: { marketId, character, seq: { in: sequences } },
+        where: { marketId, character, epoch, seq: { in: sequences } },
         select: { seq: true }
       });
       const seen = new Set(known.map((row) => row.seq));
@@ -558,6 +572,7 @@ export async function applyJournal(
         .map((event) => ({
           marketId,
           character,
+          epoch,
           seq: event.seq as number,
           kind: event.k,
           payload: event as unknown as Prisma.InputJsonValue
@@ -573,7 +588,7 @@ export async function applyJournal(
       if (!stale) {
         const tail = book.events.slice(-CORRECTION_SCAN_EVENTS);
         const stored = await tx.journalFact.findMany({
-          where: { marketId, character, seq: { in: tail.map((event) => event.seq as number) } },
+          where: { marketId, character, epoch, seq: { in: tail.map((event) => event.seq as number) } },
           select: { seq: true, payload: true }
         });
         const bySeq = new Map(stored.map((row) => [row.seq, row.payload]));
@@ -591,7 +606,7 @@ export async function applyJournal(
     }
     for (const event of corrections) {
       await tx.journalFact.update({
-        where: { marketId_character_seq: { marketId, character, seq: event.seq as number } },
+        where: { marketId_character_epoch_seq: { marketId, character, epoch, seq: event.seq as number } },
         data: { kind: event.k, payload: event as unknown as Prisma.InputJsonValue }
       });
       newCorrections += 1;
@@ -599,9 +614,10 @@ export async function applyJournal(
     if (book.checkpoint) {
       const checkpointExisting = await tx.ledgerCheckpoint.findUnique({
         where: {
-          marketId_character_throughSeq: {
+          marketId_character_epoch_throughSeq: {
             marketId,
             character,
+            epoch,
             throughSeq: book.checkpoint.throughSeq
           }
         },
@@ -610,15 +626,17 @@ export async function applyJournal(
       if (!checkpointExisting) newCheckpoints += 1;
       await tx.ledgerCheckpoint.upsert({
         where: {
-          marketId_character_throughSeq: {
+          marketId_character_epoch_throughSeq: {
             marketId,
             character,
+            epoch,
             throughSeq: book.checkpoint.throughSeq
           }
         },
         create: {
           marketId,
           character,
+          epoch,
           throughSeq: book.checkpoint.throughSeq,
           state: book.checkpoint as unknown as Prisma.InputJsonValue
         },
@@ -627,13 +645,13 @@ export async function applyJournal(
       // `parseCheckpoint` already returns the flat journal shape; the
       // replay wants exactly that, not the SavedVariables envelope.
       const replay = replayJournal(book.events, book.checkpoint);
-      const created = await applyTrades(tx, marketId, character, replay.trades);
+      const created = await applyTrades(tx, marketId, character, epoch, replay.trades);
       trades += created;
       await applyAdoptions(tx, marketId, character, book.events);
       errors += replay.errors.length;
     } else {
       const replay = replayJournal(book.events);
-      const created = await applyTrades(tx, marketId, character, replay.trades);
+      const created = await applyTrades(tx, marketId, character, epoch, replay.trades);
       trades += created;
       await applyAdoptions(tx, marketId, character, book.events);
       errors += replay.errors.length;

@@ -59,6 +59,10 @@ type JournalBook = {
   // correction, which is the only change that leaves the event count and
   // sequence untouched.
   rev: number;
+  // Book creation time. Clearing SavedVariables starts a new book whose
+  // sequence begins again at 1; the epoch keeps its facts distinct from the
+  // old book's.
+  epoch: number;
   checkpoint: JournalCheckpoint | null;
 };
 
@@ -195,7 +199,10 @@ export function parseJournal(raw: unknown): JournalBook[] {
     // A book written before the content revision existed moved its token
     // only by appending, so the sequence reaches the same value.
     const rev = typeof book.rev === "number" ? book.rev : Math.max(0, nextSeq - 1);
-    return { key, events, dropped: toNumber(book.dropped), nextSeq, rev, checkpoint: parseCheckpoint(book.checkpoint) };
+    // Books written before the epoch existed are the first installation's;
+    // zero is their identity, and every re-created book has a later one.
+    const epoch = typeof book.epoch === "number" ? book.epoch : 0;
+    return { key, events, dropped: toNumber(book.dropped), nextSeq, rev, epoch, checkpoint: parseCheckpoint(book.checkpoint) };
   });
 }
 
@@ -280,7 +287,7 @@ function postKey(event: JournalEvent, index: number): string {
 export function journalRevision(raw: unknown): string {
   return parseJournal(raw)
     .map((book) =>
-      `${book.key}:${book.events.length}:${book.dropped}:${book.nextSeq}:${book.rev}:${book.checkpoint?.throughSeq ?? 0}`
+      `${book.key}:${book.events.length}:${book.dropped}:${book.nextSeq}:${book.rev}:${book.epoch}:${book.checkpoint?.throughSeq ?? 0}`
     )
     .sort()
     .join("|");

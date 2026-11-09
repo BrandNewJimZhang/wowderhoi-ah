@@ -232,19 +232,23 @@ model EstateItem {
   @@index([itemId])
 }
 
-// Append-only action facts. (marketId, character, seq) is the identity; an
-// import inserts only the rows it has not seen, so a re-sent book is
-// idempotent and an out-of-order delivery cannot rewrite history.
+// Append-only action facts. (marketId, character, epoch, seq) is the
+// identity; an import inserts only the rows it has not seen, so a re-sent
+// book is idempotent and an out-of-order delivery cannot rewrite history.
+// `epoch` is the book's creation time: clearing SavedVariables restarts the
+// sequence at 1, and only the epoch tells those facts apart from the old
+// book's.
 model JournalFact {
   id         String   @id @default(cuid())
   marketId   String   @map("market_id")
   character  String
+  epoch      Int      @default(0)
   seq        Int
   kind       String
   payload    Json
   market     Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
 
-  @@unique([marketId, character, seq])
+  @@unique([marketId, character, epoch, seq])
 }
 
 // The prefix of a local journal folded into a replay state. Positions,
@@ -252,12 +256,13 @@ model JournalFact {
 model LedgerCheckpoint {
   marketId   String   @map("market_id")
   character  String
+  epoch      Int      @default(0)
   throughSeq Int      @map("through_seq")
   state      Json
   createdAt  DateTime @default(now()) @map("created_at")
   market     Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
 
-  @@unique([marketId, character, throughSeq])
+  @@unique([marketId, character, epoch, throughSeq])
 }
 
 // The reconciliation read model: what is owned, where it is, how much of it
