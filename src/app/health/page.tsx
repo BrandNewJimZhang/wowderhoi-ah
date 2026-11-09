@@ -19,6 +19,7 @@ import {
 } from "@/lib/retention";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { AppShell } from "@/components/app-shell";
+import { FreshnessLabel } from "@/components/freshness-label";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +61,7 @@ export default async function HealthPage() {
           <h1 className="font-mono text-lg font-semibold text-terminal-amber">数据健康</h1>
           <p className="font-mono text-xs text-terminal-muted">
             {scope ? `${scope.realm} · ${scope.faction} · ${scope.character || "未知角色"}` : "未导入市场"}
-            {" · "}{phaseLabels[context.phase]} · 数据更新于 {freshness.label}
+            {" · "}{phaseLabels[context.phase]} · 数据更新于 <FreshnessLabel at={context.latestScanAt?.getTime() ?? null} initialLabel={freshness.label} initialStale={freshness.stale} />
             {database ? ` · 数据库 ${database}` : ""}
           </p>
         </div>

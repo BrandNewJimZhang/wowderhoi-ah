@@ -15,6 +15,7 @@ import { summarizeTrades, tradeChannelLabel } from "@/lib/trade-summary";
 import { Coins } from "@/components/coins";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { AppShell } from "@/components/app-shell";
+import { FreshnessLabel } from "@/components/freshness-label";
 
 export const dynamic = "force-dynamic";
 
@@ -138,7 +139,7 @@ export default async function ReviewPage() {
         <div>
           <div className="font-mono text-xs uppercase text-terminal-muted">复盘与校准</div>
           <h1 className="flex items-center gap-2 font-mono text-lg font-semibold text-terminal-amber"><ClipboardCheck size={18} /> 决策 vs 结果</h1>
-          <p className="font-mono text-xs text-terminal-muted">{phaseLabels[phase]} · 行情更新于 {freshness.label} · 只用真实成交校准，不用公共挂单分布假装利润</p>
+          <p className="font-mono text-xs text-terminal-muted">{phaseLabels[phase]} · 行情更新于 <FreshnessLabel at={bundle.latestScanAt?.getTime() ?? null} initialLabel={freshness.label} initialStale={freshness.stale} /> · 只用真实成交校准，不用公共挂单分布假装利润</p>
         </div>
         <div className="flex gap-3 font-mono text-xs">
           <Link href="/" className="text-terminal-muted hover:text-terminal-amber">驾驶舱</Link>

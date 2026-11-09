@@ -12,6 +12,7 @@ import { summarizeTrades, tradeChannelLabel } from "@/lib/trade-summary";
 import { Coins } from "@/components/coins";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { AppShell } from "@/components/app-shell";
+import { FreshnessLabel } from "@/components/freshness-label";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +50,7 @@ export default async function PortfolioPage() {
           <div className="font-mono text-xs uppercase text-terminal-muted">组合与资金</div>
           <h1 className="flex items-center gap-2 font-mono text-lg font-semibold text-terminal-amber"><Wallet size={18} /> 头寸账本</h1>
           <p className="font-mono text-xs text-terminal-muted">
-            {scope ? `角色 ${scope.character || "未知"}` : "未导入市场"} · {phaseLabels[phase]} · 行情更新于 {freshness.label} · 账本由游戏内 Journal 重放而来，跟随最近一次扫描的角色
+            {scope ? `角色 ${scope.character || "未知"}` : "未导入市场"} · {phaseLabels[phase]} · 行情更新于 <FreshnessLabel at={bundle.latestScanAt?.getTime() ?? null} initialLabel={freshness.label} initialStale={freshness.stale} /> · 账本由游戏内 Journal 重放而来，跟随最近一次扫描的角色
           </p>
         </div>
         <div className="flex gap-3 font-mono text-xs">

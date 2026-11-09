@@ -28,6 +28,7 @@ import { ItemIcon } from "@/components/item-icon";
 import { WatchStar } from "@/components/watch-star";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { AppShell } from "@/components/app-shell";
+import { FreshnessLabel } from "@/components/freshness-label";
 
 export const dynamic = "force-dynamic";
 
@@ -124,8 +125,16 @@ export default async function Home() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3 font-mono text-xs text-terminal-muted">
-            <span className={freshness.stale ? "flex items-center gap-1 text-terminal-red" : "flex items-center gap-1 text-terminal-green"}>
-              <RadioTower size={14} /> 数据更新于 {freshness.label}
+            <span className="flex items-center gap-1">
+              <RadioTower size={14} />
+              <FreshnessLabel
+                at={latestScanAt?.getTime() ?? null}
+                initialLabel={freshness.label}
+                initialStale={freshness.stale}
+                prefix="数据更新于 "
+                staleClassName="text-terminal-red"
+                liveClassName="text-terminal-green"
+              />
             </span>
             <Link href="/market" className="text-terminal-muted hover:text-terminal-amber">市场行情 →</Link>
           </div>

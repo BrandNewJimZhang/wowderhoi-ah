@@ -20,6 +20,7 @@ import { AlertRulePanel } from "@/components/trader-panels";
 import { WatchStar } from "@/components/watch-star";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { AppShell } from "@/components/app-shell";
+import { FreshnessLabel } from "@/components/freshness-label";
 
 export default async function ItemDetail({ params }: { params: Promise<{ itemId: string }> }) {
   const { itemId } = await params;
@@ -114,8 +115,15 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
           <h1 className={`flex items-center gap-2 font-mono text-2xl font-semibold ${qualityColorClass(item.quality)}`}>
             <ItemIcon iconId={item.iconId} size={28} />{item.name}
           </h1>
-          <div className={freshness.stale ? "font-mono text-xs text-terminal-red" : "font-mono text-xs text-terminal-green"}>
-            数据更新于 {freshness.label}
+          <div>
+            <FreshnessLabel
+              at={priceAt?.getTime() ?? demand?.timestamp?.getTime() ?? null}
+              initialLabel={freshness.label}
+              initialStale={freshness.stale}
+              prefix="数据更新于 "
+              staleClassName="block font-mono text-xs text-terminal-red"
+              liveClassName="block font-mono text-xs text-terminal-green"
+            />
           </div>
         </div>
         <div className="flex items-center gap-3">

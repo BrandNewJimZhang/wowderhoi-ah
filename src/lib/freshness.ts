@@ -31,3 +31,18 @@ export function describeFreshness(latest: Date | null, now: Date): Freshness {
   if (hours < 24) return { label: `${hours} 小时前`, stale };
   return { label: `${Math.floor(hours / 24)} 天前`, stale };
 }
+
+// The next moment describeFreshness would render a different label. A
+// browser label ticks at these boundaries instead of re-rendering the whole
+// page every minute. The stale flag flips on a minute boundary below the
+// hour bracket, so the same schedule covers it.
+export function nextLabelChangeAt(latest: Date | null, now: Date): Date | null {
+  if (!latest) return null;
+  const minutes = Math.floor((now.getTime() - latest.getTime()) / 60_000);
+  if (minutes < 1) return new Date(latest.getTime() + 60_000);
+  if (minutes < 60) return new Date(latest.getTime() + (minutes + 1) * 60_000);
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return new Date(latest.getTime() + (hours + 1) * 3_600_000);
+  const days = Math.floor(hours / 24);
+  return new Date(latest.getTime() + (days + 1) * 86_400_000);
+}

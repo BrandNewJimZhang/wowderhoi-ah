@@ -5,6 +5,7 @@ import { phaseLabels } from "@/lib/phase";
 import { describeFreshness } from "@/lib/freshness";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { AppShell } from "@/components/app-shell";
+import { FreshnessLabel } from "@/components/freshness-label";
 import { MarketBrowser, type MarketRow } from "@/components/market-browser";
 
 export const dynamic = "force-dynamic";
@@ -45,7 +46,7 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
             <p className="font-mono text-xs text-terminal-muted">
               {bundle.scope ? `${bundle.scope.realm} · ${bundle.scope.faction}` : "未导入市场"} · {phaseLabels[phase]}
               {bundle.phaseMismatch ? `（统计窗口按${phaseLabels[bundle.generationPhase]}，新扫描后更新）` : ""}
-              {" · "}数据更新于 {freshness.label}{" · "}{bundle.staleCount} 种已下架仍保留历史
+              {" · "}数据更新于 <FreshnessLabel at={latestScanAt?.getTime() ?? null} initialLabel={freshness.label} initialStale={freshness.stale} />{" · "}{bundle.staleCount} 种已下架仍保留历史
             </p>
           </div>
           <div className="font-mono text-xs text-terminal-muted">

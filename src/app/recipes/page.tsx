@@ -10,6 +10,7 @@ import { getRecipes } from "@/lib/repositories";
 import { Coins } from "@/components/coins";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { AppShell } from "@/components/app-shell";
+import { FreshnessLabel } from "@/components/freshness-label";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,7 @@ export default async function RecipesPage() {
             <Hammer size={18} /> 制造机会
           </h1>
           <p className="font-mono text-xs text-terminal-muted">
-            {phaseLabels[phase]} · 预算 <Coins copper={budget} /> · {recipes.length} 条配方 · 数据更新于 {freshness.label}
+            {phaseLabels[phase]} · 预算 <Coins copper={budget} /> · {recipes.length} 条配方 · 数据更新于 <FreshnessLabel at={bundle.latestScanAt?.getTime() ?? null} initialLabel={freshness.label} initialStale={freshness.stale} />
           </p>
         </div>
         <div className="flex gap-3 font-mono text-xs">
