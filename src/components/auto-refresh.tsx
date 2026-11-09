@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import { pollRevision } from "@/lib/revision-poll";
 
 // The auction house turns over faster than a reader reloads the page. Every
-// open page polls one opaque revision; when an import lands, the server
-// components re-render through router.refresh(), which keeps the client
-// state (filters, sort, page) of components like the market browser.
+// open page polls one opaque revision; when the committed data version
+// moves, the server components re-render through router.refresh(), which
+// keeps the client state (filters, sort, page) of components like the market
+// browser. The same refresh runs when a rendered boundary (the stale flag or
+// the display phase) passes without an import.
 const POLL_INTERVAL_MS = 15_000;
 // A hung revision request must not stop the timer while the status still
 // claims the refresh is live. Timeouts degrade to offline like any failure.
@@ -50,9 +52,23 @@ export function AutoRefresh({ revision, nextRefreshInMs }: {
     let pollTimer: ReturnType<typeof setTimeout> | undefined;
     let boundaryTimer: ReturnType<typeof setTimeout> | undefined;
     let polling = false;
-    let boundaryDue: number | null = nextRefreshInMs === null
+    const boundaryDue: number | null = nextRefreshInMs === null
       ? null
       : Date.now() + Math.max(MIN_BOUNDARY_DELAY_MS, nextRefreshInMs);
+
+    // The stale flag and the display phase are rendered on the server, so
+    // crossing their boundary needs a server render even though no import
+    // landed. The boundary stays due after the timer fires: unlike a
+    // revision, no later poll would report that the requested render never
+    // landed, so each poll retries it until a render carries a new
+    // schedule. A landed render replaces this effect.
+    const refreshBoundary = () => {
+      if (stopped || boundaryDue === null) return;
+      // A hidden tab refreshes when it becomes visible again; spending the
+      // render for a reader who is not there serves nobody.
+      if (document.visibilityState === "hidden") return;
+      requestRefresh();
+    };
 
     const schedulePoll = () => {
       if (stopped) return;
@@ -90,27 +106,20 @@ export function AutoRefresh({ revision, nextRefreshInMs }: {
         reportedFailure.current = true;
         setOffline(true);
       }
+      // A boundary-driven refresh has no revision to retry it: if its
+      // render did not land, the next poll tries again while the boundary
+      // stays due.
+      if (boundaryDue !== null && Date.now() >= boundaryDue) refreshBoundary();
       schedulePoll();
     }
 
-    // The stale flag and the display phase are rendered on the server, so
-    // crossing their boundary needs a server render even though no import
-    // landed. The next render carries a new boundary and reschedules.
-    const onBoundary = () => {
-      if (stopped || boundaryDue === null) return;
-      // A hidden tab refreshes when it becomes visible again; spending the
-      // render for a reader who is not there serves nobody.
-      if (document.visibilityState === "hidden") return;
-      boundaryDue = null;
-      requestRefresh();
-    };
     if (boundaryDue !== null) {
-      boundaryTimer = setTimeout(onBoundary, Math.max(0, boundaryDue - Date.now()));
+      boundaryTimer = setTimeout(refreshBoundary, Math.max(0, boundaryDue - Date.now()));
     }
 
     const onVisibilityChange = () => {
       if (document.visibilityState !== "visible") return;
-      if (boundaryDue !== null && Date.now() >= boundaryDue) onBoundary();
+      if (boundaryDue !== null && Date.now() >= boundaryDue) refreshBoundary();
       if (pollTimer) clearTimeout(pollTimer);
       void check();
     };

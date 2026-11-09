@@ -25,10 +25,10 @@ import { marketRevision } from "@/lib/market-revision";
 // which meant reading thousands of signal documents to render one item.
 type MarketContext = {
   scope: MarketScope | null;
-  // Opaque token for the import the page rendered from; the browser polls
-  // the same token and refreshes when it moves. It is derived from the
-  // scope read before the generation, so an import landing mid-request
-  // still counts as newer.
+  // Opaque token for the committed market data this render came from; the
+  // browser polls the same token and refreshes when it moves. It is derived
+  // from the scope read before the generation, so an import landing
+  // mid-request still counts as newer.
   revision: string;
   latestScanAt: Date | null;
   // The phase right now, from wall-clock age and breadth.
