@@ -41,10 +41,10 @@ events -> state -> decision -> action -> learning
   sell page; a terminal cockpit with the same action list and the same
   allocated quantities.
 - **Learning**: mailbox-collected sales are the only clean label; public
-  disappearances are a bounded prior and inferred sales are labeled as
-  inferred. Fill probability uses per-listing exposure hours. The review
-  page shows decision matching, alpha decay, experiment recovery and the
-  next controlled experiment.
+  disappearances are a bounded prior, and legacy inferred rows stay
+  labelled and out of realized P&L. Fill probability uses per-listing
+  exposure hours. The review page shows decision matching, alpha decay,
+  experiment recovery and the next controlled experiment.
 
 Read [docs/economic-system.md](docs/economic-system.md) for the design and
 [docs/launch-runbook.md](docs/launch-runbook.md) for the first-day and
@@ -78,11 +78,12 @@ buy/sell API paths) stay per branch. See [CONTRIBUTING.md](CONTRIBUTING.md).
   phase age survives a reinstall or cleared SavedVariables; `auto` clears
   it, and the next scan clears it in the terminal too.
 - `/wahcapture mail|craft on|off` — the rollback lever for the two
-  collectors: turn one off and the system falls back to inferred sales or
-  skips craft booking; `/wahdiag` prints the current state.
-- Mailbox capture — `MAIL_SHOW` / `MAIL_INBOX_UPDATE` turn collected sale
-  mails into confirmed `sold` events (`inferred = false`) with the posting
-  time; a sale the sell panel already inferred is upgraded with `confirm`
+  collectors: with mail capture off a sale the client never reports stays
+  `unobserved` (it is not re-inferred), and with craft capture off craft
+  booking is skipped; `/wahdiag` prints the current state.
+- Mailbox capture — `MAIL_INBOX_UPDATE` turns collected sale mails into
+  confirmed `sold` events (`inferred = false`) with the posting time; a
+  legacy row an older addon version had inferred is upgraded with `confirm`
   instead of being booked twice; duplicates are fingerprinted and never
   booked twice.
 - Craft capture — `TRADE_SKILL_CRAFT_BEGIN` / `TRADE_SKILL_ITEM_CRAFTED_RESULT`
@@ -107,10 +108,13 @@ buy/sell API paths) stay per branch. See [CONTRIBUTING.md](CONTRIBUTING.md).
   with sell-front and minimum lines, supply bars, log axis for wide
   ranges and breaks across scanning gaps.
 
-Every action is written to `WoWderhoiAH_Journal`. `Ledger.lua` replays it
-into lots, FIFO positions, open postings, escrow, fees, lost deposits and
-realized P&L. A vanished owned auction older than a minute is booked as
-an **inferred** sale at the posted price and labelled everywhere.
+Every auction action is written to `WoWderhoiAH_Journal`, whether this
+addon or the Blizzard UI started it. `Ledger.lua` replays it into lots, FIFO
+positions, open postings, escrow, fees, lost deposits and realized P&L. A
+posting that leaves the owned list without a sale, cancel or expiry event is
+marked `unobserved`: it is not booked as revenue. Rows an older addon
+version inferred from that disappearance stay in the ledger labelled
+`inferred` until a mail or event confirms them.
 
 ## Terminal
 
@@ -123,9 +127,10 @@ an **inferred** sale at the posted price and labelled everywhere.
 - **Item page** (`/items/<id>`): order-book ladder, 24-hour
   fill-probability curve, windowed intraday trend, daily candles and
   weekday seasonality.
-- **Portfolio** (`/portfolio`): cash from the last scan, position value
-  and cost, unrealized P&L, confirmed realized P&L and fees, plus inferred
-  sales shown separately and labelled.
+- **Portfolio** (`/portfolio`): cash and free slots from the client-pushed
+  estate, position value and cost with unknown-cost and unobserved stock
+  kept separate, unrealized P&L, confirmed realized P&L and fees, plus
+  legacy inferred sales shown separately and labelled.
 - **Manufacturing** (`/recipes`): 2,595 Forever recipes solved as a linear
   program with profession, material-supply and budget constraints; dual
   variables are shown as shadow prices; LP volumes are floored and profit
@@ -168,30 +173,32 @@ watcher on its first server render, so `npm run dev` is the only long-running
 command. The
 standalone `npm run addon:watch` remains for a terminal deployment.
 
-The watcher posts `{ scan, series, journal }` to `/api/import/addon-scan`.
-The import materialises one immutable `MarketGeneration`: the current book
-(`MarketQuote`), the signals derived from it and the addon series, and the
-shared core's output (`MarketSignalRow`). The terminal keeps its own longer
+The watcher posts the scan and series to `/api/import/addon-scan` and the
+private state (`estate`, `journal`, `plan`) to `/api/import/addon-state`.
+The scan import materialises one immutable `MarketGeneration`: the current
+book (`MarketQuote`), the signals derived from it and the addon series, and
+the shared core's output (`MarketSignalRow`). The state import is
+idempotent per domain — estate by revision, journal facts by
+`(character, seq)`, plans by revision — so a mailbox flush or a bag change
+reaches the terminal without a new scan. The terminal keeps its own longer
 `ItemSeries`, so an addon upgrade that rebuilds the game file cannot erase
-history. A duplicate scan timestamp carrying a journal replays the ledger,
-recomputes that generation's core output and merges the series, so a sale the
-mailbox flushed between scans reaches the terminal immediately; only a
-journal-less duplicate is skipped. `WoWderhoiAH_Capture` is the previous
-scan's tier-level identity table, used only for the flow estimate.
+history. `WoWderhoiAH_Capture` is the previous scan's tier-level identity
+table, used only for the flow estimate.
 
 Every terminal read is scoped to one `Market` (realm + faction): the
 market of the newest generation, or `AQT_MARKET="realm|faction"` when you
-want to pin it. Generations, series, positions, trades and decisions from
+want to pin it. Generations, series, holdings, trades and decisions from
 another realm can never leak into the same signal.
 
-The ledger follows the character that produced the scan: positions and
-trades are replayed only from that character's journal book, never from
-another character's book on the same market, and `Market.character`
-records which one. The cockpit and portfolio headers name that character.
-Because cash, positions and trades then come from one scan, a character
-with no events shows an empty ledger rather than an alt's holdings; a
-scan-only import that carries no journal leaves the recorded character
-and ledger untouched.
+Journal facts are stored per character, holdings are rebuilt for every
+character from that character's facts and estate, and trades are appended
+per character; one character's book never supplies another one's cost. The
+cockpit and portfolio headers name the character whose estate was observed
+most recently (falling back to the newest scan), because the purse on
+screen must follow the character, not the book. Account-scoped stock — the
+account bank and own postings — is carried by that same character, so a
+switch does not count the same auction twice. A character with no events
+shows an empty ledger rather than an alt's holdings.
 
 Upgrading an existing `prisma/dev.db` from the snapshot read model: back it
 up, then run `npm run read-model:backfill` once. The script reads the legacy
