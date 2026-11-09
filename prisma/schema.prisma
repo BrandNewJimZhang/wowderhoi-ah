@@ -226,7 +226,6 @@ model EstateItem {
   itemId    Int    @map("item_id")
   location  String // carried | bank | account_bank | mail | listed | keyring
   qty       Int
-  slotCount Int    @default(0) @map("slot_count")
   estate    Estate @relation(fields: [estateId], references: [id], onDelete: Cascade)
 
   @@id([estateId, itemId, location])

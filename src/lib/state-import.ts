@@ -17,7 +17,7 @@ import {
 } from "@/lib/journal";
 import { linkTrades } from "@/lib/decision-linking";
 
-type EstateItemInput = { qty: number; slots?: number };
+type EstateItemInput = { qty: number };
 type EstateScopeInput = {
   kind?: string;
   name?: string;
@@ -151,8 +151,7 @@ export async function applyEstate(
           estateId: row.id,
           itemId,
           location,
-          qty: Math.round(qty),
-          slotCount: entry.slots === undefined ? 0 : Math.round(numeric(entry.slots, `${scope}.items.${itemId}.${location}.slots`))
+          qty: Math.round(qty)
         });
       }
     }
