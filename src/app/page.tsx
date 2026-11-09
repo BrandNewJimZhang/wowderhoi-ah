@@ -4,7 +4,6 @@ import { alertMetricLabels, evaluateAlertRules, formatAlertValue, type AlertMetr
 import { sellFrontByItem } from "@/lib/analytics";
 import {
   getAlertRules,
-  getPositions,
   getRecipes,
   getSeriesStats,
   getWatchedItemIds
@@ -14,7 +13,7 @@ import { loadDemandEvents, upcomingDemandEvents } from "@/lib/events-calendar";
 import { decisionLogSince, DECISION_LOG_WINDOW_HOURS } from "@/lib/decision-calibration";
 import { buildProductionPlan } from "@/lib/production-plan";
 import { recipeToLp } from "@/lib/recipes";
-import { getMarketBundle } from "@/lib/market-read";
+import { getMarketView } from "@/lib/market-view";
 import { describeFreshness, scanGapHint, staleScanHint } from "@/lib/freshness";
 import { seriesSpanDays } from "@/lib/item-series";
 import { fillBasisLabels } from "@/lib/fill";
@@ -38,15 +37,23 @@ const qualityName = (value: number | string | undefined) =>
   typeof value === "number" ? qualityNameByIndex(value) : value ?? "unknown";
 
 export default async function Home() {
-  const bundle = await getMarketBundle();
+  const bundle = await getMarketView();
   const { scope, signals, latestScanAt, phase, evaluation } = bundle;
   const scopeId = scope?.id;
   const now = new Date();
-  const [watchedIds, alertRules, recipeRows, positions, seriesStats, recentTrades, decisionCount] = await Promise.all([
+  // The valuation reads only the units the ledger can price. Unknown-cost
+  // units are shown separately instead of being valued at zero.
+  const positions = Object.fromEntries(
+    bundle.holdings
+      .filter((holding) => holding.knownQty > 0)
+      .map((holding) => [holding.itemId, { qty: holding.knownQty, cost: holding.costBasis }])
+  );
+  const unknownUnits = bundle.holdings.reduce((sum, holding) => sum + holding.unknownQty, 0);
+  const missingUnits = bundle.holdings.reduce((sum, holding) => sum + holding.missingQty, 0);
+  const [watchedIds, alertRules, recipeRows, seriesStats, recentTrades, decisionCount] = await Promise.all([
     getWatchedItemIds(),
     getAlertRules(),
     getRecipes(),
-    getPositions(scope),
     scopeId ? getSeriesStats(scopeId) : Promise.resolve({ items: 0, points: 0, firstAt: null, lastAt: null }),
     prisma.trade.findMany({
       where: { ...(scopeId ? { marketId: scopeId } : {}), realizedAt: { gte: new Date(now.getTime() - 7 * DAY_MS) } },
@@ -158,7 +165,11 @@ export default async function Home() {
           <div className="border border-terminal-border bg-terminal-panel p-3">
             <div className="text-terminal-muted">持仓市值 / 成本</div>
             <div className="mt-1 text-lg"><Coins copper={valuation.pricedValue} /> <span className="text-xs text-terminal-muted">/ <Coins copper={valuation.pricedCost} /></span></div>
-            <div className="mt-1 text-[10px] text-terminal-muted">{valuation.rows.length} 种，{valuation.unpricedCount} 种当前无报价</div>
+            <div className="mt-1 text-[10px] text-terminal-muted">
+              {valuation.rows.length} 种，{valuation.unpricedCount} 种当前无报价
+              {unknownUnits > 0 && ` · ${unknownUnits} 件成本未知`}
+              {missingUnits > 0 && ` · ${missingUnits} 件账实不符`}
+            </div>
           </div>
           <div className="border border-terminal-border bg-terminal-panel p-3">
             <div className="text-terminal-muted">持仓浮动</div>

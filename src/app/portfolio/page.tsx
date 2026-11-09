@@ -2,9 +2,8 @@ import Link from "next/link";
 
 import { Wallet } from "lucide-react";
 import { prisma } from "@/lib/prisma";
-import { getMarketBundle } from "@/lib/market-read";
+import { getMarketView } from "@/lib/market-view";
 import { sellFrontByItem } from "@/lib/analytics";
-import { getPositions } from "@/lib/repositories";
 import { phaseLabels } from "@/lib/phase";
 import { describeFreshness } from "@/lib/freshness";
 import { valuePositions } from "@/lib/position-valuation";
@@ -17,16 +16,31 @@ import { FreshnessLabel } from "@/components/freshness-label";
 export const dynamic = "force-dynamic";
 
 export default async function PortfolioPage() {
-  const bundle = await getMarketBundle();
+  const bundle = await getMarketView();
   const scope = bundle.scope;
-  const [positions, allTrades] = await Promise.all([
-    getPositions(scope),
-    prisma.trade.findMany({
-      where: scope ? { marketId: scope.id } : {},
-      orderBy: { realizedAt: "desc" }
-    })
-  ]);
+  const allTrades = await prisma.trade.findMany({
+    where: scope ? { marketId: scope.id } : {},
+    orderBy: { realizedAt: "desc" }
+  });
   const { signals, phase } = bundle;
+  // The valuation uses the units the ledger can price. The estate and
+  // reconciliation columns below carry the rest explicitly.
+  const positions = Object.fromEntries(
+    bundle.holdings
+      .filter((holding) => holding.knownQty > 0)
+      .map((holding) => [holding.itemId, { qty: holding.knownQty, cost: holding.costBasis }])
+  );
+  const unknownUnits = bundle.holdings.reduce((sum, holding) => sum + holding.unknownQty, 0);
+  const missingUnits = bundle.holdings.reduce((sum, holding) => sum + holding.missingQty, 0);
+  const byLocation = bundle.holdings.reduce(
+    (totals, holding) => ({
+      carried: totals.carried + holding.carriedQty,
+      bank: totals.bank + holding.bankQty + holding.accountBankQty,
+      mail: totals.mail + holding.mailQty,
+      listed: totals.listed + holding.listedQty
+    }),
+    { carried: 0, bank: 0, mail: 0, listed: 0 }
+  );
   // A position whose item left the newest scan has no current sell front:
   // value it as unpriced instead of carrying the last price it was seen at.
   const priceById = sellFrontByItem(signals);
@@ -50,7 +64,7 @@ export default async function PortfolioPage() {
           <div className="font-mono text-xs uppercase text-terminal-muted">组合与资金</div>
           <h1 className="flex items-center gap-2 font-mono text-lg font-semibold text-terminal-amber"><Wallet size={18} /> 头寸账本</h1>
           <p className="font-mono text-xs text-terminal-muted">
-            {scope ? `角色 ${scope.character || "未知"}` : "未导入市场"} · {phaseLabels[phase]} · 行情更新于 <FreshnessLabel at={bundle.latestScanAt?.getTime() ?? null} initialLabel={freshness.label} initialStale={freshness.stale} /> · 账本由游戏内 Journal 重放而来，跟随最近一次扫描的角色
+            {scope ? `角色 ${scope.character || "未知"}` : "未导入市场"} · {phaseLabels[phase]} · 行情更新于 <FreshnessLabel at={bundle.latestScanAt?.getTime() ?? null} initialLabel={freshness.label} initialStale={freshness.stale} /> · 持仓来自客户端 estate 快照，成本与已实现来自 Journal 事实
           </p>
         </div>
         <div className="flex gap-3 font-mono text-xs">
@@ -87,6 +101,18 @@ export default async function PortfolioPage() {
             推断 {trades.inferredCount} 笔 · <Coins copper={trades.inferredRealized} /> 未计入
           </div>
         </div>
+      </div>
+
+      <div className="mb-3 flex flex-wrap gap-3 border border-terminal-border bg-terminal-panel px-4 py-2 font-mono text-xs text-terminal-muted">
+        <span>背包 {byLocation.carried}</span>
+        <span>银行 {byLocation.bank}</span>
+        <span>邮箱 {byLocation.mail}</span>
+        <span>在售 {byLocation.listed}</span>
+        <span className={unknownUnits > 0 ? "text-terminal-amber" : ""}>成本未知 {unknownUnits}</span>
+        <span className={missingUnits > 0 ? "text-terminal-red" : ""}>账实不符 {missingUnits}</span>
+        {bundle.holdings.some((holding) => holding.unknownQty > 0) && (
+          <span className="text-terminal-muted">成本未知的物品不进入浮动盈亏合计</span>
+        )}
       </div>
 
       <div className="grid gap-3 xl:grid-cols-[1fr_1fr]">
