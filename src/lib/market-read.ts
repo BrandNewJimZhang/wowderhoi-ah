@@ -7,7 +7,7 @@
 // UI must not apply the new gates to the old book.
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
-import { planMatchesScan } from "@/lib/plan-view";
+import { planEstateRevision, planMatchesScan } from "@/lib/plan-view";
 import type { MarketSignal } from "@/lib/analytics";
 import type { CoreOutput } from "@/lib/core/types";
 import type { PriceIndex } from "@/lib/deflator";
@@ -240,7 +240,7 @@ export async function getNavigationBadges(): Promise<NavBadges> {
   const scope = await getScopeOnce();
   if (!scope) return { actions: 0, stale: 0, positions: 0 };
   const now = new Date();
-  const [generation, holdings, plan] = await Promise.all([
+  const [generation, holdings, estates, plan] = await Promise.all([
     getGenerationOnce(scope),
     // The portfolio is account-wide; counting only the scan character's
     // rows advertised fewer holdings than the page lists.
@@ -248,6 +248,10 @@ export async function getNavigationBadges(): Promise<NavBadges> {
       where: { marketId: scope.id },
       distinct: ["itemId"],
       select: { itemId: true }
+    }),
+    prisma.estate.findMany({
+      where: { marketId: scope.id },
+      select: { scope: true, revision: true }
     }),
     prisma.plan.findFirst({
       where: { marketId: scope.id, supersededAt: null },
@@ -258,18 +262,13 @@ export async function getNavigationBadges(): Promise<NavBadges> {
     })
   ]);
   // The plan's estate revision belongs to the character that minted it; the
-  // badge must not judge it against whoever scanned last.
-  let matchedEstateRevision = scope.estateRevision;
-  if (plan?.character) {
-    const estate = await prisma.estate.findUnique({
-      where: { marketId_scope: { marketId: scope.id, scope: `character:${plan.character}` } },
-      select: { revision: true }
-    });
-    matchedEstateRevision = estate?.revision ?? -1;
-  }
-  const currentPlan = planMatchesScan(plan, generation?.scannedAt ?? null, matchedEstateRevision)
-    ? plan
-    : null;
+  // badge must not judge it against whoever scanned last. The same rule as
+  // the dashboard and the health page.
+  const currentPlan = planMatchesScan(
+    plan,
+    generation?.scannedAt ?? null,
+    planEstateRevision(plan, estates, scope.estateRevision)
+  ) ? plan : null;
   const planActions = currentPlan && Array.isArray(currentPlan.steps) ? currentPlan.steps.length : null;
   const stale = describeFreshness(generation?.scannedAt ?? null, now).stale;
   return badgeCounts(
