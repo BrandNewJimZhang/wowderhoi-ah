@@ -150,6 +150,28 @@ local function copyMailCache(items)
   end
 end
 
+-- Mail permits at most twelve attachments; the loop stops at the first
+-- empty slot, so this is only a hard bound.
+local MAX_ATTACHMENTS = 12
+
+-- One attachment slot. GetInboxItem carries the stack count; the link is
+-- the fallback for builds that only expose it. Nil means the slot is empty,
+-- which is how the caller knows where the contiguous list ends.
+local function readAttachment(message, slot)
+  if type(GetInboxItem) == "function" then
+    local okItem, _, itemId, _, stack = pcall(GetInboxItem, message, slot)
+    if okItem and itemId then return itemId, stack or 1 end
+  end
+  if type(GetInboxItemLink) == "function" then
+    local okLink, link = pcall(GetInboxItemLink, message, slot)
+    if okLink and link then
+      local itemId = tonumber(tostring(link):match("item:(%d+)"))
+      if itemId then return itemId, 1 end
+    end
+  end
+  return nil
+end
+
 local function readInbox()
   local fresh = {}
   local pendingCash = 0
@@ -162,24 +184,14 @@ local function readInbox()
       -- A COD attachment is not owned until it is paid; counting it would
       -- put someone else's goods in the player's holdings.
       local cod = header[6] or 0
-      local attachments = cod > 0 and 0 or (header[13] or 0)
-      for attachment = 1, attachments do
-        -- GetInboxItem carries the stack count; the link is the fallback
-        -- for builds that only expose it.
-        local counted = false
-        if type(GetInboxItem) == "function" then
-          local okItem, _, itemId, _, stack = pcall(GetInboxItem, message, attachment)
-          if okItem and itemId then
-            addItem(fresh, itemId, "mail", stack or 1, 1)
-            counted = true
-          end
-        end
-        if not counted then
-          local okLink, link = pcall(GetInboxItemLink, message, attachment)
-          if okLink and link then
-            local itemId = tonumber(tostring(link):match("item:(%d+)"))
-            if itemId then addItem(fresh, itemId, "mail", 1, 1) end
-          end
+      if cod <= 0 then
+        -- The header's trailing return is not documented for this client;
+        -- probing the slots is the only contract that holds whether it is a
+        -- count or a flag.
+        for slot = 1, MAX_ATTACHMENTS do
+          local itemId, stack = readAttachment(message, slot)
+          if not itemId then break end
+          addItem(fresh, itemId, "mail", stack, 1)
         end
       end
     end

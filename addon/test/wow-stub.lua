@@ -631,9 +631,14 @@ function GetInboxHeaderInfo(index)
   local message = bed.mail[index]
   if not message then return end
   local attachments = message.attachments or {}
+  -- The trailing slot is not documented for this client. The stub reports a
+  -- count by default; a fixture may report a boolean instead to prove the
+  -- addon discovers attachments without trusting the position.
+  local reported = message.attachmentsReport
+  if reported == nil then reported = #attachments end
   return "Interface\\Icons\\INV_Letter", "Interface\\Stationery\\Test", message.sender or "Auction House",
     message.subject or "", message.money or 0, message.cod or 0, message.daysLeft or 30,
-    message.hasItem == true, false, false, nil, false, #attachments
+    message.hasItem == true, false, false, nil, false, reported
 end
 
 function GetInboxInvoiceInfo(index)

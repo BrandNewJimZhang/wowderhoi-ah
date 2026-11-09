@@ -159,6 +159,23 @@ describe("estate collection", () => {
     expect(lua.number(charScope(`items[${MAGEWEAVE}].mail.qty`))).toBe(3);
   });
 
+  it("counts attachments even when the header's last field is not a count", () => {
+    // GetInboxHeaderInfo's trailing return is not documented for this
+    // client. A boolean there must not hide the attachment: the estate
+    // probes the slots instead of trusting the field.
+    const lua = loadAddon();
+    lua.exec(`WowTest.setMail({ {
+      sender = "Auction House", subject = "Won", money = 0, hasItem = true,
+      attachments = { "|Hitem:${MAGEWEAVE}:0:0|h[Mageweave]|h" },
+      attachmentItems = { { name = "Mageweave", itemId = ${MAGEWEAVE}, count = 3 } },
+      attachmentsReport = false,
+      invoice = { kind = 2, name = "Mageweave", bid = 700 }
+    } })`);
+    lua.exec("WowTest.fireEvent('MAIL_INBOX_UPDATE')");
+    refresh(lua);
+    expect(lua.number(charScope(`items[${MAGEWEAVE}].mail.qty`))).toBe(3);
+  });
+
   it("publishes own postings as account-level listed stock", () => {
     const lua = loadAddon();
     lua.setOwned([{ auctionID: 11, itemId: LINEN, quantity: 4, buyoutAmount: 4000 }]);
