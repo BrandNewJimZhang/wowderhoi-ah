@@ -215,6 +215,57 @@ describe("POST /api/import/addon-scan revision", () => {
     expect(core?.actions).toContainEqual(expect.objectContaining({ kind: "sell", itemId: 2770 }));
   });
 
+  it("keeps account-scoped stock when a legacy scan names no character", async () => {
+    // A scan payload without a character cannot name the importing player.
+    // Passing that absence through as an empty name made no holding row the
+    // carrier of the account bank, so the stock vanished from the read model
+    // until the next estate push.
+    const observedAt = scan.scannedAt + 900;
+    const state = await postState({
+      server: "A",
+      faction: "Alliance",
+      estate: {
+        v: 1,
+        revision: 2,
+        observedAt,
+        scopes: {
+          "character:Solo": {
+            revision: 2,
+            cash: 0,
+            freeSlots: 10,
+            coverage: {
+              carried: "observed", bank: "unobserved", mail: "unobserved", money: "observed"
+            },
+            items: {}
+          },
+          account: {
+            revision: 2,
+            coverage: { account_bank: "observed", listed: "unobserved" },
+            items: { "2770": { account_bank: { qty: 3, slots: 1 } } }
+          }
+        }
+      }
+    });
+    expect(state.status).toBe(200);
+
+    const response = await post({
+      scan: {
+        ...scan,
+        scannedAt: observedAt + 60,
+        character: undefined,
+        items: {
+          "2770": { name: "Mageweave", minPrice: 100, marketPrice: 100, sellP: 100, quantity: 5, numAuctions: 1 }
+        }
+      }
+    });
+    expect(response.status).toBe(200);
+    const market = await marketRow();
+    const holding = await prisma.holding.findUnique({
+      where: { marketId_character_itemId: { marketId: market.id, character: "Solo", itemId: 2770 } }
+    });
+    expect(holding?.accountBankQty).toBe(3);
+  });
+
   it("rolls the observation and the version back when the import transaction fails", async () => {
     // Fault injection after the market update has run: the signal insert can
     // no longer succeed, so the whole transaction — including the version

@@ -263,8 +263,10 @@ export async function POST(request: Request) {
       // move to that character's holding row and leave the previous one.
       // The plan below reads those holdings, so the move must happen first;
       // otherwise a character's first scan would size sells from the
-      // previous character's account-scoped stock.
-      await refreshHoldings(tx, market.id, character);
+      // previous character's account-scoped stock. A legacy scan without a
+      // character must fall back to the same rule the pages use, not pass
+      // an empty name that no holding row can match.
+      await refreshHoldings(tx, market.id, character || undefined);
       plannedScope.estateRevision = estateRevision;
       const positions = await getPositions(plannedScope, tx);
       const ownSales = await getOwnSales(plannedScope, scan.scannedAt, tx);
