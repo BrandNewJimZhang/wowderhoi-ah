@@ -196,6 +196,28 @@ describe("POST /api/import/addon-state", () => {
     })).toMatchObject({ qty: 7 });
   });
 
+  it("accepts a restarted counter that collides with the old one", async () => {
+    // The new install's first book is revision 1, which can equal the old
+    // row's revision exactly. A re-send carries the same observation time;
+    // a re-created book carries a later one, so time is the tie-breaker.
+    await post("scan", {
+      scan: { ...scan, server: "Reset2", faction: "Horde", character: "Resty", scannedAt: NOW - 1000 }
+    });
+    await post("state", {
+      server: "Reset2", faction: "Horde",
+      estate: estate(1, 5, NOW - 500, "Resty")
+    });
+    const recreated = await post("state", {
+      server: "Reset2", faction: "Horde",
+      estate: estate(1, 7, NOW - 100, "Resty")
+    });
+    expect((await recreated.json() as { changed: boolean }).changed).toBe(true);
+    const market = await prisma.market.findUnique({ where: { realm_faction: { realm: "Reset2", faction: "Horde" } } });
+    expect(await prisma.holding.findFirst({
+      where: { marketId: market!.id, character: "Resty", itemId: 2589 }
+    })).toMatchObject({ qty: 7 });
+  });
+
   it("applies journal facts once and derives the holding", async () => {
     const events = [
       { k: "buy", t: NOW - 100, seq: 1, itemId: 2589, qty: 5, cost: 5000 },

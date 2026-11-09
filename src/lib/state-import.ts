@@ -120,9 +120,13 @@ export async function applyEstate(
         ? false
         : existingCoverage.carried !== "observed";
     if (existing) {
-      if (existing.revision === revision && !seeded) continue;
       const previousAt = existing.observedAt.getTime();
       const nextAt = observedAt.getTime();
+      // A re-send carries the observation time the publisher already
+      // stored. The same counter with a later observation is a re-created
+      // book whose counter restarted at the same number, and must replace
+      // the row.
+      if (existing.revision === revision && !seeded && nextAt <= previousAt) continue;
       // The counter is local to one addon install, but the observation time
       // is not. A reinstall restarts the counter at 1; its fresher document
       // must replace the old one, while a delayed document carrying a newer
