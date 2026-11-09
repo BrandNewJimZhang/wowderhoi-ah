@@ -36,7 +36,8 @@ export default async function PortfolioPage() {
     pricedValue: positionValue,
     pricedCost: positionCost,
     unrealized,
-    unpricedCount
+    unpricedCount,
+    unknownCostCount
   } = valuePositions(positions, priceById, nameById);
   const trades = summarizeTrades(allTrades);
   const cash = scope?.cash ?? 0;
@@ -74,14 +75,17 @@ export default async function PortfolioPage() {
           )}
         </div>
         <div className="border border-terminal-border bg-terminal-panel p-3">
-          <div className="text-terminal-muted">持仓市值 / 成本（有报价）</div>
+          <div className="text-terminal-muted">持仓市值 / 已记成本（有报价）</div>
           <div className="mt-1 text-lg"><Coins copper={positionValue} /> <span className="text-xs text-terminal-muted">/ <Coins copper={positionCost} /></span></div>
           {unpricedCount > 0 && (
             <div className="mt-1 text-[10px] text-terminal-muted">另有 {unpricedCount} 种当前无挂单，不计入市值与浮动</div>
           )}
+          {unknownCostCount > 0 && (
+            <div className="mt-1 text-[10px] text-terminal-amber">{unknownCostCount} 种成本无法证明，只计市值不计浮动</div>
+          )}
         </div>
         <div className="border border-terminal-border bg-terminal-panel p-3">
-          <div className="text-terminal-muted">浮动盈亏（有报价）</div>
+          <div className="text-terminal-muted">浮动盈亏（有报价且成本可证明）</div>
           <div className={`mt-1 text-lg ${unrealized >= 0 ? "text-terminal-green" : "text-terminal-red"}`}>
             <Coins copper={unrealized} />
           </div>
@@ -135,7 +139,9 @@ export default async function PortfolioPage() {
                   <tr key={row.itemId} className="border-b border-terminal-border/70">
                     <td className="px-3 py-2 text-left"><Link href={`/items/${row.itemId}`} className="text-slate-100 hover:text-terminal-amber">{row.name}</Link></td>
                     <td className="px-3 py-2 text-right text-slate-300">{row.qty}</td>
-                    <td className="px-3 py-2 text-right"><Coins copper={row.unitCost} /></td>
+                    <td className="px-3 py-2 text-right">
+                      {row.unitCost === null ? <span className="text-terminal-amber">成本未知</span> : <Coins copper={row.unitCost} />}
+                    </td>
                     <td className="px-3 py-2 text-right">{row.priced ? <Coins copper={row.price} /> : <span className="text-terminal-muted">—</span>}</td>
                     <td className="px-3 py-2 text-right">{row.priced ? <Coins copper={row.value} /> : <span className="text-terminal-muted">—</span>}</td>
                     <td className={`px-3 py-2 text-right ${row.unrealized === null ? "text-terminal-muted" : row.unrealized >= 0 ? "text-terminal-green" : "text-terminal-red"}`}>

@@ -61,8 +61,8 @@ export default async function Home() {
   const planResources = (publishedPlan?.resources as {
     cashBefore?: number; cashAfter?: number; slotsBefore?: number; slotsAfter?: number;
   } | undefined) ?? evaluation.plan?.resources;
-  // The valuation reads only the units the ledger can price. Unknown-cost
-  // units are shown separately instead of being valued at zero.
+  // Every owned unit gets a row. Unknown-cost units keep their market value
+  // but are excluded from the profit total, which the tile says separately.
   const { positions, unknownUnits, missingUnits } = summarizeHoldings(bundle.holdings);
   const [watchedIds, alertRules, recipeRows, seriesStats, recentTrades, decisionCount] = await Promise.all([
     getWatchedItemIds(),
@@ -223,13 +223,14 @@ export default async function Home() {
             <div className="mt-1 text-[10px] text-terminal-muted">
               {valuation.rows.length} 种，{valuation.unpricedCount} 种当前无报价
               {unknownUnits > 0 && ` · ${unknownUnits} 件成本未知`}
+              {valuation.unknownCostCount > 0 && ` · ${valuation.unknownCostCount} 种不计浮动`}
               {missingUnits > 0 && ` · ${missingUnits} 件账实不符`}
             </div>
           </div>
           <div className="border border-terminal-border bg-terminal-panel p-3">
             <div className="text-terminal-muted">持仓浮动</div>
             <div className={`mt-1 text-lg ${valuation.unrealized >= 0 ? "text-terminal-green" : "text-terminal-red"}`}><Coins copper={valuation.unrealized} /></div>
-            <div className="mt-1 text-[10px] text-terminal-muted">只计有当前建议卖价的持仓</div>
+            <div className="mt-1 text-[10px] text-terminal-muted">只计有当前建议卖价且成本可证明的持仓</div>
           </div>
           <div className="border border-terminal-border bg-terminal-panel p-3">
             <div className="text-terminal-muted">7 日已实现（确认成交）</div>
