@@ -394,16 +394,25 @@ async function applyAdoptions(
   const adopted = await tx.decision.findMany({
     where: { marketId, adoptedAt: { not: null } },
     select: {
-      decisionId: true, itemId: true, kind: true, adoptedAt: true
+      decisionId: true, itemId: true, kind: true, adoptedAt: true,
+      plan: { select: { character: true } }
     }
   });
   const unlinked = await tx.trade.findMany({
     where: { marketId, character, decisionId: null },
     select: { id: true, itemId: true, realizedAt: true, listedAt: true, observedAt: true }
   });
+  // A plan is sized from one character's stock and purse. Another character
+  // selling the same item is a different position, not the outcome of that
+  // recommendation. Decisions written before plans carried a character (or
+  // whose plan retention removed) keep the market-wide fallback.
+  const owned = adopted.filter((row) => {
+    const owner = row.plan?.character;
+    return !owner || owner === character;
+  });
   const linked = linkTrades(
     unlinked.map((trade) => ({ ...trade, decisionId: null as string | null })),
-    adopted.filter((row): row is typeof row & { decisionId: string } => row.decisionId !== null)
+    owned.filter((row): row is typeof row & { decisionId: string } => row.decisionId !== null)
   );
   for (const trade of linked) {
     if (trade.decisionId) {

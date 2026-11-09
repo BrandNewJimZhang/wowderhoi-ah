@@ -717,6 +717,50 @@ describe("POST /api/import/addon-state", () => {
     expect((await response.json() as { error: string }).error).toMatch(/phase/);
   });
 
+  it("does not attribute another character's sale to an adopted plan", async () => {
+    const revision = `A|Alliance|${NOW}:1:1:steady:Alpha`;
+    const decisionId = `${revision}:6001:sell`;
+    await post("state", {
+      server: "A", faction: "Alliance",
+      plan: {
+        revision,
+        character: "Alpha",
+        estateRevision: 1,
+        configRevision: "test",
+        observedAt: NOW,
+        steps: [{ kind: "sell", itemId: 6001, qty: 1, expectedNet: 100 }],
+        resources: {},
+        unplanned: []
+      }
+    });
+    await post("state", {
+      server: "A", faction: "Alliance",
+      journal: book("Alpha", [
+        { k: "adopt", t: NOW, seq: 1, id: decisionId },
+        { k: "buy", t: NOW - 10, seq: 2, itemId: 6001, qty: 1, cost: 1000 },
+        { k: "sold", t: NOW + 10, seq: 3, itemId: 6001, qty: 1, price: 2000, fee: 100, auctionID: 42 }
+      ])
+    });
+    // Alpha's recommendation was sized from Alpha's stock. Beta selling the
+    // same item is a different position, not the outcome of that decision.
+    await post("state", {
+      server: "A", faction: "Alliance",
+      journal: book("Beta", [
+        { k: "buy", t: NOW - 10, seq: 1, itemId: 6001, qty: 1, cost: 1000 },
+        { k: "sold", t: NOW + 10, seq: 2, itemId: 6001, qty: 1, price: 2000, fee: 100, auctionID: 41 }
+      ])
+    });
+    const market = await prisma.market.findUnique({ where: { realm_faction: { realm: "A", faction: "Alliance" } } });
+    const betaTrade = await prisma.trade.findFirst({
+      where: { marketId: market!.id, character: "Beta", itemId: 6001 }
+    });
+    expect(betaTrade?.decisionId).toBeNull();
+    // The minting character's own sale still links.
+    const alphaTrade = await prisma.trade.findFirst({
+      where: { marketId: market!.id, character: "Alpha", itemId: 6001 }
+    });
+    expect(alphaTrade?.decisionId).toBe(decisionId);
+  });
 
   it("rejects a plan step that is neither a buy nor a sell", async () => {
     const response = await post("state", {
