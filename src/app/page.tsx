@@ -30,7 +30,20 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 import { AppShell } from "@/components/app-shell";
 import { FreshnessLabel } from "@/components/freshness-label";
 import type { CoreAction, CoreRow } from "@/lib/core/types";
+import { describeNextStep, type NextStepPart } from "@/lib/next-step";
 import { planEstateRevision, planMatchesScan } from "@/lib/plan-view";
+
+// The plan's first step written as an instruction. Money stays a number
+// until render time so it keeps the coin sprites the rest of the page uses.
+function NextStepText({ parts }: { parts: NextStepPart[] }) {
+  return (
+    <>
+      {parts.map((part, index) => typeof part === "string"
+        ? <span key={index}>{part}</span>
+        : <Coins key={index} copper={part.copper} />)}
+    </>
+  );
+}
 
 export const dynamic = "force-dynamic";
 
@@ -89,6 +102,13 @@ export default async function Home() {
   // moves past them, applying the old plan would describe a different
   // market, so the list is withheld until the next scan.
   const actionsBlocked = freshness.stale || bundle.phaseMismatch;
+  // Only the game's current plan may be shown as "the next step". The
+  // scan-time fallback below describes a state that may already have moved,
+  // so it stays a list of estimates and never becomes the instruction.
+  const currentStep = publishedPlan && !actionsBlocked
+    ? (publishedPlan.steps as CoreAction[])[0]
+    : undefined;
+  const currentCopy = currentStep ? describeNextStep(currentStep) : null;
   const watchedSignals = signals.filter((signal) => watchedIds.has(signal.itemId));
   const triggeredAlerts = evaluateAlertRules(alertRules, signals.filter((signal) => !signal.stale));
   // The game's plan is sized from live cash and bag space. When it is
@@ -261,6 +281,18 @@ export default async function Home() {
                   </span>
                 )}
               />
+              {currentCopy && (
+                <div className="mx-3 mt-3 rounded border border-terminal-amber/40 bg-terminal-amber/5 p-2 font-mono text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-terminal-muted">
+                    <span>当前一步</span>
+                    <span>第 1 / {planSteps.length} 步 · 执行后自动重算</span>
+                  </div>
+                  <div className="mt-1 text-terminal-amber"><NextStepText parts={currentCopy.headline} /></div>
+                  <div className="mt-1 text-slate-200"><NextStepText parts={currentCopy.condition} /></div>
+                  <div className="mt-1 text-terminal-muted"><NextStepText parts={currentCopy.outcome} /></div>
+                  <div className="mt-1 text-[10px] leading-4 text-terminal-muted">{currentCopy.note}</div>
+                </div>
+              )}
               <div className="space-y-2 p-3 font-mono text-xs">
                 {actionsBlocked && <div className="text-terminal-muted">数据过期或阶段已推移，等下一次扫描后再给出行动。</div>}
                 {!actionsBlocked && planSteps.length === 0 && <div className="text-terminal-muted">{emptyDealsMessage}</div>}
