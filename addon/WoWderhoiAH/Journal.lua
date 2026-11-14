@@ -190,6 +190,10 @@ function WAH.recordEvent(event)
   -- Every journal write is new ledger state; queue one save so the terminal
   -- sees a buy, a post or a craft without waiting for the next scan.
   if WAH.requestFlush then WAH.requestFlush() end
+  -- The published plan was sized from the state this write just moved. The
+  -- cockpit observes the change (debounced) and re-mints, so its first step
+  -- can move on; an adoption moves no goods or cash and changes nothing.
+  if WAH.onStateChanged then WAH.onStateChanged(recorded.k) end
   return recorded
 end
 

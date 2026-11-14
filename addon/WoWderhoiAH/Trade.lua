@@ -242,6 +242,59 @@ local function rebuildActions()
   end
 end
 
+-- The plan's first step in one line. There is no cursor: the plan is the
+-- only "what now", and `WAH.replan` re-mints it when state moves, so the
+-- head of the latest plan is already the next unfinished action.
+local function nextStepLine()
+  local steps = lastEvaluation and lastEvaluation.actions or nil
+  local step = steps and steps[1]
+  if not step then return L.NEXT_STEP_NONE end
+  local prefix = string.format(L.NEXT_STEP_OF, 1, #steps)
+  if step.kind == "buy" then
+    if step.vendor then
+      return prefix .. string.format(L.NEXT_STEP_BUY_VENDOR,
+        step.qty, step.name, money(step.maxUnitPrice))
+    end
+    local cap = step.stop and step.stop.ifPriceAbove or step.maxUnitPrice
+    local line = prefix .. string.format(L.NEXT_STEP_BUY, step.qty, step.name, money(cap))
+    if step.fillProb then
+      line = line .. string.format(L.NEXT_STEP_FILL, math.floor(step.fillProb * 100 + 0.5))
+    end
+    return line
+  end
+  if step.requiresBank then
+    return prefix .. string.format(L.NEXT_STEP_SELL_BANK,
+      step.qty, step.name, money(step.price), money(step.expectedNet))
+  end
+  return prefix .. string.format(L.NEXT_STEP_SELL,
+    step.qty, step.name, money(step.price), money(step.expectedNet))
+end
+
+local function refreshNextStep()
+  if not (trade and trade.next) then return end
+  if not currentScan() then
+    trade.next:SetText(L.NEXT_STEP_NO_SCAN)
+    return
+  end
+  -- Before the first evaluation there is no plan to name; an empty line is
+  -- honest, while "nothing clears the gates" would be a claim not yet made.
+  trade.next:SetText(lastEvaluation and nextStepLine() or "")
+end
+
+-- One evaluation, one publication. The radar, the action table and the
+-- next-step line all read this result; a fact landing between renders must
+-- not leave them describing different plans.
+local function publishEvaluation()
+  lastEvaluation = WAH.Core.evaluate(WAH.coreInput())
+  -- The game is the plan authority. Publishing here means the desktop sees
+  -- the same steps, resources and identity the player is looking at.
+  if lastEvaluation.plan and WAH.publishPlan then
+    WAH.publishPlan(lastEvaluation.plan, lastEvaluation.phase)
+  end
+  rebuildActions()
+  refreshNextStep()
+end
+
 local function refreshRadar()
   wipe(deals)
   sortKey = nil
@@ -249,14 +302,10 @@ local function refreshRadar()
   if not scan or not next(scan) then
     chatMessage(L.DEALS_NEED_SCAN)
     refreshStatus()
+    refreshNextStep()
     return
   end
-  lastEvaluation = WAH.Core.evaluate(WAH.coreInput())
-  -- The game is the plan authority. Publishing here means the desktop sees
-  -- the same steps, resources and identity the player is looking at.
-  if lastEvaluation.plan and WAH.publishPlan then
-    WAH.publishPlan(lastEvaluation.plan, lastEvaluation.phase)
-  end
+  publishEvaluation()
   local considered = #lastEvaluation.rows
   -- The core already separated the funded layer: the radar promises an
   -- executable trade, so it renders that list rather than re-filtering the
@@ -313,6 +362,55 @@ WAH.refreshRadar = function()
     FauxScrollFrame_SetOffset(trade.scroll, maxOffset)
   end
   renderRows()
+end
+
+-- A fact landing (a buy, a posting, a bag or purse change) makes the
+-- published plan describe the past. Re-mint it once the burst settles, so
+-- the first step can move on. A search result table the player is reading
+-- is left untouched: the plan moves behind it, and its tab repaints on the
+-- next click.
+--
+-- The wait outlives the estate's own debounce: a journal write and the bag
+-- event that proves it arrive on different clocks, and re-minting in between
+-- would size the plan against a bag the client has not re-read yet.
+local REPLAN_DELAY = (WAH.Estate and WAH.Estate.DEBOUNCE_SECONDS or 1.5) + 0.5
+local replanQueued = false
+function WAH.replan()
+  if replanQueued then return end
+  if not (trade and trade:IsShown() and currentScan()) then return end
+  replanQueued = true
+  C_Timer.After(REPLAN_DELAY, function()
+    replanQueued = false
+    if not (trade and trade:IsShown() and currentScan()) then return end
+    -- The journal and estate revisions are already in the plan identity; if
+    -- the published plan names the current state, there is nothing to mint.
+    local revision = WAH.planRevision()
+    if revision and WoWderhoiAH_Plan and WoWderhoiAH_Plan.revision == revision then return end
+    publishEvaluation()
+    refreshStatus()
+    if mode == "deals" then
+      wipe(deals)
+      for _, row in ipairs(lastEvaluation.opportunities or {}) do deals[#deals + 1] = row end
+      applySort()
+    end
+    if mode ~= "results" then
+      -- The action list may have shrunk under the scroll position; keep the
+      -- view valid and repaint with the new plan.
+      local maxOffset = math.max(0, #visibleRows() - ROWS_VISIBLE)
+      if FauxScrollFrame_GetOffset(trade.scroll) > maxOffset then
+        FauxScrollFrame_SetOffset(trade.scroll, maxOffset)
+      end
+      renderRows()
+    end
+  end)
+end
+
+-- The state owners announce every fact that moves the plan's inputs. An
+-- adoption is the one journal fact that changes no goods and no cash, so it
+-- must not churn the plan the player just named.
+WAH.onStateChanged = function(kind)
+  if kind == "adopt" then return end
+  WAH.replan()
 end
 
 -- ============================== Buy side ==============================
@@ -846,9 +944,18 @@ local function createTradeFrame()
   trade.status:SetJustifyH("LEFT")
   trade.status:SetText(statusLine())
 
+  -- The one line the player acts on. It sits above the search row because it
+  -- answers the question the page exists for; the table below explains it.
+  trade.next = trade:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  trade.next:SetPoint("TOPLEFT", PAD, -42)
+  trade.next:SetPoint("TOPRIGHT", -PAD - 44, -42)
+  trade.next:SetJustifyH("LEFT")
+  trade.next:SetWordWrap(false)
+  trade.next:SetText("")
+
   trade.searchBox = CreateFrame("EditBox", "WoWderhoiAHTradeSearch", trade, "SearchBoxTemplate")
   trade.searchBox:SetSize(170, 20)
-  trade.searchBox:SetPoint("TOPLEFT", PAD, -42)
+  trade.searchBox:SetPoint("TOPLEFT", PAD, -58)
   trade.searchBox:SetAutoFocus(false)
   trade.searchBox:SetScript("OnEnterPressed", runSearch)
 
@@ -896,7 +1003,7 @@ local function createTradeFrame()
   headerButton(L.SELL_PAGE, optionsButton, 50, function() if WAH.openSell then WAH.openSell() end end)
 
   -- Table header row: fixed columns, right-aligned numbers.
-  local HEADER_Y = -70
+  local HEADER_Y = -86
   local COL_BUY_W, COL_W, COL_GAP = 58, 70, 6
   local SCROLL_W = 24
   local ICON_X, ICON_W, NAME_GAP = 4, 18, 6
@@ -933,8 +1040,8 @@ local function createTradeFrame()
   headerLine:SetPoint("TOPRIGHT", -SCROLL_W, HEADER_Y - 14)
   headerLine:SetHeight(1)
 
-  local ROWS_TOP = -88
-  local TOP_INSET, BOTTOM_INSET = 86, 38
+  local ROWS_TOP = -104
+  local TOP_INSET, BOTTOM_INSET = 102, 38
   local rowSpace = trade:GetHeight() - TOP_INSET - BOTTOM_INSET + ROWS_TOP - PAD
   ROWS_VISIBLE = math.max(math.floor(rowSpace / ROW_HEIGHT), 1)
 

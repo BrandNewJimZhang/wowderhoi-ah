@@ -43,9 +43,10 @@ describe("trade panel layout", () => {
   it("fits the row count to the panel instead of assuming one", () => {
     const tall = layout();
     const short = layout(360);
-    // The panel caps at 540 tall; 540 - 86 above - 38 below - 88 header -
-    // 8 border leaves 320, or 14 whole 22px rows.
-    expect(tall.visibleRows()).toBe(14);
+    // The panel caps at 540 tall; 540 - 102 above - 38 below - 104 header -
+    // 8 border leaves 288, or 13 whole 22px rows. The next-step line costs
+    // one row and is worth it: it is the sentence the page exists to say.
+    expect(tall.visibleRows()).toBe(13);
     expect(short.visibleRows()).toBeLessThan(tall.visibleRows());
     // The count that matters is the one that still clears the bottom edge,
     // at whatever height the client hands the page.

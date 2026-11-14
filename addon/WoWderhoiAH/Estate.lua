@@ -378,6 +378,11 @@ function Estate.refresh(force)
     WoWderhoiAH_Estate = snapshot
     local changed = not previous or previous.revision ~= snapshot.revision
     if changed then Estate.requestSave() end
+    -- A moving estate is a moving plan input: the cockpit re-mints from this
+    -- snapshot (debounced). The first build has no previous plan to move.
+    if previous and changed and WAH.onStateChanged then
+      WAH.onStateChanged("estate")
+    end
     return snapshot, changed
   end
   return WoWderhoiAH_Estate, false

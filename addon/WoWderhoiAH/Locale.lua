@@ -108,6 +108,17 @@ local L = {
   ACTIONS_EMPTY = "No next step clears this phase's gates.",
   ACTION_ABORT = "Abandon above %s",
   ACTION_PER_MINUTE = "Net per minute: %s",
+  -- The cockpit's one-line "what now". It names the plan's first step, not a
+  -- separate cursor: the plan is re-minted when state moves, so this line
+  -- follows the player's own actions.
+  NEXT_STEP_OF = "Next step (%d/%d): ",
+  NEXT_STEP_NO_SCAN = "Next step: run a full scan first.",
+  NEXT_STEP_NONE = "Next step: nothing clears this phase's gates.",
+  NEXT_STEP_BUY = "buy %d %s at or below %s; abandon above.",
+  NEXT_STEP_BUY_VENDOR = "buy %d %s at or below the NPC price %s.",
+  NEXT_STEP_SELL = "list %d %s at %s; %s back.",
+  NEXT_STEP_SELL_BANK = "fetch from the bank first, then list %d %s at %s; %s back.",
+  NEXT_STEP_FILL = " Fill %d%%.",
   PURCHASE_UNCONFIRMED = "Purchase not confirmed by the client - it is not in the ledger. Check the auction house before assuming it failed.",
   PHASE_LABELS = { ignition = "Ignition", wave = "Wave", settle = "Settle", steady = "Steady" },
   -- Money suffixes and sort markers sit in the locale table because they
@@ -294,6 +305,14 @@ if GetLocale() == "zhCN" then
   L.ACTIONS_EMPTY = "当前没有满足本阶段门槛的下一步动作。"
   L.ACTION_ABORT = "若价格高于 %s 则放弃"
   L.ACTION_PER_MINUTE = "每分钟净利：%s"
+  L.NEXT_STEP_OF = "下一步（%d/%d）："
+  L.NEXT_STEP_NO_SCAN = "下一步：先做一次全量扫描。"
+  L.NEXT_STEP_NONE = "下一步：当前没有满足本阶段门槛的动作。"
+  L.NEXT_STEP_BUY = "买入 %d 件 %s，单价不超过 %s，高于即放弃。"
+  L.NEXT_STEP_BUY_VENDOR = "买入 %d 件 %s，不高于 NPC 价 %s。"
+  L.NEXT_STEP_SELL = "挂出 %d 件 %s @ %s，回款 %s。"
+  L.NEXT_STEP_SELL_BANK = "先去银行取货，然后挂出 %d 件 %s @ %s，回款 %s。"
+  L.NEXT_STEP_FILL = "成交率 %d%%。"
   L.PURCHASE_UNCONFIRMED = "客户端未确认这次购买，账本没有记录。请到拍卖行核对后再判断是否失败。"
   L.PHASE_LABELS = { ignition = "点火期", wave = "洪流期", settle = "沉淀期", steady = "稳态" }
   L.MONEY_G = "金"
