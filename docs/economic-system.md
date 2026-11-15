@@ -290,7 +290,9 @@ Ledger 是 Journal 的纯投影：
   Journal 买入，只收缩买入侧（`tiers` / `minPrice` / `quantity`）；`sellP` 保留扫描
   观测，因为 top-8 阶梯无法复现整本书的前沿。驾驶舱购买和原生 UI 购买都写 Journal，
   所以两条路径汇合到同一次投影，不需要第二个写回通道。可见阶梯被买空且
-  `tierTruncated` 为真时不猜深档价格，直接关书等下一次扫描。
+  `tierTruncated` 为真时不猜深档价格，直接关书等下一次扫描。扫描进行中的买入
+  可能早于 `scannedAt`，计划会保留该买入步骤到下一次扫描；这是以扫描收尾时刻
+  为锚的保守取舍，宁可短暂保留也不重复扣减。
 - `Recipe`：`data/recipes.forever.json` 的投影，导入时整体替换。
 - 需求日历：唯一来源是 `src/data/events.json`，由 `gen:lua-rules` 编译成
   `WAH.EVENTS` 参与排序，首页“版本日历”也读同一份文件。`startsAt = 0` 的条目是模板，
