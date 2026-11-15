@@ -17,6 +17,11 @@ maintenance line for TBC Anniversary 2.5.6.
 
 </div>
 
+Every plan step answers three questions: **what to do now, how long it should
+take to sell, and what it leaves behind.** The numbers back the sentence; a
+client assumption the repo has not measured is registered in
+[docs/assumptions.md](docs/assumptions.md) instead of presented as fact.
+
 The system is built around one loop:
 
 ```text
@@ -298,6 +303,10 @@ an issue; see [CONTRIBUTING.md](CONTRIBUTING.md). Security notes in
 《魔兽世界：无限》（WoW Forever，客户端 1.60.1，Interface 16001）的拍卖行情报与**闭环地精交易系统**；仓库另保留 TBC 周年服 2.5.6 维护线。
 
 ### 一句话
+
+每个计划步骤先回答三个问题：**现在该做什么、要等多久卖出、最后能留下多少。**
+数字支撑这句话；仓库没有实测过的客户端假设登记在
+[docs/assumptions.md](docs/assumptions.md)，不冒充事实。
 
 不是更准的雷达，而是把玩家经济行为做成一个闭环：
 

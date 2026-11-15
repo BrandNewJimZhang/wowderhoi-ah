@@ -648,6 +648,9 @@ p_real(t) = p(t) / P(t) · 100
 
 ## 5. 运行边界
 
+Forever 客户端逐条假设登记在 [assumptions.md](assumptions.md)：已实测、测试覆盖、
+判断值和未验证分开列出，并附复测方式。
+
 - 客户端没有成交历史接口；公共成交不可观测。
 - `GetBids` / `QueryBids` 只覆盖玩家自己的竞价，不是全市场买单。
 - `GetReplicateItemTimeLeft` 可能返回秒或档位；`/wahdiag` 实测并降级。
