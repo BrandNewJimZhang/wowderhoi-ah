@@ -119,10 +119,6 @@ function Core.sellFrontSorted(sorted, opts)
   return filtered[#filtered].p
 end
 
-function Core.sellFront(tiers, opts)
-  return Core.sellFrontSorted(Core.sortedTiers(tiers), opts)
-end
-
 -- Largest quantity the player can actually buy under a price cap, a
 -- budget and a quantity ceiling (bag space, or the row's executable depth
 -- when the allocator is splitting one purse). Returns quantity, total cost
