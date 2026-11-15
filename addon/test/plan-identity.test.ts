@@ -69,6 +69,34 @@ describe("plan identity names every input", () => {
     expect(identity(lua)).toContain(":window:-");
   });
 
+  it("does not move for a bid, which moves no tracked goods or cash", () => {
+    const lua = scanned(loadAddon());
+    const before = identity(lua);
+    lua.exec(`WowTest.ns.recordEvent({ k = "bid", auctionID = 77, itemId = 2589, amount = 500 })`);
+    expect(identity(lua)).toBe(before);
+  });
+
+  it("names exactly the sales the fill model sees", () => {
+    const lua = scanned(loadAddon());
+    const now = lua.number("time()");
+    const key = () => lua.text("WowTest.ns.Ledger.ownSalesWindowKey(nil, time())");
+    const population = () => lua.number(`(function()
+      local count = 0
+      for _ in pairs(WowTest.ns.Ledger.salesSince(nil, time())) do count = count + 1 end
+      return count
+    end)()`);
+    // An inferred disappearance is public evidence, not a clean label.
+    lua.exec(`WowTest.ns.recordEvent({ k = "sold", itemId = 2589, qty = 1, price = 100,
+      fee = 5, inferred = true, t = ${now - 60} })`);
+    expect(key()).toBe("-");
+    expect(population()).toBe(0);
+    // A collected sale enters both views.
+    lua.exec(`WowTest.ns.recordEvent({ k = "sold", itemId = 2589, qty = 1, price = 100,
+      fee = 5, t = ${now - 30} })`);
+    expect(key()).not.toBe("-");
+    expect(population()).toBe(1);
+  });
+
   it("moves on each existing state source", () => {
     const lua = scanned(loadAddon());
     const base = identity(lua);

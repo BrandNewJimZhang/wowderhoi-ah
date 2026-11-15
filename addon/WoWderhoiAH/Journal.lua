@@ -34,6 +34,14 @@ local EVENT_KINDS = {
   adopt = true
 }
 
+-- Facts that change the book without moving goods or cash. The ledger books
+-- no trade for them, so the plan has nothing new to size against; they move
+-- the content revision (the terminal must see them) but not the economic
+-- revision the plan identity names.
+local function isAnnotation(kind)
+  return kind == "adopt" or kind == "bid"
+end
+
 local function bookKey()
   return (GetRealmName() .. "|" .. (UnitFactionGroup("player") or "Unknown")
     .. "|" .. (UnitName and UnitName("player") or "Unknown"))
@@ -55,8 +63,8 @@ local function migrate(book)
   -- of events it already carries, so the token only moves forward.
   if type(book.rev) ~= "number" then book.rev = book.nextSeq - 1 end
   -- V4 split the economic revision out of the content revision. A migrated
-  -- book cannot tell which old events were adoptions, so it starts level;
-  -- both counters only move forward from here.
+  -- book cannot tell which old events were annotations (adoptions, bids),
+  -- so it starts level; both counters only move forward from here.
   if type(book.econRev) ~= "number" then book.econRev = book.rev end
   -- V3 added the book epoch. A migrated book belongs to the first
   -- installation; zero is its identity and every re-created book is later.
@@ -111,8 +119,8 @@ function Journal.revision()
 end
 
 -- The revision the plan identity reads: only facts that move goods or cash.
--- An adoption is an annotation on a recommendation; it must reach the
--- terminal, but it must not mint a second identity for the same steps.
+-- An annotation (an adoption, a bid) must reach the terminal, but it must
+-- not mint a second identity for the same steps.
 function Journal.economicRevision()
   local book = Journal.ensure()
   return book.econRev or 0
@@ -120,11 +128,16 @@ end
 
 -- Mark the book as changed without appending an event. Actions.upgrade uses
 -- this when a later handler fills in the exact cost or deposit of a fact
--- already written.
+-- already written; it rebuilds the projections first, so the announcement
+-- below never precedes the state a plan would read. The kind travels with
+-- the correction so an annotation stays out of the economic revision.
 function Journal.touch(kind)
   local book = Journal.ensure()
   book.rev = (book.rev or 0) + 1
-  if kind ~= "adopt" then book.econRev = (book.econRev or 0) + 1 end
+  if not isAnnotation(kind) then
+    book.econRev = (book.econRev or 0) + 1
+    if WAH.onStateChanged then WAH.onStateChanged(kind) end
+  end
   return book.rev
 end
 
@@ -165,7 +178,7 @@ function Journal.append(event)
   event.seq = book.nextSeq
   book.nextSeq = book.nextSeq + 1
   book.rev = (book.rev or 0) + 1
-  if event.k ~= "adopt" then book.econRev = (book.econRev or 0) + 1 end
+  if not isAnnotation(event.k) then book.econRev = (book.econRev or 0) + 1 end
   event.t = event.t or now
   event.observedAt = event.observedAt or now
   if event.censored == nil then event.censored = event.observedAt > event.t end
@@ -204,10 +217,12 @@ function WAH.recordEvent(event)
   -- Every journal write is new ledger state; queue one save so the terminal
   -- sees a buy, a post or a craft without waiting for the next scan.
   if WAH.requestFlush then WAH.requestFlush() end
-  -- The published plan was sized from the state this write just moved. The
-  -- cockpit observes the change (debounced) and re-mints, so its first step
-  -- can move on; an adoption moves no goods or cash and changes nothing.
-  if WAH.onStateChanged then WAH.onStateChanged(recorded.k) end
+  -- Announce only after the projection above is rebuilt: an observer must
+  -- never read a ledger that has not seen the fact it was told about. An
+  -- annotation would re-mint identical steps under a new name.
+  if not isAnnotation(recorded.k) and WAH.onStateChanged then
+    WAH.onStateChanged(recorded.k)
+  end
   return recorded
 end
 

@@ -220,6 +220,20 @@ describe("journal checkpoint", () => {
     expect(lua.number("WowTest.ns.Journal.economicRevision()")).toBe(econ + 2);
   });
 
+  it("keeps every annotation out of the economic revision", () => {
+    const lua = loadAddon();
+    const rev = lua.number("WowTest.ns.Journal.revision()");
+    const econ = lua.number("WowTest.ns.Journal.economicRevision()");
+    // A bid freezes no tracked cash and moves no goods: the ledger books no
+    // trade for it, so the plan has nothing new to size against.
+    lua.exec(`WowTest.ns.recordEvent({ k = "bid", auctionID = 77, itemId = 2589, amount = 500 })`);
+    expect(lua.number("WowTest.ns.Journal.revision()")).toBe(rev + 1);
+    expect(lua.number("WowTest.ns.Journal.economicRevision()")).toBe(econ);
+    lua.exec(`WowTest.ns.recordEvent({ k = "adopt", id = "x" })`);
+    expect(lua.number("WowTest.ns.Journal.revision()")).toBe(rev + 2);
+    expect(lua.number("WowTest.ns.Journal.economicRevision()")).toBe(econ);
+  });
+
   it("continues the sequence after a compaction", () => {
     const lua = loadAddon();
     lua.exec(`

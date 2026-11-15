@@ -97,6 +97,21 @@ describe("native auction actions", () => {
     expect(lua.number("WowTest.ns.Journal.revision()")).toBe(before + 1);
   });
 
+  it("announces an in-place correction so the plan can re-mint", () => {
+    const lua = loadAddon();
+    lua.exec("WowTest.ns.onStateChanged = function(kind) WowTest.changed = kind end");
+    auction(lua, 907, LINEN, 5, 5000);
+    // The native event books the fact first, with an estimated deposit.
+    lua.exec("WowTest.fireEvent('AUCTION_HOUSE_AUCTION_CREATED', 907)");
+    lua.exec("WowTest.changed = nil");
+    lua.exec(`WowTest.ns.Actions.post(907, {
+      itemId = ${LINEN}, qty = 5, price = 1000, deposit = 100
+    })`);
+    // The correction moved the ledger the plan was sized from; without an
+    // announcement the next-step line would keep describing the estimate.
+    expect(lua.text("WowTest.changed")).toBe("post");
+  });
+
   it("upgrades a native purchase with the UI's exact cost", () => {
     const lua = loadAddon();
     auction(lua, 906, LINEN, 5, 5000);

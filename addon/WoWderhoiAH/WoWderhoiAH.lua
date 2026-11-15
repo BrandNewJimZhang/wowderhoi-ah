@@ -1737,15 +1737,18 @@ function WAH.planRevision(now)
   if type(scan) ~= "table" or type(scan.scannedAt) ~= "number" then return nil end
   local at = now or time()
   local estate = WAH.Estate and WAH.Estate.revision() or 0
-  -- The economic revision, not the content revision: an adoption moves the
-  -- book the terminal uploads but not the state the plan was sized from.
+  -- The economic revision, not the content revision: an annotation (an
+  -- adoption, a bid) moves the book the terminal uploads but not the state
+  -- the plan was sized from.
   local ledger = WAH.Journal and WAH.Journal.economicRevision() or 0
   local character = (UnitName and UnitName("player")) or "Unknown"
-  local rules = WAH.RULES_REVISION or tostring(WAH.PIPELINE_VERSION or "")
+  -- Same source and fallback as publishPlan's configRevision: the wire
+  -- format version is a different domain and must never stand in for rules.
+  local rules = WAH.RULES_REVISION or ""
   local events = WAH.Core and WAH.Core.activeEventsKey(at) or "-"
-  local ownDays = (WAH.RULES and WAH.RULES.fill and WAH.RULES.fill.ownSalesWindowDays) or 7
-  local window = WAH.Ledger
-    and WAH.Ledger.ownSalesWindowKey(ownDays * 24 * 3600, at) or "-"
+  -- Ledger owns the window default and the clean-sale predicate; nil keeps
+  -- the identity and the fill prior on that one definition.
+  local window = WAH.Ledger and WAH.Ledger.ownSalesWindowKey(nil, at) or "-"
   return string.format("%s|%s|%d:%d:%d:%s:%s:rules:%s:events:%s:window:%s",
     tostring(scan.server or ""), tostring(scan.faction or ""),
     scan.scannedAt, estate, ledger, tostring(WAH.currentPhase()), tostring(character),
@@ -1934,8 +1937,8 @@ function WAH.coreInput()
   -- gates (the loosest) on a mature market.
   input.phaseOverride = WAH.currentPhase()
   local ledger = WAH.Ledger and WAH.Ledger.current() or nil
-  local ownWindowDays = (WAH.RULES.fill and WAH.RULES.fill.ownSalesWindowDays) or 7
-  local ownSales = ledger and WAH.Ledger.salesSince(ownWindowDays * 24 * 3600, now) or {}
+  -- The Ledger default is the same window the plan identity names.
+  local ownSales = ledger and WAH.Ledger.salesSince(nil, now) or {}
   -- The scan is an immutable observation; the plan trades the book the
   -- player's purchases left behind. Every purchase path writes the journal,
   -- so this one projection advances the plan for both the cockpit and the

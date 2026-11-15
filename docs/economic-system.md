@@ -123,7 +123,8 @@ transfer_out / transfer_in / adopt`。
 `rev`：追加事件和原地补全同一事件（例如原生事件先按估算价入账、随后拿到 UI 的
 精确成本或押金）都会推进它。watcher 用它判断“事实内容变了但没有新序号”。
 计划身份读的是独立的经济修订 `econRev`：只有移动货物或现金的事实（买、卖、挂、
-撤、制造、修正）推进它，`adopt` 只推进 `rev`。采纳是一条标注，不应为同一组步骤
+撤、制造、修正）推进它；`adopt` 与 `bid` 只推进 `rev`。采纳和下注都是标注
+（下注不冻结账本追踪的现金，赢得竞价后由邮件 `buy` 记账），不应为同一组步骤
 再造一个计划身份。
 
 `epoch` 是分册创建时刻。清除 SavedVariables 或重装插件会让序号从 1 重新开始，
@@ -260,7 +261,7 @@ Ledger 是 Journal 的纯投影：
   归因时写入。
 - `Decision`：由 `Plan` 写入一次（不是页面 GET），记录稳定 `decisionId`
   （`planRevision:item:kind`；`planRevision` 本身是
-  `realm|faction|genEpoch:estateRevision:econLedgerRevision:phase:character:rules:<hash>:events:<indices>:window:<sales>`，与插件 `/wahadopt`
+  `realm|faction|genEpoch:estate:econLedger:phase:character:rules:<hash>:events:<indices>:window:<sales>`，与插件 `/wahadopt`
   同一公式；末尾三段分别命名编译规则包、活跃事件窗口和自有成交窗口成员，
   都是离散键，不随时钟漂移；计划修订只存在这个身份字符串里，不另设重复列）、
   阶段、行动类型、物品、理由与时间，以及预期净利、成交概率、
@@ -269,13 +270,13 @@ Ledger 是 Journal 的纯投影：
   时间窗；校准用 `[listedAt, observedAt]` 做 censoring-aware 匹配，带成交
   概率的 `sell` 决策同样进入分桶。核心没有押金表时不伪造卖出成交率，该步骤
   只记录预期回款。少于 10 条决策的桶只显示“样本不足”。
-- `Plan`：`Plan(generation, estate, ledger, config, now)` 的不可变输出，按
+- `Plan`：`Plan(generation, estate, ledger, configRevision, now)` 的不可变输出，按
   `(marketId, revision)` 唯一，并记录铸造它的角色。`estateRevision` 属于该
   角色的 estate 分区，换角色后终端仍按同一角色的修订判断计划是否过期。
   `steps` 是资源可行的动作序列，`resources` 记录执行前后的现金与空位，
   `unplanned` 记录未纳入的动作及原因。计划还带铸造时的 `phase`：闸门和先验
   随阶段变化，扫描之后越过边界的计划必须按自己的阶段记录决策，而不是按扫描
-  当时的阶段。`config` 是编译规则包的内容哈希（`WAH.RULES_REVISION`），由
+  当时的阶段。`configRevision` 是编译规则包的内容哈希（`WAH.RULES_REVISION`），由
   `gen:lua-rules` 对规则主体计算，和扫描线格式版本 `PIPELINE_VERSION` 分开：
   规则内容变了，终端必须拒绝旧规则下的计划；只升线格式不必。游戏内是计划的
   铸造者；终端只存副本、历史与学习。

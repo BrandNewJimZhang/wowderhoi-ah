@@ -409,20 +409,30 @@ function Ledger.purchasesBetween(from, to)
   return byItem
 end
 
+-- The own-sales window has one cutoff and one clean-sale predicate. The
+-- fill model and the plan identity must see the same population, or a plan
+-- can keep its name while the prior it was sized from changes.
+local function salesWindowCutoff(windowSeconds, nowTs)
+  local defaultDays = (WAH.RULES and WAH.RULES.fill and WAH.RULES.fill.ownSalesWindowDays) or 7
+  return (nowTs or time()) - (windowSeconds or defaultDays * 24 * 3600)
+end
+
+local function isCleanSale(trade, cutoff)
+  local quantity = trade.qty or 0
+  return trade.itemId ~= nil and trade.t >= cutoff and trade.channel == "auction"
+    and not trade.inferred and quantity > 0
+end
+
 -- Which clean sales the fill model currently sees. The window is a time
 -- filter, not a fact: a sale can age out without any journal write. The plan
 -- identity names this membership so a plan sized from one population cannot
 -- keep the identity of a plan sized from another.
 function Ledger.ownSalesWindowKey(windowSeconds, nowTs)
   local state = Ledger.current()
-  local defaultDays = (WAH.RULES and WAH.RULES.fill and WAH.RULES.fill.ownSalesWindowDays) or 7
-  local window = windowSeconds or defaultDays * 24 * 3600
-  local cutoff = (nowTs or time()) - window
+  local cutoff = salesWindowCutoff(windowSeconds, nowTs)
   local count, oldest = 0, nil
   for _, trade in ipairs(state.trades or {}) do
-    local quantity = trade.qty or 0
-    if trade.itemId and trade.t >= cutoff and trade.channel == "auction"
-      and not trade.inferred and quantity > 0 then
+    if isCleanSale(trade, cutoff) then
       count = count + 1
       local key = trade.seq or trade.t
       if not oldest or key < oldest then oldest = key end
@@ -444,16 +454,13 @@ end
 -- several listings sold close together.
 function Ledger.salesSince(windowSeconds, nowTs)
   local state = Ledger.current()
-  local defaultDays = (WAH.RULES and WAH.RULES.fill and WAH.RULES.fill.ownSalesWindowDays) or 7
-  local window = windowSeconds or defaultDays * 24 * 3600
-  local cutoff = (nowTs or time()) - window
+  local cutoff = salesWindowCutoff(windowSeconds, nowTs)
   local scanFloorHours = (WAH.RULES and WAH.RULES.scanIntervalMinutes or 15) / 60
   local scanFloor = scanFloorHours * 3600
   local byItem = {}
   for _, trade in ipairs(state.trades or {}) do
     local quantity = trade.qty or 0
-    if trade.itemId and trade.t >= cutoff and trade.channel == "auction"
-      and not trade.inferred and quantity > 0 then
+    if isCleanSale(trade, cutoff) then
       local record = byItem[trade.itemId]
       if not record then
         record = { qty = 0, samples = 0, exposed = 0 }
