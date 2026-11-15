@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { RULES_REVISION } from "@/lib/generated-rules-revision";
 import { planEpoch, planEstateRevision, planMatchesScan } from "@/lib/plan-view";
 
 describe("plan view", () => {
@@ -17,6 +18,14 @@ describe("plan view", () => {
     expect(planMatchesScan({ revision: "A|Alliance|1721600000:2:7" }, latest)).toBe(false);
     expect(planMatchesScan(null, latest)).toBe(false);
     expect(planMatchesScan({ revision: "A|Alliance|1721700000:2:7" }, null)).toBe(false);
+  });
+
+  it("compares the rule content the addon actually shipped", () => {
+    const latest = new Date(1721700000 * 1000);
+    const revision = "A|Alliance|1721700000:2:7";
+    expect(planMatchesScan({ revision, configRevision: RULES_REVISION }, latest)).toBe(true);
+    // The old manual "4" no longer names the compiled rules.
+    expect(planMatchesScan({ revision, configRevision: "4" }, latest)).toBe(false);
   });
 
   it("rejects a plan sized under another pipeline", () => {

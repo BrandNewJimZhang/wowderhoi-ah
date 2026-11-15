@@ -1759,7 +1759,10 @@ function WAH.publishPlan(plan, phase)
     -- whoever scanned last.
     character = (UnitName and UnitName("player")) or "",
     estateRevision = WAH.Estate and WAH.Estate.revision() or 0,
-    configRevision = tostring(WAH.PIPELINE_VERSION or ""),
+    -- The compiled rule content, not the scan wire format: a plan is sized
+    -- by these thresholds, so the terminal must reject one minted under a
+    -- different rule pack even when the scan pipeline did not change.
+    configRevision = tostring(WAH.RULES_REVISION or ""),
     observedAt = time(),
     steps = plan.steps or {},
     resources = plan.resources or {},

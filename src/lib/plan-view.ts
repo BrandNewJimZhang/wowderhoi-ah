@@ -1,4 +1,4 @@
-import { SCAN_PIPELINE_VERSION } from "@/lib/market-rules";
+import { RULES_REVISION } from "@/lib/generated-rules-revision";
 
 // A plan revision begins
 // realm|faction|genEpoch:estateRevision:ledgerRevision:phase:character.
@@ -55,7 +55,7 @@ export function planMatchesScan(
   plan: { revision: string; estateRevision?: number; configRevision?: string } | null | undefined,
   latestScanAt: Date | null | undefined,
   estateRevision?: number,
-  configRevision: string = String(SCAN_PIPELINE_VERSION)
+  configRevision: string = RULES_REVISION
 ): boolean {
   if (!plan || !latestScanAt) return false;
   if (planEpoch(plan.revision) !== Math.round(latestScanAt.getTime() / 1000)) return false;

@@ -1,9 +1,16 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { generateLuaRules } from "./gen-lua-rules";
+import { SCAN_PIPELINE_VERSION } from "@/lib/market-rules";
+import {
+  generateLuaRules,
+  generateRulesRevisionModule,
+  rulesBody,
+  rulesRevision
+} from "./gen-lua-rules";
 
 const LUA_PATH = fileURLToPath(new URL("../addon/WoWderhoiAH/GeneratedRules.lua", import.meta.url));
+const REVISION_PATH = fileURLToPath(new URL("../src/lib/generated-rules-revision.ts", import.meta.url));
 
 describe("gen-lua-rules", () => {
   // The drift gate: the committed Lua file is the compiled form of the
@@ -16,7 +23,24 @@ describe("gen-lua-rules", () => {
   });
 
   it("emits the pipeline version", () => {
-    expect(generateLuaRules()).toContain("WAH.PIPELINE_VERSION = 4");
+    expect(generateLuaRules()).toContain(`WAH.PIPELINE_VERSION = ${SCAN_PIPELINE_VERSION}`);
+  });
+
+  it("versions the rule pack by its content, not a hand-maintained integer", () => {
+    const body = rulesBody();
+    const revision = rulesRevision(body);
+    expect(revision).toMatch(/^[0-9a-f]{12}$/);
+    expect(generateLuaRules()).toContain(`WAH.RULES_REVISION = "${revision}"`);
+    // The terminal reads the same constant, so one hash names the rules
+    // both runtimes execute.
+    expect(readFileSync(REVISION_PATH, "utf8")).toBe(generateRulesRevisionModule());
+    expect(generateRulesRevisionModule()).toContain(`RULES_REVISION = "${revision}"`);
+    // Stable for the same body, different for an edited one.
+    expect(rulesRevision(body)).toBe(revision);
+    expect(rulesRevision(`${body}-- edited\n`)).not.toBe(revision);
+    // The scan's wire-format version is not rule content: bumping the
+    // pipeline must not invalidate every published plan on its own.
+    expect(body).not.toContain("WAH.PIPELINE_VERSION");
   });
 
   it("emits the phase and market-type matrix the decision core reads", () => {

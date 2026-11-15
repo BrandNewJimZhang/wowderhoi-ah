@@ -113,6 +113,8 @@ describe("plan publication", () => {
     })`);
     expect(lua.text("WoWderhoiAH_Plan.revision")).toBe("A|Alliance|100:2:3");
     expect(lua.text("WoWderhoiAH_Plan.character")).toBe("Tester");
+    // The terminal compares the compiled rule content, not the scan format.
+    expect(lua.text("WoWderhoiAH_Plan.configRevision")).toBe(lua.text("WowTest.ns.RULES_REVISION"));
     expect(lua.number("WoWderhoiAH_Plan.estateRevision")).toBe(lua.number("WowTest.ns.Estate.revision()"));
     expect(lua.number("#WoWderhoiAH_Plan.steps")).toBe(1);
     expect(lua.text("WoWderhoiAH_Plan.steps[1].kind")).toBe("buy");
