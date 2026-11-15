@@ -17,6 +17,18 @@ describe("decision core parity", () => {
     expect(fromAddon).toEqual(fromTerminal);
   });
 
+  it("evaluates a projected book the same way in both runtimes", () => {
+    const lua = loadAddon();
+    const input = commodityInput();
+    // Buying 60 units eats the 20 at 700 and 40 of the 100 at 800. Both
+    // loaders must consume the projected table identically.
+    input.market.items[2589] = lua.value(
+      `WowTest.ns.Core.projectBook(${toLua(input.market.items[2589])}, 60)`
+    ) as typeof input.market.items[number];
+    expect(input.market.items[2589].minPrice).toBe(800);
+    expect(lua.coreEval(input)).toEqual(runCore(input));
+  });
+
   it("agrees on an empty book and on a rejected spread", () => {
     const empty = commodityInput();
     empty.market.items = {};

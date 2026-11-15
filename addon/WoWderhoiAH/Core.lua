@@ -168,6 +168,42 @@ function Core.ladderCost(tiers, quantity)
   return nil
 end
 
+-- The book a plan actually trades against.
+--
+-- The scan is an immutable observation: one scannedAt must name one book,
+-- in this session and in the terminal. Buying removes depth from that book,
+-- so the plan input is the scan minus the units the journal says the player
+-- bought since the scan. Only the buy side moves. The persisted ladder is
+-- the cheap eight rungs, which cannot reproduce the depth-aware sell front,
+-- so sellP and the competitor counters stay as observed; a sell plan built
+-- from them is conservative, never invented.
+--
+-- When the journal claims more units than the visible ladder holds, the rest
+-- came from the truncated deep book whose prices are unknown. Close the buy
+-- side until the next scan rather than guess a price.
+function Core.projectBook(book, boughtQty)
+  if not book or not boughtQty or boughtQty <= 0 then return book end
+  local tiers = Core.sortedTiers(book.tiers)
+  local remaining = boughtQty
+  local kept = {}
+  for _, tier in ipairs(tiers) do
+    if remaining <= 0 then
+      kept[#kept + 1] = { p = tier.p, q = tier.q }
+    else
+      local take = math.min(remaining, tier.q)
+      remaining = remaining - take
+      if tier.q - take > 0 then kept[#kept + 1] = { p = tier.p, q = tier.q - take } end
+    end
+  end
+  if remaining > 0 then kept = {} end
+  local projected = {}
+  for key, value in pairs(book) do projected[key] = value end
+  projected.tiers = kept
+  projected.quantity = math.max(0, (book.quantity or 0) - boughtQty)
+  projected.minPrice = kept[1] and kept[1].p or 0
+  return projected
+end
+
 function Core.netIfSold(listPrice, quantity, unitCost, feeRate)
   local fee = feeRate or 0
   return listPrice * quantity * (1 - fee) - unitCost * quantity
