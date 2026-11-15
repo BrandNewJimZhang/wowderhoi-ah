@@ -1715,29 +1715,41 @@ end
 SLASH_WOWDERHOIAHCAPTURE1 = "/wahcapture"
 SlashCmdList["WOWDERHOIAHCAPTURE"] = setCapture
 
--- The plan identity:
--- realm|faction|genEpoch:estateRevision:ledgerRevision:phase:character.
+-- The plan identity: a version vector over every input the core read.
+--
+--   realm|faction|epoch:estate:econLedger:phase:character
+--                 :rules:<content hash>:events:<indices>:window:<sales>
+--
 -- Epoch seconds, not an ISO date: this side already has the scan timestamp
--- and Lua cannot format ISO without a second implementation. A new estate or
--- journal revision produces a new plan identity, so a prediction is never
--- silently rewritten under the old name. The phase is part of it because it
--- selects the gates and priors the plan was sized under: the same scan and
--- state can produce two different plans either side of a phase boundary.
--- The character is part of the identity because both revisions are
--- per-character counters: a fresh alt can hold the same values as the main,
--- and without the name the terminal would treat its plan as a duplicate of
--- the other character's.
-function WAH.planRevision()
+-- and Lua cannot format ISO without a second implementation. A new estate,
+-- economic-ledger or phase revision produces a new plan identity, so a
+-- prediction is never silently rewritten under the old name. The character
+-- is part of it because the revisions are per-character counters: a fresh
+-- alt can hold the same values as the main.
+--
+-- The trailing three name inputs the first five missed: the compiled rule
+-- pack (a changed threshold changes the plan with no state move), the open
+-- event windows (the demand boost is a ranking input), and the own-sales
+-- window population (a sale ages out with no journal write). All three use
+-- discrete keys, so the identity does not drift with the clock.
+function WAH.planRevision(now)
   local scan = WoWderhoiAH_ScanData
   if type(scan) ~= "table" or type(scan.scannedAt) ~= "number" then return nil end
+  local at = now or time()
   local estate = WAH.Estate and WAH.Estate.revision() or 0
   -- The economic revision, not the content revision: an adoption moves the
   -- book the terminal uploads but not the state the plan was sized from.
   local ledger = WAH.Journal and WAH.Journal.economicRevision() or 0
   local character = (UnitName and UnitName("player")) or "Unknown"
-  return string.format("%s|%s|%d:%d:%d:%s:%s",
+  local rules = WAH.RULES_REVISION or tostring(WAH.PIPELINE_VERSION or "")
+  local events = WAH.Core and WAH.Core.activeEventsKey(at) or "-"
+  local ownDays = (WAH.RULES and WAH.RULES.fill and WAH.RULES.fill.ownSalesWindowDays) or 7
+  local window = WAH.Ledger
+    and WAH.Ledger.ownSalesWindowKey(ownDays * 24 * 3600, at) or "-"
+  return string.format("%s|%s|%d:%d:%d:%s:%s:rules:%s:events:%s:window:%s",
     tostring(scan.server or ""), tostring(scan.faction or ""),
-    scan.scannedAt, estate, ledger, tostring(WAH.currentPhase()), tostring(character))
+    scan.scannedAt, estate, ledger, tostring(WAH.currentPhase()), tostring(character),
+    rules, events, window)
 end
 
 -- Publish the plan the radar just computed. The game is the plan authority;
@@ -1887,6 +1899,10 @@ end
 function WAH.coreInput()
   local scan = WAH.currentScan()
   local market = WAH.seriesMarket()
+  -- One clock for the whole evaluation: the event-window key and the
+  -- own-sales window are both inputs, and the identity must name the same
+  -- instant the core evaluated at.
+  local now = time()
   -- The plan identity names the estate revision; evaluation must read that
   -- same snapshot. A live GetMoney() inside Estate's debounce window would
   -- pair fresh cash with the revision the plan claims it was sized from.
@@ -1894,7 +1910,7 @@ function WAH.coreInput()
   local slots = (scope and scope.freeSlots)
     or (scan and scan.bagSlots) or freeBagSlots()
   local input = {
-    now = time(),
+    now = now,
     market = {
       firstScanAt = market and market.firstScanAt or nil,
       items = {}
@@ -1909,7 +1925,7 @@ function WAH.coreInput()
       stackSize = 20
     }
   }
-  input.planRevision = WAH.planRevision()
+  input.planRevision = WAH.planRevision(now)
   if not scan then return input end
   -- The phase is whatever WAH.currentPhase resolves -- manual override,
   -- the /wahopen anchor, or the series age. Passing it keeps the radar's
@@ -1919,12 +1935,12 @@ function WAH.coreInput()
   input.phaseOverride = WAH.currentPhase()
   local ledger = WAH.Ledger and WAH.Ledger.current() or nil
   local ownWindowDays = (WAH.RULES.fill and WAH.RULES.fill.ownSalesWindowDays) or 7
-  local ownSales = ledger and WAH.Ledger.salesSince(ownWindowDays * 24 * 3600, input.now) or {}
+  local ownSales = ledger and WAH.Ledger.salesSince(ownWindowDays * 24 * 3600, now) or {}
   -- The scan is an immutable observation; the plan trades the book the
   -- player's purchases left behind. Every purchase path writes the journal,
   -- so this one projection advances the plan for both the cockpit and the
   -- native auction UI without a second write-back channel.
-  local buys = WAH.Ledger and WAH.Ledger.purchasesBetween(scan.scannedAt, input.now) or {}
+  local buys = WAH.Ledger and WAH.Ledger.purchasesBetween(scan.scannedAt, now) or {}
   for itemId, entry in pairs(scan.items or {}) do
     if entry.minPrice and entry.minPrice > 0 then
       -- The scan stamped the window count while it held the series; a

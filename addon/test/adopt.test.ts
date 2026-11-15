@@ -11,7 +11,9 @@ describe("decision adoption", () => {
     // in _G in the game.
     lua.exec(`_G["WoWderhoiAH_ScanData"] = { server = "CN5 Realm 8 PvP", faction = "Alliance", scannedAt = 1794124697 }`);
     const revision = lua.text("WowTest.ns.planRevision()");
-    expect(revision).toMatch(/^CN5 Realm 8 PvP\|Alliance\|1794124697:\d+:\d+:[a-z]+:Tester$/);
+    expect(revision).toMatch(
+      /^CN5 Realm 8 PvP\|Alliance\|1794124697:\d+:\d+:[a-z]+:Tester:rules:[^:]+:events:[^:]+:window:[^:]+$/
+    );
     lua.exec(`SlashCmdList["WOWDERHOIAHADOPT"]("2589 buy")`);
     lua.exec(`WowTest.adoptEvent = WowTest.ns.Journal.last("adopt")`);
     expect(lua.text("WowTest.adoptEvent.id")).toBe(`${revision}:2589:buy`);
@@ -27,7 +29,7 @@ describe("decision adoption", () => {
     lua.exec(`_G.UnitName = function() return "Alt" end`);
     const alt = lua.text("WowTest.ns.planRevision()");
     expect(alt).not.toBe(tester);
-    expect(alt).toMatch(/:Alt$/);
+    expect(alt).toMatch(/:Alt:rules:/);
   });
 
   it("names the phase the plan was sized under", () => {

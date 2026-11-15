@@ -737,10 +737,12 @@ end
 
 -- Evaluate one market state.
 --
+-- environment (versioned as one rule pack by WAH.RULES_REVISION, never
+-- copied into the input): WAH.RULES, WAH.EVENTS, WAH.DEMAND.
+--
 -- input:
 --   now              epoch seconds
 --   phaseOverride    optional phase name
---   rules            WAH.RULES (compiled constants)
 --   market           { firstScanAt, items = { [id] = item } }
 --                    item.tiers must be price-ascending (both builders sort)
 --   capital          { cash, budget } -- cash nil = unknown balance; 0 = empty

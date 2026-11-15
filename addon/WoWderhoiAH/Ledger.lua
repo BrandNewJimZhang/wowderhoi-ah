@@ -409,6 +409,29 @@ function Ledger.purchasesBetween(from, to)
   return byItem
 end
 
+-- Which clean sales the fill model currently sees. The window is a time
+-- filter, not a fact: a sale can age out without any journal write. The plan
+-- identity names this membership so a plan sized from one population cannot
+-- keep the identity of a plan sized from another.
+function Ledger.ownSalesWindowKey(windowSeconds, nowTs)
+  local state = Ledger.current()
+  local defaultDays = (WAH.RULES and WAH.RULES.fill and WAH.RULES.fill.ownSalesWindowDays) or 7
+  local window = windowSeconds or defaultDays * 24 * 3600
+  local cutoff = (nowTs or time()) - window
+  local count, oldest = 0, nil
+  for _, trade in ipairs(state.trades or {}) do
+    local quantity = trade.qty or 0
+    if trade.itemId and trade.t >= cutoff and trade.channel == "auction"
+      and not trade.inferred and quantity > 0 then
+      count = count + 1
+      local key = trade.seq or trade.t
+      if not oldest or key < oldest then oldest = key end
+    end
+  end
+  if oldest == nil then return "-" end
+  return tostring(count) .. "." .. tostring(oldest)
+end
+
 -- Auction sales per item inside a window. These are the only clean fill
 -- labels the decision core ever receives: a collected sale is a fact, a
 -- public disappearance is an inference. Inferred trades are excluded.
