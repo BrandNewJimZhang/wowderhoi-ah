@@ -403,10 +403,41 @@ function Core.marketTypeFor(item)
   return "item"
 end
 
+-- The one event-window arithmetic. The ranking boost and the plan identity
+-- both ask whether a window is open; two copies of these boundaries would
+-- let an event change the plan without moving the identity that names it.
+-- An entry with startsAt 0 is a template and never matches.
+function Core.eventWindow(event)
+  local startsAt = event and (event.startsAt or 0) or 0
+  if startsAt <= 0 then return nil end
+  return startsAt - (event.leadHours or 0) * 3600, event.endsAt or startsAt
+end
+
+function Core.isEventActive(event, now)
+  local startAt, endAt = Core.eventWindow(event)
+  return startAt ~= nil and now >= startAt and now <= endAt
+end
+
+-- Windows are named by their integer index in the compiled calendar: the
+-- weight is rule content, already covered by the rule revision, and string
+-- formatting would have to agree across runtimes.
+function Core.activeEventIndices(now)
+  local indices = {}
+  for index, event in ipairs(WAH.EVENTS or {}) do
+    if Core.isEventActive(event, now) then indices[#indices + 1] = index end
+  end
+  return indices
+end
+
+function Core.activeEventsKey(now)
+  local indices = Core.activeEventIndices(now)
+  if #indices == 0 then return "-" end
+  return table.concat(indices, ",")
+end
+
 -- Demand multiplier for a scheduled event window. Generated from
--- src/data/events.json into WAH.EVENTS; an entry with startsAt 0 is a
--- template and never matches. Only the ranking prior is scaled: an event
--- must not relax a gate or invent a price.
+-- src/data/events.json into WAH.EVENTS. Only the ranking prior is scaled:
+-- an event must not relax a gate or invent a price.
 function Core.eventBoost(now, category, subCategory)
   local function matchesAny(names, value)
     local list = names or {}
@@ -421,9 +452,7 @@ function Core.eventBoost(now, category, subCategory)
   end
   local boost = 1
   for _, event in ipairs(WAH.EVENTS or {}) do
-    local startAt = (event.startsAt or 0) - (event.leadHours or 0) * 3600
-    local endAt = event.endsAt or event.startsAt or 0
-    if (event.startsAt or 0) > 0 and now >= startAt and now <= endAt
+    if Core.isEventActive(event, now)
       and matchesAny(event.classes, category) and matchesAny(event.subClasses, subCategory) then
       boost = boost * (event.weight or 1)
     end

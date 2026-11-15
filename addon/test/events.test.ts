@@ -15,6 +15,61 @@ function boostWith(events: (now: number) => unknown[], category: string, subCate
   );
 }
 
+describe("active event windows", () => {
+  function withEvents(eventFactory: (now: number) => unknown[]) {
+    const lua = loadAddon();
+    const now = lua.number("time()");
+    lua.exec(`WowTest.ns.EVENTS = ${toLua(eventFactory(now))}`);
+    return { lua, now };
+  }
+
+  it("names the active windows by integer index", () => {
+    const { lua } = withEvents((now) => [{
+      name: "Inside", startsAt: now - 60, endsAt: now + 3600, leadHours: 0, weight: 1.5
+    }, {
+      name: "Past", startsAt: now - 7200, endsAt: now - 3600, leadHours: 0, weight: 2
+    }, {
+      name: "Template", startsAt: 0, endsAt: 0, leadHours: 0, weight: 2
+    }]);
+    expect(lua.text("WowTest.ns.Core.activeEventsKey(time())")).toBe("1");
+    expect(lua.value("WowTest.ns.Core.activeEventIndices(time())")).toEqual([1]);
+  });
+
+  it("moves only at the window edges", () => {
+    const { lua } = withEvents((now) => [{
+      name: "Later", startsAt: now + 10800, endsAt: now + 14400, leadHours: 2, weight: 1.5
+    }]);
+    // The lead window opens an hour from now (startsAt - 2h).
+    expect(lua.text("WowTest.ns.Core.activeEventsKey(time())")).toBe("-");
+    lua.advance(3599);
+    expect(lua.text("WowTest.ns.Core.activeEventsKey(time())")).toBe("-");
+    lua.advance(1);
+    expect(lua.text("WowTest.ns.Core.activeEventsKey(time())")).toBe("1");
+    lua.advance(1800);
+    expect(lua.text("WowTest.ns.Core.activeEventsKey(time())")).toBe("1");
+    lua.advance(9001);
+    expect(lua.text("WowTest.ns.Core.activeEventsKey(time())")).toBe("-");
+  });
+
+  it("does not put the event weight in the key", () => {
+    const { lua } = withEvents((now) => [{
+      name: "Inside", startsAt: now - 60, endsAt: now + 3600, leadHours: 0, weight: 1.5
+    }]);
+    const key = lua.text("WowTest.ns.Core.activeEventsKey(time())");
+    lua.exec("WowTest.ns.EVENTS[1].weight = 3");
+    expect(lua.text("WowTest.ns.Core.activeEventsKey(time())")).toBe(key);
+  });
+
+  it("uses the same predicate as the ranking boost", () => {
+    const { lua } = withEvents((now) => [{
+      name: "Inside", startsAt: now, endsAt: now + 3600, leadHours: 0, weight: 1.5,
+      classes: ["*"], subClasses: []
+    }]);
+    expect(lua.number("WowTest.ns.Core.eventBoost(time(), 'Trade Goods', 'Cloth')")).toBeCloseTo(1.5, 3);
+    expect(lua.text("WowTest.ns.Core.activeEventsKey(time())")).toBe("1");
+  });
+});
+
 describe("demand calendar", () => {
   it("multiplies the prior inside the lead window", () => {
     expect(boostWith((now) => [{
