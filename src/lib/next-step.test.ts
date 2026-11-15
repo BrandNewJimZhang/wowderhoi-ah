@@ -74,6 +74,16 @@ describe("describeNextStep", () => {
     expect(copy.note).toContain("NPC");
   });
 
+  it("keeps a market buy's abort price when an older step carries no stop", () => {
+    // The core always emits `stop`, but the contract keeps it optional so a
+    // generation written before the plan contract still decodes. The vendor
+    // discriminator is the fill basis, not the presence of `stop`.
+    const copy = describeNextStep(buy({ stop: undefined, fillBasis: "proxy" }));
+    expect(text(copy.condition)).toContain("高于即放弃");
+    expect(text(copy.condition)).not.toContain("NPC");
+    expect(copper(copy.condition)).toEqual([9399]);
+  });
+
   it("sends the player to the bank before listing bank stock", () => {
     const copy = describeNextStep(sell({ requiresBank: true }));
     expect(text(copy.headline)).toBe("挂出 10 件 Copper Bar");

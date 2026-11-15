@@ -49,6 +49,21 @@ describe("next step prompt", () => {
     expect(text).toContain("成交率");
   });
 
+  it("caps a vendor buy at the NPC price without claiming a fill chance", () => {
+    const lua = loadAddon();
+    lua.setScan([{
+      itemId: 2589, name: "Linen Cloth", minPrice: 100, vendorP: 300,
+      numAuctions: 2, sellers: 2, quantity: 20, itemClass: "Trade Goods",
+      tiers: [{ p: 100, q: 20 }]
+    }]);
+    lua.openTab();
+    lua.exec("WowTest.clickButton(WowTest.ns.L.NEXT_STEPS)");
+    const text = prompt(lua);
+    expect(text).toContain("买入");
+    expect(text).toContain("NPC");
+    expect(text).not.toContain("成交率");
+  });
+
   it("advances after a buy is booked and the purse moves", () => {
     const lua = openPlan();
     expect(lua.names()[0]).toBe("买入 Clean Spread");

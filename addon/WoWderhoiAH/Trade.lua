@@ -151,7 +151,28 @@ local function applySort()
   end)
 end
 
+-- Every surface that reads the funded layer fills the radar list the same
+-- way. A second copy of this loop would let one refresh render a different
+-- set of trades than the plan beside it.
+local function fillDeals()
+  wipe(deals)
+  for _, row in ipairs((lastEvaluation and lastEvaluation.opportunities) or {}) do
+    deals[#deals + 1] = row
+  end
+  applySort()
+end
+
 local renderRows -- forward declaration; a header click re-renders after sorting
+
+-- A re-mint can shrink the list under the scroll position. Clamp first so
+-- the repaint never asks the scroll frame for a row that no longer exists.
+local function repaintRows()
+  local maxOffset = math.max(0, #visibleRows() - ROWS_VISIBLE)
+  if FauxScrollFrame_GetOffset(trade.scroll) > maxOffset then
+    FauxScrollFrame_SetOffset(trade.scroll, maxOffset)
+  end
+  renderRows()
+end
 
 local function sortMark(key)
   if sortKey ~= key then return "" end
@@ -243,15 +264,17 @@ local function rebuildActions()
 end
 
 -- The plan's first step in one line. There is no cursor: the plan is the
--- only "what now", and `WAH.replan` re-mints it when state moves, so the
--- head of the latest plan is already the next unfinished action.
+-- only "what now", and a state change re-mints it, so the head of the
+-- latest plan is already the next unfinished action.
 local function nextStepLine()
   local steps = lastEvaluation and lastEvaluation.actions or nil
   local step = steps and steps[1]
   if not step then return L.NEXT_STEP_NONE end
   local prefix = string.format(L.NEXT_STEP_OF, 1, #steps)
   if step.kind == "buy" then
-    if step.vendor then
+    -- The contract's fill basis is what both surfaces read; the `vendor`
+    -- boolean is a row field, not a promise every stored step carries.
+    if step.fillBasis == "vendor" then
       return prefix .. string.format(L.NEXT_STEP_BUY_VENDOR,
         step.qty, step.name, money(step.maxUnitPrice))
     end
@@ -316,11 +339,7 @@ local function refreshRadar()
   -- The core already separated the funded layer: the radar promises an
   -- executable trade, so it renders that list rather than re-filtering the
   -- candidate rows with a second copy of `allocQty > 0`.
-  for _, row in ipairs(lastEvaluation.opportunities or {}) do
-    deals[#deals + 1] = row
-  end
-  rebuildActions()
-  applySort()
+  fillDeals()
   refreshStatus()
   if #deals == 0 then
     local excluded = lastEvaluation.diagnostics and lastEvaluation.diagnostics.excluded or {}
@@ -361,13 +380,7 @@ WAH.refreshRadar = function()
   -- radar tabs rebuild on their next click anyway.
   if mode == "results" then return end
   refreshRadar()
-  -- The list may have shrunk under the scroll position; keep the view valid
-  -- and repaint with the new book.
-  local maxOffset = math.max(0, #visibleRows() - ROWS_VISIBLE)
-  if FauxScrollFrame_GetOffset(trade.scroll) > maxOffset then
-    FauxScrollFrame_SetOffset(trade.scroll, maxOffset)
-  end
-  renderRows()
+  repaintRows()
 end
 
 -- A fact landing (a buy, a posting, a bag or purse change) makes the
@@ -381,7 +394,7 @@ end
 -- would size the plan against a bag the client has not re-read yet.
 local REPLAN_DELAY = (WAH.Estate and WAH.Estate.DEBOUNCE_SECONDS or 1.5) + 0.5
 local replanQueued = false
-function WAH.replan()
+local function replan()
   if replanQueued then return end
   if not (trade and trade:IsShown() and currentScan()) then return end
   replanQueued = true
@@ -394,29 +407,18 @@ function WAH.replan()
     if revision and WoWderhoiAH_Plan and WoWderhoiAH_Plan.revision == revision then return end
     publishEvaluation()
     refreshStatus()
-    if mode == "deals" then
-      wipe(deals)
-      for _, row in ipairs(lastEvaluation.opportunities or {}) do deals[#deals + 1] = row end
-      applySort()
-    end
-    if mode ~= "results" then
-      -- The action list may have shrunk under the scroll position; keep the
-      -- view valid and repaint with the new plan.
-      local maxOffset = math.max(0, #visibleRows() - ROWS_VISIBLE)
-      if FauxScrollFrame_GetOffset(trade.scroll) > maxOffset then
-        FauxScrollFrame_SetOffset(trade.scroll, maxOffset)
-      end
-      renderRows()
-    end
+    if mode == "deals" then fillDeals() end
+    -- The action list may have shrunk under the scroll position; keep the
+    -- view valid and repaint with the new plan.
+    if mode ~= "results" then repaintRows() end
   end)
 end
 
--- The state owners announce every fact that moves the plan's inputs. An
--- adoption is the one journal fact that changes no goods and no cash, so it
--- must not churn the plan the player just named.
-WAH.onStateChanged = function(kind)
-  if kind == "adopt" then return end
-  WAH.replan()
+-- The state owners announce facts that move the plan's inputs. Journal and
+-- Estate only fire this for economic changes; an annotation never reaches
+-- here, so the plan the player just named is not churned.
+WAH.onStateChanged = function()
+  replan()
 end
 
 -- ============================== Buy side ==============================

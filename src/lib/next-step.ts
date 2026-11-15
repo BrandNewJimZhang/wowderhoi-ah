@@ -27,9 +27,9 @@ export function describeNextStep(action: CoreAction): NextStepCopy {
       : [` · 成交率 ${Math.round((action.fillProb ?? 0) * 100)}%`];
     return {
       headline: ["买入 ", `${action.qty} 件 `, action.name],
-      condition: action.stop
-        ? ["单价 ≤ ", { copper: abort }, "，高于即放弃"]
-        : ["单价 ≤ NPC 价 ", { copper: action.maxUnitPrice }],
+      condition: vendor
+        ? ["单价 ≤ NPC 价 ", { copper: action.maxUnitPrice }]
+        : ["单价 ≤ ", { copper: abort }, "，高于即放弃"],
       outcome: ["预计净利 ", { copper: action.expectedNet }, ...probability],
       note: vendor
         ? "NPC 必赚：买下后直接卖店，没有市场风险。完成后计划会自动重算。"

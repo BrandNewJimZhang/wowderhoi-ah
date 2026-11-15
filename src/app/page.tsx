@@ -105,9 +105,7 @@ export default async function Home() {
   // Only the game's current plan may be shown as "the next step". The
   // scan-time fallback below describes a state that may already have moved,
   // so it stays a list of estimates and never becomes the instruction.
-  const currentStep = publishedPlan && !actionsBlocked
-    ? (publishedPlan.steps as CoreAction[])[0]
-    : undefined;
+  const currentStep = publishedPlan && !actionsBlocked ? planSteps[0] : undefined;
   const currentCopy = currentStep ? describeNextStep(currentStep) : null;
   const watchedSignals = signals.filter((signal) => watchedIds.has(signal.itemId));
   const triggeredAlerts = evaluateAlertRules(alertRules, signals.filter((signal) => !signal.stale));
@@ -117,7 +115,7 @@ export default async function Home() {
   type BuyStep = Extract<CoreAction, { kind: "buy" }>;
   const rowById = new Map(evaluation.rows.map((row) => [row.itemId, row]));
   const fundedBuys: Array<{ step: BuyStep; row: CoreRow }> | null = publishedPlan
-    ? (publishedPlan.steps as CoreAction[])
+    ? planSteps
         .filter((step): step is BuyStep => step.kind === "buy")
         .flatMap((step) => {
           const row = rowById.get(step.itemId);
