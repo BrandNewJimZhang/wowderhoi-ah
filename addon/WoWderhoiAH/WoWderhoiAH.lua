@@ -1908,6 +1908,11 @@ function WAH.coreInput()
   local ledger = WAH.Ledger and WAH.Ledger.current() or nil
   local ownWindowDays = (WAH.RULES.fill and WAH.RULES.fill.ownSalesWindowDays) or 7
   local ownSales = ledger and WAH.Ledger.salesSince(ownWindowDays * 24 * 3600, input.now) or {}
+  -- The scan is an immutable observation; the plan trades the book the
+  -- player's purchases left behind. Every purchase path writes the journal,
+  -- so this one projection advances the plan for both the cockpit and the
+  -- native auction UI without a second write-back channel.
+  local buys = WAH.Ledger and WAH.Ledger.purchasesBetween(scan.scannedAt, input.now) or {}
   for itemId, entry in pairs(scan.items or {}) do
     if entry.minPrice and entry.minPrice > 0 then
       -- The scan stamped the window count while it held the series; a
@@ -1919,7 +1924,7 @@ function WAH.coreInput()
       local own = ownSales[itemId]
       -- The key is the item's identity: Core.evaluate iterates pairs(items)
       -- and never reads an id field from the record.
-      input.market.items[itemId] = {
+      input.market.items[itemId] = Core.projectBook({
         name = entry.name,
         quality = entry.quality,
         itemClass = entry.itemClass,
@@ -1953,7 +1958,7 @@ function WAH.coreInput()
         ownExposedHours = own and own.exposedHours or 0,
         demandPrior = Core.demandFor(entry.itemClass, entry.itemSubClass),
         history = samples > 0 and { samples = samples, spanHours = spanHours or 0 } or nil
-      }
+      }, buys[itemId] or 0)
     end
   end
   local cash = GetMoney and GetMoney() or 0

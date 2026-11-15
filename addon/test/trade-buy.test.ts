@@ -87,6 +87,34 @@ describe("a purchase never rewrites the scan observation", () => {
   });
 });
 
+describe("a cockpit purchase advances the plan through the projection", () => {
+  it("drops the buy step once the purchase empties the visible book", () => {
+    const lua = loadAddon();
+    lua.setScan([{
+      itemId: LINEN, name: "Linen Cloth", minPrice: 100, sellP: 650,
+      numAuctions: 3, sellers: 3, quantity: 10, itemClass: "Trade Goods",
+      tiers: [{ p: 100, q: 10 }]
+    }]);
+    lua.setPoints([{ itemId: LINEN, closes: [650, 650, 650, 650, 650, 650], spacing: 1800 }]);
+    lua.openTab();
+    const steps = () => lua.value("WoWderhoiAH_Plan.steps") as Array<{
+      kind: string; itemId: number; qty: number;
+    }>;
+    expect(steps().some((step) => step.kind === "buy" && step.itemId === LINEN)).toBe(true);
+
+    lua.search("Linen", [{ itemId: LINEN, name: "Linen Cloth", count: 10, buyout: 1000 }]);
+    lua.setBag([{ bag: 0, slot: 1, itemId: LINEN, count: 10, name: "Linen Cloth" }]);
+    lua.exec("WowTest.fireEvent('BAG_UPDATE_DELAYED')");
+    lua.buyRow(1);
+    lua.exec("WowTest.fireEvent('AUCTION_HOUSE_PURCHASE_COMPLETED')");
+    lua.advance(3);
+
+    const after = steps();
+    expect(after.some((step) => step.kind === "buy" && step.itemId === LINEN)).toBe(false);
+    expect(after.some((step) => step.kind === "sell" && step.itemId === LINEN)).toBe(true);
+  });
+});
+
 describe("the search result table still follows the client", () => {
   it("re-runs the search and shows the surviving listings", () => {
     const lua = page();
