@@ -47,7 +47,9 @@
 
 ### 2.1 `WoWderhoiAH_ScanData`（v4）
 
-一次全量扫描的最新快照：
+一次全量扫描的最新快照。它是不可变观测：只有扫描收尾写入一次，购买、上架、
+撤单和采纳都不改写它；同一个 `scannedAt` 在两端永远命名同一本书。玩家自己的买入
+在计划读取时从盘口投影扣除，而不是写回这里。
 
 - 元数据：`dataVersion`、`observationVersion`（观测洁净度：2 表示推断消失量已剔除
   自有挂单与自有买入）、`scannedAt`、`server`、`faction`、`character`、`cash`、
@@ -277,6 +279,12 @@ Ledger 是 Journal 的纯投影：
   与已发布计划的身份一致，则不重复求值。因此「下一步」永远是当前计划的第一步，
   会随玩家的购买、上架和背包变化前进；它不维护游标，每一步决策仍按被展示时的
   `planRevision` 记录，采纳与复盘的身份不受重铸影响。
+- 计划读的是投影书，不是原始扫描：`WAH.coreInput` 用
+  `Core.projectBook(scanItem, buysSinceScan)` 从扫描阶梯减去 `scannedAt` 之后的
+  Journal 买入，只收缩买入侧（`tiers` / `minPrice` / `quantity`）；`sellP` 保留扫描
+  观测，因为 top-8 阶梯无法复现整本书的前沿。驾驶舱购买和原生 UI 购买都写 Journal，
+  所以两条路径汇合到同一次投影，不需要第二个写回通道。可见阶梯被买空且
+  `tierTruncated` 为真时不猜深档价格，直接关书等下一次扫描。
 - `Recipe`：`data/recipes.forever.json` 的投影，导入时整体替换。
 - 需求日历：唯一来源是 `src/data/events.json`，由 `gen:lua-rules` 编译成
   `WAH.EVENTS` 参与排序，首页“版本日历”也读同一份文件。`startsAt = 0` 的条目是模板，

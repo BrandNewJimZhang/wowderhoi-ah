@@ -509,74 +509,6 @@ end
 
 local runSearch -- forward declaration
 
--- The radar reads the session scan as its record of what is listed right
--- now, and only a full rescan rewrites it — so buying the cheapest listing
--- left the scan advertising a price nobody can pay. The live result rows are
--- the one fresh evidence a session has; rebuild the ladder from them.
---
--- Ceiling: those rows are one search's results, never the whole book, so
--- the rebuilt ladder is never deeper than the truth. It can hide a real
--- deal until the next scan; it can never invent one.
-local function repriceAfterPurchase(bought)
-  local scan = currentScan()
-  local scanned = scan and scan[bought.itemId]
-  if not scanned then return end
-  -- A commodity purchase walks the cheapest offers first, regardless of
-  -- which row the player clicked, so decrement in that order.
-  if bought.via == "commodity" then
-    local offers = {}
-    for _, row in ipairs(results) do
-      if row.itemId == bought.itemId then offers[#offers + 1] = row end
-    end
-    table.sort(offers, function(left, right) return left.unitPrice < right.unitPrice end)
-    local remaining = bought.qty or 0
-    for _, offer in ipairs(offers) do
-      if remaining <= 0 then break end
-      local take = math.min(remaining, offer.count)
-      offer.count = offer.count - take
-      remaining = remaining - take
-    end
-  end
-  local tiersByPrice = {}
-  local cheapest, quantity, listings = nil, 0, 0
-  for _, row in ipairs(results) do
-    if row.itemId == bought.itemId and row.count and row.count > 0
-      and (bought.via == "commodity" or row.auctionID ~= bought.auctionID) then
-      tiersByPrice[row.unitPrice] = (tiersByPrice[row.unitPrice] or 0) + row.count
-      quantity = quantity + row.count
-      listings = listings + 1
-      if not cheapest or row.unitPrice < cheapest then cheapest = row.unitPrice end
-    end
-  end
-  if not cheapest then
-    scan[bought.itemId] = nil
-    return
-  end
-  local tiers = {}
-  for price, count in pairs(tiersByPrice) do tiers[#tiers + 1] = { p = price, q = count } end
-  table.sort(tiers, function(left, right) return left.p < right.p end)
-  -- Rebuild the front with the same rule the scanner used: item auctions
-  -- measure depth in listings, commodities in units, and ignition asks for
-  -- a shallower front. The market type is the one the scan recorded; deriving
-  -- it again from the surviving rows would flip a stack-bearing item auction
-  -- to commodity as the book shrinks.
-  local marketType = scanned.marketType or WAH.Core.marketTypeFor({
-    itemClass = scanned.itemClass,
-    quantity = scanned.quantity,
-    numAuctions = scanned.numAuctions
-  })
-  local phase = WAH.currentPhase and WAH.currentPhase() or "steady"
-  scanned.minPrice = cheapest
-  scanned.tiers = tiers
-  scanned.quantity = quantity
-  scanned.numAuctions = listings
-  scanned.sellP = WAH.Core.sellFront(tiers, {
-    rules = WAH.RULES.sellFront,
-    byCount = marketType == "item",
-    early = phase == "ignition"
-  }) or cheapest
-end
-
 -- A purchase awaiting the client's confirmation. `confirmed` marks that a
 -- completion signal arrived; the three-second timeout must not warn about a
 -- purchase that is merely still being settled.
@@ -616,10 +548,12 @@ local function recordPurchase(purchase, quiet)
   end
 end
 
--- Settle a confirmed purchase: reprice the book the player is looking at and
--- re-run the search so the bought units drop off. `correction` restates a
--- purchase the request timeout already settled; the book was repriced from
--- the requested quantity, so only the booked fact may change.
+-- Settle a confirmed purchase: re-run the search so the result table shows
+-- what the client now answers. The scan itself is an immutable observation
+-- (one scannedAt must never name two books); the plan subtracts the booked
+-- purchase at read time, so buying advances it without rewriting the scan.
+-- `correction` restates a purchase the request timeout already settled; only
+-- the booked fact may change.
 local function completePurchase(purchase, filled, correction)
   if filled and filled > 0 then
     purchase.qty = filled
@@ -628,7 +562,6 @@ local function completePurchase(purchase, filled, correction)
   end
   recordPurchase(purchase, correction)
   if correction then return end
-  repriceAfterPurchase(purchase.row)
   C_Timer.After(0.6, function()
     if trade and trade:IsShown() and mode == "results" then runSearch() end
   end)

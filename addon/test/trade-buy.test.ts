@@ -1,11 +1,10 @@
-// Buying the cheapest listing of an item makes the session's scan data a
-// lie about that item, and the cockpit reads the scan as its record of what
-// is listed right now. Only a full rescan ever rewrote it, so a bought
-// listing kept reappearing at a price nobody could pay.
+// The scan is an immutable observation: the terminal rejects a second book
+// with the same scannedAt, and the plan identity names that epoch. A
+// purchase is state, not a new observation -- rewriting the stored book
+// would let one epoch mean two different market states.
 //
-// The buy path is the one moment in a session that knows a listing is gone,
-// so these tests pin that it rebuilds the ladder from the rows still on the
-// list -- and that a confirmed purchase becomes a journal fact.
+// The live search table still refreshes after a buy; that is a UI
+// observation, and it no longer leaks into the scan the plan reads.
 
 import { describe, expect, it } from "vitest";
 import { loadAddon, type WowLua } from "./wow-lua";
@@ -43,46 +42,17 @@ function page(options?: { numAuctions?: number; phase?: string; extraScan?: unkn
 function buyCheapest(lua: WowLua, listings: Listing[], confirm = true) {
   lua.search("Mageweave", listings);
   lua.buyRow(1);
-  // The scan correction and the journal entry both happen on the client's
-  // confirmation, not on the optimistic click.
+  // The journal entry happens on the client's confirmation, not on the
+  // optimistic click.
   if (confirm) lua.exec("WowTest.fireEvent('AUCTION_HOUSE_PURCHASE_COMPLETED')");
 }
 
-describe("a purchase corrects the scan the cockpit reads", () => {
-  it("leaves the cheapest surviving listing as the item's new minimum", () => {
+describe("a purchase never rewrites the scan observation", () => {
+  it("leaves the bought item's scan entry byte for byte unchanged", () => {
     const lua = page();
+    const before = lua.value(`WoWderhoiAH_ScanData.items[${MAGEWEAVE}]`);
     buyCheapest(lua, [listing(80000), listing(90000), listing(85000)]);
-    expect(lua.scanMin(MAGEWEAVE)).toBe(85000);
-    expect(lua.scanAuctions(MAGEWEAVE)).toBe(2);
-    expect(lua.number("WoWderhoiAH_ScanData.items[4338].quantity")).toBe(20);
-    expect(lua.number("#WoWderhoiAH_ScanData.items[4338].tiers")).toBe(2);
-  });
-
-  it("drops the item once the surviving front leaves no executable edge", () => {
-    const lua = page();
-    buyCheapest(lua, [listing(80000), listing(90000), listing(85000)]);
-    // The sell front is now the cheapest survivor, so buying it to resell
-    // at the front has no spread. The old median radar kept showing this;
-    // the executable radar must not.
-    lua.findDeals();
-    expect(lua.names()).toEqual([]);
-  });
-
-  it("forgets the item entirely when its last listing is the one bought", () => {
-    const lua = page();
-    buyCheapest(lua, [listing(80000)]);
-    expect(lua.scanned(MAGEWEAVE)).toBe(false);
-    lua.findDeals();
-    expect(lua.names()).toEqual([]);
-  });
-
-  it("counts the bought listing out of the book's depth", () => {
-    // Wave rules require three buyable listings; buying one leaves two.
-    const lua = page({ numAuctions: 3, phase: "wave" });
-    buyCheapest(lua, [listing(80000), listing(85000), listing(90000)]);
-    expect(lua.scanAuctions(MAGEWEAVE)).toBe(2);
-    lua.findDeals();
-    expect(lua.names()).toEqual([]);
+    expect(lua.value(`WoWderhoiAH_ScanData.items[${MAGEWEAVE}]`)).toEqual(before);
   });
 
   it("leaves every other item's scan entry alone", () => {
@@ -92,47 +62,48 @@ describe("a purchase corrects the scan the cockpit reads", () => {
         sellers: 3, quantity: 10, tiers: [{ p: 80000, q: 10 }]
       }]
     });
+    const before = lua.value(`WoWderhoiAH_ScanData.items[${LINEN}]`);
     buyCheapest(lua, [listing(80000), listing(85000)]);
-    expect(lua.scanMin(MAGEWEAVE)).toBe(85000);
-    expect(lua.scanMin(LINEN)).toBe(80000);
-    expect(lua.scanAuctions(LINEN)).toBe(6);
+    expect(lua.value(`WoWderhoiAH_ScanData.items[${LINEN}]`)).toEqual(before);
+  });
+
+  it("keeps the scan epoch and total", () => {
+    const lua = page();
+    const scannedAt = lua.number("WoWderhoiAH_ScanData.scannedAt");
+    const total = lua.number("WoWderhoiAH_ScanData.total");
+    buyCheapest(lua, [listing(80000), listing(85000)]);
+    expect(lua.number("WoWderhoiAH_ScanData.scannedAt")).toBe(scannedAt);
+    expect(lua.number("WoWderhoiAH_ScanData.total")).toBe(total);
   });
 
   it("changes nothing when the listing moved before the click landed", () => {
     const lua = page();
+    const before = lua.value(`WoWderhoiAH_ScanData.items[${MAGEWEAVE}]`);
     lua.search("Mageweave", [listing(80000), listing(85000)]);
     lua.repriceListing(1, 990000);
     lua.buyRow(1);
     expect(lua.lastChat()).toContain("价格已变化");
-    expect(lua.scanMin(MAGEWEAVE)).toBe(80000);
-    expect(lua.scanAuctions(MAGEWEAVE)).toBe(3);
+    expect(lua.value(`WoWderhoiAH_ScanData.items[${MAGEWEAVE}]`)).toEqual(before);
   });
 });
 
-describe("the post-purchase front uses the scanner's own rule", () => {
-  it("measures an item auction's depth in listings, not units", () => {
-    const lua = loadAddon();
-    lua.setScan([
-      {
-        itemId: MAGEWEAVE, name: "Mageweave Cloth", minPrice: 100, sellP: 300,
-        numAuctions: 4, sellers: 4, quantity: 6, itemClass: "Armor",
-        tiers: [{ p: 100, q: 1 }, { p: 200, q: 3 }, { p: 300, q: 1 }, { p: 400, q: 1 }]
+describe("the search result table still follows the client", () => {
+  it("re-runs the search and shows the surviving listings", () => {
+    const lua = page();
+    buyCheapest(lua, [listing(80000), listing(90000), listing(85000)]);
+    // The server now answers with the two listings the purchase left.
+    lua.exec(`
+      WowTest.pendingItemResults[${MAGEWEAVE}] = {
+        { itemKey = C_AuctionHouse.MakeItemKey(${MAGEWEAVE}, 0, 0, 0), auctionID = 6101,
+          quantity = 10, itemLink = "|Hitem:${MAGEWEAVE}:0:0:0|h[Mageweave Cloth]|h",
+          minBid = 85000, buyoutAmount = 85000 },
+        { itemKey = C_AuctionHouse.MakeItemKey(${MAGEWEAVE}, 0, 0, 0), auctionID = 6102,
+          quantity = 10, itemLink = "|Hitem:${MAGEWEAVE}:0:0:0|h[Mageweave Cloth]|h",
+          minBid = 90000, buyoutAmount = 90000 }
       }
-    ]);
-    lua.setPoints([{ itemId: MAGEWEAVE, closes: CLOSES }]);
-    lua.openTab();
-    lua.search("Mageweave", [
-      { itemId: MAGEWEAVE, name: "Mageweave Cloth", count: 1, buyout: 100 },
-      { itemId: MAGEWEAVE, name: "Mageweave Cloth", count: 3, buyout: 600 },
-      { itemId: MAGEWEAVE, name: "Mageweave Cloth", count: 1, buyout: 300 },
-      { itemId: MAGEWEAVE, name: "Mageweave Cloth", count: 1, buyout: 400 }
-    ]);
-    lua.buyRow(1);
-    lua.exec("WowTest.fireEvent('AUCTION_HOUSE_PURCHASE_COMPLETED')");
-    // Three listings survive. The by-listing front is the third cheapest
-    // (400); a quantity-weighted front would stop inside the 3-stack at
-    // 200, pricing the same book two different ways.
-    expect(lua.number("WoWderhoiAH_ScanData.items[4338].sellP")).toBe(400);
+    `);
+    lua.advance(1);
+    expect(lua.rowCount()).toBe(2);
   });
 });
 
