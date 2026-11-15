@@ -54,6 +54,10 @@ local function migrate(book)
   -- V2 added the content revision. A migrated book starts from the number
   -- of events it already carries, so the token only moves forward.
   if type(book.rev) ~= "number" then book.rev = book.nextSeq - 1 end
+  -- V4 split the economic revision out of the content revision. A migrated
+  -- book cannot tell which old events were adoptions, so it starts level;
+  -- both counters only move forward from here.
+  if type(book.econRev) ~= "number" then book.econRev = book.rev end
   -- V3 added the book epoch. A migrated book belongs to the first
   -- installation; zero is its identity and every re-created book is later.
   if type(book.epoch) ~= "number" then book.epoch = 0 end
@@ -65,7 +69,7 @@ function Journal.ensure()
   local book = WoWderhoiAH_Journal.books[key]
   if not book then
     book = {
-      e = {}, dropped = 0, nextSeq = 1, rev = 0,
+      e = {}, dropped = 0, nextSeq = 1, rev = 0, econRev = 0,
       -- Creation time, not a random id: a re-created book always follows
       -- the one whose SavedVariables were cleared.
       epoch = time(),
@@ -97,21 +101,30 @@ function Journal.book()
   return Journal.ensure()
 end
 
--- Stable per-book revision. The plan identity reads it; the terminal uses
--- it to tell a re-sent book from a new action without comparing event
--- tables. It moves on an append and on an in-place correction, which keeps
--- the same sequence but changes what the fact says.
+-- Stable per-book content revision. The terminal uses it to tell a re-sent
+-- book from a new action without comparing event tables. It moves on an
+-- append and on an in-place correction, which keeps the same sequence but
+-- changes what the fact says.
 function Journal.revision()
   local book = Journal.ensure()
   return book.rev
 end
 
+-- The revision the plan identity reads: only facts that move goods or cash.
+-- An adoption is an annotation on a recommendation; it must reach the
+-- terminal, but it must not mint a second identity for the same steps.
+function Journal.economicRevision()
+  local book = Journal.ensure()
+  return book.econRev or 0
+end
+
 -- Mark the book as changed without appending an event. Actions.upgrade uses
 -- this when a later handler fills in the exact cost or deposit of a fact
 -- already written.
-function Journal.touch()
+function Journal.touch(kind)
   local book = Journal.ensure()
   book.rev = (book.rev or 0) + 1
+  if kind ~= "adopt" then book.econRev = (book.econRev or 0) + 1 end
   return book.rev
 end
 
@@ -152,6 +165,7 @@ function Journal.append(event)
   event.seq = book.nextSeq
   book.nextSeq = book.nextSeq + 1
   book.rev = (book.rev or 0) + 1
+  if event.k ~= "adopt" then book.econRev = (book.econRev or 0) + 1 end
   event.t = event.t or now
   event.observedAt = event.observedAt or now
   if event.censored == nil then event.censored = event.observedAt > event.t end

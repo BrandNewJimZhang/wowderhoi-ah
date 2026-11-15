@@ -203,6 +203,23 @@ describe("journal checkpoint", () => {
     expect(same).toBe(1);
   });
 
+  it("tracks an economic revision separate from the fact revision", () => {
+    const lua = loadAddon();
+    const rev = lua.number("WowTest.ns.Journal.revision()");
+    const econ = lua.number("WowTest.ns.Journal.economicRevision()");
+    lua.exec(`WowTest.ns.recordEvent({ k = "adopt", id = "x" })`);
+    // The watcher needs the book revision to upload the adoption.
+    expect(lua.number("WowTest.ns.Journal.revision()")).toBe(rev + 1);
+    // The plan must not churn on an annotation that moves nothing.
+    expect(lua.number("WowTest.ns.Journal.economicRevision()")).toBe(econ);
+    lua.exec(`WowTest.ns.recordEvent({ k = "buy", itemId = 2589, qty = 1, cost = 100 })`);
+    expect(lua.number("WowTest.ns.Journal.economicRevision()")).toBe(econ + 1);
+    lua.exec(`WowTest.ns.Journal.touch()`);
+    expect(lua.number("WowTest.ns.Journal.economicRevision()")).toBe(econ + 2);
+    lua.exec(`WowTest.ns.Journal.touch("adopt")`);
+    expect(lua.number("WowTest.ns.Journal.economicRevision()")).toBe(econ + 2);
+  });
+
   it("continues the sequence after a compaction", () => {
     const lua = loadAddon();
     lua.exec(`

@@ -1731,7 +1731,9 @@ function WAH.planRevision()
   local scan = WoWderhoiAH_ScanData
   if type(scan) ~= "table" or type(scan.scannedAt) ~= "number" then return nil end
   local estate = WAH.Estate and WAH.Estate.revision() or 0
-  local ledger = WAH.Journal and WAH.Journal.revision() or 0
+  -- The economic revision, not the content revision: an adoption moves the
+  -- book the terminal uploads but not the state the plan was sized from.
+  local ledger = WAH.Journal and WAH.Journal.economicRevision() or 0
   local character = (UnitName and UnitName("player")) or "Unknown"
   return string.format("%s|%s|%d:%d:%d:%s:%s",
     tostring(scan.server or ""), tostring(scan.faction or ""),

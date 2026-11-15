@@ -66,6 +66,22 @@ describe("decision adoption", () => {
     expect(lua.text(`tostring(WowTest.ns.Journal.last("adopt"))`)).toBe("nil");
   });
 
+  it("does not mint a new plan identity", () => {
+    const lua = loadAddon();
+    lua.exec(`_G["WoWderhoiAH_ScanData"] = { server = "A", faction = "Alliance", scannedAt = 100 }`);
+    const before = lua.text("WowTest.ns.planRevision()");
+    const revisionBefore = lua.number("WowTest.ns.Journal.revision()");
+    // The adoption is a journal fact (the watcher must upload it), but it
+    // moves no goods and no cash: the plan the player just named stays the
+    // same plan.
+    lua.exec(`WowTest.ns.recordEvent({ k = "adopt", id = "A|Alliance|100:2589:buy" })`);
+    expect(lua.number("WowTest.ns.Journal.revision()")).toBe(revisionBefore + 1);
+    expect(lua.text("WowTest.ns.planRevision()")).toBe(before);
+
+    lua.exec(`WowTest.ns.recordEvent({ k = "buy", itemId = 2589, qty = 1, cost = 100 })`);
+    expect(lua.text("WowTest.ns.planRevision()")).not.toBe(before);
+  });
+
   it("does not make the ledger replay report an unknown event", () => {
     const lua = loadAddon();
     lua.exec(`WowTest.adoptReplay = WowTest.ns.Ledger.replay({
