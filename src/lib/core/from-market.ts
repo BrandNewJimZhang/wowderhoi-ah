@@ -22,8 +22,6 @@ type CoreBuildOptions = {
   cashCopper?: number;
   bagSlots?: number;
   freeSlots?: number;
-  // realm|faction|genEpoch:estateRevision:ledgerRevision:phase:character.
-  planRevision?: string;
 };
 
 // The addon's planner fixes a stack at 20 units; the terminal must send the
@@ -108,7 +106,6 @@ export function buildCoreInput(
   }
   return {
     now: options.now.getTime() / 1000,
-    ...(options.planRevision ? { planRevision: options.planRevision } : {}),
     // The caller resolves the phase once from the generation's stored
     // breadth and the market's true first observation; the core must not
     // re-derive it from whatever quotes this read happens to carry.

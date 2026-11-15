@@ -82,9 +82,6 @@ export type GenerationInput = {
   budgetCopper: number;
   phaseOverride: MarketPhase | null;
   freeSlots?: number;
-  // The plan identity the core stamps on its output:
-  // realm|faction|genEpoch:estateRevision:ledgerRevision:phase:character.
-  planRevision?: string;
 };
 
 // The stored shape of a merged series. The live import and the migration
@@ -139,7 +136,7 @@ function signalItemOf(itemId: number, items: Map<number, SignalItem>): SignalIte
   return item;
 }
 
-type DecisionIdentity = { realm: string; faction: string; scannedAt: Date; planRevision?: string };
+type DecisionIdentity = { realm: string; faction: string; scannedAt: Date };
 
 // Backfill helper: the live import leaves decisions to the game's plan, but
 // the migration and the perf seed rebuild an old generation's recommendations
@@ -149,7 +146,7 @@ export function decisionRowsFrom(core: CoreOutput, identity: DecisionIdentity): 
   const rows: DecisionRow[] = [];
   const seen = new Set<string>();
   for (const action of core.actions) {
-    const planRevision = core.plan?.revision || identity.planRevision;
+    const planRevision = core.plan?.revision;
     const decisionId = decisionIdFor({
       realm: identity.realm,
       faction: identity.faction,
@@ -281,8 +278,7 @@ export function buildGenerationPlan(input: GenerationInput): GenerationPlan {
     budgetCopper: input.budgetCopper,
     cashCopper: scan.cash,
     bagSlots: scan.bagSlots ?? undefined,
-    freeSlots: input.freeSlots ?? scan.bagSlots ?? undefined,
-    planRevision: input.planRevision
+    freeSlots: input.freeSlots ?? scan.bagSlots ?? undefined
   }));
   const coreByItem = new Map(core.rows.map((row) => [row.itemId, row]));
   for (const row of signals) {
