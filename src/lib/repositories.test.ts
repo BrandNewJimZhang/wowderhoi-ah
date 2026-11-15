@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { RULES_REVISION } from "@/lib/generated-rules-revision";
 
 const directory = mkdtempSync(path.join(tmpdir(), "wah-repositories-"));
 process.env.DATABASE_URL = `file:${path.join(directory, "test.db").replace(/\\/g, "/")}`;
@@ -147,8 +148,9 @@ describe("getReconciliationStats", () => {
     await prisma.$executeRawUnsafe(
       `INSERT INTO "Plan" ("id", "market_id", "revision", "character", "estate_revision",
         "config_revision", "steps", "resources", "unplanned", "created_at", "superseded_at")
-       VALUES ('p1', 'm1', ?, 'Tester', 3, '4', '[]', '{}', '[]', ?, NULL)`,
+       VALUES ('p1', 'm1', ?, 'Tester', 3, ?, '[]', '{}', '[]', ?, NULL)`,
       revision,
+      RULES_REVISION,
       NEW
     );
     // The scope came from whoever scanned last (revision 999); the plan is
