@@ -42,12 +42,22 @@ export function describeNextStep(action: CoreAction): NextStepCopy {
     : action.realizedPnl !== undefined && action.realizedPnl !== null
       ? [" · 已实现 ", { copper: action.realizedPnl }]
       : [];
+  // A fill-chance sell step was priced with the client's deposit table.
+  // Without one the step carries the core's base undercut, while the sell
+  // page may choose another price and duration; the note must not present
+  // the base number as the final recommendation.
+  const priced = action.fillProb !== undefined && action.fillProb !== null;
+  const note = action.requiresBank
+    ? priced
+      ? "先去银行取出这些货，再到卖出页按建议价挂出。完成后计划会自动重算。"
+      : "先去银行取出这些货，再到卖出页设定时长后挂出；押金与成交时长可在卖出页优化。完成后计划会自动重算。"
+    : priced
+      ? "打开卖出页，按建议价挂出。完成后计划会自动重算。"
+      : "打开卖出页，设定时长后挂出；押金与成交时长可在卖出页优化。完成后计划会自动重算。";
   return {
     headline: ["挂出 ", `${action.qty} 件 `, name],
     condition: ["挂单价 ", { copper: action.price }],
     outcome: ["回款 ", { copper: action.expectedNet }, ...realised],
-    note: action.requiresBank
-      ? "先去银行取出这些货，再到卖出页挂出。完成后计划会自动重算。"
-      : "打开卖出页，按建议价挂出。完成后计划会自动重算。"
+    note
   };
 }

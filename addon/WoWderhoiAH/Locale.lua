@@ -118,6 +118,10 @@ local L = {
   NEXT_STEP_BUY_VENDOR = "buy %d %s at or below the NPC price %s.",
   NEXT_STEP_SELL = "list %d %s at %s; %s back.",
   NEXT_STEP_SELL_BANK = "fetch from the bank first, then list %d %s at %s; %s back.",
+  -- The core quotes the base undercut; the sell page owns the deposit-aware
+  -- price and duration search. Say which one this line is.
+  NEXT_STEP_SELL_BASE = "list %d %s at the base undercut %s; %s back. Deposit and duration can be optimised on the sell page.",
+  NEXT_STEP_SELL_BASE_BANK = "fetch from the bank first, then list %d %s at the base undercut %s; %s back. Deposit and duration can be optimised on the sell page.",
   NEXT_STEP_FILL = " Fill %d%%.",
   PURCHASE_UNCONFIRMED = "Purchase not confirmed by the client - it is not in the ledger. Check the auction house before assuming it failed.",
   PHASE_LABELS = { ignition = "Ignition", wave = "Wave", settle = "Settle", steady = "Steady" },
@@ -312,6 +316,9 @@ if GetLocale() == "zhCN" then
   L.NEXT_STEP_BUY_VENDOR = "买入 %d 件 %s，不高于 NPC 价 %s。"
   L.NEXT_STEP_SELL = "挂出 %d 件 %s @ %s，回款 %s。"
   L.NEXT_STEP_SELL_BANK = "先去银行取货，然后挂出 %d 件 %s @ %s，回款 %s。"
+  -- 核心给的是基础降价，卖出页才做押金与时长优化；这句要说清是哪一个价。
+  L.NEXT_STEP_SELL_BASE = "挂出 %d 件 %s，基础价 %s，回款 %s；押金与时长可在卖出页优化。"
+  L.NEXT_STEP_SELL_BASE_BANK = "先去银行取货，然后挂出 %d 件 %s，基础价 %s，回款 %s；押金与时长可在卖出页优化。"
   L.NEXT_STEP_FILL = "成交率 %d%%。"
   L.PURCHASE_UNCONFIRMED = "客户端未确认这次购买，账本没有记录。请到拍卖行核对后再判断是否失败。"
   L.PHASE_LABELS = { ignition = "点火期", wave = "洪流期", settle = "沉淀期", steady = "稳态" }

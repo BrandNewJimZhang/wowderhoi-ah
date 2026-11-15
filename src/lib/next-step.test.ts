@@ -82,6 +82,23 @@ describe("describeNextStep", () => {
     expect(copy.note).toContain("银行");
   });
 
+  it("does not claim the base undercut is the sell page's final price", () => {
+    // The plan's sell step carries no deposit table, so its price is the
+    // plain one-copper undercut. The sell page may pick another price and
+    // duration; the note must point there instead of pretending the base
+    // number is the recommendation.
+    const copy = describeNextStep(sell());
+    expect(copy.note).toContain("卖出页");
+    expect(copy.note).toContain("优化");
+    expect(copy.note).not.toContain("按建议价");
+  });
+
+  it("quotes the optimized price when the step was priced with deposits", () => {
+    const copy = describeNextStep(sell({ fillProb: 0.62, fillBasis: "sell" }));
+    expect(copy.note).toContain("按建议价");
+    expect(copy.note).not.toContain("优化");
+  });
+
   it("does not report a realised result when the basis is unknown", () => {
     const copy = describeNextStep(sell({ costKnown: false, realizedPnl: null }));
     expect(text(copy.outcome)).toContain("成本未知");

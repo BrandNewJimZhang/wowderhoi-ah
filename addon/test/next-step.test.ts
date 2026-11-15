@@ -69,6 +69,9 @@ describe("next step prompt", () => {
     expect(lua.text("WoWderhoiAH_Plan.revision")).not.toBe(revision);
     expect(lua.names()[0]).toBe("卖出 Clean Spread");
     expect(prompt(lua)).toContain("挂出");
+    // The plan's sell step is the base undercut, not the sell page's
+    // deposit-aware price, and the line says where the price is optimized.
+    expect(prompt(lua)).toContain("优化");
   });
 
   it("re-mints the plan without repainting a search result table", () => {

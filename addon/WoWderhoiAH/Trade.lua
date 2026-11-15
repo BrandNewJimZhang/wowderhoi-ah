@@ -262,11 +262,17 @@ local function nextStepLine()
     end
     return line
   end
+  -- A fill-chance sell step was priced with the client's deposit table;
+  -- otherwise the price is the core's base undercut and the sell page owns
+  -- the price x duration search.
+  local priced = step.fillProb ~= nil
+  local format
   if step.requiresBank then
-    return prefix .. string.format(L.NEXT_STEP_SELL_BANK,
-      step.qty, step.name, money(step.price), money(step.expectedNet))
+    format = priced and L.NEXT_STEP_SELL_BANK or L.NEXT_STEP_SELL_BASE_BANK
+  else
+    format = priced and L.NEXT_STEP_SELL or L.NEXT_STEP_SELL_BASE
   end
-  return prefix .. string.format(L.NEXT_STEP_SELL,
+  return prefix .. string.format(format,
     step.qty, step.name, money(step.price), money(step.expectedNet))
 end
 
