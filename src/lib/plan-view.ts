@@ -1,9 +1,11 @@
 import { RULES_REVISION } from "@/lib/generated-rules-revision";
 
 // A plan revision begins
-// realm|faction|genEpoch:estateRevision:ledgerRevision:phase:character.
-// The epoch is the scan the plan was minted for; a page must not present a
-// plan from an older book as the current next step.
+// realm|faction|genEpoch:estate:econLedger:phase:character, then names the
+// rule pack, the active event windows and the own-sales population. The
+// epoch is the scan the plan was minted for; a page must not present a plan
+// from an older book as the current next step. Ordering reads only the
+// first three colon-separated values, so the trailing segments are opaque.
 export function planEpoch(revision: string): number | null {
   const epoch = planStateOf(revision)?.epoch ?? null;
   return epoch !== null && epoch > 0 ? epoch : null;

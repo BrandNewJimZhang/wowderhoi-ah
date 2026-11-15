@@ -181,6 +181,11 @@ end
 -- When the journal claims more units than the visible ladder holds, the rest
 -- came from the truncated deep book whose prices are unknown. Close the buy
 -- side until the next scan rather than guess a price.
+--
+-- Units come off the cheapest rung first, matching a commodity purchase. An
+-- item-auction purchase may have taken a dearer listing; subtracting the
+-- cheap end then hides a deal until the next scan instead of inventing one,
+-- the same direction as the sell side.
 function Core.projectBook(book, boughtQty)
   if not book or not boughtQty or boughtQty <= 0 then return book end
   local tiers = Core.sortedTiers(book.tiers)

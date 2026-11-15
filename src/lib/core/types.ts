@@ -72,8 +72,9 @@ export type CorePosition = {
 export type CoreInput = {
   now: number;
   phaseOverride?: MarketPhase;
-  // The immutable identity this plan is evaluated under:
-  // realm|faction|genEpoch:estateRevision:ledgerRevision:phase:character.
+  // The immutable identity this plan is evaluated under: the version vector
+  // realm|faction|genEpoch:estate:econLedger:phase:character:
+  // rules:<hash>:events:<indices>:window:<sales>.
   planRevision?: string;
   market: {
     // Only used when no phaseOverride is supplied; every production caller
