@@ -217,6 +217,49 @@ describe("estate collection", () => {
   });
 });
 
+describe("the core reads the snapshot its identity names", () => {
+  function withScan(lua: ReturnType<typeof loadAddon>) {
+    lua.setScan([{ itemId: LINEN, name: "Linen", minPrice: 100, sellP: 200, numAuctions: 3, quantity: 10 }]);
+    return lua;
+  }
+
+  it("reads cash from the estate, not from a purse the debounce has not published", () => {
+    const lua = withScan(loadAddon());
+    lua.exec("WowTest.setMoney(111111)");
+    lua.exec("WowTest.fireEvent('PLAYER_MONEY')");
+    refresh(lua);
+    expect(lua.number("WowTest.ns.coreInput().capital.cash")).toBe(111111);
+
+    // The client already reports the new purse; the estate has not rebuilt.
+    // Sizing against GetMoney() here would pair new cash with the old
+    // estate revision the identity names.
+    lua.exec("WowTest.setMoney(222222)");
+    lua.exec("WowTest.fireEvent('PLAYER_MONEY')");
+    expect(lua.number("GetMoney()")).toBe(222222);
+    expect(lua.number("WowTest.ns.coreInput().capital.cash")).toBe(111111);
+
+    refresh(lua);
+    expect(lua.number("WowTest.ns.coreInput().capital.cash")).toBe(222222);
+  });
+
+  it("reads free and total bag space from the same snapshot", () => {
+    const lua = withScan(loadAddon());
+    lua.exec("WowTest.freeBagSlots = { [0] = 2 }");
+    lua.exec("WowTest.fireEvent('BAG_UPDATE_DELAYED')");
+    refresh(lua);
+    expect(lua.number("WowTest.ns.coreInput().capacity.freeSlots")).toBe(2);
+    expect(lua.number("WowTest.ns.coreInput().capacity.bagSlots")).toBe(2);
+
+    lua.exec("WowTest.freeBagSlots = { [0] = 9 }");
+    lua.exec("WowTest.fireEvent('BAG_UPDATE_DELAYED')");
+    expect(lua.number("WowTest.ns.coreInput().capacity.freeSlots")).toBe(2);
+    expect(lua.number("WowTest.ns.coreInput().capacity.bagSlots")).toBe(2);
+
+    refresh(lua);
+    expect(lua.number("WowTest.ns.coreInput().capacity.freeSlots")).toBe(9);
+  });
+});
+
 describe("estate revision", () => {
   it("moves only when the content changes", () => {
     const lua = loadAddon();

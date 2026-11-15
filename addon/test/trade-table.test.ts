@@ -201,6 +201,9 @@ describe("rainy-day radar", () => {
     // evaluator's gates but the allocator gives it zero units; a zero in the
     // "buy" column is not an executable opportunity.
     lua.exec("function GetMoney() return 40000 end");
+    // The purse reaches the core through the estate snapshot, so publish it.
+    lua.exec("WowTest.fireEvent('PLAYER_MONEY')");
+    lua.advance(2);
     lua.setScan(SCAN);
     lua.setPoints(POINTS);
     lua.openTab();
@@ -212,6 +215,8 @@ describe("rainy-day radar", () => {
     // One unit at 800 clears the evaluator but the allocator hands out
     // nothing once the daily share is applied.
     lua.exec("function GetMoney() return 1000 end");
+    lua.exec("WowTest.fireEvent('PLAYER_MONEY')");
+    lua.advance(2);
     lua.setScan(SCAN);
     lua.setPoints(POINTS);
     lua.openTab();

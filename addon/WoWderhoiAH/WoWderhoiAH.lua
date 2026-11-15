@@ -1882,6 +1882,12 @@ end
 function WAH.coreInput()
   local scan = WAH.currentScan()
   local market = WAH.seriesMarket()
+  -- The plan identity names the estate revision; evaluation must read that
+  -- same snapshot. A live GetMoney() inside Estate's debounce window would
+  -- pair fresh cash with the revision the plan claims it was sized from.
+  local scope = WAH.Estate and WAH.Estate.currentCharacterScope() or nil
+  local slots = (scope and scope.freeSlots)
+    or (scan and scan.bagSlots) or freeBagSlots()
   local input = {
     now = time(),
     market = {
@@ -1891,9 +1897,10 @@ function WAH.coreInput()
     positions = {},
     capital = { cash = 0, budget = 0 },
     capacity = {
-      bagSlots = freeBagSlots(),
-      freeSlots = (WAH.Estate and WAH.Estate.currentCharacterScope()
-        and WAH.Estate.currentCharacterScope().freeSlots) or freeBagSlots(),
+      -- Both fields describe the same observation. bagSlots used to be read
+      -- live while freeSlots came from the snapshot.
+      bagSlots = slots,
+      freeSlots = slots,
       stackSize = 20
     }
   }
@@ -1961,7 +1968,11 @@ function WAH.coreInput()
       }, buys[itemId] or 0)
     end
   end
-  local cash = GetMoney and GetMoney() or 0
+  -- Estate snapshot first, then the scan's seed, then the live client. The
+  -- first two are named by the identity (estate revision / scannedAt); the
+  -- live read is only the last resort before a state has ever been observed.
+  local cash = (scope and scope.cash) or (scan and scan.cash)
+  if cash == nil then cash = GetMoney and GetMoney() or 0 end
   -- The ledger owns cost and realised P&L; the estate owns how much is
   -- actually sellable now and where it sits. Neither replaces the other.
   local reconciled = WAH.Reconciler and WAH.Reconciler.current() or nil

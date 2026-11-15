@@ -21,12 +21,17 @@ describe("capacity inputs", () => {
   it("reads free bag slots from the client", () => {
     const lua = loadAddon();
     lua.exec("WowTest.freeBagSlots = { [0] = 2, [1] = 3, [2] = 1 }");
+    // Capacity is read from the estate snapshot the plan identity names.
+    lua.exec("WowTest.fireEvent('BAG_UPDATE_DELAYED')");
+    lua.advance(2);
     expect(lua.number("WowTest.ns.coreInput().capacity.bagSlots")).toBe(6);
   });
 
   it("counts zero free slots as zero, not as the planning default", () => {
     const lua = loadAddon();
     lua.exec("WowTest.freeBagSlots = {}");
+    lua.exec("WowTest.fireEvent('BAG_UPDATE_DELAYED')");
+    lua.advance(2);
     expect(lua.number("WowTest.ns.coreInput().capacity.bagSlots")).toBe(0);
   });
 
